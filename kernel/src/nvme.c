@@ -138,41 +138,46 @@ static void nvme_log_identify_field(const char *label,
     serial_write("\r\n");
 }
 
-static bool nvme_block_read(void *context, uint64_t lba,
-                             uint32_t block_count, void *buffer) {
-    struct nvme_io_state *state = (struct nvme_io_state *)context;
+static bool nvme_block_transfer(struct nvme_io_state *state,
+                                 uint8_t opcode, uint64_t lba,
+                                 uint32_t block_count, void *buffer) {
+    const bool write = opcode == 0x01U;
+    const bool read = opcode == 0x02U;
     if (state == NULL || !state->initialized || state->busy ||
-        buffer == NULL || block_count == 0 ||
+        (!write && !read) || buffer == NULL || block_count == 0U ||
+        state->logical_block_size == 0U ||
         lba >= state->namespace_blocks ||
         (uint64_t)block_count > state->namespace_blocks - lba ||
-        block_count > (4096U / state->logical_block_size)) {
-        return false;
-    }
+        block_count > (4096U / state->logical_block_size)) return false;
 
     const uint32_t transfer_bytes = block_count * state->logical_block_size;
-    for (uint32_t i = 0; i < transfer_bytes; ++i) {
-        state->dma_buffer[i] = 0;
+    if (write) {
+        const uint8_t *input = (const uint8_t *)buffer;
+        for (uint32_t i = 0U; i < transfer_bytes; ++i)
+            state->dma_buffer[i] = input[i];
+    } else {
+        for (uint32_t i = 0U; i < transfer_bytes; ++i)
+            state->dma_buffer[i] = 0U;
     }
 
     uint16_t command_id = ++state->next_command_id;
-    if (command_id == 0) command_id = ++state->next_command_id;
-
+    if (command_id == 0U) command_id = ++state->next_command_id;
     volatile struct nvme_command *command =
         &state->submission_queue[state->submission_tail];
-    command->opcode = 0x02U; /* NVMe Read only. */
-    command->flags = 0;
+    command->opcode = opcode;
+    command->flags = 0U;
     command->command_id = command_id;
     command->namespace_id = 1U;
-    command->reserved = 0;
-    command->metadata_pointer = 0;
+    command->reserved = 0U;
+    command->metadata_pointer = 0U;
     command->prp1 = state->dma_buffer_physical;
-    command->prp2 = 0;
+    command->prp2 = 0U;
     command->cdw10 = (uint32_t)lba;
     command->cdw11 = (uint32_t)(lba >> 32);
     command->cdw12 = block_count - 1U;
-    command->cdw13 = 0;
-    command->cdw14 = 0;
-    command->cdw15 = 0;
+    command->cdw13 = 0U;
+    command->cdw14 = 0U;
+    command->cdw15 = 0U;
 
     state->busy = true;
     __asm__ volatile ("sfence" : : : "memory");
@@ -182,11 +187,10 @@ static bool nvme_block_read(void *context, uint64_t lba,
         state->submission_tail;
 
     bool completed = false;
-    uint16_t completion_status = 0;
+    uint16_t completion_status = 0U;
     volatile struct nvme_completion *completion =
         &state->completion_queue[state->completion_head];
-
-    for (uint32_t spin = 0; spin < NVME_POLL_LIMIT; ++spin) {
+    for (uint32_t spin = 0U; spin < NVME_POLL_LIMIT; ++spin) {
         completion_status = completion->status;
         if ((completion_status & 1U) == state->completion_phase) {
             completed = true;
@@ -196,9 +200,10 @@ static bool nvme_block_read(void *context, uint64_t lba,
     }
 
     if (!completed || completion->command_id != command_id ||
-        ((completion_status >> 1) & 0xFFU) != 0 ||
-        ((completion_status >> 9) & 0x07U) != 0) {
-        serial_write("NVMe: block read failed, completion status=");
+        ((completion_status >> 1) & 0xFFU) != 0U ||
+        ((completion_status >> 9) & 0x07U) != 0U) {
+        serial_write(write ? "NVMe: block write failed, completion status="
+                           : "NVMe: block read failed, completion status=");
         serial_write_hex(completion_status);
         serial_write("\r\n");
         state->busy = false;
@@ -208,13 +213,91 @@ static bool nvme_block_read(void *context, uint64_t lba,
     __asm__ volatile ("sfence" : : : "memory");
     state->completion_head =
         (uint16_t)((state->completion_head + 1U) % NVME_IO_QUEUE_DEPTH);
-    if (state->completion_head == 0) state->completion_phase ^= 1U;
+    if (state->completion_head == 0U) state->completion_phase ^= 1U;
     state->doorbells[(3U * state->doorbell_stride_bytes) / 4U] =
         state->completion_head;
 
-    for (uint32_t i = 0; i < transfer_bytes; ++i) {
-        ((uint8_t *)buffer)[i] = state->dma_buffer[i];
+    if (read) {
+        uint8_t *output = (uint8_t *)buffer;
+        for (uint32_t i = 0U; i < transfer_bytes; ++i)
+            output[i] = state->dma_buffer[i];
     }
+    state->busy = false;
+    return true;
+}
+
+static bool nvme_block_read(void *context, uint64_t lba,
+                            uint32_t block_count, void *buffer) {
+    return nvme_block_transfer((struct nvme_io_state *)context, 0x02U,
+                               lba, block_count, buffer);
+}
+
+static bool nvme_block_write(void *context, uint64_t lba,
+                             uint32_t block_count, const void *buffer) {
+    return nvme_block_transfer((struct nvme_io_state *)context, 0x01U,
+                               lba, block_count, (void *)buffer);
+}
+
+static bool nvme_block_flush(void *context) {
+    struct nvme_io_state *state = (struct nvme_io_state *)context;
+    if (state == NULL || !state->initialized || state->busy) return false;
+
+    uint16_t command_id = ++state->next_command_id;
+    if (command_id == 0U) command_id = ++state->next_command_id;
+    volatile struct nvme_command *command =
+        &state->submission_queue[state->submission_tail];
+    command->opcode = 0x00U; /* NVM Flush. */
+    command->flags = 0U;
+    command->command_id = command_id;
+    command->namespace_id = 1U;
+    command->reserved = 0U;
+    command->metadata_pointer = 0U;
+    command->prp1 = 0U;
+    command->prp2 = 0U;
+    command->cdw10 = 0U;
+    command->cdw11 = 0U;
+    command->cdw12 = 0U;
+    command->cdw13 = 0U;
+    command->cdw14 = 0U;
+    command->cdw15 = 0U;
+
+    state->busy = true;
+    __asm__ volatile ("sfence" : : : "memory");
+    state->submission_tail =
+        (uint16_t)((state->submission_tail + 1U) % NVME_IO_QUEUE_DEPTH);
+    state->doorbells[(2U * state->doorbell_stride_bytes) / 4U] =
+        state->submission_tail;
+
+    bool completed = false;
+    uint16_t completion_status = 0U;
+    volatile struct nvme_completion *completion =
+        &state->completion_queue[state->completion_head];
+    for (uint32_t spin = 0U; spin < NVME_POLL_LIMIT; ++spin) {
+        completion_status = completion->status;
+        if ((completion_status & 1U) == state->completion_phase) {
+            completed = true;
+            break;
+        }
+        __asm__ volatile ("pause");
+    }
+
+    const bool success = completed && completion->command_id == command_id &&
+        ((completion_status >> 1) & 0xFFU) == 0U &&
+        ((completion_status >> 9) & 0x07U) == 0U;
+    if (!success) {
+        serial_write("NVMe: flush failed, completion status=");
+        serial_write_hex(completion_status);
+        serial_write("\r\n");
+        state->busy = false;
+        return false;
+    }
+
+    __asm__ volatile ("sfence" : : : "memory");
+    state->completion_head =
+        (uint16_t)((state->completion_head + 1U) % NVME_IO_QUEUE_DEPTH);
+    if (state->completion_head == 0U) state->completion_phase ^= 1U;
+    state->doorbells[(3U * state->doorbell_stride_bytes) / 4U] =
+        state->completion_head;
     state->busy = false;
     return true;
 }
@@ -608,9 +691,17 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         .block_count = namespace_size,
         .block_size = logical_block_size,
         .max_blocks_per_request = 4096U / logical_block_size,
+#ifdef NEXUS_STORAGE_SELFTEST
+        .flags = NEXUS_BLOCKDEV_WRITABLE,
+#else
         .flags = NEXUS_BLOCKDEV_READ_ONLY,
+#endif
         .context = &nvme_io,
-        .read = nvme_block_read
+        .read = nvme_block_read,
+#ifdef NEXUS_STORAGE_SELFTEST
+        .write = nvme_block_write,
+        .flush = nvme_block_flush
+#endif
     };
     if (!blockdev_register(&block_device)) {
         nvme_io.initialized = false;
@@ -625,7 +716,7 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         serial_write("NVMe: registered block device lookup failed\r\n");
         return false;
     }
-    serial_write("NVMe: registered read-only block device nvme0n1\r\n");
+    serial_write("NVMe: registered block device nvme0n1\r\n");
     serial_write("NEXUS NVME BLOCK DEVICE READY\r\n");
 
 #ifdef NEXUS_STORAGE_SELFTEST
@@ -727,7 +818,51 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     serial_write("FAT32: mounted volume, listed and read README.TXT\\r\\n");
     serial_write("NEXUS FAT32 READ ONLY READY\\r\\n");
     serial_write("NEXUS GPT READ ONLY READY\r\n");
-    serial_write("NEXUS NVME READ ONLY READY\r\n");
+    /*
+     * LBA 100 is deliberately unused in this disposable image; the FAT32
+     * partition begins at LBA 2048.
+     */
+    uint8_t saved_sector[4096];
+    uint8_t pattern_sector[4096];
+    uint8_t readback_sector[4096];
+    const uint32_t sector_size = registered->block_size;
+    if (sector_size > sizeof(saved_sector) ||
+        !blockdev_read(registered, 100U, 1U, saved_sector)) {
+        serial_write("NVMe: unable to save disposable test sector\r\n");
+        return false;
+    }
+    for (uint32_t i = 0U; i < sector_size; ++i)
+        pattern_sector[i] = (uint8_t)(0xA5U ^ (uint8_t)(i * 37U));
+
+    const bool pattern_written =
+        blockdev_write(registered, 100U, 1U, pattern_sector) &&
+        blockdev_flush(registered);
+    const bool pattern_read =
+        pattern_written &&
+        blockdev_read(registered, 100U, 1U, readback_sector);
+    bool pattern_ok = pattern_read;
+    for (uint32_t i = 0U; i < sector_size && pattern_ok; ++i) {
+        if (readback_sector[i] != pattern_sector[i]) pattern_ok = false;
+    }
+
+    /* Restore regardless of the write verification result. */
+    const bool restore_written =
+        blockdev_write(registered, 100U, 1U, saved_sector) &&
+        blockdev_flush(registered);
+    const bool restore_read =
+        restore_written &&
+        blockdev_read(registered, 100U, 1U, readback_sector);
+    bool restore_ok = restore_read;
+    for (uint32_t i = 0U; i < sector_size && restore_ok; ++i) {
+        if (readback_sector[i] != saved_sector[i]) restore_ok = false;
+    }
+    if (!pattern_ok || !restore_ok) {
+        serial_write("NVMe: disposable write/flush/restore self-test failed\r\n");
+        return false;
+    }
+    serial_write("NVMe: disposable reserved-sector write and restore verified\r\n");
+    serial_write("NEXUS NVME WRITE SELFTEST READY\r\n");
+
 #endif
 
     serial_write("NEXUS NVME IDENTIFY READY\r\n");

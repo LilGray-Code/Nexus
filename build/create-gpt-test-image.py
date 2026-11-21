@@ -154,6 +154,8 @@ def main():
     path = Path(sys.argv[1])
     image = bytearray(TOTAL_SECTORS * SECTOR)
 
+    # LBA 100 remains unused and unallocated; CI saves, writes, flushes,
+    # verifies and restores it. The FAT32 partition starts at LBA 2048.
     image[:len(b"NEXUS-READ-ONLY-TEST")] = b"NEXUS-READ-ONLY-TEST"
     mbr_entry = struct.pack("<B3sB3sII", 0, b"\x00\x02\x00", 0xEE,
                             b"\xff\xff\xff", 1, TOTAL_SECTORS - 1)

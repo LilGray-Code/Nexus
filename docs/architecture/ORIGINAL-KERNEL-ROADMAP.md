@@ -713,3 +713,21 @@ synchronously; their syscall state, file descriptors, CR3/TSS stack ownership,
 page-fault recovery, and address-space context are not yet stored per runnable
 process. SMP, priorities, blocking queues, wait/exit semantics, thread
 cancellation, and stack reclamation are also future work.
+
+### Guarded NVMe write and flush path
+
+The common block-device registry now distinguishes read-only and writable
+devices and exposes bounded write and flush callbacks. NVMe supports the NVM
+Write (opcode 0x01) and Flush (opcode 0x00) commands with completion validation,
+using the existing one-page DMA buffer. The production/release build continues
+to register NVMe as read-only. Only the CI storage-selftest build registers the
+disposable QEMU image as writable.
+
+The CI image generator intentionally leaves LBA 100 unused and unallocated,
+before the FAT32 partition at LBA 2048. The self-test saves that logical block,
+writes a deterministic pattern, flushes, reads back and checks it, restores the
+saved block, flushes again, and verifies restoration. No GPT metadata,
+partition metadata, FAT32 structures, or files are targeted. This is a driver
+and test-path foundation, not a persistent writable filesystem: FAT32 writes,
+a journal, crash recovery, explicit volume selection, permissions, and a safe
+installer remain necessary before normal users' disks can be modified.

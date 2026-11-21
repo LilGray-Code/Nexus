@@ -8,11 +8,17 @@
 #define NEXUS_BLOCKDEV_MAX_DEVICES 8U
 #define NEXUS_BLOCKDEV_NAME_MAX 16U
 #define NEXUS_BLOCKDEV_READ_ONLY 0x00000001U
+#define NEXUS_BLOCKDEV_WRITABLE 0x00000002U
 
 typedef bool (*nexus_blockdev_read_fn)(void *context,
                                        uint64_t lba,
                                        uint32_t block_count,
                                        void *buffer);
+typedef bool (*nexus_blockdev_write_fn)(void *context,
+                                        uint64_t lba,
+                                        uint32_t block_count,
+                                        const void *buffer);
+typedef bool (*nexus_blockdev_flush_fn)(void *context);
 
 struct nexus_block_device {
     char name[NEXUS_BLOCKDEV_NAME_MAX];
@@ -22,6 +28,8 @@ struct nexus_block_device {
     uint32_t flags;
     void *context;
     nexus_blockdev_read_fn read;
+    nexus_blockdev_write_fn write;
+    nexus_blockdev_flush_fn flush;
 };
 
 void blockdev_init(void);
@@ -30,5 +38,8 @@ size_t blockdev_count(void);
 const struct nexus_block_device *blockdev_at(size_t index);
 bool blockdev_read(const struct nexus_block_device *device,
                    uint64_t lba, uint32_t block_count, void *buffer);
+bool blockdev_write(const struct nexus_block_device *device,
+                    uint64_t lba, uint32_t block_count, const void *buffer);
+bool blockdev_flush(const struct nexus_block_device *device);
 
 #endif

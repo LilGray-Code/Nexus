@@ -15,9 +15,9 @@ struct nexus_installer_disk_identity {
 };
 
 /* Kernel adapters revalidate device identity and obtain kernel-owned
- * destructive-write sessions. FAT32 formatting is restricted to an exact
- * GPT EFI System Partition; GPT writing changes metadata only. Neither
- * operation deploys system files or installs a bootloader. */
+ * destructive-write sessions. FAT32 formatting and root-file deployment are
+ * restricted to an exact GPT EFI System Partition. NXFS file deployment is
+ * restricted to the planned system partition. */
 bool nexus_installer_write_nxfs_file(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *captured_identity,

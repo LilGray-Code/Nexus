@@ -180,6 +180,34 @@ int main(void) {
     assert(target.format_area[esp_offset + 510U] == 0x55U);
     assert(target.format_area[esp_offset + 511U] == 0xAAU);
 
+    /* Deploy an EFI boot configuration through the guarded FAT32 writer. */
+    static const uint8_t limine_cfg[] =
+        "timeout: 3\\n/Nexus OS\\n    protocol: limine\\n"
+        "    kernel_path: boot():/NEXUS/KERNEL.ELF\\n";
+    assert(nexus_installer_write_efi_file(target_handle,&identity,
+        identity.stable_id,"ERASE",esp->first_lba,esp_blocks,
+        "LIMINE.CFG",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
+    assert(target.flushes == 8U);
+    const uint32_t bps=512U;
+    const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
+        ((uint32_t)target.format_area[esp_offset+15U]<<8));
+    const uint32_t fatsz=(uint32_t)target.format_area[esp_offset+36U] |
+        ((uint32_t)target.format_area[esp_offset+37U]<<8) |
+        ((uint32_t)target.format_area[esp_offset+38U]<<16) |
+        ((uint32_t)target.format_area[esp_offset+39U]<<24);
+    const size_t root_off=esp_offset+(size_t)(reserved+2U*fatsz)*bps;
+    assert(memcmp(target.format_area+root_off,"LIMINE  CFG",11U)==0);
+    assert(target.format_area[root_off+11U]==0x20U);
+    const uint32_t file_cluster=(uint32_t)target.format_area[root_off+26U] |
+        ((uint32_t)target.format_area[root_off+27U]<<8) |
+        ((uint32_t)target.format_area[root_off+20U]<<16) |
+        ((uint32_t)target.format_area[root_off+21U]<<24);
+    assert(file_cluster>=3U);
+    const size_t file_off=esp_offset+(size_t)(reserved+2U*fatsz+
+        (file_cluster-2U)*8U)*bps;
+    assert(memcmp(target.format_area+file_off,limine_cfg,
+                  sizeof(limine_cfg)-1U)==0);
+
     /* Format the planned Nexus System partition through the guarded NXFS path. */
     target.nxfs_base = plan.partitions[1].first_lba;
     assert(gpt_scan_device(target_handle));
@@ -188,7 +216,7 @@ int main(void) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 12U);
+    assert(target.flushes == 13U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -219,7 +247,7 @@ int main(void) {
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 16U);
+    assert(target.flushes == 17U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

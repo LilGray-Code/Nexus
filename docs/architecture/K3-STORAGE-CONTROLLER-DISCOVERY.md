@@ -1,41 +1,61 @@
-# K3 — Storage Controller Discovery
+# K3 — Storage Controller Discovery and NVMe Identify
 
 ## Status
 
-Nexus now classifies PCI mass-storage controllers using the kernel's
-read-only PCI inventory. This stage is discovery only.
+Nexus classifies PCI mass-storage controllers through PCI configuration-space
+enumeration. AHCI/SATA register and port discovery is read-only. The first NVMe
+admin-queue operation is now implemented: Identify Controller (read-only).
 
-## Detected classes
+## Controller discovery
 
-The current classifier recognizes SCSI, IDE, RAID, ATA, SATA/AHCI, SAS,
-NVM Express (NVMe), and UFS class codes. For each controller it logs its
-PCI bus/device/function address, vendor and device IDs, and programming
-interface.
+The classifier recognizes SCSI, IDE, RAID, ATA, SATA/AHCI, SAS, NVMe, and UFS
+PCI class codes. For each discovered controller it logs the PCI
+bus/device/function address, vendor/device IDs, programming interface, and
+decoded BAR resources.
+
+The AHCI probe reads CAP, GHC, PI, and VS from the assigned ABAR, then reads
+SSTS and signature values for implemented ports that fit within the mapped
+register page. It does not start an AHCI port or issue ATA/ATAPI commands.
+The QEMU UEFI profile exposes AHCI; the legacy BIOS profile currently exposes
+an IDE controller.
+
+## NVMe Identify Controller
+
+The NVMe path is limited to PCI class 01/subclass 08/programming-interface 02.
+It validates an assigned aligned BAR0, enables PCI memory decoding and bus
+mastering with a 16-bit PCI Command-register write (avoiding writes to the
+adjacent write-one-to-clear Status register), and maps the controller and
+admin doorbell pages.
+
+It checks that the controller supports the NVM command set, 4 KiB memory pages,
+at least 16 admin queue entries, and a doorbell stride supported by this first
+implementation. It allocates and clears three separate 4 KiB DMA pages below
+the 4 GiB boundary for the admin submission queue, completion queue, and
+Identify data. It configures a 16-entry admin queue, masks interrupts for
+polling, and sends NVMe Identify Controller (opcode 0x06, CNS=1).
+
+The controller identity returned by the QEMU UEFI test is vendor 1B36,
+model "QEMU NVMe Ctrl", serial "NEXUSNVME0001", firmware "8.2.2". The current
+CI requires the Identify completion marker and model field.
 
 ## Safety and limitations
 
-The probe only reads the PCI inventory populated by the PCI configuration
-scanner. The scanner captures PCI command/status and raw BAR registers; the
-BAR decoder distinguishes I/O versus memory space, 32-bit versus 64-bit memory,
-prefetchability, and whether a non-zero base address is assigned. It does not
-enable bus mastering, change PCI command bits, size or assign BARs, map
-controller registers, issue ATA/NVMe commands, or access sectors. It does not mount filesystems and is not a disk driver.
+Identify Controller reads controller metadata only. It does not issue
+Identify Namespace, read/write commands, format/sanitize commands, or any
+sector I/O. It does not mount filesystems or expose an OS block device. The
+QEMU test image is disposable and is not accessed at the namespace/sector
+level.
 
-The bootstrap physical-memory allocator now also exposes a one-page DMA
-allocator with a caller-supplied exclusive physical-address ceiling. The boot
-path verifies allocation below 4 GiB in the generic UEFI and legacy BIOS QEMU
-profiles. This is a prerequisite only: it does not yet provide contiguous
-multi-page DMA regions, IOMMU mapping, cache-coherency management, or a storage
-command engine. DMA pages are not yet used for device commands.
+The DMA allocator currently guarantees one 4 KiB page below a caller-provided
+physical-address ceiling. NVMe currently uses three separate pages, not a
+general contiguous DMA allocator. IOMMU/VT-d isolation, interrupt delivery,
+controller reset/recovery, namespace discovery, request scheduling, timeouts
+based on CAP.TO, and broader doorbell-stride support remain future work.
+Bus mastering is enabled for the detected NVMe controller; no IOMMU mapping
+or device-specific DMA isolation is implemented yet. Do not treat this
+prototype as safe for untrusted PCI devices or as a production disk driver.
 
-The next storage milestones are controller-specific MMIO/resource validation,
-an AHCI read-only identify path, an NVMe identify path, and then block-device
-and filesystem layers. The current AHCI register probe only reads CAP, GHC,
-PI, and VS from the assigned ABAR after checking PCI Memory Space Enable. The
-QEMU UEFI test reads version 1.0 and reports six implemented ports; the legacy
-BIOS test currently exposes an IDE controller instead.
-It also reads each implemented port's SSTS and signature registers where they
-fit in the currently mapped ABAR page, reporting link state and ATA/ATAPI type.
-It does not issue commands, start ports, enable bus mastering, or write AHCI
-registers. Ports outside the mapped page are skipped. Each later stage needs
-separate tests before disk access.
+Next storage milestones are NVMe namespace Identify, a common block-device
+interface, AHCI command/IDENTIFY support, sector reads from explicitly
+selected test media, and filesystem layers. Sector writes remain out of scope
+until a separate, explicit storage-write design and test plan exists.

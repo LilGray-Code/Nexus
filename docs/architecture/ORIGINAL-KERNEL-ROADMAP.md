@@ -407,7 +407,7 @@ write support, permissions, and user-mode file APIs are not implemented.
 ### Desktop terminal application
 
 The framebuffer desktop now includes a keyboard-driven terminal view (F4).
-Its bounded command set is read-only: `help`, `about`, `ls`, `cat FILE`,
+Its bounded command set is read-only: `help`, `about`, `mem`, `uptime`, `ls`, `cat FILE`,
 and `clear`. Directory listing and file reads go through the VFS and do not
 modify storage. The terminal is currently a kernel-integrated shell, not a
 separate ring-3 process; command history, pipes, scripting, permissions, and

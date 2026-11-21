@@ -67,7 +67,7 @@ jobs:
           grep -q "K2: hardware timer ticks received:" uefi-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" uefi-serial.log
           grep -q "NEXUS ACPI MADT READY" uefi-serial.log
-          grep -q "NEXUS IOAPIC PROBE READY" uefi-serial.log
+          grep -q "NEXUS IOAPIC PROBE READY" uefi-serial.log\n          grep -q "NEXUS PCI ENUMERATION READY" uefi-serial.log\n          grep -q "PCI: device " uefi-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 
@@ -90,7 +90,7 @@ jobs:
           grep -q "K2: hardware timer ticks received:" bios-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" bios-serial.log
           grep -q "NEXUS ACPI MADT READY" bios-serial.log
-          grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log
+          grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log\n          grep -q "NEXUS PCI ENUMERATION READY" bios-serial.log\n          grep -q "PCI: device " bios-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 

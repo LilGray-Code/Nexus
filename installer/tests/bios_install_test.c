@@ -35,6 +35,7 @@ int main(void){
  uint64_t encoded=0U;for(unsigned i=0;i<8U;i++)encoded|=(uint64_t)storage[0x1a4U+i]<<(i*8U);
  assert(encoded==(uint64_t)BIOS_FIRST*512U);
  assert(!nexus_bios_install_apply(&t,BIOS_FIRST,1U,image,sizeof(image)));
+ assert(!nexus_bios_install_apply(&t,BIOS_FIRST,63U,image,sizeof(image)));
  assert(!nexus_bios_install_apply(&t,DISK_BLOCKS,1U,image,sizeof(image)));
  assert(!nexus_bios_install_apply(&t,BIOS_FIRST,BIOS_BLOCKS,image,512U));
  image[511]=0U;assert(!nexus_bios_install_apply(&t,BIOS_FIRST,BIOS_BLOCKS,image,sizeof(image)));

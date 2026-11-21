@@ -22,7 +22,8 @@ bool nexus_bios_install_apply(const struct nexus_bios_install_target *t,
     if(!t||!image||!t->read||!t->write||!t->flush||
        t->block_size!=BIOS_SECTOR_SIZE||t->max_blocks_per_request==0U||
        image_size<=BIOS_SECTOR_SIZE||
-       !range_ok(first,partition_blocks,t->block_count))return false;
+       !range_ok(first,partition_blocks,t->block_count)||
+       partition_blocks<64U)return false;
     const uint8_t *src=(const uint8_t*)image;
     if(src[510]!=0x55U||src[511]!=0xAAU)return false;
     const uint64_t stage_bytes=(uint64_t)image_size-BIOS_SECTOR_SIZE;

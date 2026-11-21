@@ -3,8 +3,8 @@
 ## Status
 
 Nexus classifies PCI mass-storage controllers through PCI configuration-space
-enumeration. AHCI/SATA register and port discovery is read-only. The first NVMe
-admin-queue operation is now implemented: Identify Controller (read-only).
+enumeration. AHCI/SATA register and port discovery is read-only. The NVMe admin queue now implements Identify Controller and Identify Namespace
+(metadata-only operations; no sector reads or writes).
 
 ## Controller discovery
 
@@ -32,7 +32,10 @@ at least 16 admin queue entries, and a doorbell stride supported by this first
 implementation. It allocates and clears three separate 4 KiB DMA pages below
 the 4 GiB boundary for the admin submission queue, completion queue, and
 Identify data. It configures a 16-entry admin queue, masks interrupts for
-polling, and sends NVMe Identify Controller (opcode 0x06, CNS=1).
+polling, and sends NVMe Identify Controller (opcode 0x06, CNS=1). It then reads the
+controller namespace count and, when nonzero, issues Identify Namespace for
+NSID 1 (opcode 0x06, CNS=0). It validates NSZE and the active LBA format and
+reports namespace capacity in logical blocks and logical-block byte size.
 
 The controller identity returned by the QEMU UEFI test is vendor 1B36,
 model "QEMU NVMe Ctrl", serial "NEXUSNVME0001", firmware "8.2.2". The current
@@ -40,22 +43,22 @@ CI requires the Identify completion marker and model field.
 
 ## Safety and limitations
 
-Identify Controller reads controller metadata only. It does not issue
-Identify Namespace, read/write commands, format/sanitize commands, or any
-sector I/O. It does not mount filesystems or expose an OS block device. The
+Identify Controller and Identify Namespace read controller/namespace
+metadata only. They do not issue read/write commands, format/sanitize
+commands, or any sector I/O. It does not mount filesystems or expose an OS block device. The
 QEMU test image is disposable and is not accessed at the namespace/sector
 level.
 
 The DMA allocator currently guarantees one 4 KiB page below a caller-provided
 physical-address ceiling. NVMe currently uses three separate pages, not a
 general contiguous DMA allocator. IOMMU/VT-d isolation, interrupt delivery,
-controller reset/recovery, namespace discovery, request scheduling, timeouts
+controller reset/recovery, additional namespace-ID discovery beyond NSID 1,
+request scheduling, timeouts
 based on CAP.TO, and broader doorbell-stride support remain future work.
 Bus mastering is enabled for the detected NVMe controller; no IOMMU mapping
 or device-specific DMA isolation is implemented yet. Do not treat this
 prototype as safe for untrusted PCI devices or as a production disk driver.
 
-Next storage milestones are NVMe namespace Identify, a common block-device
-interface, AHCI command/IDENTIFY support, sector reads from explicitly
+Next storage milestones are a common block-device interface, AHCI command/IDENTIFY support, sector reads from explicitly
 selected test media, and filesystem layers. Sector writes remain out of scope
 until a separate, explicit storage-write design and test plan exists.

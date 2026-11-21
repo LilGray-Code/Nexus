@@ -336,32 +336,33 @@ multiple vendors and generations.
 
 ### Next implementation sequence
 
-1. Expand the read-only block interface with locking, request ownership,
-   timeouts, and controller recovery before adding concurrent callers.
-2. Add AHCI command-list/FIS/PRDT setup and ATA IDENTIFY, followed by explicitly
-   requested read-only access to test media.
-3. Add IOMMU/VT-d awareness, DMA ownership/lifetime rules, and general-purpose
-   DMA allocation before broader device driver support.
-4. Add IOMMU/VT-d awareness, DMA ownership/lifetime rules, controller recovery,
-   and more general DMA allocation before broader device driver support.
-5. Expand QEMU coverage across memory sizes, CPU models, chipsets, and USB,
+1. Harden the read-only block interface with request ownership, bounded
+   timeouts, controller recovery, and safe DMA lifetime management.
+2. Validate backup GPT headers, partition-entry overlap, and malformed-table
+   handling; expose partition metadata to a read-only Files application.
+3. Add AHCI command-list/FIS/PRDT setup and ATA IDENTIFY, followed by
+   read-only access to disposable test media.
+4. Add IOMMU/VT-d awareness and a general-purpose DMA allocator before
+   enabling broader bus-mastering device drivers.
+5. Add a read-only filesystem, VFS, initramfs, and the first userland process.
+6. Expand QEMU coverage across memory sizes, CPU models, chipsets, and USB,
    graphics, and network controller families.
-6. Begin multi-vendor physical boot and read-only discovery testing; record
+7. Begin multi-vendor physical boot and read-only discovery testing; record
    exact hardware IDs, firmware, boot mode, and results for each system.
-7. Only after reliable block reads, add GPT parsing, a read-only filesystem
-   path, initramfs, userland, and eventually the Nexus installer.
+8. Build the window manager/compositor, app runtime, system services, installer,
+   recovery, and update path before calling the OS a complete desktop release.
 
 The current implementation has not been merged into `main`. A successful
 QEMU CI run is not proof of physical compatibility.
 
 
-### Interactive desktop shell work (development)
+### Interactive desktop shell work (prototype)
 
-The desktop shell now has keyboard-navigable app views. F1 opens the Files
-screen, F2 opens the Browser placeholder, F3 opens Settings, and Escape
-returns home. A mouse cursor and click-to-open home tiles have been committed
-to the original-kernel branch; the corresponding full BIOS/UEFI CI run is
-still pending. These features are an interactive shell foundation, not a
-complete desktop environment. There is no window manager, compositor,
-user-mode application runtime, editable text widget, filesystem browser,
-browser engine, network stack, or installer yet.
+The desktop shell has keyboard-navigable app views. F1 opens the Files screen,
+F2 opens the Browser placeholder, F3 opens Settings, and Escape returns home.
+A mouse pointer and click-to-open home tiles are implemented. CI run
+44878054534 compiled and booted the shell under UEFI and legacy BIOS, but it
+did not synthesize pointer movement or clicks. These features are an
+interactive shell foundation, not a complete desktop environment. There is
+no window manager, compositor, user-mode application runtime, editable text
+widget, filesystem browser, browser engine, network stack, or installer yet.

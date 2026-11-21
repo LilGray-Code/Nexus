@@ -190,7 +190,10 @@ bool gpt_scan_device(const struct nexus_block_device *device) {
 
     if (device == NULL || device->block_size > sizeof(io_buffer) ||
         device->block_size < GPT_ENTRY_MIN_SIZE ||
-        device->block_size % GPT_ENTRY_MIN_SIZE != 0) {
+        device->block_size % GPT_ENTRY_MIN_SIZE != 0 ||
+        device->block_count < 3U || !read_one(device, 0U, io_buffer) ||
+        io_buffer[510] != 0x55U || io_buffer[511] != 0xAAU ||
+        io_buffer[450] != 0xEEU || read_le32(io_buffer + 454U) != 1U) {
         return false;
     }
 

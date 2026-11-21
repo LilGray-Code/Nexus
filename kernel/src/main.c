@@ -204,6 +204,7 @@ void kmain(void) {
     for (;;) {
         struct nexus_input_event event;
         while (input_pop_event(&event)) {
+            desktop_handle_input(&event);
             if (event.type == NEXUS_INPUT_KEYBOARD) {
                 serial_write("INPUT: keyboard scancode=");
                 serial_write_hex(event.scancode);

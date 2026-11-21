@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <limine.h>
 
+#include "acpi.h"
 #include "interrupts.h"
 #include "memory.h"
 #include "serial.h"
@@ -24,6 +25,10 @@ static volatile struct limine_memmap_request memory_map_request = {
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_hhdm_request hhdm_request = {
     .id = LIMINE_HHDM_REQUEST_ID, .revision = 0
+};
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_rsdp_request rsdp_request = {
+    .id = LIMINE_RSDP_REQUEST_ID, .revision = 0
 };
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t requests_end[] = LIMINE_REQUESTS_END_MARKER;
@@ -165,6 +170,13 @@ void kmain(void) {
     serial_write("\r\nFirst allocated physical page: ");
     serial_write_hex(first_page);
     serial_write("\r\n");
+
+    if (rsdp_request.response == NULL ||
+        !acpi_init(rsdp_request.response->address)) {
+        serial_write("ERROR: ACPI RSDP/MADT discovery failed\\r\\n");
+        halt_forever();
+    }
+    serial_write("NEXUS ACPI MADT READY\\r\\n");
 
     timer_init(100);
     serial_write("K2: PIC remapped and PIT configured for 100 Hz\r\n");

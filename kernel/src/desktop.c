@@ -346,11 +346,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             if (entry != NULL) {
                                 size_t n = 0;
                                 while (n < sizeof(files_first_name) - 1U &&
-                                       entry->name[n] != '\\0') {
+                                       entry->name[n] != '\0') {
                                     files_first_name[n] = entry->name[n];
                                     ++n;
                                 }
-                                files_first_name[n] = '\\0';
+                                files_first_name[n] = '\0';
                             }
                         }
                     }

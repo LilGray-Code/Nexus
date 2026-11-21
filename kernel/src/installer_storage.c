@@ -174,9 +174,9 @@ bool nexus_installer_deploy_boot_payloads(
  uint64_t esp_first,uint64_t esp_blocks) {
  const struct nexus_boot_payloads *p=nexus_boot_payloads_get();
  if(!p||!device||!identity)return false;
- /* The ESP is revalidated against GPT and the captured disk identity for
-  * every file write. BIOS stage-2 is staged as a file only; raw BIOS stage-1
-  * installation is deliberately a separate, not-yet-enabled operation. */
+ /* Each file write revalidates the selected ESP and disk identity. The HDD
+  * image is staged for guarded BIOS installation; limine-bios.sys remains
+  * on the ESP because Limine's BIOS stage requires it at boot. */
  if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
     esp_first,esp_blocks,"EFI/BOOT/BOOTX64.EFI",
     p->uefi_loader.data,p->uefi_loader.size)!=NEXUS_FAT32_FILE_OK)return false;

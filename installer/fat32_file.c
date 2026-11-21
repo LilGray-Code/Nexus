@@ -114,7 +114,7 @@ static bool long_name_info(const char*n,uint8_t alias[11],
    if(ch!=names[k][i])break;
    i++;
   }
-  if(n[i]!='\\0'||names[k][i]!='\\0')continue;
+  if(n[i]!='\0'||names[k][i]!='\0')continue;
   if(!valid_name(aliases[k],alias))return false;
   *long_name=names[k];
   size_t len=0U;while(names[k][len])len++;

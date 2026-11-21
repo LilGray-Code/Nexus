@@ -122,7 +122,7 @@ int main(int argc,char **argv) {
     uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios_hdd=NULL,*external_bios_sys=NULL;
     uint32_t external_kernel_size=0U,external_uefi_size=0U,external_bios_hdd_size=0U,external_bios_sys_size=0U;
     if(argc!=1&&argc!=6)return 2;
-    if(argc==5){
+    if(argc==6){
         assert(load_payload_file(argv[1],&external_kernel,&external_kernel_size));
         assert(load_payload_file(argv[2],&external_uefi,&external_uefi_size));
         assert(load_payload_file(argv[3],&external_bios_hdd,&external_bios_hdd_size));
@@ -232,11 +232,13 @@ int main(int argc,char **argv) {
     fake_bios_hdd[510]=0x55U;fake_bios_hdd[511]=0xAAU;
     fake_uefi[0x3c]=0x40U;fake_uefi[0x40]='P';fake_uefi[0x41]='E';
     uint8_t *kernel_payload=argc==6?external_kernel:fake_kernel;
-    uint8_t *uefi_payload=argc==5?external_uefi:fake_uefi;
-    uint8_t *bios_payload=argc==5?external_bios:fake_bios;
-    uint32_t kernel_payload_size=argc==5?external_kernel_size:(uint32_t)sizeof(fake_kernel);
-    uint32_t uefi_payload_size=argc==5?external_uefi_size:(uint32_t)sizeof(fake_uefi);
-    uint32_t bios_payload_size=argc==5?external_bios_size:(uint32_t)sizeof(fake_bios);
+    uint8_t *uefi_payload=argc==6?external_uefi:fake_uefi;
+    uint8_t *bios_hdd_payload=argc==6?external_bios_hdd:fake_bios_hdd;
+    uint8_t *bios_sys_payload=argc==6?external_bios_sys:fake_bios_sys;
+    uint32_t kernel_payload_size=argc==6?external_kernel_size:(uint32_t)sizeof(fake_kernel);
+    uint32_t uefi_payload_size=argc==6?external_uefi_size:(uint32_t)sizeof(fake_uefi);
+    uint32_t bios_hdd_payload_size=argc==6?external_bios_hdd_size:(uint32_t)sizeof(fake_bios_hdd);
+    uint32_t bios_sys_payload_size=argc==6?external_bios_sys_size:(uint32_t)sizeof(fake_bios_sys);
     struct limine_file kernel_file={.address=kernel_payload,.size=kernel_payload_size};
     struct limine_file uefi_file={.address=uefi_payload,.size=uefi_payload_size,
         .path="boot():/EFI/BOOT/BOOTX64.EFI"};

@@ -21,7 +21,9 @@ prefetchability, and whether a non-zero base address is assigned. It does not
 enable bus mastering, change PCI command bits, size or assign BARs, map
 controller registers, issue ATA/NVMe commands, or access sectors. It does not mount filesystems and is not a disk driver.
 
-The next storage milestones are safe BAR decoding/resource reservation,
-controller-specific MMIO mapping, an AHCI read-only identify path, an NVMe
-identify path, and then block-device and filesystem layers. Each stage will
-need separate tests before it can access or modify a disk.
+The next storage milestones are controller-specific MMIO/resource validation,
+an AHCI read-only identify path, an NVMe identify path, and then block-device
+and filesystem layers. The current AHCI register probe only reads CAP, GHC,
+PI, and VS from the assigned ABAR after checking PCI Memory Space Enable. It
+does not issue commands, start ports, enable bus mastering, or write AHCI
+registers. Each later stage needs separate tests before disk access.

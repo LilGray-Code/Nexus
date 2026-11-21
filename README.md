@@ -23,10 +23,11 @@ and an early single-connection TCP/plain-HTTP client.
 
 The desktop now includes an **Install F5** graphical preview with target-device
 capacity, logical sector size, and UEFI/legacy-BIOS partition planning. It is
-read-only and cannot install or modify a disk. A host-tested GPT metadata serializer, guarded mock-disk transaction, and
-two-stage installer authorization state machine exist, but they are not
-connected to the kernel's release block-device path. The release NVMe device
-remains read-only.
+read-only and cannot install or modify a disk. The GPT transaction is linked
+through a kernel block-device adapter and has host-side adapter tests for boot
+media rejection, unknown boot provenance, mounted targets, confirmation, and
+successful disposable-disk metadata writes. Firmware boot-source identification
+and UI integration are still missing, so release writes remain disabled.
 
 This is still an early prototype, not a complete desktop OS. Durable installable
 filesystem hardening, a full installer wizard, system-image deployment,
@@ -43,9 +44,10 @@ installer engine specification, GPT planner, metadata serializer, guarded
 transaction, safety invariants, and implementation gates are in
 [installer/README.md](installer/README.md).
 
-The GPT transaction is host-tested against an in-memory mock disk in CI. Its
-kernel adapter revalidates device identity and obtains a kernel-owned write
-session before issuing GPT metadata writes. However, the session cannot open
+The GPT transaction and its kernel storage adapter are host-tested against a
+disposable in-memory block device in CI. Tests exercise unknown boot provenance,
+boot-medium rejection, mounted-target rejection, bad confirmation, identity
+change, and a successful GPT write/read-back. The adapter cannot open a session
 until the boot chain positively identifies the live boot medium; that firmware
 provenance integration is not implemented. The UI is not connected, and no
 completed installation or release-ISO disk-writing capability is claimed.

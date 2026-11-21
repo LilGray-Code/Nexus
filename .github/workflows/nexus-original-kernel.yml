@@ -67,6 +67,7 @@ jobs:
           fi
           cat uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
+          grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS USER MODE" uefi-serial.log
           grep -q "K2: hardware timer ticks received:" uefi-serial.log
@@ -119,6 +120,7 @@ jobs:
           fi
           cat bios-serial.log
           grep -q "NEXUS GDT TSS READY" bios-serial.log
+          grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
           grep -q "NEXUS USER MODE" bios-serial.log
           grep -q "K2: hardware timer ticks received:" bios-serial.log
@@ -159,6 +161,7 @@ jobs:
           fi
           cat release-serial.log
           grep -q "NEXUS NVME BLOCK DEVICE READY" release-serial.log
+          grep -q "NEXUS ELF64 VALIDATION READY" release-serial.log
           grep -q "NEXUS NVME IDENTIFY READY" release-serial.log
           if grep -q "NEXUS NVME READ ONLY READY" release-serial.log; then
             echo "Release ISO unexpectedly ran CI sector-read self-test"

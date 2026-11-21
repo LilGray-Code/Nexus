@@ -4,6 +4,7 @@
 #include "serial.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define PIC1_COMMAND 0x20
@@ -47,6 +48,8 @@ static bool local_apic_enable_pic_virtual_wire(void) {
     uint32_t eax = 1, ebx, ecx, edx;
     __asm__ volatile ("cpuid"
                       : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    (void)ebx;
+    (void)ecx;
     if ((edx & (1U << 9)) == 0) return false;
 
     uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);

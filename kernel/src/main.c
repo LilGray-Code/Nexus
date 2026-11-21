@@ -186,7 +186,12 @@ void kmain(void) {
     serial_write("NEXUS IOAPIC PROBE READY\\r\\n");
 
     timer_init(100);
-    serial_write("K2: PIC remapped and PIT configured for 100 Hz\r\n");
+    if (ioapic_route_isa_irq0(32)) {
+        serial_write("NEXUS IOAPIC TIMER ROUTE READY\r\n");
+    } else {
+        serial_write("IOAPIC: direct timer route unavailable; retaining PIC/PIT fallback\r\n");
+    }
+    serial_write("K2: PIT configured for 100 Hz\r\n");
 
     const uint64_t target_tick = timer_ticks() + 5;
     __asm__ volatile ("sti" : : : "memory");

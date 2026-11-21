@@ -17,6 +17,12 @@ struct nexus_installer_disk_identity {
  * destructive-write sessions. FAT32 formatting is restricted to an exact
  * GPT EFI System Partition; GPT writing changes metadata only. Neither
  * operation deploys system files or installs a bootloader. */
+bool nexus_installer_write_nxfs_file(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *captured_identity,
+    const char *typed_stable_id,const char *typed_erase_phrase,
+    const struct nexus_gpt_partition *partition,
+    const char *name,const void *data,uint32_t length);
 bool nexus_installer_format_nxfs(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *captured_identity,

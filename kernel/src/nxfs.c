@@ -421,6 +421,36 @@ bool nxfs_format(const struct nexus_block_device *device,
     return nxfs_mount(device, partition);
 }
 
+bool nxfs_write_file_install(
+    const struct nexus_block_device *device,
+    const struct nexus_gpt_partition *partition,
+    const char *typed_stable_id,
+    const char *typed_erase_phrase,
+    const char *name,const void *data,uint32_t length) {
+    if (device == NULL || partition == NULL || name == NULL ||
+        (length != 0U && data == NULL) || nxfs_install_authorized ||
+        nxfs_mounted || !nxfs_partition_type_matches(partition) ||
+        partition->first_lba > partition->last_lba ||
+        partition->last_lba >= device->block_count ||
+        length > NEXUS_NXFS_MAX_FILE_BYTES ||
+        !blockdev_install_session_begin(device, typed_stable_id,
+                                        typed_erase_phrase))
+        return false;
+    nxfs_install_device = device;
+    nxfs_install_authorized = true;
+    bool result = nxfs_mount(device, partition);
+    if (result) result = nxfs_write_file(name, data, length);
+    /* Leave the target unmounted and close the one-operation write session. */
+    nxfs_mounted = false;
+    nxfs_busy = false;
+    nxfs_device = NULL;
+    zero_bytes(nxfs_entries, sizeof(nxfs_entries));
+    nxfs_install_authorized = false;
+    nxfs_install_device = NULL;
+    blockdev_install_session_end();
+    return result;
+}
+
 bool nxfs_format_install(const struct nexus_block_device *device,
                          const struct nexus_gpt_partition *partition,
                          const char *typed_stable_id,

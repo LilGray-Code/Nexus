@@ -62,6 +62,23 @@ static bool installer_is_exact_nxfs_partition(
     }
     return false;
 }
+bool nexus_installer_write_nxfs_file(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *captured_identity,
+    const char *typed_stable_id,const char *typed_erase_phrase,
+    const struct nexus_gpt_partition *partition,
+    const char *name,const void *data,uint32_t length) {
+    if (device == NULL || captured_identity == NULL || partition == NULL ||
+        !blockdev_matches_identity(device, captured_identity->stable_id,
+            captured_identity->model, captured_identity->block_count,
+            captured_identity->block_size) ||
+        !installer_is_exact_nxfs_partition(device, partition))
+        return false;
+    struct nexus_gpt_partition validated = *partition;
+    return nxfs_write_file_install(device, &validated, typed_stable_id,
+                                   typed_erase_phrase, name, data, length);
+}
+
 bool nexus_installer_format_nxfs(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *captured_identity,

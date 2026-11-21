@@ -191,11 +191,35 @@ int main(void) {
     assert(target.flushes == 12U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
+    /* Deploy a large system file through a one-operation installer session. */
+    static uint8_t system_payload[256U * 1024U];
+    static uint8_t system_readback[4096U];
+    for(size_t i=0U;i<sizeof(system_payload);++i)
+        system_payload[i]=(uint8_t)((i*29U+(i>>7))&0xFFU);
+    assert(nexus_installer_write_nxfs_file(target_handle,&identity,
+        identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
+        system_payload,sizeof(system_payload)));
+    assert(target.flushes == 16U);
+    assert(nxfs_mount(target_handle,&system_copy));
+    const struct nexus_nxfs_entry *system_entry=NULL;
+    for(size_t i=0U;i<nxfs_entry_count();++i){
+        const struct nexus_nxfs_entry *entry=nxfs_entry_at(i);
+        if(entry!=NULL&&strcmp(entry->name,"KERNEL.BIN")==0)system_entry=entry;
+    }
+    assert(system_entry!=NULL&&system_entry->size==sizeof(system_payload));
+    for(uint32_t offset=0U;offset<system_entry->size;offset+=sizeof(system_readback)){
+        const uint32_t amount=system_entry->size-offset<sizeof(system_readback)
+            ?system_entry->size-offset:(uint32_t)sizeof(system_readback);
+        assert(nxfs_read_file(system_entry,offset,amount,system_readback));
+        assert(memcmp(system_readback,system_payload+offset,amount)==0);
+    }
+    assert(!nxfs_write_file("DENIED.TXT",system_payload,1U));
+
     /* FAT32 formatting rejects arbitrary LBAs and non-ESP GPT partitions. */
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 12U);
+    assert(target.flushes == 16U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,
@@ -242,44 +266,6 @@ int main(void) {
     assert(blockdev_register(&target_device));
     assert(blockdev_register(&optical_device));
     assert(!blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
-
-    /* NXFS v2 supports system-sized files and remount verification. */
-    blockdev_init();
-    memset(&target, 0, sizeof(target));
-    target.nxfs_base = 8192U;
-    target_device = make_device("nxfs-large", "TEST-NXFS-LARGE", &target);
-    target_device.flags = NEXUS_BLOCKDEV_WRITABLE;
-    assert(blockdev_register(&target_device));
-    const struct nexus_block_device *rw_handle = blockdev_at(0U);
-    assert(rw_handle != NULL);
-    struct nexus_gpt_partition nxfs_test_partition = {0};
-    const uint8_t nxfs_guid[16] = {
-        0x46U,0x53U,0x58U,0x4EU,0x01U,0x00U,0x58U,0x4EU,
-        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x46U,0x53U
-    };
-    memcpy(nxfs_test_partition.type_guid, nxfs_guid, sizeof(nxfs_guid));
-    nxfs_test_partition.first_lba = target.nxfs_base;
-    nxfs_test_partition.last_lba = target.nxfs_base + 300000U - 1U;
-    assert(nxfs_format(rw_handle, &nxfs_test_partition));
-    static uint8_t large_payload[256U * 1024U];
-    static uint8_t large_readback[4096U];
-    for (size_t i=0U;i<sizeof(large_payload);++i)
-        large_payload[i]=(uint8_t)((i*37U+(i>>8))&0xFFU);
-    assert(nxfs_write_file("KERNEL.BIN",large_payload,sizeof(large_payload)));
-    assert(nxfs_mount(rw_handle,&nxfs_test_partition));
-    const struct nexus_nxfs_entry *large_entry=NULL;
-    for(size_t i=0U;i<nxfs_entry_count();++i){
-        const struct nexus_nxfs_entry *entry=nxfs_entry_at(i);
-        if(entry!=NULL&&strcmp(entry->name,"KERNEL.BIN")==0)large_entry=entry;
-    }
-    assert(large_entry!=NULL&&large_entry->size==sizeof(large_payload));
-    for(uint32_t offset=0U;offset<large_entry->size;offset+=sizeof(large_readback)){
-        const uint32_t amount=large_entry->size-offset<sizeof(large_readback)
-            ?large_entry->size-offset:(uint32_t)sizeof(large_readback);
-        assert(nxfs_read_file(large_entry,offset,amount,large_readback));
-        assert(memcmp(large_readback,large_payload+offset,amount)==0);
-    }
-    assert(nxfs_remove_file("KERNEL.BIN"));
 
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
     return 0;

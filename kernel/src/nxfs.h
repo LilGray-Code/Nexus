@@ -22,6 +22,11 @@ struct nexus_nxfs_entry {
 };
 
 bool nxfs_partition_type_matches(const struct nexus_gpt_partition *partition);
+bool nxfs_write_file_install(
+    const struct nexus_block_device *device,
+    const struct nexus_gpt_partition *partition,
+    const char *typed_stable_id,const char *typed_erase_phrase,
+    const char *name,const void *data,uint32_t length);
 bool nxfs_format_install(const struct nexus_block_device *device,
                          const struct nexus_gpt_partition *partition,
                          const char *typed_stable_id,

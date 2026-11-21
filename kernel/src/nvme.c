@@ -679,19 +679,21 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         serial_write("FAT32: CI README.TXT directory entry mismatch\\r\\n");
         return false;
     }
-    static const char expected_file_data[] =
-        "Nexus OS read-only FAT32 filesystem test.\r\n";
+    static const char expected_boundary[] =
+        "            FAT32-CROSS-CLUSTER-READ-OK";
     uint8_t file_data[128];
     const uint32_t expected_file_size =
-        (uint32_t)(sizeof(expected_file_data) - 1U);
+        512U + (uint32_t)(sizeof(expected_boundary) - 1U - 12U);
     if (test_file->size != expected_file_size ||
-        !fat32_read_file(test_file, 0U, expected_file_size, file_data)) {
-        serial_write("FAT32: CI read-file self-test failed\r\n");
+        !fat32_read_file(test_file, 500U,
+                         (uint32_t)(sizeof(expected_boundary) - 1U),
+                         file_data)) {
+        serial_write("FAT32: CI cross-cluster read self-test failed\\r\\n");
         return false;
     }
-    for (uint32_t i = 0; i < expected_file_size; ++i) {
-        if (file_data[i] != (uint8_t)expected_file_data[i]) {
-            serial_write("FAT32: README.TXT data mismatch\r\n");
+    for (uint32_t i = 0; i < sizeof(expected_boundary) - 1U; ++i) {
+        if (file_data[i] != (uint8_t)expected_boundary[i]) {
+            serial_write("FAT32: fragmented cluster content mismatch\\r\\n");
             return false;
         }
     }

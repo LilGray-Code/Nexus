@@ -9,10 +9,13 @@
 
 #define DISK_BLOCKS (16ULL * 1024ULL * 1024ULL * 1024ULL / 512ULL)
 #define EDGE_BLOCKS 64U
+#define FORMAT_BASE 2048U
+#define FORMAT_BLOCKS 4096U
 
 struct mock_disk {
     uint8_t first[EDGE_BLOCKS * 512U];
     uint8_t last[EDGE_BLOCKS * 512U];
+    uint8_t format_area[FORMAT_BLOCKS * 512U];
     unsigned flushes;
 };
 
@@ -22,6 +25,10 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
         count > DISK_BLOCKS - lba) return false;
     if (lba + count <= EDGE_BLOCKS) {
         *base = disk->first + lba * 512ULL;
+        return true;
+    }
+    if (lba >= FORMAT_BASE && lba + count <= FORMAT_BASE + FORMAT_BLOCKS) {
+        *base = disk->format_area + (lba - FORMAT_BASE) * 512ULL;
         return true;
     }
     if (lba >= DISK_BLOCKS - EDGE_BLOCKS) {
@@ -153,11 +160,23 @@ int main(void) {
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_OK);
     assert(target.flushes == 5U);
 
+    /* The guarded adapter formats only the exact planned EFI System Partition. */
+    const struct nexus_planned_partition *esp = &plan.partitions[0];
+    assert(esp->kind == NEXUS_PARTITION_ESP);
+    const uint64_t esp_blocks = esp->last_lba - esp->first_lba + 1U;
+    assert(nexus_installer_format_fat32(target_handle, &identity,
+        identity.stable_id, "ERASE", esp->first_lba, esp_blocks,
+        0x12345678U) == NEXUS_FAT32_FORMAT_OK);
+    assert(target.flushes == 7U);
+    const size_t esp_offset = (size_t)(esp->first_lba - FORMAT_BASE) * 512U;
+    assert(target.format_area[esp_offset + 510U] == 0x55U);
+    assert(target.format_area[esp_offset + 511U] == 0xAAU);
+
     /* FAT32 formatting rejects arbitrary LBAs and non-ESP GPT partitions. */
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 5U);
+    assert(target.flushes == 7U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

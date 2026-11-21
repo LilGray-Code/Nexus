@@ -77,6 +77,7 @@ bool nexus_partition_plan_create(uint64_t disk_block_count,
         (firmware != NEXUS_FIRMWARE_UEFI &&
          firmware != NEXUS_FIRMWARE_LEGACY_BIOS &&
          firmware != NEXUS_FIRMWARE_DUAL) ||
+        (firmware != NEXUS_FIRMWARE_UEFI && logical_block_size != 512U) ||
         disk_block_count < 128U) return false;
 
     alignment = NEXUS_PLAN_ALIGNMENT_BYTES / logical_block_size;

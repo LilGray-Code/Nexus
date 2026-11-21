@@ -73,6 +73,12 @@ static void test_rejects_unsafe_inputs(void) {
                                          NEXUS_FIRMWARE_UEFI, &plan));
     assert(!nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
                                         512ULL, 512U, 0, &plan));
+    assert(!nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
+                                        4096ULL, 4096U,
+                                        NEXUS_FIRMWARE_LEGACY_BIOS, &plan));
+    assert(!nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
+                                        4096ULL, 4096U,
+                                        NEXUS_FIRMWARE_DUAL, &plan));
     assert(plan.partition_count == 0U);
 }
 

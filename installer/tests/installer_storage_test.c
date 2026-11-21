@@ -300,7 +300,7 @@ int main(int argc,char **argv) {
     assert(config_cluster>=3U);
     const size_t config_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (config_cluster-2U)*spc)*bps;
-    assert(memcmp(target.format_area+config_off,"timeout: 3\\n",11U)==0);
+    assert(memcmp(target.format_area+config_off,"timeout: 3\n",11U)==0);
 
     /* The BIOS stage-2 filename requires a two-entry VFAT long name. */
     const uint32_t root_boot_cluster=(uint32_t)target.format_area[root_off+128U+26U] |

@@ -6,6 +6,7 @@
 #include "interrupts.h"
 #include "memory.h"
 #include "serial.h"
+#include "scheduler.h"
 #include "timer.h"
 
 __attribute__((used, section(".limine_requests")))
@@ -99,6 +100,31 @@ static void show_splash(void) {
     draw_text(fb, "KERNEL STARTED", title_y + 12 * scale, scale, cyan);
 }
 
+static volatile uint32_t scheduler_count_a;
+static volatile uint32_t scheduler_count_b;
+static volatile uint8_t scheduler_trace[6];
+static volatile uint32_t scheduler_trace_count;
+
+static void scheduler_worker_a(void *argument) {
+    (void)argument;
+    for (uint32_t i = 0; i < 3; ++i) {
+        scheduler_count_a++;
+        if (scheduler_trace_count < 6)
+            scheduler_trace[scheduler_trace_count++] = 1;
+        scheduler_yield();
+    }
+}
+
+static void scheduler_worker_b(void *argument) {
+    (void)argument;
+    for (uint32_t i = 0; i < 3; ++i) {
+        scheduler_count_b++;
+        if (scheduler_trace_count < 6)
+            scheduler_trace[scheduler_trace_count++] = 2;
+        scheduler_yield();
+    }
+}
+
 __attribute__((noreturn))
 static void halt_forever(void) {
     for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
@@ -154,7 +180,35 @@ void kmain(void) {
     serial_write_hex(timer_ticks());
     serial_write("\r\n");
 
+    scheduler_init();
+    scheduler_count_a = 0;
+    scheduler_count_b = 0;
+    scheduler_trace_count = 0;
+
+    if (!scheduler_create_thread(scheduler_worker_a, NULL) ||
+        !scheduler_create_thread(scheduler_worker_b, NULL)) {
+        serial_write("ERROR: unable to create cooperative scheduler test threads\r\n");
+        halt_forever();
+    }
+
+    scheduler_start();
+
+    bool scheduler_ok = scheduler_count_a == 3 &&
+                        scheduler_count_b == 3 &&
+                        scheduler_trace_count == 6;
+    static const uint8_t expected_trace[6] = {1, 2, 1, 2, 1, 2};
+    for (uint32_t i = 0; i < 6 && scheduler_ok; ++i) {
+        if (scheduler_trace[i] != expected_trace[i]) scheduler_ok = false;
+    }
+
+    if (!scheduler_ok) {
+        serial_write("ERROR: cooperative scheduler round-robin test failed\r\n");
+        halt_forever();
+    }
+    serial_write("K2: cooperative scheduler test passed (A-B-A-B-A-B)\r\n");
+
     show_splash();
+    serial_write("NEXUS K2 COOPERATIVE SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     serial_write("NEXUS K0 BOOT COMPLETE\r\n");

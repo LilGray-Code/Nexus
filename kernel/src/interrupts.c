@@ -1,4 +1,5 @@
 #include "interrupts.h"
+#include "ioapic.h"
 
 #include "serial.h"
 #include "timer.h"
@@ -123,7 +124,11 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
         if (irq == 0) {
             timer_interrupt_tick();
         }
-        pic_irq_eoi(irq);
+        if (irq == 0 && ioapic_timer_route_active()) {
+            ioapic_send_eoi();
+        } else {
+            pic_irq_eoi(irq);
+        }
         return;
     }
 

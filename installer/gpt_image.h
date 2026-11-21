@@ -27,7 +27,7 @@ struct nexus_gpt_image_buffers {
  */
 bool nexus_gpt_image_build(const struct nexus_partition_plan *plan,
                            const uint8_t disk_guid[16],
-                           const uint8_t partition_guids[NEXUS_PLAN_MAX_PARTITIONS][16],
+                           const uint8_t *partition_guids,
                            struct nexus_gpt_image_buffers *out);
 
 #endif

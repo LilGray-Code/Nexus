@@ -44,7 +44,7 @@ static void format_u64(uint64_t value, char output[21]) {
     } while (value != 0U && count < sizeof(reverse));
     for (size_t i = 0; i < count; ++i)
         output[i] = reverse[count - i - 1U];
-    output[count] = '\\0';
+    output[count] = '\0';
 }
 
 static void draw_shell(void) {

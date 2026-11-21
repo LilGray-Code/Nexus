@@ -11,7 +11,11 @@ static void test_uefi_plan(void) {
                                        NEXUS_FIRMWARE_UEFI, &plan));
     assert(plan.partition_count == 3U);
     assert(plan.partitions[0].kind == NEXUS_PARTITION_ESP);
+    assert(plan.partitions[0].last_lba - plan.partitions[0].first_lba + 1U ==
+           (512ULL * 1024ULL * 1024ULL) / 512ULL);
     assert(plan.partitions[1].kind == NEXUS_PARTITION_SYSTEM);
+    assert(plan.partitions[1].last_lba - plan.partitions[1].first_lba + 1U ==
+           (8192ULL * 1024ULL * 1024ULL) / 512ULL);
     assert(plan.partitions[2].kind == NEXUS_PARTITION_DATA);
     for (size_t i = 0; i < plan.partition_count; ++i) {
         assert(plan.partitions[i].first_lba <= plan.partitions[i].last_lba);
@@ -30,6 +34,8 @@ static void test_bios_plan(void) {
                                        NEXUS_FIRMWARE_LEGACY_BIOS, &plan));
     assert(plan.partition_count == 3U);
     assert(plan.partitions[0].kind == NEXUS_PARTITION_BIOS_BOOT);
+    assert(plan.partitions[0].last_lba - plan.partitions[0].first_lba + 1U ==
+           (2ULL * 1024ULL * 1024ULL) / 512ULL);
     assert(plan.partitions[1].kind == NEXUS_PARTITION_SYSTEM);
     assert(plan.partitions[2].kind == NEXUS_PARTITION_DATA);
 }

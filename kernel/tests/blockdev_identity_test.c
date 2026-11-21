@@ -26,17 +26,6 @@ static bool test_flush(void *context) {
     return true;
 }
 
-static bool test_write(void *context, uint64_t lba, uint32_t count,
-                        const void *buffer) {
-    (void)context; (void)lba; (void)count; (void)buffer;
-    return true;
-}
-
-static bool test_flush(void *context) {
-    (void)context;
-    return true;
-}
-
 static struct nexus_block_device make_device(const char *name,
                                               const char *stable_id) {
     struct nexus_block_device device = {0};

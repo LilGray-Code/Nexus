@@ -20,4 +20,4 @@ $(OUT)/main.o: src/main.c | $(OUT)
 $(OUT)/nexus-kernel.elf: $(OUT)/main.o linker/x86_64.ld
 	$(LD) $(LDFLAGS) -o $@ $(OUT)/main.o
 clean:
-	rm -rf $(OUT)
+	rm -f $(OUT)/main.o $(OUT)/nexus-kernel.elf

@@ -277,7 +277,7 @@ int64_t usermode_sys_open(uint64_t user_path) {
     }
     if (length == 0U) return -NEXUS_EINVAL;
     if (length == sizeof(path)) return -NEXUS_ENAMETOOLONG;
-    if (!vfs_root_mounted()) return -NEXUS_ENODEV;
+    if (!vfs_has_filesystem()) return -NEXUS_ENODEV;
 
     size_t slot = USERMODE_FILE_SLOTS;
     for (size_t i = 0; i < USERMODE_FILE_SLOTS; ++i) {

@@ -1,6 +1,7 @@
 #include "nvme.h"
 
 #include "blockdev.h"
+#include "gpt.h"
 
 #include "memory.h"
 #include "paging.h"
@@ -643,14 +644,26 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         serial_write("NVMe: CI block-device read self-test failed at LBA 1\r\n");
         return false;
     }
-    static const char second_sector_data[] = "NEXUS-SECOND-SECTOR";
+    static const char second_sector_data[] = "EFI PART";
     for (size_t i = 0; i < sizeof(second_sector_data) - 1U; ++i) {
         if (verification_buffer[i] != (uint8_t)second_sector_data[i]) {
-            serial_write("NVMe: CI read data did not match LBA 1 test signature\r\n");
+            serial_write("NVMe: CI read data did not match GPT header signature\r\n");
             return false;
         }
     }
     serial_write("NVMe: blockdev_read verified LBAs 0 and 1\r\n");
+    if (!gpt_scan_device(registered) || gpt_partition_count() != 1U) {
+        serial_write("GPT: CI parser self-test failed to discover one partition\r\n");
+        return false;
+    }
+    const struct nexus_gpt_partition *test_partition = gpt_partition_at(0);
+    if (test_partition == NULL || test_partition->first_lba != 2048U ||
+        test_partition->last_lba != 4095U) {
+        serial_write("GPT: CI parser returned unexpected partition bounds\r\n");
+        return false;
+    }
+    serial_write("GPT: validated header and entry CRCs; discovered test partition\r\n");
+    serial_write("NEXUS GPT READ ONLY READY\r\n");
     serial_write("NEXUS NVME READ ONLY READY\r\n");
 #endif
 

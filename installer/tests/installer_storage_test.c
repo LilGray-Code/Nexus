@@ -314,6 +314,16 @@ int main(int argc,char **argv) {
             break;
         }
     }
+    if(root_boot_cluster<3U){
+        for(size_t slot=0U;slot<16U;slot++){
+            const size_t entry_off=root_off+slot*32U;
+            fprintf(stderr,"root[%zu]=%.11s attr=%02x cluster=%02x%02x%02x%02x\\n",
+                slot,(const char*)(target.format_area+entry_off),
+                target.format_area[entry_off+11U],
+                target.format_area[entry_off+20U],target.format_area[entry_off+21U],
+                target.format_area[entry_off+26U],target.format_area[entry_off+27U]);
+        }
+    }
     assert(root_boot_cluster>=3U);
     const size_t root_boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (root_boot_cluster-2U)*spc)*bps;

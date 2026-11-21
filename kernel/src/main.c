@@ -3,6 +3,10 @@
 #include <stdint.h>
 #include <limine.h>
 
+#include "interrupts.h"
+#include "memory.h"
+#include "serial.h"
+
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
 __attribute__((used, section(".limine_requests_start")))
@@ -11,28 +15,16 @@ __attribute__((used, section(".limine_requests")))
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 0
 };
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_memmap_request memory_map_request = {
+    .id = LIMINE_MEMMAP_REQUEST_ID, .revision = 0
+};
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_hhdm_request hhdm_request = {
+    .id = LIMINE_HHDM_REQUEST_ID, .revision = 0
+};
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t requests_end[] = LIMINE_REQUESTS_END_MARKER;
-
-static inline void outb(uint16_t port, uint8_t value) {
-    __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
-}
-static inline uint8_t inb(uint16_t port) {
-    uint8_t value;
-    __asm__ volatile ("inb %1, %0" : "=a"(value) : "Nd"(port));
-    return value;
-}
-static void serial_init(void) {
-    outb(0x3F9, 0x00); outb(0x3FB, 0x80);
-    outb(0x3F8, 0x01); outb(0x3F9, 0x00);
-    outb(0x3FB, 0x03); outb(0x3FA, 0xC7); outb(0x3FC, 0x0B);
-}
-static void serial_putc(char c) {
-    for (unsigned int spin = 0; spin < 100000; ++spin) {
-        if (inb(0x3FD) & 0x20) { outb(0x3F8, (uint8_t)c); return; }
-    }
-}
-static void serial_write(const char *s) { while (*s) serial_putc(*s++); }
 
 static uint8_t glyph_row(char c, unsigned int row) {
     static const struct { char c; uint8_t r[7]; } font[] = {
@@ -48,6 +40,7 @@ static uint8_t glyph_row(char c, unsigned int row) {
         if (font[i].c == c) return font[i].r[row];
     return 0;
 }
+
 static uint32_t rgb(const struct limine_framebuffer *fb,
                     uint8_t red, uint8_t green, uint8_t blue) {
     uint64_t rmax = ((uint64_t)1 << fb->red_mask_size) - 1;
@@ -57,12 +50,14 @@ static uint32_t rgb(const struct limine_framebuffer *fb,
                       ((green * gmax / 255) << fb->green_mask_shift) |
                       ((blue * bmax / 255) << fb->blue_mask_shift));
 }
+
 static void pixel(struct limine_framebuffer *fb, uint64_t x, uint64_t y,
                   uint32_t color) {
     volatile uint32_t *row = (volatile uint32_t *)
         ((uintptr_t)fb->address + y * fb->pitch);
     row[x] = color;
 }
+
 static void draw_text(struct limine_framebuffer *fb, const char *text,
                       uint64_t y, uint32_t scale, uint32_t color) {
     size_t length = 0;
@@ -85,6 +80,7 @@ static void draw_text(struct limine_framebuffer *fb, const char *text,
         }
     }
 }
+
 static void show_splash(void) {
     if (framebuffer_request.response == NULL ||
         framebuffer_request.response->framebuffer_count == 0) return;
@@ -101,20 +97,50 @@ static void show_splash(void) {
     draw_text(fb, "NEXUS OS", title_y, scale, white);
     draw_text(fb, "KERNEL STARTED", title_y + 12 * scale, scale, cyan);
 }
+
 __attribute__((noreturn))
 static void halt_forever(void) {
     for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
 }
+
 void kmain(void) {
+    __asm__ volatile ("cli" : : : "memory");
     serial_init();
     serial_write("\r\nNEXUS OS KERNEL STARTED\r\n");
     serial_write("Architecture: x86_64\r\n");
     serial_write("Boot protocol: Limine\r\n");
+
     if (!LIMINE_BASE_REVISION_SUPPORTED(base_revision)) {
         serial_write("ERROR: unsupported Limine base revision\r\n");
         halt_forever();
     }
+
+    idt_init();
+    serial_write("K1: CPU exception IDT installed (vectors 0-31)\r\n");
+
+    if (!memory_init(memory_map_request.response, hhdm_request.response)) {
+        serial_write("ERROR: physical memory map initialization failed\r\n");
+        halt_forever();
+    }
+
+    uint64_t first_page = 0;
+    if (!memory_alloc_page(&first_page) ||
+        memory_phys_to_virt(first_page) == NULL) {
+        serial_write("ERROR: physical page allocation failed\r\n");
+        halt_forever();
+    }
+
+    serial_write("K1: physical memory allocator ready\r\n");
+    serial_write("Usable memory bytes: ");
+    serial_write_hex(memory_total_bytes());
+    serial_write("\r\nRemaining bootstrap pages bytes: ");
+    serial_write_hex(memory_free_bytes());
+    serial_write("\r\nFirst allocated physical page: ");
+    serial_write_hex(first_page);
+    serial_write("\r\n");
+
     show_splash();
+    serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     serial_write("NEXUS K0 BOOT COMPLETE\r\n");
     halt_forever();
 }

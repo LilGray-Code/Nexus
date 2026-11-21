@@ -33,6 +33,7 @@ static uint64_t files_first_lba;
 static uint64_t files_last_lba;
 static bool files_fat32_ok;
 static char files_first_name[13];
+static char files_preview[41];
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -172,6 +173,11 @@ static void draw_shell(void) {
                                    "ROOT FILE:", 1, 233, 243, 252);
                 graphics_draw_text(text_x + 100U, text_y + 228U,
                                    files_first_name, 1, 119, 229, 211);
+                graphics_draw_text(text_x, text_y + 258U,
+                                   "READ ONLY PREVIEW:", 1,
+                                   233, 243, 252);
+                graphics_draw_text(text_x + 150U, text_y + 258U,
+                                   files_preview, 1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 228U,
                                    "NO SUPPORTED FAT32 VOLUME",
@@ -280,6 +286,8 @@ static void scan_files_once(void) {
     files_last_lba = 0;
     for (size_t n = 0; n < sizeof(files_first_name); ++n)
         files_first_name[n] = '\0';
+    for (size_t n = 0; n < sizeof(files_preview); ++n)
+        files_preview[n] = '\0';
 
     for (size_t i = 0; i < blockdev_count(); ++i) {
         const struct nexus_block_device *device = blockdev_at(i);
@@ -293,18 +301,34 @@ static void scan_files_once(void) {
             files_partition_count = count;
             files_first_lba = part->first_lba;
             files_last_lba = part->last_lba;
-            if (fat32_root_entry_count() > 0U) {
+            for (size_t file_index = 0;
+                 file_index < fat32_root_entry_count(); ++file_index) {
                 const struct nexus_fat32_entry *entry =
-                    fat32_root_entry_at(0);
-                if (entry != NULL) {
-                    size_t length = 0;
-                    while (length < sizeof(files_first_name) - 1U &&
-                           entry->name[length] != '\0') {
-                        files_first_name[length] = entry->name[length];
-                        ++length;
+                    fat32_root_entry_at(file_index);
+                if (entry == NULL) continue;
+                if (files_first_name[0] == '\0') {
+                    size_t name_length = 0;
+                    while (name_length < sizeof(files_first_name) - 1U &&
+                           entry->name[name_length] != '\0') {
+                        files_first_name[name_length] = entry->name[name_length];
+                        ++name_length;
                     }
-                    files_first_name[length] = '\0';
+                    files_first_name[name_length] = '\0';
                 }
+                if ((entry->attributes & 0x10U) != 0U || entry->size == 0U)
+                    continue;
+                uint8_t preview_data[sizeof(files_preview) - 1U];
+                uint32_t amount = entry->size;
+                if (amount > sizeof(preview_data)) amount = sizeof(preview_data);
+                if (!fat32_read_file(entry, 0U, amount, preview_data))
+                    continue;
+                for (uint32_t n = 0; n < amount; ++n) {
+                    const uint8_t ch = preview_data[n];
+                    files_preview[n] = (ch >= 0x20U && ch <= 0x7EU)
+                        ? (char)ch : ' ';
+                }
+                files_preview[amount] = '\0';
+                break;
             }
             serial_write("FILES: mounted read-only FAT32 volume on ");
             serial_write(device->name);

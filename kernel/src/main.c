@@ -6,6 +6,7 @@
 #include "acpi.h"
 #include "blockdev.h"
 #include "desktop.h"
+#include "gdt.h"
 #include "interrupts.h"
 #include "input.h"
 #include "ioapic.h"
@@ -81,6 +82,12 @@ void kmain(void) {
         serial_write("ERROR: unsupported Limine base revision\r\n");
         halt_forever();
     }
+
+    if (!gdt_init()) {
+        serial_write("ERROR: Nexus GDT/TSS initialization failed\\r\\n");
+        halt_forever();
+    }
+    serial_write("NEXUS GDT TSS READY\\r\\n");
 
     idt_init();
     serial_write("K1: CPU exception IDT installed (vectors 0-31)\r\n");

@@ -217,9 +217,13 @@ static void draw_shell(void) {
                 blockdev_at(installer_selected_device);
             if (device != NULL) {
                 graphics_draw_text(text_x, text_y + 78U,
-                                   "SELECTED TARGET:", 1, 233, 243, 252);
+                                   "SELECTED DRIVE:", 1, 233, 243, 252);
                 graphics_draw_text(text_x + 140U, text_y + 78U,
                                    device->name, 1, 119, 229, 211);
+                graphics_draw_text(text_x, text_y + 96U,
+                                   device->model, 1, 170, 225, 190);
+                graphics_draw_text(text_x, text_y + 114U,
+                                   device->stable_id, 1, 170, 191, 211);
                 const uint64_t blocks_per_gib =
                     (1024ULL * 1024ULL * 1024ULL) / device->block_size;
                 char capacity[21];
@@ -227,21 +231,21 @@ static void draw_shell(void) {
                 format_u64(blocks_per_gib == 0U ? 0U :
                            device->block_count / blocks_per_gib, capacity);
                 format_u64(device->block_size, sector);
-                graphics_draw_text(text_x, text_y + 106U,
+                graphics_draw_text(text_x, text_y + 138U,
                                    "CAPACITY (GiB):", 1, 233, 243, 252);
-                graphics_draw_text(text_x + 140U, text_y + 106U,
+                graphics_draw_text(text_x + 140U, text_y + 138U,
                                    capacity, 1, 170, 225, 190);
-                graphics_draw_text(text_x, text_y + 134U,
+                graphics_draw_text(text_x, text_y + 166U,
                                    "LOGICAL SECTOR:", 1, 233, 243, 252);
-                graphics_draw_text(text_x + 140U, text_y + 134U,
+                graphics_draw_text(text_x + 140U, text_y + 166U,
                                    sector, 1, 170, 225, 190);
-                graphics_draw_text(text_x, text_y + 162U,
+                graphics_draw_text(text_x, text_y + 194U,
                                    installer_firmware == NEXUS_FIRMWARE_UEFI
                                        ? "FIRMWARE PLAN: UEFI / GPT"
                                        : "FIRMWARE PLAN: LEGACY BIOS / GPT",
                                    1, 108, 216, 229);
                 if (installer_plan_valid) {
-                    graphics_draw_text(text_x, text_y + 196U,
+                    graphics_draw_text(text_x, text_y + 222U,
                                        "PROPOSED PARTITIONS (READ ONLY PREVIEW)",
                                        1, 119, 229, 211);
                     for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
@@ -260,7 +264,7 @@ static void draw_shell(void) {
                             sectors_per_mib;
                         char size_text[21];
                         format_u64(size_mib, size_text);
-                        const uint64_t row_y = text_y + 226U + i * 30U;
+                        const uint64_t row_y = text_y + 252U + i * 24U;
                         graphics_draw_text(text_x, row_y, label,
                                            1, 233, 243, 252);
                         graphics_draw_text(text_x + 190U, row_y,
@@ -273,11 +277,11 @@ static void draw_shell(void) {
                                        "DISK TOO SMALL OR SECTOR SIZE UNSUPPORTED",
                                        1, 239, 177, 119);
                 }
-                graphics_draw_text(text_x, text_y + 330U,
-                                   "UP/DOWN SELECT TARGET  F1 UEFI  F2 BIOS",
-                                   1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 354U,
-                                   "ESC RETURNS HOME - NO DATA HAS BEEN CHANGED",
+                                   "UP/DOWN SELECT DRIVE  F1 UEFI  F2 BIOS",
+                                   1, 170, 191, 211);
+                graphics_draw_text(text_x, text_y + 378U,
+                                   "READ ONLY PREVIEW - INSTALLATION NOT ENABLED",
                                    1, 170, 191, 211);
             }
         }

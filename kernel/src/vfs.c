@@ -1,6 +1,7 @@
 #include "vfs.h"
 
 #include "fat32.h"
+#include "blockdev.h"
 #include "nxfs.h"
 
 #include <stddef.h>
@@ -165,6 +166,7 @@ bool vfs_mount_root_fat32(const struct nexus_block_device *device,
                           const struct nexus_gpt_partition *partition) {
     root_mounted = false;
     if (!fat32_mount(device, partition)) return false;
+    if (!blockdev_set_mounted(device, true)) return false;
     root_mounted = true;
     return true;
 }
@@ -177,6 +179,7 @@ bool vfs_mount_root_nxfs(const struct nexus_block_device *device,
                          const struct nexus_gpt_partition *partition) {
     nxfs_root_mounted = false;
     if (!nxfs_mount(device, partition)) return false;
+    if (!blockdev_set_mounted(device, true)) return false;
     nxfs_root_mounted = true;
     return true;
 }

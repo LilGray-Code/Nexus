@@ -607,3 +607,7 @@ interface is active and whether an IPv4 address has been configured.
 At this milestone no IPv4 configuration method is enabled yet, so the interface
 will normally report that it has no IPv4 address. DHCP, DNS, TCP, TLS, IPv6,
 sockets, and the browser network backend remain future work.
+
+Terminal's `net` command now prints the DHCP-provided gateway alongside the
+leased IPv4 address, while the network status API retains subnet-mask and DNS
+server configuration for follow-on resolver and route work.

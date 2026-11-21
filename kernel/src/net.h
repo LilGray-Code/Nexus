@@ -10,6 +10,9 @@ struct nexus_net_info {
     bool ipv4_configured;
     uint8_t mac[6];
     uint8_t ipv4[4];
+    uint8_t subnet_mask[4];
+    uint8_t gateway[4];
+    uint8_t dns_server[4];
 };
 
 bool net_init(void);

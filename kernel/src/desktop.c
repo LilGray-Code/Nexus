@@ -506,6 +506,21 @@ static void terminal_execute(void) {
                 if (i != 3U && out < sizeof(terminal_output) - 1U)
                     terminal_output[out++] = '.';
             }
+            const char *gateway_label = " gw ";
+            for (size_t i = 0; gateway_label[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i) {
+                terminal_output[out++] = gateway_label[i];
+            }
+            for (size_t i = 0; i < 4U; ++i) {
+                char number[21];
+                format_u64(info.gateway[i], number);
+                for (size_t j = 0; number[j] != '\0' &&
+                     out < sizeof(terminal_output) - 2U; ++j) {
+                    terminal_output[out++] = number[j];
+                }
+                if (i != 3U && out < sizeof(terminal_output) - 1U)
+                    terminal_output[out++] = '.';
+            }
             terminal_output[out] = '\0';
         }
     } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&

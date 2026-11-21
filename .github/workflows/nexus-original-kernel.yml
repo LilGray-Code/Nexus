@@ -84,6 +84,7 @@ jobs:
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log
           grep -q "NEXUS E1000 TX READY" uefi-serial.log
+          grep -q "NEXUS DHCP READY" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" uefi-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" uefi-serial.log
@@ -144,6 +145,7 @@ jobs:
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" bios-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" bios-serial.log
           grep -q "NEXUS E1000 TX READY" bios-serial.log
+          grep -q "NEXUS DHCP READY" bios-serial.log
           grep -q "PCI: functions discovered:" bios-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log

@@ -157,6 +157,7 @@ jobs:
         with:
           name: NexusOS-Boot-Diagnostics
           path: |
+            /tmp/nexus-source-inventory.txt
             /tmp/nexus-el-torito.txt
             /tmp/nexus-bios-serial.log
             /tmp/nexus-uefi-serial.log

@@ -3,6 +3,7 @@
 #include "gdt.h"
 #include "memory.h"
 #include "paging.h"
+#include "serial.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -171,9 +172,7 @@ bool usermode_sys_write(uint64_t user_address, uint64_t length) {
     }
 
     /* Never dereference a userspace pointer directly in ring 0. */
-    extern void serial_write_n(const char *text, size_t length);
     serial_write_n(kernel_buffer, (size_t)length);
-    extern void serial_write(const char *text);
     serial_write("\r\n");
     return true;
 }

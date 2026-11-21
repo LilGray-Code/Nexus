@@ -68,6 +68,7 @@ jobs:
           cat uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
+          grep -q "NEXUS USER MODE" uefi-serial.log
           grep -q "K2: hardware timer ticks received:" uefi-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" uefi-serial.log
           grep -q "NEXUS ACPI MADT READY" uefi-serial.log
@@ -119,6 +120,7 @@ jobs:
           cat bios-serial.log
           grep -q "NEXUS GDT TSS READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
+          grep -q "NEXUS USER MODE" bios-serial.log
           grep -q "K2: hardware timer ticks received:" bios-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" bios-serial.log
           grep -q "NEXUS ACPI MADT READY" bios-serial.log

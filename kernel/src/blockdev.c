@@ -125,17 +125,17 @@ static bool blockdev_string_equal(const char *left, size_t left_capacity,
     if (left == NULL || right == NULL) return false;
     size_t i = 0;
     while (i < left_capacity && i < right_capacity &&
-           left[i] != '\\0' && right[i] != '\\0') {
+           left[i] != '\0' && right[i] != '\0') {
         if (left[i] != right[i]) return false;
         ++i;
     }
     return i < left_capacity && i < right_capacity &&
-           left[i] == '\\0' && right[i] == '\\0';
+           left[i] == '\0' && right[i] == '\0';
 }
 
 bool blockdev_identity_is_unique(const struct nexus_block_device *device) {
     if (!blockdev_is_registered(device) ||
-        device->stable_id[0] == '\\0' ||
+        device->stable_id[0] == '\0' ||
         !blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
                                device->stable_id, NEXUS_BLOCKDEV_ID_MAX)) {
         return false;

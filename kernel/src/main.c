@@ -165,6 +165,17 @@ void kmain(void) {
         halt_forever();
     }
 
+    uint64_t dma32_page = 0;
+    if (memory_alloc_dma_page(0x100000000ULL, &dma32_page) &&
+        dma32_page < 0x100000000ULL) {
+        serial_write("K1: DMA32 page allocated at: ");
+        serial_write_hex(dma32_page);
+        serial_write("\r\n");
+        serial_write("NEXUS DMA32 PAGE ALLOCATOR READY\r\n");
+    } else {
+        serial_write("WARNING: no page available below the 4 GiB DMA limit\r\n");
+    }
+
     serial_write("K1: physical memory allocator ready\r\n");
     serial_write("Usable memory bytes: ");
     serial_write_hex(memory_total_bytes());

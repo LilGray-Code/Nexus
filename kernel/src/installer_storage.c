@@ -2,6 +2,7 @@
 
 #include "blockdev.h"
 #include "fat32_format.h"
+#include "gpt.h"
 
 static bool installer_target_read(void *context, uint64_t lba,
                                   uint32_t blocks, void *buffer) {
@@ -19,6 +20,27 @@ static bool installer_target_flush(void *context) {
     return blockdev_install_flush((const struct nexus_block_device *)context);
 }
 
+static bool installer_is_exact_esp_partition(
+    const struct nexus_block_device *device,uint64_t first,uint64_t count) {
+    static const uint8_t esp_guid[16]={
+        0x28U,0x73U,0x2AU,0xC1U,0x1FU,0xF8U,0xD2U,0x11U,
+        0xBAU,0x4BU,0x00U,0xA0U,0xC9U,0x3EU,0xC9U,0x3BU
+    };
+    if(count==0U||first>UINT64_MAX-(count-1U)||
+       first+count-1U>=device->block_count||!gpt_scan_device(device))
+        return false;
+    for(size_t i=0U;i<gpt_partition_count();++i){
+        const struct nexus_gpt_partition *part=gpt_partition_at(i);
+        if(part==NULL||part->first_lba!=first||
+           part->last_lba!=first+count-1U)continue;
+        bool matches=true;
+        for(size_t b=0U;b<16U;++b)
+            if(part->type_guid[b]!=esp_guid[b])matches=false;
+        return matches;
+    }
+    return false;
+}
+
 enum nexus_fat32_format_result nexus_installer_format_fat32(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *captured_identity,
@@ -32,7 +54,9 @@ enum nexus_fat32_format_result nexus_installer_format_fat32(
         return NEXUS_FAT32_FORMAT_INVALID;
     if (!blockdev_matches_identity(device, captured_identity->stable_id,
             captured_identity->model, captured_identity->block_count,
-            captured_identity->block_size))
+            captured_identity->block_size) ||
+        !installer_is_exact_esp_partition(device, partition_first_lba,
+                                          partition_block_count))
         return NEXUS_FAT32_FORMAT_INVALID;
     if (!blockdev_install_session_begin(device, typed_stable_id,
                                         typed_erase_phrase))

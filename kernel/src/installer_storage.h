@@ -12,10 +12,10 @@ struct nexus_installer_disk_identity {
     uint32_t block_size;
 };
 
-/* Kernel adapter: validates the captured target, obtains the kernel's
- * destructive-write session, and only then invokes the GPT transaction.
- * This operation writes partition metadata only; it does not format or deploy
- * an operating system. */
+/* Kernel adapters revalidate device identity and obtain kernel-owned
+ * destructive-write sessions. FAT32 formatting is restricted to an exact
+ * GPT EFI System Partition; GPT writing changes metadata only. Neither
+ * operation deploys system files or installs a bootloader. */
 enum nexus_fat32_format_result nexus_installer_format_fat32(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *captured_identity,

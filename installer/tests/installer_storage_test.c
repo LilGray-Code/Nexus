@@ -153,6 +153,12 @@ int main(void) {
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_OK);
     assert(target.flushes == 5U);
 
+    /* FAT32 formatting rejects arbitrary LBAs and non-ESP GPT partitions. */
+    assert(nexus_installer_format_fat32(target_handle, &identity,
+        identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
+        NEXUS_FAT32_FORMAT_INVALID);
+    assert(target.flushes == 5U);
+
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,
         target_handle->stable_id, "ERASE", &plan, disk_guid,

@@ -1,9 +1,12 @@
 # Nexus Installer
 
-**Status:** GPT metadata writer and kernel block-device adapter are implemented
-and linked into the kernel build. Destructive writes remain fail-closed because
-boot-medium provenance is not yet established by the boot chain. The UI is a
-read-only preview; no installable system image or complete installer exists.
+**Status:** GPT metadata writing, kernel write authorization, boot-medium
+provenance resolution, and a bounded FAT32 formatter are implemented and linked
+into the kernel build. CI verifies the live optical ISO boot source in UEFI and
+legacy BIOS and host-tests unique GPT/MBR disk identity matching. Physical
+USB/SATA/NVMe boot-source matching remains unvalidated. The desktop is still a
+read-only preview; no complete installable system image or bootloader deployment
+exists, so the live UI does not initiate destructive writes.
 
 ## Product requirement
 
@@ -152,8 +155,8 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   after a changed target or failed apply. Host CI tests all state transitions.
 - The kernel desktop now has an **Install F5** screen that displays the selected
   block device, capacity, sector size, and a UEFI or BIOS partition preview.
-  It is explicitly read-only and does not invoke the GPT install transaction
-  or the installer state machine.
+  It is explicitly read-only and does not invoke the GPT install transaction,
+  FAT32 formatter, or the installer state machine.
 - The kernel has GPT primary/backup header and entry-array CRC validation,
   exercised against a disposable QEMU disk image.
 - NXFS has an early on-disk formatter/mounter, two checksummed superblocks,
@@ -165,11 +168,17 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   where a reserved sector is written, read back, and restored on a disposable
   QEMU image. The distributable ISO intentionally registers NVMe as read-only;
   normal boots do not write to user disks.
-- `kernel/src/installer_storage.c` now adapts the GPT transaction to the
-  registered kernel block-device API. It revalidates the selected device's
-  stable identity and geometry, obtains a kernel-owned destructive-write
-  session, and routes bounded reads, writes, and flushes through that session.
-  The adapter is linked into the kernel build but is not called by the desktop.
+- `installer/fat32_format.c` formats an existing partition as FAT32 with
+  primary/backup boot sectors and FSInfo, two allocation tables, initialized
+  reserved entries, and an empty root cluster. It uses bounded writes, flushes,
+  and read-back verification. Host tests cover a sparse 8 GiB volume, invalid
+  geometry, and injected I/O failure.
+- `kernel/src/installer_storage.c` adapts GPT writing and FAT32 formatting to
+  the registered kernel block-device API. Both paths revalidate stable device
+  identity and obtain a kernel-owned destructive-write session. FAT32 formatting
+  additionally requires an exact GPT EFI System Partition extent; arbitrary
+  LBAs and non-ESP partitions are rejected. The adapter is linked into the
+  kernel but is not called by the desktop.
 - The kernel requests Limine's standard Executable File response. It resolves
   boot provenance by matching a unique GPT partition GUID, GPT disk GUID, or
   MBR disk ID against registered devices after validating on-disk metadata.
@@ -182,14 +191,15 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   and rejects duplicate matches. Physical GPT/MBR boot-media matching still
   needs testing with actual USB/SATA/NVMe boot media. Never infer identity from
   device order, model, or capacity.
-- The distributable NVMe driver remains read-only. The kernel adapter has
-  host-side integration coverage, but release writes remain disabled until the
-  desktop confirmation flow is wired, filesystem formatting/deployment and
-  bootloader installation exist, and interrupted-install/fault-injection tests
-  pass on disposable disks.
+- The distributable NVMe driver blocks ordinary filesystem writes but exposes
+  its write/flush callbacks only through the kernel installer authorization
+  session. The physical NVMe write path has CI-only disposable-disk coverage;
+  physical-drive installation has not been tested. The desktop does not yet
+  invoke the guarded GPT or FAT32 adapters.
 - The graphical preview is not yet a complete installer. System-image
-  deployment, NXFS formatting on a selected target, Limine target-disk
-  installation, first boot, and recovery remain unimplemented.
+  packaging and deployment, NXFS formatting through the guarded installer
+  session, Limine target-disk installation, first boot, and recovery remain
+  unimplemented.
 
 The partition planner is an implemented and tested foundation, not a usable
 installer. Disk-writing remains disabled in the distributable ISO until the

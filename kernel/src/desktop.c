@@ -1274,7 +1274,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             scan_files_once();
                             refresh_files_listing();
                         }
-                        serial_write("DESKTOP: app tile opened by mouse\\r\\n");
+                        serial_write("DESKTOP: app tile opened by mouse\r\n");
                         break;
                     }
                 }
@@ -1344,9 +1344,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 vfs_remove_file(selected.name)) {
                 serial_write("FILES: removed writable file ");
                 serial_write(selected.name);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
             } else {
-                serial_write("FILES: delete refused (read-only or unsupported file)\\r\\n");
+                serial_write("FILES: delete refused (read-only or unsupported file)\r\n");
             }
             refresh_files_listing();
             draw_shell();
@@ -1402,7 +1402,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     active_view = next_view;
     draw_shell();
     draw_pointer();
-    serial_write("DESKTOP: view changed by keyboard shortcut\\r\\n");
+    serial_write("DESKTOP: view changed by keyboard shortcut\r\n");
 }
 
 

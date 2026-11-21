@@ -21,6 +21,13 @@ prefetchability, and whether a non-zero base address is assigned. It does not
 enable bus mastering, change PCI command bits, size or assign BARs, map
 controller registers, issue ATA/NVMe commands, or access sectors. It does not mount filesystems and is not a disk driver.
 
+The bootstrap physical-memory allocator now also exposes a one-page DMA
+allocator with a caller-supplied exclusive physical-address ceiling. The boot
+path verifies allocation below 4 GiB in the generic UEFI and legacy BIOS QEMU
+profiles. This is a prerequisite only: it does not yet provide contiguous
+multi-page DMA regions, IOMMU mapping, cache-coherency management, or a storage
+command engine. DMA pages are not yet used for device commands.
+
 The next storage milestones are controller-specific MMIO/resource validation,
 an AHCI read-only identify path, an NVMe identify path, and then block-device
 and filesystem layers. The current AHCI register probe only reads CAP, GHC,

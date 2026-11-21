@@ -75,8 +75,10 @@ static bool directory_child(const struct nexus_fat32_format_target*t,
    put16(sector+26U,(uint16_t)child);
    sector[32]='.';sector[33]='.';
    for(unsigned i=34;i<43;i++)sector[i]=' ';
-   sector[43]=0x10U;put16(sector+52U,(uint16_t)(parent>>16));
-   put16(sector+58U,(uint16_t)parent);
+   sector[43]=0x10U;
+   uint32_t parent_cluster=parent==root?0U:parent;
+   put16(sector+52U,(uint16_t)(parent_cluster>>16));
+   put16(sector+58U,(uint16_t)parent_cluster);
   }
   if(!write1(t,child_lba+s,sector))return false;
  }

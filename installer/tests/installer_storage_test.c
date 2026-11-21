@@ -297,6 +297,8 @@ int main(int argc,char **argv) {
     const size_t efi_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (efi_cluster-2U)*spc)*bps;
     assert(memcmp(target.format_area+efi_off+64U,"BOOT       ",11U)==0);
+    assert(target.format_area[efi_off+32U+20U]==0U &&
+           target.format_area[efi_off+32U+26U]==0U);
     const uint32_t boot_cluster=(uint32_t)target.format_area[efi_off+64U+26U] |
         ((uint32_t)target.format_area[efi_off+64U+27U]<<8) |
         ((uint32_t)target.format_area[efi_off+64U+20U]<<16) |
@@ -304,6 +306,7 @@ int main(int argc,char **argv) {
     assert(boot_cluster>=3U);
     const size_t boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (boot_cluster-2U)*spc)*bps;
+    assert(target.format_area[boot_off+32U+26U]==(uint8_t)efi_cluster);
     assert(target.format_area[boot_off+64U]=='B' &&
            target.format_area[boot_off+65U]=='O');
     assert(target.format_area[boot_off+96U]==0x41U);
@@ -340,6 +343,7 @@ int main(int argc,char **argv) {
     assert(limine_dir_cluster>=3U);
     const size_t limine_dir_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (limine_dir_cluster-2U)*spc)*bps;
+    assert(target.format_area[limine_dir_off+32U+26U]==(uint8_t)boot_cluster);
     assert(target.format_area[limine_dir_off+64U]==0x42U);
     assert(target.format_area[limine_dir_off+96U]==0x01U);
     assert(memcmp(target.format_area+limine_dir_off+128U,"LIMINE~1BIN",11U)==0);

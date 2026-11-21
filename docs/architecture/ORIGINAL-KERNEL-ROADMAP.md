@@ -276,16 +276,20 @@ workflow remain on `main`.
 ### Latest verified storage build
 
 CI run
-[44874813799](https://github.com/LilGray-Code/Nexus/actions/runs/44874813799)
-passed build, ELF/ISO verification, UEFI boot, legacy BIOS boot, and artifact
-upload. In UEFI QEMU, the kernel identified the emulated controller as vendor
-`1B36`, model `QEMU NVMe Ctrl`, serial `NEXUSNVME0001`, firmware `8.2.2`.
-The CI test uses a disposable 64 MiB QEMU disk image. It identifies the
-controller and namespace, then calls the common block-device API to read LBA 0
-and LBA 1 sequentially and checks distinct 512-byte signatures. No disk write
-command is issued. A separate distributable ISO is built without the CI-only
-automatic read test and is booted with the test disk attached to confirm that
-normal boot registers the drive but does not automatically read sectors.
+[44875961523](https://github.com/LilGray-Code/Nexus/actions/runs/44875961523)
+passed the full workflow: compilation, ELF/ISO verification, UEFI boot,
+legacy BIOS boot, two sequential NVMe block-device reads, a clean distributable
+build, and a final UEFI boot of that distributable image.
+
+The CI self-test build uses a disposable 64 MiB QEMU disk image with distinct
+signatures in LBA 0 and LBA 1. The common blockdev_read API read both sectors
+sequentially and verified both signatures. No disk write command is issued.
+
+The uploaded distributable ISO is rebuilt without the
+NEXUS_STORAGE_SELFTEST compile option. CI boots it with an NVMe test device
+attached, confirms that the read-only block device registers, and confirms
+that the automatic sector-read test marker is absent. Normal boots therefore
+do not automatically read disk sectors.
 
 The current CI profiles are deliberately generic rather than laptop-specific:
 UEFI/Q35 with a qemu64 CPU and AHCI plus NVMe, and legacy BIOS/PC with the max

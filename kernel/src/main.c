@@ -188,14 +188,14 @@ void kmain(void) {
         framebuffer_request.response->framebuffer_count > 0) {
         (void)desktop_show(framebuffer_request.response->framebuffers[0]);
     } else {
-        serial_write("DESKTOP: no framebuffer supplied by bootloader\\r\\n");
+        serial_write("DESKTOP: no framebuffer supplied by bootloader\r\n");
     }
     serial_write("NEXUS K2 COOPERATIVE SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     keyboard_init();
-    serial_write("NEXUS PS2 KEYBOARD POLLING READY\\r\\n");
-    serial_write("NEXUS K0 BOOT COMPLETE\\r\\n");
+    serial_write("NEXUS PS2 KEYBOARD POLLING READY\r\n");
+    serial_write("NEXUS K0 BOOT COMPLETE\r\n");
 
     /* Timer interrupts wake the CPU while the legacy keyboard is polled. */
     __asm__ volatile ("sti" : : : "memory");
@@ -203,14 +203,14 @@ void kmain(void) {
         char key = 0;
         while (keyboard_poll(&key)) {
             serial_write("KEYBOARD: ");
-            if (key == '\\n') serial_write("ENTER");
-            else if (key == '\\b') serial_write("BACKSPACE");
-            else if (key == '\\t') serial_write("TAB");
+            if (key == '\n') serial_write("ENTER");
+            else if (key == '\b') serial_write("BACKSPACE");
+            else if (key == '\t') serial_write("TAB");
             else {
-                char output[2] = {key, '\\0'};
+                char output[2] = {key, '\0'};
                 serial_write(output);
             }
-            serial_write("\\r\\n");
+            serial_write("\r\n");
         }
         __asm__ volatile ("sti; hlt" : : : "memory");
     }

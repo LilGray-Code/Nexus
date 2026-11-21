@@ -60,7 +60,13 @@ ISR_NO_ERROR 28
 ISR_ERROR    29
 ISR_ERROR    30
 ISR_NO_ERROR 31
-ISR_NO_ERROR 128
+
+.global isr128
+.type isr128, @function
+isr128:
+    pushq $0
+    pushq $128
+    jmp interrupt_common
 
 IRQ_STUB 32
 IRQ_STUB 33

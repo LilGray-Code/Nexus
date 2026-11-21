@@ -1049,8 +1049,10 @@ static void terminal_execute(void) {
         }
     } else if (terminal_input[0]=='r' && terminal_input[1]=='m' &&
                terminal_input[2]==' ') {
-        const bool ok = vfs_ramfs_remove(terminal_input + 3);
-        const char *message = ok ? "RAM file removed" : "RAM file not found";
+        const bool ok = vfs_remove_file(terminal_input + 3);
+        const char *message = ok
+            ? "writable file removed"
+            : "file not found or volume is read-only";
         size_t out = 0U;
         while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
             terminal_output[out] = message[out]; ++out;

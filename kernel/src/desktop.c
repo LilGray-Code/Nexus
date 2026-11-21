@@ -179,14 +179,14 @@ static void draw_shell(void) {
                            1, 108, 216, 229);
 
         const uint64_t tile_y = text_y + 76U;
-        uint64_t tile_width = (panel_width - 100U) / 4U;
+        uint64_t tile_width = (panel_width - 100U) / 5U;
         if (tile_width > 190U) tile_width = 190U;
-        const char *labels[4] = {"FILES F1", "BROWSER F2", "SETTINGS F3", "TERMINAL F4"};
-        const uint8_t accent[4][3] = {
+        const char *labels[5] = {"FILES F1", "BROWSER F2", "SETTINGS F3", "TERMINAL F4", "INSTALL F5"};
+        const uint8_t accent[5][3] = {
             {45, 177, 202}, {117, 136, 244},
-            {82, 198, 155}, {217, 164, 83}
+            {82, 198, 155}, {217, 164, 83}, {239, 177, 119}
         };
-        for (uint32_t i = 0; i < 4U; ++i) {
+        for (uint32_t i = 0; i < 5U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
             graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
@@ -198,15 +198,6 @@ static void draw_shell(void) {
             graphics_draw_text(tile_x + 12U, tile_y + 47U, labels[i],
                                1, 233, 243, 252);
         }
-        const uint64_t installer_y = tile_y + 90U;
-        graphics_fill_rect(panel_x + 28U, installer_y, tile_width, 74U,
-                           27, 45, 72);
-        graphics_draw_rect(panel_x + 28U, installer_y, tile_width, 74U,
-                           58, 87, 117);
-        graphics_fill_rect(panel_x + 40U, installer_y + 12U, 22U, 22U,
-                           239, 177, 119);
-        graphics_draw_text(panel_x + 40U, installer_y + 47U,
-                           "INSTALL F5", 1, 233, 243, 252);
         graphics_draw_text(text_x, panel_y + panel_height - 42U,
                            "F1 FILES F2 BROWSER F3 SETTINGS F4 TERMINAL F5 INSTALL",
                            1, 170, 191, 211);
@@ -1377,31 +1368,27 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t px = (screen_width - pw) / 2U;
             const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
             const uint64_t ty = py + 82U + 76U;
-            uint64_t tw = (pw - 100U) / 4U;
+            uint64_t tw = (pw - 100U) / 5U;
             if (tw > 190U) tw = 190U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (uint32_t i = 0; i < 4U; ++i) {
+                for (uint32_t i = 0; i < 5U; ++i) {
                     const uint64_t tx = px + 28U + (uint64_t)i * (tw + 10U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {
                         active_view = i == 0U ? DESKTOP_FILES :
                                       (i == 1U ? DESKTOP_BROWSER :
-                                      (i == 2U ? DESKTOP_SETTINGS : DESKTOP_TERMINAL));
+                                      (i == 2U ? DESKTOP_SETTINGS :
+                                      (i == 3U ? DESKTOP_TERMINAL : DESKTOP_INSTALLER)));
                         if (active_view == DESKTOP_FILES) {
                             scan_files_once();
                             refresh_files_listing();
+                        } else if (active_view == DESKTOP_INSTALLER) {
+                            installer_refresh_plan();
                         }
                         serial_write("DESKTOP: app tile opened by mouse\r\n");
                         break;
                     }
                 }
-            } else if ((uint64_t)pointer_y >= ty + 90U &&
-                       (uint64_t)pointer_y < ty + 164U &&
-                       (uint64_t)pointer_x >= px + 28U &&
-                       (uint64_t)pointer_x < px + 28U + tw) {
-                active_view = DESKTOP_INSTALLER;
-                installer_refresh_plan();
-                serial_write("DESKTOP: Nexus installer preview opened by mouse\r\n");
             }
         }
         draw_shell();

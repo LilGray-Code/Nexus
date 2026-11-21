@@ -6,6 +6,7 @@
 #include "acpi.h"
 #include "blockdev.h"
 #include "desktop.h"
+#include "elf64.h"
 #include "gdt.h"
 #include "interrupts.h"
 #include "input.h"
@@ -78,6 +79,11 @@ void kmain(void) {
     serial_write("\r\nNEXUS OS KERNEL STARTED\r\n");
     serial_write("Architecture: x86_64\r\n");
     serial_write("Boot protocol: Limine\r\n");
+    if (!nexus_elf64_selftest()) {
+        serial_write("ERROR: ELF64 parser self-test failed\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS ELF64 VALIDATION READY\r\n");
 
     if (!LIMINE_BASE_REVISION_SUPPORTED(base_revision)) {
         serial_write("ERROR: unsupported Limine base revision\r\n");

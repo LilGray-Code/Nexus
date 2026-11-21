@@ -412,3 +412,14 @@ and `clear`. Directory listing and file reads go through the VFS and do not
 modify storage. The terminal is currently a kernel-integrated shell, not a
 separate ring-3 process; command history, pipes, scripting, permissions, and
 a general executable loader remain future work.
+
+
+### Ring-3 syscall progress
+
+The user-mode bring-up test now exercises a restricted write syscall (number 2)
+before exit (number 1). The first implementation accepts only file descriptor
+1, a maximum 128-byte buffer wholly inside the explicitly mapped user code page,
+and writes those bytes to the serial console. The CI boot test asserts the
+user-originated marker. This is a deliberately narrow proof of syscall entry,
+argument validation, and return to user mode; it is not yet a general process
+ABI, safe arbitrary user-memory copy layer, ELF loader, or terminal device.

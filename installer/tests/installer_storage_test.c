@@ -186,7 +186,7 @@ int main(void) {
         "    kernel_path: boot():/NEXUS/KERNEL.ELF\n";
     assert(nexus_installer_write_efi_file(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks,
-        "EFI/BOOT/LOADER.CFG",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
+        "EFI/BOOT/limine.conf",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
     assert(target.flushes == 13U);
     const uint32_t bps=512U;
     const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
@@ -217,7 +217,7 @@ int main(void) {
     assert(boot_cluster>=3U);
     const size_t boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (boot_cluster-2U)*spc)*bps;
-    assert(memcmp(target.format_area+boot_off+64U,"LOADER  CFG",11U)==0);
+    assert(memcmp(target.format_area+boot_off+64U,"LIMINE~1CNF",11U)==0);
     const uint32_t file_cluster=(uint32_t)target.format_area[boot_off+64U+26U] |
         ((uint32_t)target.format_area[boot_off+64U+27U]<<8) |
         ((uint32_t)target.format_area[boot_off+64U+20U]<<16) |

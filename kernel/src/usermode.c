@@ -184,7 +184,7 @@ static bool build_test_elf(size_t *file_size) {
         usermode_test_elf[segment_file_offset + message_offset + i] =
             (uint8_t)test_message[i];
     }
-    for (size_t i = 0; i < sizeof(test_missing_path); ++i) {
+    for (size_t i = 0; i < sizeof(test_invalid_path); ++i) {
         usermode_test_elf[segment_file_offset + path_offset + i] =
             (uint8_t)test_invalid_path[i];
     }

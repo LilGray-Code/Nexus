@@ -8,6 +8,8 @@
 #include "graphics.h"
 #include "input.h"
 #include "serial.h"
+#include "memory.h"
+#include "timer.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -233,7 +235,7 @@ static void draw_shell(void) {
         graphics_draw_text(text_x + 56U, text_y + 128U, terminal_input,
                            1, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 180U,
-                           "HELP  ABOUT  LS  CAT FILE  CLEAR",
+                           "HELP  ABOUT  MEM  UPTIME  LS  CAT FILE  CLEAR",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 210U,
                            "PRESS ESC TO RETURN HOME",
@@ -433,7 +435,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about ls cat FILE clear";
+        const char *s = "help about mem uptime ls cat FILE clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -441,6 +443,33 @@ static void terminal_execute(void) {
                terminal_input[4]=='t' && terminal_input[5]=='\0') {
         const char *s = "Nexus OS original x86-64 kernel";
         size_t i=0; while(s[i]!='\0' && i<sizeof(terminal_output)-1U){terminal_output[i]=s[i];++i;} terminal_output[i]='\0';
+    } else if (terminal_input[0]=='m' && terminal_input[1]=='e' &&
+               terminal_input[2]=='m' && terminal_input[3]=='\0') {
+        const char *label = "free bytes: ";
+        size_t n = 0;
+        while (label[n] != '\0' && n < sizeof(terminal_output)-1U) {
+            terminal_output[n] = label[n]; ++n;
+        }
+        char number[21];
+        format_u64(memory_free_bytes(), number);
+        for (size_t k = 0; number[k] != '\0' &&
+             n < sizeof(terminal_output)-1U; ++k) terminal_output[n++] = number[k];
+        terminal_output[n] = '\0';
+    } else if (terminal_input[0]=='u' && terminal_input[1]=='p' &&
+               terminal_input[2]=='t' && terminal_input[3]=='i' &&
+               terminal_input[4]=='m' && terminal_input[5]=='e' &&
+               terminal_input[6]=='\0') {
+        const uint64_t seconds = timer_ticks() / 100U;
+        const char *label = "uptime seconds: ";
+        size_t n = 0;
+        while (label[n] != '\0' && n < sizeof(terminal_output)-1U) {
+            terminal_output[n] = label[n]; ++n;
+        }
+        char number[21];
+        format_u64(seconds, number);
+        for (size_t k = 0; number[k] != '\0' &&
+             n < sizeof(terminal_output)-1U; ++k) terminal_output[n++] = number[k];
+        terminal_output[n] = '\0';
     } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
                terminal_input[2]=='\0') {
         size_t out=0;

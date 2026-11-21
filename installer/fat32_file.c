@@ -36,12 +36,18 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
  uint32_t bps=le16(sector+11),spc=sector[13],reserved=le16(sector+14);
  uint32_t fats=sector[16],fat_size=le32(sector+36),root=le32(sector+44);
  uint32_t total=le32(sector+32);
- if(le16(sector+510)!=0xAA55U||bps!=t->block_size||!spc||
+ if(le16(sector+510)!=0xAA55U||bps!=t->block_size||
+    (bps!=512U&&bps!=4096U)||bps%32U!=0U||!spc||spc>128U||
     (spc&(spc-1U))||!reserved||fats!=2U||!fat_size||root<2U||
-    total>count||total==0U) {result=NEXUS_FAT32_FILE_INVALID;goto done;}
+    total>count||total==0U||(uint64_t)spc*bps>65536U) {
+  result=NEXUS_FAT32_FILE_INVALID;goto done;
+ }
  uint64_t data_rel=(uint64_t)reserved+(uint64_t)fats*fat_size;
  if(data_rel>=total){result=NEXUS_FAT32_FILE_INVALID;goto done;}
  uint32_t clusters=(uint32_t)((total-data_rel)/spc);
+ if((uint64_t)fat_size*bps/4U<(uint64_t)clusters+2U) {
+  result=NEXUS_FAT32_FILE_INVALID;goto done;
+ }
  if(root-2U>=clusters){result=NEXUS_FAT32_FILE_INVALID;goto done;}
  uint64_t fat1=part+reserved,fat2=fat1+fat_size,data_start=part+data_rel;
  /* Partition LBAs are 64-bit: large GPT disks can place the ESP above 2 TiB. */
@@ -106,7 +112,11 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
    for(uint32_t j=0;j<bps;j++)sector[j]=0;
    uint32_t n=remaining>bps?bps:remaining;
    for(uint32_t j=0;j<n;j++)sector[j]=src[j];
-   if(!write1(t,base+sec,sector))goto done;
+   if(!write1(t,base+sec,sector)||
+      !read1(t,base+sec,verify)||
+      __builtin_memcmp(sector,verify,bps)!=0) {
+    result=NEXUS_FAT32_FILE_VERIFY;goto done;
+   }
    src+=n;remaining-=n;
   }
   /* Next cluster is found by scanning FAT for the first allocated successor. */

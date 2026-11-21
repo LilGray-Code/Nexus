@@ -103,6 +103,7 @@ jobs:
             exit "$status"
           fi
           cat uefi-serial.log
+          grep -q "BOOT MEDIA: optical source is not a registered disk" uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
@@ -218,6 +219,7 @@ jobs:
             exit "$status"
           fi
           cat bios-serial.log
+          grep -q "BOOT MEDIA: optical source is not a registered disk" bios-serial.log
           grep -q "NEXUS GDT TSS READY" bios-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
@@ -267,6 +269,7 @@ jobs:
             exit "$status"
           fi
           cat release-serial.log
+          grep -q "BOOT MEDIA: optical source is not a registered disk" release-serial.log
           grep -q "NEXUS NVME BLOCK DEVICE READY" release-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" release-serial.log
           grep -q "NEXUS RAMFS READY" release-serial.log

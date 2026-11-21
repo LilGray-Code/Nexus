@@ -157,6 +157,48 @@ int main(void) {
     assert(nexus_installer_write_gpt(target_handle, &identity,
         target_handle->stable_id, "ERASE", &plan, disk_guid,
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_UNSAFE_TARGET);
+
+    /* MBR provenance must also be unique across all registered disks. */
+    blockdev_init();
+    memset(boot.first, 0, sizeof(boot.first));
+    memset(boot.last, 0, sizeof(boot.last));
+    const uint32_t mbr_id = 0x78563412U;
+    boot.first[440] = 0x12U;
+    boot.first[441] = 0x34U;
+    boot.first[442] = 0x56U;
+    boot.first[443] = 0x78U;
+    boot.first[510] = 0x55U;
+    boot.first[511] = 0xAAU;
+    boot_device = make_device("boot-mbr", "TEST-BOOT-MBR", &boot);
+    target_device = make_device("target-mbr", "TEST-TARGET-MBR", &target);
+    assert(blockdev_register(&boot_device));
+    assert(blockdev_register(&target_device));
+    memcpy(target.first, boot.first, sizeof(target.first));
+    assert(!blockdev_set_boot_media_from_mbr_disk_id(mbr_id));
+    memset(target.first, 0, sizeof(target.first));
+    assert(blockdev_set_boot_media_from_mbr_disk_id(mbr_id));
+    assert(!blockdev_set_boot_media_from_mbr_disk_id(mbr_id));
+
+    /* Optical boot is safe only when no optical block device is registered. */
+    blockdev_init();
+    target_device = make_device("target-optical", "TEST-TARGET-OPTICAL", &target);
+    assert(blockdev_register(&target_device));
+    assert(blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
+    const struct nexus_block_device *optical_target = blockdev_at(0U);
+    assert(optical_target != NULL);
+    assert(blockdev_install_session_begin(optical_target,
+        optical_target->stable_id, "ERASE"));
+    blockdev_install_session_end();
+
+    blockdev_init();
+    target_device = make_device("target-optical", "TEST-TARGET-OPTICAL", &target);
+    struct nexus_block_device optical_device =
+        make_device("optical", "TEST-OPTICAL", &boot);
+    optical_device.transport = NEXUS_BLOCKDEV_TRANSPORT_OPTICAL;
+    assert(blockdev_register(&target_device));
+    assert(blockdev_register(&optical_device));
+    assert(!blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
+
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
     return 0;
 }

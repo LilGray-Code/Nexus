@@ -170,20 +170,23 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   stable identity and geometry, obtains a kernel-owned destructive-write
   session, and routes bounded reads, writes, and flushes through that session.
   The adapter is linked into the kernel build but is not called by the desktop.
-- The kernel now has a fail-closed provenance resolver:
-  `blockdev_set_boot_media_from_gpt_partition_guid` accepts a bootloader-
-  supplied GPT partition unique GUID, validates primary and backup GPT metadata
-  on every registered disk, and accepts only exactly one matching disk. The
-  lower-level setters are private to `blockdev.c`; other kernel/UI code cannot
-  mark an arbitrary device as the boot disk through the public API.
-- The bootloader does **not yet supply** that GUID to Nexus. Until a custom
-  Limine handoff extension is implemented and tested for UEFI and BIOS,
-  `blockdev_install_session_begin` remains fail-closed and rejects all targets.
-  Never infer boot identity from device order, model, or capacity.
-- The distributable NVMe driver remains read-only. The kernel adapter is not
-  sufficient evidence for enabling release writes: it still needs boot-source
-  provenance, UI confirmation wiring, a kernel adapter test, and disposable-
-  disk fault-injection tests.
+- The kernel requests Limine's standard Executable File response. It resolves
+  boot provenance by matching a unique GPT partition GUID, GPT disk GUID, or
+  MBR disk ID against registered devices after validating on-disk metadata.
+  Optical and TFTP boots are accepted as non-disk sources only when no device
+  of the corresponding transport is registered. Missing or ambiguous identity
+  remains fail-closed. The low-level setters are private to `blockdev.c`.
+- CI now verifies that the executable-file handoff identifies the live optical
+  source in both OVMF UEFI and SeaBIOS boots, including the distributable ISO.
+  The GPT partition resolver is host-tested against validated mock GPT metadata
+  and rejects duplicate matches. Physical GPT/MBR boot-media matching still
+  needs testing with actual USB/SATA/NVMe boot media. Never infer identity from
+  device order, model, or capacity.
+- The distributable NVMe driver remains read-only. The kernel adapter has
+  host-side integration coverage, but release writes remain disabled until the
+  desktop confirmation flow is wired, filesystem formatting/deployment and
+  bootloader installation exist, and interrupted-install/fault-injection tests
+  pass on disposable disks.
 - The graphical preview is not yet a complete installer. System-image
   deployment, NXFS formatting on a selected target, Limine target-disk
   installation, first boot, and recovery remain unimplemented.

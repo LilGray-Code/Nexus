@@ -45,6 +45,7 @@ enum nexus_gpt_install_result nexus_installer_write_gpt(
     const struct nexus_gpt_install_target target = {
         .block_count = device->block_count,
         .block_size = device->block_size,
+        .max_blocks_per_request = device->max_blocks_per_request,
         .context = (void *)device,
         .read = installer_target_read,
         .write = installer_target_write,

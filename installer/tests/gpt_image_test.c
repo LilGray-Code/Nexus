@@ -61,7 +61,7 @@ static void test_uefi_image(void) {
     assert(nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
                                        512ULL, 512U,
                                        NEXUS_FIRMWARE_UEFI, &plan));
-    assert(nexus_gpt_image_build(&plan, disk_guid, partition_guids, &image));
+    assert(nexus_gpt_image_build(&plan, disk_guid, &partition_guids[0][0], &image));
     assert(image.protective_mbr[510] == 0x55U &&
            image.protective_mbr[511] == 0xAAU);
     assert(image.protective_mbr[450] == 0xEEU);

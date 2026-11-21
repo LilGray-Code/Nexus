@@ -44,7 +44,8 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
  uint32_t clusters=(uint32_t)((total-data_rel)/spc);
  if(root-2U>=clusters){result=NEXUS_FAT32_FILE_INVALID;goto done;}
  uint64_t fat1=part+reserved,fat2=fat1+fat_size,data_start=part+data_rel;
- uint32_t root_lba=data_start+(root-2U)*spc;
+ /* Partition LBAs are 64-bit: large GPT disks can place the ESP above 2 TiB. */
+ uint64_t root_lba=data_start+(uint64_t)(root-2U)*spc;
  uint32_t root_slot=UINT32_MAX;
  /* Search the root directory's first cluster for a free entry or terminator. */
  for(uint32_t s=0;s<spc&&root_slot==UINT32_MAX;s++){

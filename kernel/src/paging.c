@@ -3,11 +3,14 @@
 #include "memory.h"
 
 #include <stddef.h>
+#include <stdint.h>
 
 #define PAGE_PRESENT 0x001ULL
 #define PAGE_WRITABLE 0x002ULL
+#define PAGE_USER 0x004ULL
 #define PAGE_WRITE_THROUGH 0x008ULL
 #define PAGE_CACHE_DISABLE 0x010ULL
+#define PAGE_LARGE 0x080ULL
 #define PAGE_ADDRESS_MASK 0x000FFFFFFFFFF000ULL
 #define CR4_LA57 (1ULL << 12)
 
@@ -76,5 +79,111 @@ bool paging_map_mmio_page(uint64_t physical_address,
 
     __asm__ volatile ("invlpg (%0)" : : "r"((uintptr_t)virtual_base) : "memory");
     *virtual_address = (volatile uint32_t *)(uintptr_t)virtual_base;
+    return true;
+}
+
+/*
+ * Translate one user virtual address using the active CR3. Every paging level
+ * must be present and user-accessible. The helper also understands 1 GiB and
+ * 2 MiB leaves, so the copy routine does not assume every mapping is 4 KiB.
+ */
+static bool translate_user_address(uint64_t root_physical,
+                                   unsigned int levels,
+                                   uint64_t address,
+                                   uint64_t *physical_address,
+                                   uint64_t *mapping_size) {
+    if (physical_address == NULL || mapping_size == NULL) return false;
+
+    volatile uint64_t *table =
+        (volatile uint64_t *)memory_phys_to_virt(root_physical);
+    if (table == NULL) return false;
+
+    for (unsigned int level = levels; level > 0U; --level) {
+        const unsigned int shift = 12U + 9U * (level - 1U);
+        const uint64_t index = (address >> shift) & 0x1FFU;
+        const uint64_t entry = table[index];
+
+        if ((entry & (PAGE_PRESENT | PAGE_USER)) !=
+            (PAGE_PRESENT | PAGE_USER)) {
+            return false;
+        }
+
+        if (level == 1U) {
+            *mapping_size = 1ULL << 12;
+            *physical_address = (entry & PAGE_ADDRESS_MASK) |
+                                (address & (*mapping_size - 1ULL));
+            return true;
+        }
+
+        if ((entry & PAGE_LARGE) != 0U) {
+            if (level != 2U && level != 3U) return false;
+            *mapping_size = 1ULL << shift;
+            const uint64_t base_mask =
+                PAGE_ADDRESS_MASK & ~(*mapping_size - 1ULL);
+            *physical_address = (entry & base_mask) |
+                                (address & (*mapping_size - 1ULL));
+            return true;
+        }
+
+        table = (volatile uint64_t *)memory_phys_to_virt(
+            entry & PAGE_ADDRESS_MASK);
+        if (table == NULL) return false;
+    }
+
+    return false;
+}
+
+/*
+ * Copy a bounded user range into kernel-owned memory. The range must remain
+ * in the lower canonical user half and every traversed page must have the
+ * U/S bit set at every level. The caller must separately impose an ABI limit.
+ */
+bool paging_copy_from_user(void *destination, uint64_t source, size_t length) {
+    if (length == 0U) return true;
+    if (destination == NULL) return false;
+
+    const uint64_t byte_count = (uint64_t)length;
+    if ((size_t)byte_count != length || source > UINT64_MAX - byte_count) {
+        return false;
+    }
+
+    uint64_t cr3, cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    const unsigned int user_address_bits = levels == 5U ? 56U : 47U;
+    const uint64_t user_limit = 1ULL << user_address_bits;
+    const uint64_t end = source + byte_count;
+    if (source >= user_limit || end > user_limit) return false;
+
+    const uint64_t root_physical = cr3 & PAGE_ADDRESS_MASK;
+    uint8_t *output = (uint8_t *)destination;
+    uint64_t current = source;
+    uint64_t remaining = byte_count;
+
+    while (remaining != 0U) {
+        uint64_t physical;
+        uint64_t mapping_size;
+        if (!translate_user_address(root_physical, levels, current,
+                                    &physical, &mapping_size)) {
+            return false;
+        }
+
+        const uint64_t mapping_offset = current & (mapping_size - 1ULL);
+        uint64_t chunk = mapping_size - mapping_offset;
+        if (chunk > remaining) chunk = remaining;
+
+        const volatile uint8_t *input =
+            (const volatile uint8_t *)memory_phys_to_virt(physical);
+        if (input == NULL) return false;
+
+        for (uint64_t i = 0; i < chunk; ++i) output[i] = input[i];
+
+        output += (size_t)chunk;
+        current += chunk;
+        remaining -= chunk;
+    }
+
     return true;
 }

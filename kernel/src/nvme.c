@@ -257,7 +257,6 @@ static bool nvme_block_read(void *context, uint64_t lba,
                                lba, block_count, buffer);
 }
 
-#if 1
 static bool nvme_block_write(void *context, uint64_t lba,
                              uint32_t block_count, const void *buffer) {
     return nvme_block_transfer((struct nvme_io_state *)context, 0x01U,
@@ -331,7 +330,6 @@ static bool nvme_block_flush(void *context) {
     state->busy = false;
     return success;
 }
-#endif
 
 bool nvme_identify_probe(const struct nexus_pci_device *device) {
     if (device == NULL || device->class_code != 0x01 ||

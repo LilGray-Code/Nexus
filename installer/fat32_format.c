@@ -11,6 +11,7 @@
 #define MAX_TRANSFER 8U
 static uint8_t workspace[MAX_BLOCK_SIZE*MAX_TRANSFER];
 static uint8_t verify_workspace[MAX_BLOCK_SIZE];
+static uint8_t readback_workspace[MAX_BLOCK_SIZE];
 static bool busy;
 static void put16(uint8_t *p,uint16_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
 static void put32(uint8_t *p,uint32_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2]=(uint8_t)(v>>16);p[3]=(uint8_t)(v>>24);}
@@ -38,9 +39,9 @@ static bool write_blocks(const struct nexus_fat32_format_target *t,
 }
 static bool verify_sector(const struct nexus_fat32_format_target *t,
                           uint64_t lba,const uint8_t *expected){
-    if(!t->read(t->context,lba,1U,verify_workspace))return false;
+    if(!t->read(t->context,lba,1U,readback_workspace))return false;
     for(uint32_t i=0U;i<t->block_size;++i)
-        if(verify_workspace[i]!=expected[i])return false;
+        if(readback_workspace[i]!=expected[i])return false;
     return true;
 }
 static void make_fsinfo(uint8_t *s,uint32_t bytes){
@@ -50,14 +51,14 @@ static void make_fsinfo(uint8_t *s,uint32_t bytes){
     put32(s+508U,0xAA550000U);
 }
 static void make_boot(uint8_t *s,uint32_t bytes,uint32_t spc,
-                      uint32_t fat_size,uint32_t total,uint32_t volume_id){
+                      uint32_t fat_size,uint32_t total,uint32_t hidden,uint32_t volume_id){
     for(uint32_t i=0U;i<bytes;++i)s[i]=0U;
     s[0]=0xEBU;s[1]=0x58U;s[2]=0x90U;
     s[3]='N';s[4]='E';s[5]='X';s[6]='U';s[7]='S';s[8]='F';s[9]='A';s[10]='T';
     put16(s+11U,(uint16_t)bytes);s[13]=(uint8_t)spc;
     put16(s+14U,RESERVED);s[16]=2U;put16(s+17U,0U);
     put16(s+19U,0U);s[21]=0xF8U;put16(s+22U,0U);
-    put16(s+24U,63U);put16(s+26U,255U);put32(s+28U,0U);
+    put16(s+24U,63U);put16(s+26U,255U);put32(s+28U,hidden);
     put32(s+32U,total);put32(s+36U,fat_size);
     put16(s+40U,0U);put16(s+42U,0U);put32(s+44U,ROOT_CLUSTER);
     put16(s+48U,1U);put16(s+50U,BACKUP_BOOT);
@@ -106,6 +107,10 @@ enum nexus_fat32_format_result nexus_fat32_format(
     const uint64_t data_start=fat2+fat_size;
     busy=true;
     for(size_t i=0U;i<sizeof(workspace);++i)workspace[i]=0U;
+    /* Invalidate both boot-sector copies before overwriting filesystem data. */
+    if(!write_blocks(t,start,1U,workspace)||
+       !write_blocks(t,start+BACKUP_BOOT,1U,workspace)||
+       !t->flush(t->context))goto io_error;
     uint64_t remain=fat_size,cursor=fat1;
     while(remain!=0U){
         uint32_t n=remain>MAX_TRANSFER?MAX_TRANSFER:(uint32_t)remain;
@@ -127,17 +132,25 @@ enum nexus_fat32_format_result nexus_fat32_format(
     if(!write_blocks(t,start+1U,1U,workspace)||
        !write_blocks(t,start+BACKUP_FSINFO,1U,workspace))goto io_error;
     make_boot(workspace,t->block_size,spc,(uint32_t)fat_size,
-              (uint32_t)blocks,volume_id);
+              (uint32_t)blocks,start<=UINT32_MAX?(uint32_t)start:0U,volume_id);
     if(!write_blocks(t,start,1U,workspace)||
        !write_blocks(t,start+BACKUP_BOOT,1U,workspace)||
        !t->flush(t->context))goto io_error;
     make_boot(verify_workspace,t->block_size,spc,(uint32_t)fat_size,
-              (uint32_t)blocks,volume_id);
+              (uint32_t)blocks,start<=UINT32_MAX?(uint32_t)start:0U,volume_id);
     if(!verify_sector(t,start,verify_workspace)||
        !verify_sector(t,start+BACKUP_BOOT,verify_workspace))goto verify_error;
     make_fsinfo(verify_workspace,t->block_size);
     if(!verify_sector(t,start+1U,verify_workspace)||
        !verify_sector(t,start+BACKUP_FSINFO,verify_workspace))goto verify_error;
+    for(uint32_t i=0U;i<t->block_size;++i)verify_workspace[i]=0U;
+    put32(verify_workspace,0x0FFFFFF8U);
+    put32(verify_workspace+4U,0xFFFFFFFFU);
+    put32(verify_workspace+8U,EOC);
+    if(!verify_sector(t,fat1,verify_workspace)||
+       !verify_sector(t,fat2,verify_workspace))goto verify_error;
+    for(uint32_t i=0U;i<t->block_size;++i)verify_workspace[i]=0U;
+    if(!verify_sector(t,data_start,verify_workspace))goto verify_error;
     busy=false;return NEXUS_FAT32_FORMAT_OK;
 io_error:
     busy=false;return NEXUS_FAT32_FORMAT_IO_ERROR;

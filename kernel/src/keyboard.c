@@ -4,6 +4,7 @@
 
 static bool shift_down;
 static bool caps_lock;
+static bool extended_scan;
 
 static inline uint8_t inb(uint16_t port) {
     uint8_t value;
@@ -44,6 +45,7 @@ static const char shifted_map[128] = {
 void keyboard_init(void) {
     shift_down = false;
     caps_lock = false;
+    extended_scan = false;
     /* Drain stale controller bytes; do not reprogram firmware-owned ports. */
     for (uint32_t i = 0; i < 32U; ++i) {
         if ((inb(0x64) & 1U) == 0) break;
@@ -54,7 +56,8 @@ void keyboard_init(void) {
 bool keyboard_poll(char *character) {
     if (character == NULL || (inb(0x64) & 1U) == 0) return false;
     const uint8_t scan = inb(0x60);
-    if (scan == 0xE0U || scan == 0xE1U) return false;
+    if (scan == 0xE0U || scan == 0xE1U) { extended_scan = true; return false; }
+    if (extended_scan) { extended_scan = false; return false; }
 
     if (scan == 0x2AU || scan == 0x36U) {
         shift_down = true;

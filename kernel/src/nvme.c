@@ -883,8 +883,8 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     serial_write("NVMe: disposable reserved-sector write and restore verified\r\n");
     serial_write("NEXUS NVME WRITE SELFTEST READY\r\n");
 
-    if (!nxfs_mount(registered, nxfs_partition)) {
-        serial_write("NXFS: CI test partition mount failed\r\n");
+    if (!nxfs_format(registered, nxfs_partition)) {
+        serial_write("NXFS: CI format-and-mount of disposable partition failed\r\n");
         return false;
     }
     if (!nxfs_selftest()) {

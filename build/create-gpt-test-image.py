@@ -151,31 +151,6 @@ def make_fat32(image):
     image[fragmented_file_sector:
           fragmented_file_sector + len(README) - SECTOR] = README[SECTOR:]
 
-def make_nxfs(image):
-    """Format a fresh dedicated NexusFS test partition."""
-    block_size = SECTOR
-    partition_blocks = NXFS_LAST - NXFS_FIRST + 1
-    blocks_per_slot = (16 * 1024 + block_size - 1) // block_size
-    data_start = 19
-    if partition_blocks < data_start + 16 * 2 * blocks_per_slot:
-        raise ValueError("NXFS test partition is too small")
-
-    def make_superblock():
-        block = bytearray(block_size)
-        block[0:8] = b"NEXUSFS1"
-        struct.pack_into("<IIIIQIII", block, 8,
-                         1, block_size, 16, 16 * 1024,
-                         partition_blocks, 3, data_start, blocks_per_slot)
-        struct.pack_into("<I", block, 60, zlib.crc32(block[:60]) & 0xFFFFFFFF)
-        return block
-
-    start = NXFS_FIRST * SECTOR
-    superblock = make_superblock()
-    image[start:start + SECTOR] = superblock
-    image[start + SECTOR:start + 2 * SECTOR] = superblock
-    # Journal, entry table, and file banks remain zeroed on a fresh volume.
-
-
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: create-gpt-test-image.py IMAGE")
@@ -224,7 +199,7 @@ def main():
         TOTAL_SECTORS - 1, 1, backup_entries_lba, disk_guid, entries_crc)
 
     make_fat32(image)
-    make_nxfs(image)
+    # Leave the dedicated NXFS partition blank; the kernel CI test formats it.
     path.write_bytes(image)
 
 if __name__ == "__main__":

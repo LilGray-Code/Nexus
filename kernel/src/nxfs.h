@@ -22,6 +22,8 @@ struct nexus_nxfs_entry {
 };
 
 bool nxfs_partition_type_matches(const struct nexus_gpt_partition *partition);
+bool nxfs_format(const struct nexus_block_device *device,
+                 const struct nexus_gpt_partition *partition);
 bool nxfs_mount(const struct nexus_block_device *device,
                 const struct nexus_gpt_partition *partition);
 bool nxfs_is_mounted(void);

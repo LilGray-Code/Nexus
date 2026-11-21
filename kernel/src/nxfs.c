@@ -31,11 +31,6 @@ static bool nxfs_mounted;
 static bool nxfs_busy;
 static struct nexus_nxfs_entry nxfs_entries[NEXUS_NXFS_MAX_FILES];
 static uint8_t nxfs_io_buffer[NXFS_BLOCK_MAX];
-static uint8_t nxfs_record_buffer[NXFS_BLOCK_MAX];
-
-static uint16_t read_le16(const uint8_t *p) {
-    return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
-}
 
 static uint32_t read_le32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -345,6 +340,76 @@ static bool replay_journal(bool *override_valid, size_t *override_slot,
         *override_entry = entry;
     }
     return true;
+}
+
+bool nxfs_format(const struct nexus_block_device *device,
+                 const struct nexus_gpt_partition *partition) {
+    if (device == NULL || partition == NULL ||
+        !nxfs_partition_type_matches(partition) ||
+        (device->flags & NEXUS_BLOCKDEV_WRITABLE) == 0U ||
+        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) != 0U ||
+        (device->block_size != 512U && device->block_size != 4096U) ||
+        partition->first_lba > partition->last_lba ||
+        partition->last_lba >= device->block_count) return false;
+
+    nxfs_device = device;
+    nxfs_partition = *partition;
+    nxfs_block_size = device->block_size;
+    nxfs_blocks_per_slot =
+        (NEXUS_NXFS_MAX_FILE_BYTES + nxfs_block_size - 1U) /
+        nxfs_block_size;
+    const uint64_t partition_blocks =
+        partition->last_lba - partition->first_lba + 1U;
+    const uint64_t required_blocks =
+        (uint64_t)NXFS_DATA_LBA +
+        (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * nxfs_blocks_per_slot;
+    if (nxfs_block_size > NXFS_BLOCK_MAX ||
+        partition_blocks < required_blocks) {
+        nxfs_device = NULL;
+        return false;
+    }
+
+    nxfs_mounted = false;
+    nxfs_busy = false;
+    zero_bytes(nxfs_entries, sizeof(nxfs_entries));
+    zero_bytes(nxfs_io_buffer, nxfs_block_size);
+
+    /* Invalidate an existing format before replacing metadata. */
+    if (!nxfs_write_block(NXFS_SUPERBLOCK_A, nxfs_io_buffer) ||
+        !nxfs_flush() ||
+        !nxfs_write_block(NXFS_SUPERBLOCK_B, nxfs_io_buffer) ||
+        !nxfs_flush()) {
+        nxfs_device = NULL;
+        return false;
+    }
+
+    /* Clear the one-block journal and fixed metadata table. */
+    if (!nxfs_write_block(NXFS_JOURNAL_LBA, nxfs_io_buffer)) {
+        nxfs_device = NULL;
+        return false;
+    }
+    for (size_t slot = 0U; slot < NEXUS_NXFS_MAX_FILES; ++slot) {
+        if (!nxfs_write_block(NXFS_METADATA_LBA + slot, nxfs_io_buffer)) {
+            nxfs_device = NULL;
+            return false;
+        }
+    }
+    if (!nxfs_flush()) {
+        nxfs_device = NULL;
+        return false;
+    }
+
+    /* Two independently checksummed copies allow one-copy recovery. */
+    encode_superblock(nxfs_io_buffer, partition_blocks);
+    if (!nxfs_write_block(NXFS_SUPERBLOCK_A, nxfs_io_buffer) ||
+        !nxfs_flush() ||
+        !nxfs_write_block(NXFS_SUPERBLOCK_B, nxfs_io_buffer) ||
+        !nxfs_flush()) {
+        nxfs_device = NULL;
+        return false;
+    }
+
+    return nxfs_mount(device, partition);
 }
 
 bool nxfs_mount(const struct nexus_block_device *device,

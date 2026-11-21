@@ -112,7 +112,7 @@ static bool long_name_info(const char*n,uint8_t alias[11],
   if(ch!=config_name[i])break;
   i++;
  }
- if(n[i]=='\\0'&&i==sizeof(config_name)-1U){
+ if(n[i]=='\0'&&i==sizeof(config_name)-1U){
   wanted=config_name;short_alias=config_alias;
  }else{
   i=0;
@@ -121,7 +121,7 @@ static bool long_name_info(const char*n,uint8_t alias[11],
    if(ch!=bios_name[i])break;
    i++;
   }
-  if(n[i]=='\\0'&&i==sizeof(bios_name)-1U){
+  if(n[i]=='\0'&&i==sizeof(bios_name)-1U){
    wanted=bios_name;short_alias=bios_alias;
   }
  }
@@ -170,7 +170,8 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
  if(root-2U>=clusters){result=NEXUS_FAT32_FILE_INVALID;goto done;}
  uint64_t fat1=part+reserved,fat2=fat1+fat_size,data_start=part+data_rel;
  /* Partition LBAs are 64-bit: large GPT disks can place the ESP above 2 TiB. */
- uint32_t parent=root;bool has_lfn=false;\n const char *lfn_name=NULL;uint32_t lfn_entries=0U;
+ uint32_t parent=root;bool has_lfn=false;
+ const char *lfn_name=NULL;uint32_t lfn_entries=0U;
  const char*component=name;
  for(;;){
   const char*slash=component;
@@ -180,7 +181,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    char partname[13];uint8_t shortpart[11];
    if(n==0U||n>12U){result=NEXUS_FAT32_FILE_INVALID;goto done;}
    for(size_t i=0;i<n;i++)partname[i]=component[i];
-   partname[n]='\0';
+   partname[n]='\\0';
    if(!valid_name(partname,shortpart)){result=NEXUS_FAT32_FILE_INVALID;goto done;}
    uint32_t child=0;
    if(!directory_child(t,fat1,fat2,data_start,bps,spc,clusters,
@@ -191,7 +192,9 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    continue;
   }
   if(!valid_name(component,shortname)){
-   if(!long_config_name(component,shortname)){result=NEXUS_FAT32_FILE_INVALID;goto done;}
+   if(!long_name_info(component,shortname,&lfn_name,&lfn_entries)){
+    result=NEXUS_FAT32_FILE_INVALID;goto done;
+   }
    has_lfn=true;
   }
   break;

@@ -5,140 +5,162 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define PCI_CONFIG_ADDRESS 0x0CF8U
-#define PCI_CONFIG_DATA    0x0CFCU
-#define PCI_ENABLE_BIT     0x80000000U
-#define PCI_MAX_BUSES      256U
-#define PCI_MAX_DEVICES    32U
-#define PCI_MAX_FUNCTIONS  8U
+#define PCI_CONFIG_ADDRESS 0x0CF8
+#define PCI_CONFIG_DATA    0x0CFC
+#define PCI_VENDOR_ABSENT  0xFFFFU
+#define PCI_MAX_PRINTED_DEVICES 12U
 
-static struct nexus_pci_device devices[NEXUS_PCI_MAX_DEVICES];
-static size_t stored_devices;
+static struct nexus_pci_device stored_devices[NEXUS_PCI_MAX_STORED_DEVICES];
+static uint32_t stored_device_count;
+static uint32_t discovered_device_count;
+static uint32_t storage_device_count;
+static uint32_t display_device_count;
+static uint32_t network_device_count;
 
-static inline void port_out32(uint16_t port, uint32_t value) {
+static inline void outl(uint16_t port, uint32_t value) {
     __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port));
 }
 
-static inline uint32_t port_in32(uint16_t port) {
+static inline uint32_t inl(uint16_t port) {
     uint32_t value;
     __asm__ volatile ("inl %1, %0" : "=a"(value) : "Nd"(port));
     return value;
 }
 
 /*
- * PCI Configuration Mechanism #1. All accesses are read-only; the kernel
- * never sets command bits, sizes BARs, or changes bus routing during probe.
+ * PCI Configuration Mechanism #1. This writes only the address selector at
+ * CF8 and reads the selected config dword at CFC; it never writes device
+ * configuration space, BARs, command registers, or bus-master controls.
  */
-static uint32_t config_read32(uint8_t bus, uint8_t device,
-                              uint8_t function, uint8_t offset) {
-    const uint32_t address = PCI_ENABLE_BIT |
+static uint32_t pci_config_read(uint8_t bus, uint8_t slot,
+                                uint8_t function, uint8_t offset) {
+    if (slot >= 32 || function >= 8) return UINT32_MAX;
+
+    const uint32_t address = 0x80000000U |
         ((uint32_t)bus << 16) |
-        ((uint32_t)device << 11) |
+        ((uint32_t)slot << 11) |
         ((uint32_t)function << 8) |
         ((uint32_t)offset & 0xFCU);
-    port_out32(PCI_CONFIG_ADDRESS, address);
-    return port_in32(PCI_CONFIG_DATA);
+
+    outl(PCI_CONFIG_ADDRESS, address);
+    return inl(PCI_CONFIG_DATA);
 }
 
-static void print_device(const struct nexus_pci_device *d) {
-    serial_write("PCI: device ");
-    serial_write_hex(d->bus);
-    serial_write(":");
-    serial_write_hex(d->device);
-    serial_write(".");
-    serial_write_hex(d->function);
-    serial_write(" vendor=");
-    serial_write_hex(d->vendor_id);
-    serial_write(" device=");
-    serial_write_hex(d->device_id);
-    serial_write(" class=");
-    serial_write_hex(d->class_code);
-    serial_write(" subclass=");
-    serial_write_hex(d->subclass);
-    serial_write(" prog-if=");
-    serial_write_hex(d->programming_interface);
-    serial_write("\r\n");
-}
+static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
+                          uint32_t identity, uint32_t class_revision,
+                          uint32_t header_dword) {
+    const uint16_t vendor = (uint16_t)(identity & 0xFFFFU);
+    const uint16_t device = (uint16_t)(identity >> 16);
+    const uint8_t class_code = (uint8_t)(class_revision >> 24);
+    const uint8_t subclass = (uint8_t)(class_revision >> 16);
+    const uint8_t prog_if = (uint8_t)(class_revision >> 8);
+    const uint8_t header_type = (uint8_t)(header_dword >> 16);
 
-static void record_function(uint8_t bus, uint8_t device, uint8_t function,
-                            uint32_t identity) {
-    const uint32_t class_register =
-        config_read32(bus, device, function, 0x08);
-    const uint32_t header_register =
-        config_read32(bus, device, function, 0x0C);
-    const uint32_t interrupt_register =
-        config_read32(bus, device, function, 0x3C);
+    if (vendor == PCI_VENDOR_ABSENT) return;
 
-    struct nexus_pci_device entry = {
-        .bus = bus,
-        .device = device,
-        .function = function,
-        .header_type = (uint8_t)(header_register >> 16),
-        .vendor_id = (uint16_t)(identity & 0xFFFFU),
-        .device_id = (uint16_t)(identity >> 16),
-        .class_code = (uint8_t)(class_register >> 24),
-        .subclass = (uint8_t)(class_register >> 16),
-        .programming_interface = (uint8_t)(class_register >> 8),
-        .revision = (uint8_t)class_register,
-        .interrupt_line = (uint8_t)interrupt_register,
-        .interrupt_pin = (uint8_t)(interrupt_register >> 8),
-        .bars = {0}
-    };
+    ++discovered_device_count;
+    if (class_code == 0x01) ++storage_device_count;
+    if (class_code == 0x03) ++display_device_count;
+    if (class_code == 0x02) ++network_device_count;
 
-    uint8_t bar_count = 0;
-    switch (entry.header_type & 0x7FU) {
-        case 0: bar_count = 6; break; /* Endpoint / normal device. */
-        case 1: bar_count = 2; break; /* PCI-to-PCI bridge. */
-        case 2: bar_count = 1; break; /* CardBus bridge. */
-        default: break;
-    }
-
-    for (uint8_t i = 0; i < bar_count; ++i) {
-        entry.bars[i] =
-            config_read32(bus, device, function, (uint8_t)(0x10U + i * 4U));
-    }
-
-    if (stored_devices < NEXUS_PCI_MAX_DEVICES) {
-        devices[stored_devices++] = entry;
-        print_device(&entry);
+    if (stored_device_count < NEXUS_PCI_MAX_STORED_DEVICES) {
+        struct nexus_pci_device *saved =
+            &stored_devices[stored_device_count++];
+        saved->bus = bus;
+        saved->slot = slot;
+        saved->function = function;
+        saved->header_type = header_type;
+        saved->class_code = class_code;
+        saved->subclass = subclass;
+        saved->programming_interface = prog_if;
+        saved->vendor_id = vendor;
+        saved->device_id = device;
     }
 }
 
 bool pci_init(void) {
-    stored_devices = 0;
-    serial_write("PCI: scanning configuration mechanism 1 (read-only)\r\n");
+    stored_device_count = 0;
+    discovered_device_count = 0;
+    storage_device_count = 0;
+    display_device_count = 0;
+    network_device_count = 0;
 
-    for (uint16_t bus = 0; bus < PCI_MAX_BUSES; ++bus) {
-        for (uint8_t device = 0; device < PCI_MAX_DEVICES; ++device) {
-            const uint32_t function_zero =
-                config_read32((uint8_t)bus, device, 0, 0x00);
-            if ((uint16_t)function_zero == 0xFFFFU) continue;
+    serial_write("PCI: read-only configuration mechanism #1 scan started\r\n");
 
-            record_function((uint8_t)bus, device, 0, function_zero);
+    for (uint16_t bus = 0; bus < 256; ++bus) {
+        for (uint8_t slot = 0; slot < 32; ++slot) {
+            const uint32_t function0_identity =
+                pci_config_read((uint8_t)bus, slot, 0, 0x00);
+            if ((function0_identity & 0xFFFFU) == PCI_VENDOR_ABSENT) {
+                continue;
+            }
 
-            const uint32_t header =
-                config_read32((uint8_t)bus, device, 0, 0x0C);
-            if (((header >> 16) & 0x80U) == 0) continue;
+            const uint32_t function0_header =
+                pci_config_read((uint8_t)bus, slot, 0, 0x0C);
+            const uint8_t header_type =
+                (uint8_t)(function0_header >> 16);
+            const uint8_t function_limit =
+                (header_type & 0x80U) ? 8U : 1U;
 
-            for (uint8_t function = 1; function < PCI_MAX_FUNCTIONS; ++function) {
-                const uint32_t identity =
-                    config_read32((uint8_t)bus, device, function, 0x00);
-                if ((uint16_t)identity == 0xFFFFU) continue;
-                record_function((uint8_t)bus, device, function, identity);
+            for (uint8_t function = 0; function < function_limit; ++function) {
+                const uint32_t identity = function == 0
+                    ? function0_identity
+                    : pci_config_read((uint8_t)bus, slot, function, 0x00);
+                if ((identity & 0xFFFFU) == PCI_VENDOR_ABSENT) continue;
+
+                const uint32_t class_revision =
+                    pci_config_read((uint8_t)bus, slot, function, 0x08);
+                const uint32_t header =
+                    function == 0
+                    ? function0_header
+                    : pci_config_read((uint8_t)bus, slot, function, 0x0C);
+
+                record_device((uint8_t)bus, slot, function,
+                              identity, class_revision, header);
             }
         }
     }
 
-    serial_write("PCI: devices discovered: ");
-    serial_write_hex(stored_devices);
+    serial_write("PCI: functions discovered: ");
+    serial_write_hex(discovered_device_count);
+    serial_write("\r\nPCI: storage-class functions: ");
+    serial_write_hex(storage_device_count);
+    serial_write("\r\nPCI: display-class functions: ");
+    serial_write_hex(display_device_count);
+    serial_write("\r\nPCI: network-class functions: ");
+    serial_write_hex(network_device_count);
     serial_write("\r\n");
-    return stored_devices != 0;
+
+    const uint32_t printed = stored_device_count < PCI_MAX_PRINTED_DEVICES
+        ? stored_device_count : PCI_MAX_PRINTED_DEVICES;
+    for (uint32_t i = 0; i < printed; ++i) {
+        const struct nexus_pci_device *device = &stored_devices[i];
+        serial_write("PCI: ");
+        serial_write_hex(device->bus);
+        serial_write(":");
+        serial_write_hex(device->slot);
+        serial_write(".");
+        serial_write_hex(device->function);
+        serial_write(" vendor/device ");
+        serial_write_hex(device->vendor_id);
+        serial_write("/");
+        serial_write_hex(device->device_id);
+        serial_write(" class/subclass ");
+        serial_write_hex(device->class_code);
+        serial_write("/");
+        serial_write_hex(device->subclass);
+        serial_write("\r\n");
+    }
+
+    serial_write("PCI: scan complete; device configuration remains read-only\r\n");
+    return discovered_device_count != 0;
 }
 
-size_t pci_device_count(void) {
-    return stored_devices;
+uint32_t pci_device_count(void) {
+    return discovered_device_count;
 }
 
-const struct nexus_pci_device *pci_device_at(size_t index) {
-    return index < stored_devices ? &devices[index] : NULL;
+const struct nexus_pci_device *pci_device_at(uint32_t index) {
+    if (index >= stored_device_count) return NULL;
+    return &stored_devices[index];
 }

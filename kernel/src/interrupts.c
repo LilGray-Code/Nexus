@@ -1,5 +1,4 @@
 #include "interrupts.h"
-#include "ioapic.h"
 
 #include "serial.h"
 #include "timer.h"
@@ -122,15 +121,9 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
     if (frame->vector >= 32 && frame->vector <= 47) {
         const uint8_t irq = (uint8_t)(frame->vector - 32);
         if (irq == 0) {
-            serial_write("IRQ: timer vector entered\\r\\n");
             timer_interrupt_tick();
         }
-        if (irq == 0 && ioapic_timer_route_active()) {
-            ioapic_send_eoi();
-            serial_write("IRQ: Local APIC EOI sent\\r\\n");
-        } else {
-            pic_irq_eoi(irq);
-        }
+        pic_irq_eoi(irq);
         return;
     }
 

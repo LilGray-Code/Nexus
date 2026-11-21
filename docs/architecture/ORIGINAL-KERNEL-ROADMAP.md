@@ -1,6 +1,6 @@
 # Nexus OS: Original Kernel Architecture and Migration Roadmap
 
-**Status:** K0, K1, K2 timer IRQ, and cooperative scheduler smoke test passed BIOS/UEFI QEMU CI; APIC/IOAPIC, preemption, and SMP remain open  
+**Status:** K0–K2 boot, memory, exceptions, PIC/PIT timer, cooperative scheduler, ACPI and read-only I/O APIC probe passed BIOS/UEFI QEMU CI; K3 PCI discovery being added; direct I/O APIC timer routing remains disabled  
 **Target:** x86-64 PCs, with UEFI and legacy BIOS boot in the first public release  
 **Reference hardware:** Dell Latitude 5410  
 **Long-term requirement:** Nexus-owned kernel and userland; no FreeBSD or Linux kernel at runtime.
@@ -275,12 +275,23 @@ IOAPIC routing, APIC timer calibration, SMP, and preemption remain unfinished.
 
 ### Current development increment
 
-A cooperative scheduler prototype has been added on the branch. It uses
-statically allocated stacks and an x86-64 assembly context switch. CI run
+The cooperative scheduler prototype uses statically allocated stacks and an
+x86-64 assembly context switch. CI run
 [44871736233](https://github.com/LilGray-Code/Nexus/actions/runs/44871736233)
-passed OVMF and SeaBIOS. Both serial logs show two workers completing three
-turns in the required `A-B-A-B-A-B` order. This test is non-preemptive and is
-not evidence of SMP or interrupt-driven scheduling.
+passed OVMF and SeaBIOS; both logs show the A-B-A-B-A-B trace.
+
+ACPI RSDP/XSDT/RSDT/MADT parsing and the read-only I/O APIC register probe
+also passed both firmware modes in CI run
+[44872080452](https://github.com/LilGray-Code/Nexus/actions/runs/44872080452).
+A direct I/O APIC timer route was then attempted, but caused a #GP during the
+first timer interrupt. The active boot path has been returned to the proven
+PIC/PIT virtual-wire timer path. Direct I/O APIC routing is experimental and
+disabled pending interrupt-frame and EOI validation.
+
+K3 now adds read-only PCI Configuration Mechanism #1 enumeration. It scans
+the conventional bus/device/function address space and records vendor/device
+IDs and class information; it does not write device configuration, BARs,
+command registers, or bus-master settings.
 
 ### Next implementation sequence
 

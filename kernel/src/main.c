@@ -180,6 +180,12 @@ void kmain(void) {
     }
     serial_write("NEXUS ACPI MADT READY\r\n");
 
+    if (!pci_init()) {
+        serial_write("ERROR: PCI configuration-space scan found no devices\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS PCI DISCOVERY READY\r\n");
+
     if (!ioapic_probe()) {
         serial_write("ERROR: I/O APIC read-only probe failed\r\n");
         halt_forever();

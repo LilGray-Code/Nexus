@@ -39,7 +39,14 @@ int main(void){
         .block_size=512U,.max_blocks_per_request=8U,.context=&disk,
         .write=mock_write,.read=mock_read,.flush=mock_flush};
     const uint64_t part_blocks=8U*1024U*1024U*1024U/512U;
-    assert(nexus_fat32_format(&t,BASE,part_blocks,0x12345678U)==NEXUS_FAT32_FORMAT_OK);
+    const enum nexus_fat32_format_result first_result =
+        nexus_fat32_format(&t,BASE,part_blocks,0x12345678U);
+    if(first_result!=NEXUS_FAT32_FORMAT_OK)
+        fprintf(stderr,"FAT32 format result=%u writes=%llu fat2=%llu root=%llu\\n",
+            (unsigned)first_result,(unsigned long long)disk.writes,
+            (unsigned long long)disk.special_lba[0],
+            (unsigned long long)disk.special_lba[1]);
+    assert(first_result==NEXUS_FAT32_FORMAT_OK);
     const uint8_t *boot=disk.first;
     assert(boot[510]==0x55U&&boot[511]==0xAAU);
     assert(boot[82]=='F'&&boot[83]=='A'&&boot[84]=='T'&&boot[85]=='3'&&boot[86]=='2');

@@ -265,7 +265,7 @@ static void draw_shell(void) {
                                    1, 170, 191, 211);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  ENTER PREVIEW",
+                               "UP/DOWN SELECT  ENTER PREVIEW  DEL REMOVE",
                                1, 170, 191, 211);
         }
         graphics_draw_text(text_x, text_y + 342U,
@@ -1332,6 +1332,23 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if (event->scancode == 0x50U && files_listing_count > 0U) {
             if (files_selected_index + 1U < files_listing_count)
                 ++files_selected_index;
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x53U &&
+            files_selected_index < files_listing_count) {
+            struct nexus_vfs_dirent selected;
+            if (vfs_root_entry(files_selected_index, &selected) &&
+                selected.type == NEXUS_VFS_FILE &&
+                vfs_remove_file(selected.name)) {
+                serial_write("FILES: removed writable file ");
+                serial_write(selected.name);
+                serial_write("\\r\\n");
+            } else {
+                serial_write("FILES: delete refused (read-only or unsupported file)\\r\\n");
+            }
+            refresh_files_listing();
             draw_shell();
             draw_pointer();
             return;

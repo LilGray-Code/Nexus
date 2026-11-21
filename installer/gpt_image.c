@@ -94,7 +94,7 @@ static const char *partition_name(enum nexus_partition_kind kind) {
 
 static bool validate_plan(const struct nexus_partition_plan *plan,
                           const uint8_t disk_guid[16],
-                          const uint8_t partition_guids[NEXUS_PLAN_MAX_PARTITIONS][16]) {
+                          const uint8_t *partition_guids) {
     if (plan == NULL || disk_guid == NULL || partition_guids == NULL ||
         !guid_nonzero(disk_guid) ||
         (plan->logical_block_size != 512U &&
@@ -113,15 +113,16 @@ static bool validate_plan(const struct nexus_partition_plan *plan,
         const struct nexus_planned_partition *part = &plan->partitions[i];
         if (partition_type(part->kind) == NULL ||
             partition_name(part->kind) == NULL ||
-            !guid_nonzero(partition_guids[i]) ||
+            !guid_nonzero(partition_guids + i * 16U) ||
             part->first_lba > part->last_lba ||
             part->first_lba < plan->first_usable_lba ||
             part->last_lba > plan->last_usable_lba ||
             (i != 0U && part->first_lba <= previous_last) ||
             part->first_lba % alignment != 0U) return false;
-        if (guid_equal(disk_guid, partition_guids[i])) return false;
+        if (guid_equal(disk_guid, partition_guids + i * 16U)) return false;
         for (size_t prior = 0U; prior < i; ++prior)
-            if (guid_equal(partition_guids[prior], partition_guids[i]))
+            if (guid_equal(partition_guids + prior * 16U,
+                           partition_guids + i * 16U))
                 return false;
         previous_last = part->last_lba;
     }
@@ -173,7 +174,7 @@ static void encode_header(uint8_t *header, uint32_t block_size,
 
 bool nexus_gpt_image_build(const struct nexus_partition_plan *plan,
                            const uint8_t disk_guid[16],
-                           const uint8_t partition_guids[NEXUS_PLAN_MAX_PARTITIONS][16],
+                           const uint8_t *partition_guids,
                            struct nexus_gpt_image_buffers *out) {
     uint64_t entry_blocks;
     uint64_t backup_entries_lba;
@@ -198,7 +199,7 @@ bool nexus_gpt_image_build(const struct nexus_partition_plan *plan,
     for (size_t i = 0U; i < plan->partition_count; ++i) {
         encode_partition_entry(out->primary_entries +
                                    i * NEXUS_GPT_IMAGE_ENTRY_SIZE,
-                               &plan->partitions[i], partition_guids[i]);
+                               &plan->partitions[i], partition_guids + i * 16U);
     }
     copy_bytes(out->backup_entries, out->primary_entries,
                NEXUS_GPT_IMAGE_ENTRY_BYTES);

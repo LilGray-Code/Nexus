@@ -109,7 +109,13 @@ jobs:
           /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
             build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios-hdd.bin \
             build/limine-binary/limine-bios.sys /tmp/nexus-installed-uefi.img
-          sfdisk --dump /tmp/nexus-installed-uefi.img
+          echo "Installed disk MBR:"
+          od -An -tx1 -N512 /tmp/nexus-installed-uefi.img
+          echo "Installed disk GPT header signature:"
+          od -An -tc -j512 -N8 /tmp/nexus-installed-uefi.img
+          echo "Installed disk GPT partition entry 0:"
+          od -An -tx1 -j1024 -N128 /tmp/nexus-installed-uefi.img
+          sfdisk --dump /tmp/nexus-installed-uefi.img || true
           dd if=/tmp/nexus-installed-uefi.img of=/tmp/nexus-installed-esp.img \
             bs=512 skip=2048 count=1048576 status=none
           fsck.fat -n /tmp/nexus-installed-esp.img

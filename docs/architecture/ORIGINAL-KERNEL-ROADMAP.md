@@ -813,3 +813,71 @@ descriptor tables, create/open flags, append semantics, directories, access
 controls, or full POSIX compatibility. The 4 KiB syscall limit and 8.3 names
 are intentionally conservative; persistent storage still requires an
 explicitly prepared and mounted NexusFS partition.
+
+
+## 11. Product direction reaffirmed: fully custom Nexus OS
+
+The target is a genuinely independent OS, not a rebranded distribution. The
+installed runtime must contain no Linux or FreeBSD kernel, userland, init
+system, package manager, or distribution installer. A host toolchain may be
+used to compile and assemble Nexus, but host utilities must not become runtime
+dependencies. The old Debian prototype is historical only and must not be used
+as the base for the target ISO.
+
+The first release remains x86-64, with Limine as the reviewed third-party
+bootloader and one Nexus kernel image supporting UEFI and legacy BIOS. Limine
+does not make the OS a distribution; it is the boot-stage component specified
+for this project.
+
+The custom installer is specified in installer/README.md. It is a first-party
+graphical application in the Nexus live environment. It owns disk discovery,
+partition planning, NXFS formatting, system deployment, Limine installation,
+first-boot setup, and recovery. It must not wrap or invoke Debian Installer,
+Calamares, Subiquity, Anaconda, or Linux disk utilities.
+
+### Installer implementation order
+
+1. Complete stable block-device identity and read-only geometry/sector access.
+2. Extract GPT parsing into reusable tested code and implement a pure,
+   side-effect-free partition planner.
+3. Implement a general block-write API with flush and read-back semantics;
+   keep it disabled for normal boot until disposable-disk fault tests pass.
+4. Finish durable NXFS format, mount, checker, and crash-consistency behavior.
+5. Implement a journaled installer engine and image deployment with hash
+   verification.
+6. Add Limine BIOS/UEFI target-disk installation and verify installed-disk
+   boots in SeaBIOS and OVMF.
+7. Build the full-screen graphical wizard on the Nexus framebuffer/window and
+   input foundations, including two-step destructive confirmation.
+8. Add interrupted-install recovery, upgrades, rollback, and multi-vendor
+   physical hardware validation.
+
+The installer must remain read-only/preview-only until the write, filesystem,
+and recovery gates are satisfied. Do not add a placeholder that formats real
+disks, and do not claim an installer exists merely because a welcome screen
+renders.
+
+### Current installer status
+
+The installer specification exists, but the installer itself is not yet
+implemented. Current kernel storage is primarily read-only; the GPT self-test
+validates metadata in a disposable image but does not authorize real-disk
+writes. The current framebuffer shell is a kernel prototype, not yet a
+userland window system capable of hosting the finished installer.
+
+### Release gate
+
+A Nexus installer release is complete only when an independent tester can,
+without a terminal:
+
+- boot the live image in both UEFI and legacy BIOS modes;
+- inspect disks and understand the proposed layout before writing;
+- install to a disposable target using explicit confirmation;
+- reboot from the installed disk into the Nexus login/desktop;
+- preserve the user-data partition during a system upgrade;
+- recover from an interrupted or failed install; and
+- verify installation logs and system-image hashes.
+
+The test suite must cover multiple QEMU disk/controller profiles and a rotating
+physical matrix from multiple vendors. The Dell Latitude 5410 is optional as
+one sample only, never the sole compatibility target.

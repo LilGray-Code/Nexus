@@ -68,6 +68,58 @@ jobs:
           sha256sum -c SHA256SUMS.txt
           file NexusOS-Standalone-amd64.iso
 
+      - name: Install firmware boot-test tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86 ovmf xorriso
+
+      - name: Inspect El Torito boot catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          xorriso -indev release/NexusOS-Standalone-amd64.iso -report_el_torito plain | tee /tmp/nexus-el-torito.txt
+          grep -qi "El Torito" /tmp/nexus-el-torito.txt
+
+      - name: Firmware execution smoke test (legacy BIOS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          timeout --signal=TERM --kill-after=5s 20s qemu-system-x86_64 \\
+            -machine pc,accel=tcg -m 2048 \\
+            -cdrom release/NexusOS-Standalone-amd64.iso -boot order=d \\
+            -display none -serial file:/tmp/nexus-bios-serial.log \\
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [ "$status" -ne 124 ]; then
+            echo "BIOS QEMU smoke test exited unexpectedly: $status"
+            cat /tmp/nexus-bios-serial.log || true
+            exit 1
+          fi
+
+      - name: Firmware execution smoke test (UEFI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          firmware="$(find /usr/share -type f -iname 'OVMF_CODE*.fd' | head -n 1)"
+          test -n "$firmware"
+          set +e
+          timeout --signal=TERM --kill-after=5s 20s qemu-system-x86_64 \\
+            -machine q35,accel=tcg -m 2048 -bios "$firmware" \\
+            -cdrom release/NexusOS-Standalone-amd64.iso -boot order=d \\
+            -display none -serial file:/tmp/nexus-uefi-serial.log \\
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [ "$status" -ne 124 ]; then
+            echo "UEFI QEMU smoke test exited unexpectedly: $status"
+            cat /tmp/nexus-uefi-serial.log || true
+            exit 1
+          fi
+
       - name: Upload installable ISO
         uses: actions/upload-artifact@v4
         with:

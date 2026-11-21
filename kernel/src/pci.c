@@ -75,6 +75,32 @@ static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
         saved->programming_interface = prog_if;
         saved->vendor_id = vendor;
         saved->device_id = device;
+
+        const uint32_t command_status =
+            pci_config_read(bus, slot, function, 0x04);
+        const uint32_t interrupt_register =
+            pci_config_read(bus, slot, function, 0x3C);
+        saved->command = (uint16_t)command_status;
+        saved->status = (uint16_t)(command_status >> 16);
+        saved->interrupt_line = (uint8_t)interrupt_register;
+        saved->interrupt_pin = (uint8_t)(interrupt_register >> 8);
+
+        for (uint8_t i = 0; i < NEXUS_PCI_BAR_COUNT; ++i) {
+            saved->bars[i] = 0;
+        }
+
+        uint8_t bar_count = 0;
+        switch (header_type & 0x7FU) {
+            case 0: bar_count = 6; break;
+            case 1: bar_count = 2; break;
+            case 2: bar_count = 1; break;
+            default: break;
+        }
+        for (uint8_t i = 0; i < bar_count; ++i) {
+            saved->bars[i] =
+                pci_config_read(bus, slot, function,
+                                (uint8_t)(0x10U + i * 4U));
+        }
     }
 }
 
@@ -163,4 +189,57 @@ uint32_t pci_device_count(void) {
 const struct nexus_pci_device *pci_device_at(uint32_t index) {
     if (index >= stored_device_count) return NULL;
     return &stored_devices[index];
+}
+
+bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,
+                    struct nexus_pci_bar *bar) {
+    if (device == NULL || bar == NULL || index >= NEXUS_PCI_BAR_COUNT)
+        return false;
+
+    *bar = (struct nexus_pci_bar){0};
+
+    /* A 64-bit BAR consumes the following BAR slot as its upper dword. */
+    for (uint8_t i = 0; i < index; ++i) {
+        const uint32_t previous = device->bars[i];
+        if (previous != 0 && (previous & 1U) == 0 &&
+            ((previous >> 1) & 3U) == 2U) {
+            if ((uint8_t)(i + 1U) == index) return false;
+            ++i;
+        }
+    }
+
+    const uint32_t raw = device->bars[index];
+    if (raw == 0 || raw == UINT32_MAX) return false;
+
+    bar->present = true;
+    if ((raw & 1U) != 0) {
+        bar->io_space = true;
+        bar->base = (uint64_t)(raw & ~3U);
+        bar->assigned = bar->base != 0;
+        return true;
+    }
+
+    const uint32_t memory_type = (raw >> 1) & 3U;
+    if (memory_type == 3U) {
+        *bar = (struct nexus_pci_bar){0};
+        return false;
+    }
+
+    bar->prefetchable = (raw & 8U) != 0;
+    if (memory_type == 2U) {
+        if (index + 1U >= NEXUS_PCI_BAR_COUNT) {
+            *bar = (struct nexus_pci_bar){0};
+            return false;
+        }
+        bar->is_64bit = true;
+        bar->base = ((uint64_t)device->bars[index + 1U] << 32) |
+                    (uint64_t)(raw & ~0xFU);
+    } else if (memory_type == 1U) {
+        bar->base = (uint64_t)(raw & 0x000FFFF0U);
+    } else {
+        bar->base = (uint64_t)(raw & ~0xFU);
+    }
+
+    bar->assigned = bar->base != 0;
+    return true;
 }

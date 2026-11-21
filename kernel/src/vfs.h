@@ -10,6 +10,8 @@
 
 #define NEXUS_VFS_NAME_MAX 13U
 #define NEXUS_VFS_READ_CHUNK 4096U
+#define NEXUS_VFS_RAM_MAX_FILES 16U
+#define NEXUS_VFS_RAM_MAX_FILE_SIZE 4096U
 
 enum nexus_vfs_node_type {
     NEXUS_VFS_FILE = 1,
@@ -26,11 +28,17 @@ struct nexus_vfs_file {
     const void *filesystem_entry;
     uint32_t offset;
     bool open;
+    bool ram_file;
 };
 
 bool vfs_mount_root_fat32(const struct nexus_block_device *device,
                           const struct nexus_gpt_partition *partition);
 bool vfs_root_mounted(void);
+bool vfs_has_filesystem(void);
+bool vfs_ramfs_create(const char *name);
+bool vfs_ramfs_write(const char *name, const void *data, size_t length);
+bool vfs_ramfs_remove(const char *name);
+bool vfs_ramfs_selftest(void);
 size_t vfs_root_entry_count(void);
 bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry);
 bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file);

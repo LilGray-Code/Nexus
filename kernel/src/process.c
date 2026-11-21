@@ -172,7 +172,7 @@ bool process_execute_file(const char *name,
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_NOT_FOUND;
         return false;
     }
-    if (!vfs_root_mounted()) {
+    if (!vfs_has_filesystem()) {
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_NO_VOLUME;
         return false;
     }

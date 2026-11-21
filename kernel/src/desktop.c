@@ -437,7 +437,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime net dns HOST ls cat FILE run FILE ps clear";
+        const char *s = "help about mem uptime net dns HOST ls cat FILE run FILE ps touch NAME write NAME TEXT rm NAME clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -548,11 +548,60 @@ static void terminal_execute(void) {
             }
             terminal_output[out] = '\0';
         }
+    } else if (terminal_input[0]=='t' && terminal_input[1]=='o' &&
+               terminal_input[2]=='u' && terminal_input[3]=='c' &&
+               terminal_input[4]=='h' && terminal_input[5]==' ') {
+        const bool ok = vfs_ramfs_create(terminal_input + 6);
+        const char *message = ok ? "RAM file created" : "invalid name or RAMFS full";
+        size_t out = 0U;
+        while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+            terminal_output[out] = message[out]; ++out;
+        }
+        terminal_output[out] = '\0';
+    } else if (terminal_input[0]=='w' && terminal_input[1]=='r' &&
+               terminal_input[2]=='i' && terminal_input[3]=='t' &&
+               terminal_input[4]=='e' && terminal_input[5]==' ') {
+        const char *argument = terminal_input + 6;
+        size_t name_length = 0U;
+        while (argument[name_length] != '\0' && argument[name_length] != ' ')
+            ++name_length;
+        if (argument[name_length] != ' ' || name_length == 0U ||
+            name_length >= NEXUS_VFS_NAME_MAX) {
+            const char *message = "usage: write NAME TEXT";
+            size_t out = 0U;
+            while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = message[out]; ++out;
+            }
+            terminal_output[out] = '\0';
+        } else {
+            char filename[NEXUS_VFS_NAME_MAX];
+            for (size_t i = 0; i < name_length; ++i) filename[i] = argument[i];
+            filename[name_length] = '\0';
+            const char *content = argument + name_length + 1U;
+            size_t content_length = 0U;
+            while (content[content_length] != '\0') ++content_length;
+            const bool ok = vfs_ramfs_write(filename, content, content_length);
+            const char *message = ok ? "RAM file written" : "write failed (RAM file limit 4096 bytes)";
+            size_t out = 0U;
+            while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = message[out]; ++out;
+            }
+            terminal_output[out] = '\0';
+        }
+    } else if (terminal_input[0]=='r' && terminal_input[1]=='m' &&
+               terminal_input[2]==' ') {
+        const bool ok = vfs_ramfs_remove(terminal_input + 3);
+        const char *message = ok ? "RAM file removed" : "RAM file not found";
+        size_t out = 0U;
+        while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+            terminal_output[out] = message[out]; ++out;
+        }
+        terminal_output[out] = '\0';
     } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
                terminal_input[2]=='\0') {
-        if (!vfs_root_mounted()) scan_files_once();
+        if (!vfs_has_filesystem()) scan_files_once();
         size_t out=0;
-        if (!vfs_root_mounted()) {
+        if (!vfs_has_filesystem()) {
             const char *s="no mounted volume";
             while(s[out]!='\0' && out<sizeof(terminal_output)-1U){terminal_output[out]=s[out];++out;}
         } else {

@@ -7,6 +7,15 @@
 
 static bool root_mounted;
 
+struct ramfs_entry {
+    bool used;
+    char name[NEXUS_VFS_NAME_MAX];
+    uint32_t size;
+    uint8_t data[NEXUS_VFS_RAM_MAX_FILE_SIZE];
+};
+
+static struct ramfs_entry ramfs[NEXUS_VFS_RAM_MAX_FILES];
+
 static char ascii_upper(char value) {
     if (value >= 'a' && value <= 'z')
         return (char)(value - 'a' + 'A');
@@ -26,6 +35,111 @@ static bool name_equal(const char *left, const char *right) {
     return false;
 }
 
+
+static bool normalize_ramfs_name(const char *source,
+                                 char output[NEXUS_VFS_NAME_MAX]) {
+    if (source == NULL || output == NULL) return false;
+    size_t length = 0U;
+    size_t base_length = 0U;
+    size_t extension_length = 0U;
+    bool extension = false;
+
+    while (source[length] != '\0') {
+        const char ch = source[length];
+        if (ch == '.') {
+            if (length >= NEXUS_VFS_NAME_MAX - 1U ||
+                extension || base_length == 0U) return false;
+            extension = true;
+            output[length++] = '.';
+            continue;
+        }
+        const bool valid = (ch >= 'a' && ch <= 'z') ||
+                           (ch >= 'A' && ch <= 'Z') ||
+                           (ch >= '0' && ch <= '9') ||
+                           ch == '_' || ch == '-';
+        if (!valid || length >= NEXUS_VFS_NAME_MAX - 1U) return false;
+        if (extension) {
+            if (++extension_length > 3U) return false;
+        } else {
+            if (++base_length > 8U) return false;
+        }
+        output[length++] = ascii_upper(ch);
+    }
+
+    if (length == 0U || base_length == 0U ||
+        (extension && extension_length == 0U)) return false;
+    output[length] = '\0';
+    return true;
+}
+
+static struct ramfs_entry *ramfs_find(const char *name) {
+    char normalized[NEXUS_VFS_NAME_MAX];
+    if (!normalize_ramfs_name(name, normalized)) return NULL;
+    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+        if (ramfs[i].used && name_equal(ramfs[i].name, normalized))
+            return &ramfs[i];
+    }
+    return NULL;
+}
+
+bool vfs_has_filesystem(void) {
+    if (root_mounted) return true;
+    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+        if (ramfs[i].used) return true;
+    }
+    return false;
+}
+
+bool vfs_ramfs_create(const char *name) {
+    char normalized[NEXUS_VFS_NAME_MAX];
+    if (!normalize_ramfs_name(name, normalized) ||
+        ramfs_find(normalized) != NULL) return false;
+
+    struct ramfs_entry *slot = NULL;
+    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+        if (!ramfs[i].used) {
+            slot = &ramfs[i];
+            break;
+        }
+    }
+    if (slot == NULL) return false;
+
+    *slot = (struct ramfs_entry){0};
+    slot->used = true;
+    for (size_t i = 0; i < NEXUS_VFS_NAME_MAX; ++i) {
+        slot->name[i] = normalized[i];
+        if (normalized[i] == '\0') break;
+    }
+    return true;
+}
+
+bool vfs_ramfs_write(const char *name, const void *data, size_t length) {
+    if (length > NEXUS_VFS_RAM_MAX_FILE_SIZE ||
+        (length != 0U && data == NULL)) return false;
+
+    struct ramfs_entry *entry = ramfs_find(name);
+    if (entry == NULL) {
+        if (!vfs_ramfs_create(name)) return false;
+        entry = ramfs_find(name);
+    }
+    if (entry == NULL) return false;
+
+    const uint8_t *source = (const uint8_t *)data;
+    for (size_t i = 0; i < length; ++i) entry->data[i] = source[i];
+    for (size_t i = length; i < entry->size; ++i) entry->data[i] = 0U;
+    entry->size = (uint32_t)length;
+    return true;
+}
+
+bool vfs_ramfs_remove(const char *name) {
+    struct ramfs_entry *entry = ramfs_find(name);
+    if (entry == NULL) return false;
+    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILE_SIZE; ++i)
+        entry->data[i] = 0U;
+    *entry = (struct ramfs_entry){0};
+    return true;
+}
+
 bool vfs_mount_root_fat32(const struct nexus_block_device *device,
                           const struct nexus_gpt_partition *partition) {
     root_mounted = false;
@@ -39,18 +153,39 @@ bool vfs_root_mounted(void) {
 }
 
 size_t vfs_root_entry_count(void) {
-    return root_mounted ? fat32_root_entry_count() : 0U;
+    size_t count = root_mounted ? fat32_root_entry_count() : 0U;
+    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+        if (ramfs[i].used) ++count;
+    }
+    return count;
 }
 
 bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
-    if (!root_mounted || entry == NULL) return false;
+    if (entry == NULL) return false;
+    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+        if (!ramfs[i].used) continue;
+        if (index == 0U) {
+            size_t n = 0U;
+            while (ramfs[i].name[n] != '\0' && n < NEXUS_VFS_NAME_MAX - 1U) {
+                entry->name[n] = ramfs[i].name[n];
+                ++n;
+            }
+            entry->name[n] = '\0';
+            entry->type = NEXUS_VFS_FILE;
+            entry->size = ramfs[i].size;
+            return true;
+        }
+        --index;
+    }
+
+    if (!root_mounted) return false;
     const struct nexus_fat32_entry *fat_entry = fat32_root_entry_at(index);
     if (fat_entry == NULL) return false;
 
-    size_t i = 0;
-    for (; i < NEXUS_VFS_NAME_MAX - 1U && fat_entry->name[i] != '\0'; ++i)
-        entry->name[i] = fat_entry->name[i];
-    entry->name[i] = '\0';
+    size_t n = 0U;
+    for (; n < NEXUS_VFS_NAME_MAX - 1U && fat_entry->name[n] != '\0'; ++n)
+        entry->name[n] = fat_entry->name[n];
+    entry->name[n] = '\0';
     entry->type = (fat_entry->attributes & 0x10U) != 0U
         ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
     entry->size = fat_entry->size;
@@ -58,8 +193,19 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
 }
 
 bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
-    if (!root_mounted || name == NULL || file == NULL) return false;
+    if (name == NULL || file == NULL) return false;
     *file = (struct nexus_vfs_file){0};
+
+    struct ramfs_entry *ram_entry = ramfs_find(name);
+    if (ram_entry != NULL) {
+        file->filesystem_entry = ram_entry;
+        file->offset = 0U;
+        file->open = true;
+        file->ram_file = true;
+        return true;
+    }
+
+    if (!root_mounted) return false;
     for (size_t i = 0; i < fat32_root_entry_count(); ++i) {
         const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
         if (entry == NULL || !name_equal(entry->name, name) ||
@@ -73,10 +219,16 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
 }
 
 bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
-    if (!root_mounted || file == NULL || !file->open ||
-        file->filesystem_entry == NULL || size == NULL) {
-        return false;
+    if (file == NULL || !file->open ||
+        file->filesystem_entry == NULL || size == NULL) return false;
+    if (file->ram_file) {
+        const struct ramfs_entry *entry =
+            (const struct ramfs_entry *)file->filesystem_entry;
+        if (!entry->used) return false;
+        *size = entry->size;
+        return true;
     }
+    if (!root_mounted) return false;
     const struct nexus_fat32_entry *entry =
         (const struct nexus_fat32_entry *)file->filesystem_entry;
     *size = entry->size;
@@ -86,11 +238,27 @@ bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
 bool vfs_read(struct nexus_vfs_file *file, void *buffer,
               size_t requested, size_t *bytes_read) {
     if (bytes_read != NULL) *bytes_read = 0;
-    if (!root_mounted || file == NULL || !file->open ||
-        (requested != 0U && buffer == NULL) || bytes_read == NULL) {
-        return false;
+    if (file == NULL || !file->open ||
+        (requested != 0U && buffer == NULL) || bytes_read == NULL) return false;
+
+    if (file->ram_file) {
+        const struct ramfs_entry *ram_entry =
+            (const struct ramfs_entry *)file->filesystem_entry;
+        if (ram_entry == NULL || !ram_entry->used ||
+            file->offset > ram_entry->size) return false;
+        size_t amount = requested;
+        const uint32_t remaining = ram_entry->size - file->offset;
+        if (amount > remaining) amount = remaining;
+        if (amount > NEXUS_VFS_READ_CHUNK) amount = NEXUS_VFS_READ_CHUNK;
+        uint8_t *out = (uint8_t *)buffer;
+        for (size_t i = 0; i < amount; ++i)
+            out[i] = ram_entry->data[file->offset + (uint32_t)i];
+        file->offset += (uint32_t)amount;
+        *bytes_read = amount;
+        return true;
     }
 
+    if (!root_mounted) return false;
     const struct nexus_fat32_entry *entry =
         (const struct nexus_fat32_entry *)file->filesystem_entry;
     if (entry == NULL || file->offset > entry->size) return false;
@@ -116,4 +284,24 @@ bool vfs_read(struct nexus_vfs_file *file, void *buffer,
 void vfs_close(struct nexus_vfs_file *file) {
     if (file == NULL) return;
     *file = (struct nexus_vfs_file){0};
+}
+
+
+bool vfs_ramfs_selftest(void) {
+    static const char payload[] = "NEXUS RAMFS READY";
+    if (!vfs_ramfs_write("NXRAM.TST", payload, sizeof(payload) - 1U))
+        return false;
+
+    struct nexus_vfs_file file;
+    if (!vfs_open_readonly("nxram.tst", &file) || !file.ram_file)
+        return false;
+    uint8_t buffer[32];
+    size_t bytes_read = 0U;
+    const bool read_ok = vfs_read(&file, buffer, sizeof(buffer), &bytes_read);
+    vfs_close(&file);
+    if (!read_ok || bytes_read != sizeof(payload) - 1U) return false;
+    for (size_t i = 0; i < bytes_read; ++i) {
+        if (buffer[i] != (uint8_t)payload[i]) return false;
+    }
+    return vfs_ramfs_remove("NXRAM.TST");
 }

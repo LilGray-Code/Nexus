@@ -70,6 +70,7 @@ jobs:
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
+          grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
           grep -q "NEXUS FILE EXEC OK" uefi-serial.log
           grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
@@ -133,6 +134,7 @@ jobs:
           grep -q "NEXUS GDT TSS READY" bios-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
+          grep -q "NEXUS RAMFS READY" bios-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" bios-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" bios-serial.log
           grep -q "NEXUS SYSCALL ABI READY" bios-serial.log
@@ -180,6 +182,7 @@ jobs:
           cat release-serial.log
           grep -q "NEXUS NVME BLOCK DEVICE READY" release-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" release-serial.log
+          grep -q "NEXUS RAMFS READY" release-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" release-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" release-serial.log
           grep -q "NEXUS SYSCALL ABI READY" release-serial.log

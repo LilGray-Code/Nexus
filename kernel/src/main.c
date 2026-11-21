@@ -22,6 +22,7 @@
 #include "timer.h"
 #include "usermode.h"
 #include "process.h"
+#include "vfs.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
@@ -95,10 +96,10 @@ void kmain(void) {
     }
 
     if (!gdt_init()) {
-        serial_write("ERROR: Nexus GDT/TSS initialization failed\\r\\n");
+        serial_write("ERROR: Nexus GDT/TSS initialization failed\r\n");
         halt_forever();
     }
-    serial_write("NEXUS GDT TSS READY\\r\\n");
+    serial_write("NEXUS GDT TSS READY\r\n");
 
     idt_init();
     serial_write("K1: CPU exception IDT installed (vectors 0-31)\r\n");
@@ -182,7 +183,7 @@ void kmain(void) {
 
     timer_init(100);
     if (e1000_ready() && !net_init()) {
-        serial_write("WARNING: Ethernet network layer did not initialize\\r\\n");
+        serial_write("WARNING: Ethernet network layer did not initialize\r\n");
     }
     serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\r\n");
 
@@ -237,30 +238,35 @@ void kmain(void) {
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     const bool input_ready = input_init();
     if (!input_ready) {
-        serial_write("INPUT: no PS/2 devices detected; desktop remains keyboard/mouse inactive\\r\\n");
+        serial_write("INPUT: no PS/2 devices detected; desktop remains keyboard/mouse inactive\r\n");
     }
     process_init();
     if (!usermode_run_selftest()) {
-        serial_write("ERROR: CPL3 user-mode self-test failed\\r\\n");
+        serial_write("ERROR: CPL3 user-mode self-test failed\r\n");
         halt_forever();
     }
 #ifdef NEXUS_STORAGE_SELFTEST
     const enum nexus_desktop_process_test_result file_test =
         desktop_run_process_selftest();
     if (file_test == NEXUS_DESKTOP_PROCESS_TEST_FAILED) {
-        serial_write("ERROR: FAT32 ELF file execution self-test failed\\r\\n");
+        serial_write("ERROR: FAT32 ELF file execution self-test failed\r\n");
         halt_forever();
     } else if (file_test == NEXUS_DESKTOP_PROCESS_TEST_PASSED) {
-        serial_write("NEXUS FILE PROCESS SELFTEST READY\\r\\n");
+        serial_write("NEXUS FILE PROCESS SELFTEST READY\r\n");
     } else {
-        serial_write("NEXUS FILE PROCESS SELFTEST SKIPPED\\r\\n");
+        serial_write("NEXUS FILE PROCESS SELFTEST SKIPPED\r\n");
     }
 #endif
+    if (!vfs_ramfs_selftest()) {
+        serial_write("ERROR: RAM filesystem self-test failed\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS RAMFS READY\r\n");
     serial_write("NEXUS PROCESS MANAGER READY\r\n");
     serial_write("NEXUS ELF64 USER LOADER READY\r\n");
-    serial_write("NEXUS USER MODE SELFTEST READY\\r\\n");
-    serial_write("NEXUS SYSCALL ABI READY\\r\\n");
-    serial_write("NEXUS K0 BOOT COMPLETE\\r\\n");
+    serial_write("NEXUS USER MODE SELFTEST READY\r\n");
+    serial_write("NEXUS SYSCALL ABI READY\r\n");
+    serial_write("NEXUS K0 BOOT COMPLETE\r\n");
 
     /* Timer and input IRQs wake the kernel while the event queue is drained. */
     __asm__ volatile ("sti" : : : "memory");
@@ -272,7 +278,7 @@ void kmain(void) {
             if (event.type == NEXUS_INPUT_KEYBOARD) {
                 serial_write("INPUT: keyboard scancode=");
                 serial_write_hex(event.scancode);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
             } else if (event.type == NEXUS_INPUT_MOUSE) {
                 serial_write("INPUT: mouse dx=");
                 serial_write_hex((uint16_t)event.mouse_dx);
@@ -280,7 +286,7 @@ void kmain(void) {
                 serial_write_hex((uint16_t)event.mouse_dy);
                 serial_write(" buttons=");
                 serial_write_hex(event.mouse_buttons);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
             }
         }
         __asm__ volatile ("sti; hlt" : : : "memory");

@@ -625,3 +625,18 @@ This is not yet a general resolver: it handles a single synchronous A query,
 one outstanding request, IPv4 DNS over UDP only, and no CNAME chase, AAAA,
 search domains, caching, TCP fallback, or DNSSEC. TCP/TLS and the browser engine
 remain unimplemented.
+
+
+### Writable in-memory filesystem overlay
+
+The VFS now layers a bounded writable RAM filesystem in front of the existing
+read-only FAT32 volume. It supports up to 16 files, each up to 4 KiB, with
+validated 8.3 names. RAM files are listed before on-disk files; open/read/size
+work through the same VFS handle, so user-mode file syscalls can read RAM files
+too. Create, replace, and remove operations affect only volatile RAM and never
+issue disk writes.
+
+Terminal adds \`touch NAME\`, \`write NAME TEXT\`, and \`rm NAME\`. The boot
+self-test creates a RAM file, reads it back through the VFS, checks its
+contents, and removes it. These files do not persist across reboot; persistent
+writable storage still requires a safe filesystem journal and block write path.

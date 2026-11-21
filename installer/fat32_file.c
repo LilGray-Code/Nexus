@@ -181,7 +181,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    char partname[13];uint8_t shortpart[11];
    if(n==0U||n>12U){result=NEXUS_FAT32_FILE_INVALID;goto done;}
    for(size_t i=0;i<n;i++)partname[i]=component[i];
-   partname[n]='\\0';
+   partname[n]='\0';
    if(!valid_name(partname,shortpart)){result=NEXUS_FAT32_FILE_INVALID;goto done;}
    uint32_t child=0;
    if(!directory_child(t,fat1,fat2,data_start,bps,spc,clusters,

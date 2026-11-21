@@ -3,6 +3,7 @@
 #include "graphics.h"
 #include "serial.h"
 
+#include <stddef.h>
 #include <stdint.h>
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {

@@ -4,6 +4,7 @@
 #include <limine.h>
 
 #include "acpi.h"
+#include "blockdev.h"
 #include "interrupts.h"
 #include "ioapic.h"
 #include "memory.h"
@@ -141,6 +142,7 @@ static void halt_forever(void) {
 void kmain(void) {
     __asm__ volatile ("cli" : : : "memory");
     serial_init();
+    blockdev_init();
     serial_write("\r\nNEXUS OS KERNEL STARTED\r\n");
     serial_write("Architecture: x86_64\r\n");
     serial_write("Boot protocol: Limine\r\n");

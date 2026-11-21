@@ -2,6 +2,7 @@
 #include "acpi.h"
 #include "paging.h"
 #include "serial.h"
+#include <stddef.h>
 #include <stdint.h>
 
 #define IOAPIC_SELECT 0x00U

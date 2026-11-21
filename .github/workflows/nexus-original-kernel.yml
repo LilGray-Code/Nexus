@@ -45,6 +45,7 @@ jobs:
         run: |
           # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
           truncate -s 64M nvme-test.img
+          printf 'NEXUS-READ-ONLY-TEST' | dd of=nvme-test.img bs=1 conv=notrunc status=none
           set +e
           timeout 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
@@ -76,6 +77,8 @@ jobs:
           grep -q "NEXUS NVME NAMESPACE READY" uefi-serial.log
           grep -q "NVMe: namespace count:" uefi-serial.log
           grep -q "NVMe: namespace logical block bytes:" uefi-serial.log
+          grep -q "NEXUS NVME READ ONLY READY" uefi-serial.log
+          grep -q "NVMe: read-only LBA 0 verified against test image signature" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log

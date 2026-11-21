@@ -50,15 +50,16 @@ bool blockdev_write(const struct nexus_block_device *device,
 bool blockdev_flush(const struct nexus_block_device *device);
 /* Reports hardware support only; this does not authorize or perform writes. */
 bool blockdev_install_write_supported(const struct nexus_block_device *device);
-/* Opens a narrowly scoped destructive-write session after explicit confirmation.
- * boot_media_known must only be true when firmware/boot-chain inspection proved
- * the target is not the medium currently running Nexus. */
+/* Boot/storage safety state is kernel-owned. Detection remains incomplete by
+ * default, so installer writes are denied until the boot chain identifies its
+ * source medium. Call completion only after positively identifying that medium. */
+bool blockdev_set_boot_media(const struct nexus_block_device *device);
+bool blockdev_set_boot_media_detection_complete(void);
+bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted);
+/* Opens a destructive-write session only when kernel-owned safety state allows it. */
 bool blockdev_install_session_begin(const struct nexus_block_device *device,
                                     const char *typed_stable_id,
-                                    const char *typed_erase_phrase,
-                                    bool boot_media_known,
-                                    bool is_boot_media,
-                                    bool is_mounted);
+                                    const char *typed_erase_phrase);
 bool blockdev_install_write(const struct nexus_block_device *device,
                             uint64_t lba, uint32_t block_count,
                             const void *buffer);

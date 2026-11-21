@@ -478,8 +478,24 @@ directly into a hand-built code mapping.
 The loader currently handles one bootstrap process, fixed-address static
 ET_EXEC binaries, at most 16 load segments, no dynamic linker/PIE/TLS, and a
 single fixed stack page. The physical allocator is still monotonic, page-table
-and user-page reclamation is absent, executable mappings do not yet use NX
-protection, and the process has no general file-descriptor table or lifecycle
-manager. This proves the image-to-address-space-to-ring-3 path, not a general
+and user-page reclamation is absent, and the process has no general
+file-descriptor table or lifecycle manager. This proves the image-to-address-space-to-ring-3 path, not a general
 multi-process runtime. CI boot assertions exercise the loaded program's
 rejected kernel-pointer write, valid stdout write, and exit status.
+
+
+### Hardware NX page protection
+
+The user address-space mapper now detects the CPUID NX feature and enables
+IA32_EFER.NXE before using the page-table execute-disable bit. ELF executable
+segments are mapped user-readable and read-only; non-executable segments and
+the initial user stack receive NX when the processor advertises support.
+Processors without NX retain the parser's software W^X restriction, but do
+not receive hardware execute-disable enforcement. The boot log reports
+whether hardware NX is enabled. The BIOS/UEFI and final-ISO CI profiles now
+require the ELF loader self-test marker after the ring-3 program exits.
+
+This remains an early single-process implementation. It does not yet reclaim
+address-space pages, handle page faults as recoverable process faults, switch
+between multiple user processes, or provide a mature per-process resource
+table.

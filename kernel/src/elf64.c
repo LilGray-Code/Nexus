@@ -184,7 +184,7 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
 
 static bool allocate_zeroed_user_page(uint64_t root_physical,
                                       uint64_t virtual_address,
-                                      bool writable,
+                                      bool writable, bool executable,
                                       uint64_t *page_physical) {
     if (page_physical == NULL || !memory_alloc_page(page_physical)) {
         return false;
@@ -196,7 +196,7 @@ static bool allocate_zeroed_user_page(uint64_t root_physical,
     for (size_t i = 0; i < (size_t)ELF64_PAGE_SIZE; ++i) page[i] = 0;
 
     return paging_map_user_page(root_physical, virtual_address,
-                                *page_physical, writable);
+                                *page_physical, writable, executable);
 }
 
 bool nexus_elf64_load(const void *file, size_t file_size,
@@ -243,8 +243,11 @@ bool nexus_elf64_load(const void *file, size_t file_size,
             uint64_t page_physical;
             const bool writable =
                 (segment->flags & NEXUS_ELF64_SEGMENT_WRITE) != 0U;
+            const bool executable =
+                (segment->flags & NEXUS_ELF64_SEGMENT_EXEC) != 0U;
             if (!allocate_zeroed_user_page(new_root, page_address,
-                                           writable, &page_physical)) {
+                                           writable, executable,
+                                           &page_physical)) {
                 return false;
             }
 
@@ -278,7 +281,7 @@ bool nexus_elf64_load(const void *file, size_t file_size,
     }
 
     uint64_t stack_physical;
-    if (!allocate_zeroed_user_page(new_root, ELF64_STACK_PAGE, true,
+    if (!allocate_zeroed_user_page(new_root, ELF64_STACK_PAGE, true, false,
                                    &stack_physical)) {
         return false;
     }

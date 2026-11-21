@@ -13,6 +13,7 @@
 #include "ioapic.h"
 #include "memory.h"
 #include "pci.h"
+#include "paging.h"
 #include "serial.h"
 #include "storage.h"
 #include "scheduler.h"
@@ -102,6 +103,12 @@ void kmain(void) {
     if (!memory_init(memory_map_request.response, hhdm_request.response)) {
         serial_write("ERROR: physical memory map initialization failed\r\n");
         halt_forever();
+    }
+
+    if (paging_enable_nx()) {
+        serial_write("NEXUS NX PAGE PROTECTION READY\\r\\n");
+    } else {
+        serial_write("WARNING: CPU does not support NX page protection\\r\\n");
     }
 
     uint64_t first_page = 0;
@@ -215,6 +222,7 @@ void kmain(void) {
         serial_write("ERROR: CPL3 user-mode self-test failed\\r\\n");
         halt_forever();
     }
+    serial_write("NEXUS ELF64 USER LOADER READY\\r\\n");
     serial_write("NEXUS USER MODE SELFTEST READY\\r\\n");
     serial_write("NEXUS K0 BOOT COMPLETE\\r\\n");
 

@@ -11,8 +11,16 @@
 #define PAGE_WRITE_THROUGH 0x008ULL
 #define PAGE_CACHE_DISABLE 0x010ULL
 #define PAGE_LARGE 0x080ULL
+#define PAGE_NO_EXECUTE (1ULL << 63)
 #define PAGE_ADDRESS_MASK 0x000FFFFFFFFFF000ULL
 #define CR4_LA57 (1ULL << 12)
+#define IA32_EFER_MSR 0xC0000080U
+#define IA32_EFER_NXE (1ULL << 11)
+#define CPUID_EXTENDED_MAX 0x80000000U
+#define CPUID_EXTENDED_FEATURES 0x80000001U
+#define CPUID_NX_BIT (1U << 20)
+
+static bool nx_enabled;
 
 static bool allocate_table(uint64_t *physical,
                            volatile uint64_t **virtual_table) {
@@ -26,6 +34,50 @@ static bool allocate_table(uint64_t *physical,
     for (unsigned int i = 0; i < 512; ++i) table[i] = 0;
     *virtual_table = table;
     return true;
+}
+
+/*
+ * Enable execute-disable support only when the processor advertises NX.
+ * Long mode guarantees RDMSR/WRMSR support; NXE is set before any user leaf
+ * mapping is marked non-executable.
+ */
+bool paging_enable_nx(void) {
+    uint32_t eax = CPUID_EXTENDED_MAX;
+    uint32_t ebx, ecx = 0U, edx;
+    __asm__ volatile ("cpuid"
+                      : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
+    if (eax < CPUID_EXTENDED_FEATURES) {
+        nx_enabled = false;
+        return false;
+    }
+
+    eax = CPUID_EXTENDED_FEATURES;
+    ecx = 0U;
+    __asm__ volatile ("cpuid"
+                      : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
+    if ((edx & CPUID_NX_BIT) == 0U) {
+        nx_enabled = false;
+        return false;
+    }
+
+    uint32_t efer_low, efer_high;
+    __asm__ volatile ("rdmsr"
+                      : "=a"(efer_low), "=d"(efer_high)
+                      : "c"(IA32_EFER_MSR));
+    uint64_t efer = ((uint64_t)efer_high << 32) | efer_low;
+    efer |= IA32_EFER_NXE;
+    __asm__ volatile ("wrmsr"
+                      :
+                      : "c"(IA32_EFER_MSR),
+                        "a"((uint32_t)efer),
+                        "d"((uint32_t)(efer >> 32))
+                      : "memory");
+    nx_enabled = true;
+    return true;
+}
+
+bool paging_nx_enabled(void) {
+    return nx_enabled;
 }
 
 /*
@@ -107,7 +159,7 @@ bool paging_create_user_address_space(uint64_t *root_physical) {
 
 /* Map one previously-unmapped 4 KiB page into a user address space. */
 bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
-                          uint64_t page_physical, bool writable) {
+                          uint64_t page_physical, bool writable, bool executable) {
     if ((virtual_address & 0xFFFULL) != 0U ||
         (page_physical & 0xFFFULL) != 0U) {
         return false;
@@ -153,7 +205,8 @@ bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
 
     table[leaf_index] = (page_physical & PAGE_ADDRESS_MASK) |
                         PAGE_PRESENT | PAGE_USER |
-                        (writable ? PAGE_WRITABLE : 0U);
+                        (writable ? PAGE_WRITABLE : 0U) |
+                        ((!executable && nx_enabled) ? PAGE_NO_EXECUTE : 0U);
     return true;
 }
 

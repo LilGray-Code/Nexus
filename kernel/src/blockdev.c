@@ -4,12 +4,18 @@
 
 static struct nexus_block_device devices[NEXUS_BLOCKDEV_MAX_DEVICES];
 static size_t registered_count;
+static const struct nexus_block_device *boot_media_device;
+static bool boot_media_detection_complete;
+static bool mounted_devices[NEXUS_BLOCKDEV_MAX_DEVICES];
 
 void blockdev_init(void) {
     blockdev_install_session_end();
     registered_count = 0;
+    boot_media_device = NULL;
+    boot_media_detection_complete = false;
     for (size_t i = 0; i < NEXUS_BLOCKDEV_MAX_DEVICES; ++i) {
         devices[i] = (struct nexus_block_device){0};
+        mounted_devices[i] = false;
     }
 }
 
@@ -49,6 +55,7 @@ bool blockdev_register(const struct nexus_block_device *device) {
     }
 
     devices[registered_count] = *device;
+    mounted_devices[registered_count] = false;
     ++registered_count;
     return true;
 }
@@ -116,6 +123,36 @@ bool blockdev_flush(const struct nexus_block_device *device) {
     return false;
 }
 
+
+static size_t blockdev_index(const struct nexus_block_device *device) {
+    if (device == NULL) return NEXUS_BLOCKDEV_MAX_DEVICES;
+    for (size_t i = 0U; i < registered_count; ++i)
+        if (&devices[i] == device) return i;
+    return NEXUS_BLOCKDEV_MAX_DEVICES;
+}
+
+bool blockdev_set_boot_media(const struct nexus_block_device *device) {
+    if (blockdev_index(device) == NEXUS_BLOCKDEV_MAX_DEVICES ||
+        boot_media_detection_complete) return false;
+    if (boot_media_device != NULL && boot_media_device != device) return false;
+    boot_media_device = device;
+    return true;
+}
+
+bool blockdev_set_boot_media_detection_complete(void) {
+    if (boot_media_device == NULL || boot_media_detection_complete) return false;
+    boot_media_detection_complete = true;
+    return true;
+}
+
+bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted) {
+    const size_t index = blockdev_index(device);
+    if (index == NEXUS_BLOCKDEV_MAX_DEVICES) return false;
+    mounted_devices[index] = mounted;
+    if (mounted && install_session_device == device)
+        blockdev_install_session_end();
+    return true;
+}
 
 static bool blockdev_is_registered(const struct nexus_block_device *device) {
     if (device == NULL) return false;
@@ -215,17 +252,17 @@ void blockdev_install_session_end(void) {
 
 bool blockdev_install_session_begin(const struct nexus_block_device *device,
                                     const char *typed_stable_id,
-                                    const char *typed_erase_phrase,
-                                    bool boot_media_known,
-                                    bool is_boot_media,
-                                    bool is_mounted) {
+                                    const char *typed_erase_phrase) {
     blockdev_install_session_end();
-    if (!blockdev_install_write_supported(device) ||
+    const size_t index = blockdev_index(device);
+    if (!boot_media_detection_complete ||
+        index == NEXUS_BLOCKDEV_MAX_DEVICES || device == boot_media_device ||
+        mounted_devices[index] ||
+        !blockdev_install_write_supported(device) ||
         !blockdev_identity_is_unique(device) ||
         !blockdev_exact_text(device->stable_id, typed_stable_id,
                              NEXUS_BLOCKDEV_ID_MAX) ||
-        !blockdev_exact_text("ERASE", typed_erase_phrase, 8U) ||
-        !boot_media_known || is_boot_media || is_mounted) return false;
+        !blockdev_exact_text("ERASE", typed_erase_phrase, 8U)) return false;
 
     install_session_device = device;
     for (size_t i = 0U; i < NEXUS_BLOCKDEV_ID_MAX; ++i)

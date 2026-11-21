@@ -146,6 +146,20 @@ bool ioapic_route_isa_irq0(uint8_t vector) {
         ioapic_write(r, (uint8_t)high_reg, (destination & 0xFFU) << 24);
         ioapic_write(r, (uint8_t)low_reg, low);
 
+        const uint32_t readback_low = ioapic_read(r, (uint8_t)low_reg);
+        const uint32_t readback_high = ioapic_read(r, (uint8_t)high_reg);
+        serial_write("IOAPIC: redirection low readback: ");
+        serial_write_hex(readback_low);
+        serial_write("\\r\\nIOAPIC: redirection high readback: ");
+        serial_write_hex(readback_high);
+        serial_write("\\r\\n");
+        if ((readback_low & 0xFFU) != vector ||
+            (readback_low & REDIR_MASKED) != 0) {
+            ioapic_write(r, (uint8_t)low_reg, readback_low | REDIR_MASKED);
+            serial_write("IOAPIC: redirection readback mismatch; route rejected\\r\\n");
+            return false;
+        }
+
         /* Disable PIC virtual-wire after the direct I/O APIC route is live. */
         if (route_x2apic) {
             wrmsr(IA32_X2APIC_LINT0, REDIR_MASKED);

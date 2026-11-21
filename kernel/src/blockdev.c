@@ -184,3 +184,79 @@ bool blockdev_install_write_supported(const struct nexus_block_device *device) {
         device->write == NULL || device->flush == NULL) return false;
     return true;
 }
+
+static const struct nexus_block_device *install_session_device;
+static char install_session_id[NEXUS_BLOCKDEV_ID_MAX];
+static char install_session_model[NEXUS_BLOCKDEV_MODEL_MAX];
+static uint64_t install_session_block_count;
+static uint32_t install_session_block_size;
+
+static bool blockdev_exact_text(const char *expected, const char *provided,
+                                size_t capacity) {
+    if (expected == NULL || provided == NULL) return false;
+    size_t i = 0U;
+    while (i < capacity && expected[i] != '\0' && provided[i] != '\0') {
+        if (expected[i] != provided[i]) return false;
+        ++i;
+    }
+    return i < capacity && expected[i] == '\0' && provided[i] == '\0';
+}
+
+void blockdev_install_session_end(void) {
+    install_session_device = NULL;
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_ID_MAX; ++i)
+        install_session_id[i] = '\0';
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_MODEL_MAX; ++i)
+        install_session_model[i] = '\0';
+    install_session_block_count = 0U;
+    install_session_block_size = 0U;
+}
+
+bool blockdev_install_session_begin(const struct nexus_block_device *device,
+                                    const char *typed_stable_id,
+                                    const char *typed_erase_phrase,
+                                    bool boot_media_known,
+                                    bool is_boot_media,
+                                    bool is_mounted) {
+    blockdev_install_session_end();
+    if (!blockdev_install_write_supported(device) ||
+        !blockdev_identity_is_unique(device) ||
+        !blockdev_exact_text(device->stable_id, typed_stable_id,
+                             NEXUS_BLOCKDEV_ID_MAX) ||
+        !blockdev_exact_text("ERASE", typed_erase_phrase, 8U) ||
+        !boot_media_known || is_boot_media || is_mounted) return false;
+
+    install_session_device = device;
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_ID_MAX; ++i)
+        install_session_id[i] = device->stable_id[i];
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_MODEL_MAX; ++i)
+        install_session_model[i] = device->model[i];
+    install_session_block_count = device->block_count;
+    install_session_block_size = device->block_size;
+    return true;
+}
+
+static bool blockdev_install_session_valid(
+    const struct nexus_block_device *device) {
+    return device != NULL && device == install_session_device &&
+        blockdev_matches_identity(device, install_session_id,
+                                  install_session_model,
+                                  install_session_block_count,
+                                  install_session_block_size) &&
+        blockdev_install_write_supported(device);
+}
+
+bool blockdev_install_write(const struct nexus_block_device *device,
+                            uint64_t lba, uint32_t block_count,
+                            const void *buffer) {
+    if (!blockdev_install_session_valid(device) || buffer == NULL ||
+        block_count == 0U || lba >= device->block_count ||
+        (uint64_t)block_count > device->block_count - lba ||
+        block_count > device->max_blocks_per_request) return false;
+    return device->write(device->context, lba, block_count, buffer);
+}
+
+bool blockdev_install_flush(const struct nexus_block_device *device) {
+    if (!blockdev_install_session_valid(device)) return false;
+    return device->flush(device->context);
+}

@@ -41,4 +41,7 @@ const struct nexus_pci_device *pci_device_at(uint32_t index);
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,
                     struct nexus_pci_bar *bar);
 
+/* Enable memory decoding and bus mastering using a 16-bit command write. */
+bool pci_enable_memory_bus_master(const struct nexus_pci_device *device);
+
 #endif

@@ -38,7 +38,7 @@ int main(void){
     struct nexus_fat32_format_target t={.block_count=DISK_BLOCKS,
         .block_size=512U,.max_blocks_per_request=8U,.context=&disk,
         .write=mock_write,.read=mock_read,.flush=mock_flush};
-    const uint64_t part_blocks=8U*1024U*1024U*1024U/512U;
+    const uint64_t part_blocks=(uint64_t)8U*1024U*1024U*1024U/512U;
     const enum nexus_fat32_format_result first_result =
         nexus_fat32_format(&t,BASE,part_blocks,0x12345678U);
     if(first_result!=NEXUS_FAT32_FORMAT_OK)

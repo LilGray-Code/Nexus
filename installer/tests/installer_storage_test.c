@@ -87,6 +87,28 @@ static struct nexus_block_device make_device(const char *name,
     d.flush = mock_flush;
     return d;
 }
+
+static bool load_payload_file(const char *path,uint8_t **data,uint32_t *size){
+    FILE *f=fopen(path,"rb");if(!f)return false;
+    if(fseek(f,0,SEEK_END)!=0){fclose(f);return false;}
+    long n=ftell(f);if(n<=0||(unsigned long)n>1024UL*1024UL){fclose(f);return false;}
+    if(fseek(f,0,SEEK_SET)!=0){fclose(f);return false;}
+    uint8_t *p=malloc((size_t)n);if(!p){fclose(f);return false;}
+    bool ok=fread(p,1U,(size_t)n,f)==(size_t)n;
+    if(fclose(f)!=0)ok=false;
+    if(!ok){free(p);return false;}
+    *data=p;*size=(uint32_t)n;return true;
+}
+static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
+    FILE *f=fopen(path,"wb");if(!f)return false;
+    bool ok=fseek(f,(long)(DISK_BLOCKS*512ULL-1ULL),SEEK_SET)==0&&fputc(0,f)!=EOF;
+    if(ok)ok=fseek(f,0,SEEK_SET)==0&&fwrite(disk->first,1U,sizeof(disk->first),f)==sizeof(disk->first);
+    if(ok)ok=fseek(f,(long)(FORMAT_BASE*512ULL),SEEK_SET)==0&&fwrite(disk->format_area,1U,sizeof(disk->format_area),f)==sizeof(disk->format_area);
+    if(ok)ok=fseek(f,(long)((DISK_BLOCKS-EDGE_BLOCKS)*512ULL),SEEK_SET)==0&&fwrite(disk->last,1U,sizeof(disk->last),f)==sizeof(disk->last);
+    if(fclose(f)!=0)ok=false;
+    return ok;
+}
+
 int main(int argc,char **argv) {
     uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios=NULL;
     uint32_t external_kernel_size=0U,external_uefi_size=0U,external_bios_size=0U;

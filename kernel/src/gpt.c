@@ -13,6 +13,7 @@
 static struct nexus_gpt_partition partitions[NEXUS_GPT_MAX_PARTITIONS];
 static size_t partition_count;
 static uint8_t io_buffer[GPT_IO_BUFFER_SIZE];
+static uint8_t backup_header[GPT_IO_BUFFER_SIZE];
 
 static uint32_t read_le32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -51,7 +52,8 @@ static bool validate_header(const struct nexus_block_device *device,
                             uint8_t *header, uint64_t *entries_lba,
                             uint32_t *entry_count, uint32_t *entry_size,
                             uint32_t *entries_crc, uint64_t *first_usable_out,
-                            uint64_t *last_usable_out) {
+                            uint64_t *last_usable_out, uint64_t *backup_lba_out,
+                            uint8_t disk_guid_out[16]) {
     if (device == NULL || device->block_size < GPT_HEADER_MIN_SIZE ||
         device->block_size > GPT_IO_BUFFER_SIZE ||
         device->block_size % GPT_ENTRY_MIN_SIZE != 0 ||
@@ -110,6 +112,62 @@ static bool validate_header(const struct nexus_block_device *device,
     }
     *first_usable_out = first_usable;
     *last_usable_out = last_usable;
+    *backup_lba_out = backup_lba;
+    for (size_t i = 0; i < 16U; ++i) disk_guid_out[i] = header[56U + i];
+    return true;
+}
+
+
+static bool validate_backup_header(const struct nexus_block_device *device,
+                                   uint64_t backup_lba,
+                                   uint64_t first_usable,
+                                   uint64_t last_usable,
+                                   uint64_t primary_entries_lba,
+                                   uint32_t entry_count,
+                                   uint32_t entry_size,
+                                   uint32_t entries_crc,
+                                   const uint8_t disk_guid[16]) {
+    if (!read_one(device, backup_lba, backup_header)) return false;
+    static const uint8_t signature[8] =
+        {'E', 'F', 'I', ' ', 'P', 'A', 'R', 'T'};
+    for (size_t i = 0; i < 8U; ++i) {
+        if (backup_header[i] != signature[i]) return false;
+    }
+    const uint32_t header_size = read_le32(backup_header + 12U);
+    if (header_size < GPT_HEADER_MIN_SIZE ||
+        header_size > device->block_size) return false;
+    const uint32_t stored_crc = read_le32(backup_header + 16U);
+    backup_header[16] = backup_header[17] =
+        backup_header[18] = backup_header[19] = 0;
+    const uint32_t calculated_crc =
+        ~crc32_update(0xFFFFFFFFU, backup_header, header_size);
+    backup_header[16] = (uint8_t)stored_crc;
+    backup_header[17] = (uint8_t)(stored_crc >> 8);
+    backup_header[18] = (uint8_t)(stored_crc >> 16);
+    backup_header[19] = (uint8_t)(stored_crc >> 24);
+    if (calculated_crc != stored_crc ||
+        read_le64(backup_header + 24U) != backup_lba ||
+        read_le64(backup_header + 32U) != 1U ||
+        read_le64(backup_header + 40U) != first_usable ||
+        read_le64(backup_header + 48U) != last_usable ||
+        read_le32(backup_header + 80U) != entry_count ||
+        read_le32(backup_header + 84U) != entry_size ||
+        read_le32(backup_header + 88U) != entries_crc) {
+        return false;
+    }
+    for (size_t i = 0; i < 16U; ++i) {
+        if (backup_header[56U + i] != disk_guid[i]) return false;
+    }
+
+    const uint64_t backup_entries_lba = read_le64(backup_header + 72U);
+    const uint64_t entry_bytes = (uint64_t)entry_count * entry_size;
+    const uint64_t entry_blocks =
+        (entry_bytes + device->block_size - 1U) / device->block_size;
+    if (backup_entries_lba <= primary_entries_lba ||
+        backup_entries_lba >= backup_lba ||
+        entry_blocks > backup_lba - backup_entries_lba) {
+        return false;
+    }
     return true;
 }
 
@@ -130,9 +188,18 @@ bool gpt_scan_device(const struct nexus_block_device *device) {
     uint32_t expected_entries_crc = 0;
     uint64_t first_usable = 0;
     uint64_t last_usable = 0;
+    uint64_t backup_lba = 0;
+    uint8_t disk_guid[16];
     if (!validate_header(device, io_buffer, &entries_lba, &entry_count,
                          &entry_size, &expected_entries_crc,
-                         &first_usable, &last_usable)) {
+                         &first_usable, &last_usable, &backup_lba,
+                         disk_guid)) {
+        return false;
+    }
+
+    if (!validate_backup_header(device, backup_lba, first_usable,
+                                last_usable, entries_lba, entry_count,
+                                entry_size, expected_entries_crc, disk_guid)) {
         return false;
     }
 
@@ -168,6 +235,23 @@ bool gpt_scan_device(const struct nexus_block_device *device) {
                 first > last || last >= device->block_count) {
                 partition_count = 0;
                 return false;
+            }
+            for (size_t prior = 0; prior < partition_count; ++prior) {
+                const struct nexus_gpt_partition *existing = &partitions[prior];
+                if (!(last < existing->first_lba ||
+                      first > existing->last_lba)) {
+                    partition_count = 0;
+                    return false;
+                }
+                bool same_guid = true;
+                for (size_t g = 0; g < 16U; ++g) {
+                    if (existing->unique_guid[g] != entry[16U + g])
+                        same_guid = false;
+                }
+                if (same_guid) {
+                    partition_count = 0;
+                    return false;
+                }
             }
             if (partition_count >= NEXUS_GPT_MAX_PARTITIONS) continue;
             struct nexus_gpt_partition *part =

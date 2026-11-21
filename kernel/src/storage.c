@@ -1,6 +1,7 @@
 #include "storage.h"
 
 #include "pci.h"
+#include "nvme.h"
 #include "paging.h"
 #include "serial.h"
 
@@ -135,7 +136,7 @@ static const char *storage_kind(uint8_t subclass, uint8_t programming_interface)
 
 bool storage_probe(void) {
     controller_count = 0;
-    serial_write("STORAGE: classifying PCI mass-storage controllers (read-only)\r\n");
+    serial_write("STORAGE: classifying controllers and running read-only identify probes\r\n");
 
     const size_t count = pci_device_count();
     for (size_t i = 0; i < count; ++i) {
@@ -177,6 +178,9 @@ bool storage_probe(void) {
         if (device->subclass == 0x06 &&
             device->programming_interface == 0x01) {
             (void)ahci_register_probe(device);
+        } else if (device->subclass == 0x08 &&
+                   device->programming_interface == 0x02) {
+            (void)nvme_identify_probe(device);
         }
 
     }

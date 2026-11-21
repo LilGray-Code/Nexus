@@ -327,7 +327,7 @@ int64_t usermode_sys_file_write(uint64_t user_path,
     if (!paging_copy_from_user(path, user_path, sizeof(path)))
         return -NEXUS_EFAULT;
     size_t path_length = 0U;
-    while (path_length < sizeof(path) && path[path_length] != '\\0') {
+    while (path_length < sizeof(path) && path[path_length] != '\0') {
         if (path[path_length] == '/' || path[path_length] == '\\\\')
             return -NEXUS_EINVAL;
         ++path_length;

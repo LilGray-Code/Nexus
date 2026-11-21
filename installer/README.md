@@ -127,11 +127,31 @@ No gate may be marked complete from compilation alone. Each exit requires captur
 
 ## Current implementation status
 
-- The kernel has a read-only block-device registry and early NVMe identification.
-- GPT header and entry-array CRC validation has a CI self-test using a disposable
-  image.
-- FAT32 is read-only. NXFS currently has a RAM-backed/early implementation and
-  is not yet a durable on-disk installation filesystem.
-- No disk formatting, GPT writing, general block-device write path, installer
-  wizard, or installed-system first boot is currently available.
-- Therefore the installer must remain preview-only until I2 and I3 are proven.
+- A pure, host-testable partition planner now exists in
+  `installer/partition_plan.c`. It plans GPT partition extents for UEFI
+  (512 MiB ESP) and legacy BIOS (2 MiB BIOS Boot partition), followed by an
+  8 GiB Nexus System partition and an aligned remainder data partition.
+  It supports 512-byte and 4096-byte logical sectors, checks arithmetic and
+  bounds, and performs no disk I/O.
+- CI compiles and runs planner tests for UEFI, BIOS, 4Kn alignment, exact
+  partition sizes, non-overlap, invalid sector sizes, undersized disks, and
+  invalid firmware modes.
+- The kernel has GPT primary/backup header and entry-array CRC validation,
+  exercised against a disposable QEMU disk image.
+- NXFS has an early on-disk formatter/mounter, two checksummed superblocks,
+  journal replay, copy-on-write data banks, and file read/write/delete. Its
+  current CI self-test formats and tests only a disposable virtual disk. It
+  remains a small prototype (16 files, up to 16 KiB each), not a production
+  system filesystem.
+- NVMe block writes and flush are available to the CI-only self-test build,
+  where a reserved sector is written, read back, and restored on a disposable
+  QEMU image. The distributable ISO intentionally registers NVMe as read-only;
+  normal boots do not write to user disks.
+- No GPT writer, general-purpose installer write authorization flow, graphical
+  installer wizard, installed-system deployment, or installed first boot is
+  currently available.
+
+The partition planner is an implemented and tested foundation, not a usable
+installer. Disk-writing remains disabled in the distributable ISO until the
+GPT writer, write authorization, crash recovery, and complete install/boot
+path have passed their dedicated disposable-disk tests.

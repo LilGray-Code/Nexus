@@ -66,6 +66,8 @@ jobs:
           grep -q "NEXUS STORAGE DISCOVERY READY" uefi-serial.log
           grep -q "STORAGE: controller " uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
+          grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log
+          grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log

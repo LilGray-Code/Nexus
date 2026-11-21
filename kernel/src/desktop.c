@@ -19,6 +19,7 @@ static uint64_t screen_width;
 static uint64_t screen_height;
 static bool desktop_ready;
 static bool mouse_left_was_down;
+static void draw_pointer(void);
 static int64_t pointer_x;
 static int64_t pointer_y;
 

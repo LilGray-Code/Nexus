@@ -54,6 +54,9 @@ bool blockdev_install_write_supported(const struct nexus_block_device *device);
  * default, so installer writes are denied until the boot chain identifies its
  * source medium. Call completion only after positively identifying that medium. */
 bool blockdev_set_boot_media(const struct nexus_block_device *device);
+/* Resolve boot provenance from a bootloader-reported GPT partition unique
+ * GUID (on-disk byte order). Requires exactly one validated disk match. */
+bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_guid[16]);
 bool blockdev_set_boot_media_detection_complete(void);
 bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted);
 /* Opens a destructive-write session only when kernel-owned safety state allows it. */

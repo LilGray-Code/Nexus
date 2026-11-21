@@ -1,4 +1,5 @@
 #include "blockdev.h"
+#include "gpt.h"
 
 #include <stdint.h>
 
@@ -141,6 +142,42 @@ bool blockdev_set_boot_media(const struct nexus_block_device *device) {
         boot_media_detection_complete) return false;
     if (boot_media_device != NULL && boot_media_device != device) return false;
     boot_media_device = device;
+    return true;
+}
+
+bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_guid[16]) {
+    if (partition_guid == NULL || boot_media_detection_complete ||
+        boot_media_device != NULL) return false;
+    uint8_t nonzero = 0U;
+    for (size_t i = 0U; i < 16U; ++i) nonzero |= partition_guid[i];
+    if (nonzero == 0U) return false;
+
+    const struct nexus_block_device *match = NULL;
+    size_t match_count = 0U;
+    for (size_t d = 0U; d < registered_count; ++d) {
+        const struct nexus_block_device *candidate = &devices[d];
+        if (!gpt_scan_device(candidate)) continue;
+        for (size_t p = 0U; p < gpt_partition_count(); ++p) {
+            const struct nexus_gpt_partition *partition = gpt_partition_at(p);
+            if (partition == NULL) continue;
+            bool equal = true;
+            for (size_t b = 0U; b < 16U; ++b) {
+                if (partition->unique_guid[b] != partition_guid[b]) {
+                    equal = false;
+                    break;
+                }
+            }
+            if (equal && ++match_count > 1U) return false;
+            if (equal) match = candidate;
+        }
+    }
+    /* Missing, ambiguous, or corrupt metadata must never authorize writes. */
+    if (match_count != 1U || match == NULL ||
+        !blockdev_set_boot_media(match)) return false;
+    if (!blockdev_set_boot_media_detection_complete()) {
+        boot_media_device = NULL;
+        return false;
+    }
     return true;
 }
 

@@ -1,5 +1,6 @@
 #include "installer_storage.h"
 #include "blockdev.h"
+#include "gpt_image.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -106,8 +107,24 @@ int main(void) {
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_UNSAFE_TARGET);
     assert(target.flushes == 0U);
 
-    assert(blockdev_set_boot_media(boot_handle));
-    assert(blockdev_set_boot_media_detection_complete());
+    /* Emulate a bootloader handoff containing the boot partition GUID. */
+    struct nexus_gpt_image_buffers boot_image;
+    assert(nexus_gpt_image_build(&plan, disk_guid,
+        &partition_guids[0][0], &boot_image));
+    memcpy(boot.first, boot_image.protective_mbr, 512U);
+    memcpy(boot.first + 512U, boot_image.primary_header, 512U);
+    memcpy(boot.first + 1024U, boot_image.primary_entries,
+           NEXUS_GPT_IMAGE_ENTRY_BYTES);
+    memcpy(boot.last + (EDGE_BLOCKS - 33U) * 512U,
+           boot_image.backup_entries, NEXUS_GPT_IMAGE_ENTRY_BYTES);
+    memcpy(boot.last + (EDGE_BLOCKS - 1U) * 512U,
+           boot_image.backup_header, 512U);
+    const uint8_t missing_guid[16] = {0xFEU};
+    assert(!blockdev_set_boot_media_from_gpt_partition_guid(missing_guid));
+    assert(blockdev_set_boot_media_from_gpt_partition_guid(
+        &partition_guids[0][0]));
+    assert(!blockdev_set_boot_media_from_gpt_partition_guid(
+        &partition_guids[0][0]));
     assert(nexus_installer_write_gpt(boot_handle, &identity,
         identity.stable_id, "ERASE", &plan, disk_guid,
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_UNSAFE_TARGET);

@@ -1,6 +1,7 @@
 #include "usermode.h"
 
 #include "memory.h"
+#include "gdt.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -22,7 +23,10 @@ volatile uint64_t usermode_exit_status = UINT64_MAX;
 
 extern void nexus_enter_user(uint64_t root_physical,
                              uint64_t entry_point,
-                             uint64_t stack_pointer);
+                             uint64_t stack_pointer,
+                             uint64_t kernel_stack_top);
+
+static uint8_t usermode_kernel_stack[16384U] __attribute__((aligned(16)));
 
 static bool allocate_page(uint64_t *physical, volatile uint64_t **virtual_page) {
     if (physical == NULL || virtual_page == NULL ||
@@ -119,7 +123,12 @@ bool usermode_run_selftest(void) {
         code_page[i] = test_program[i];
     (void)stack_page;
 
+    const uint64_t kernel_stack_top = (uint64_t)(uintptr_t)
+        (usermode_kernel_stack + sizeof(usermode_kernel_stack));
+    if (!gdt_set_kernel_stack(kernel_stack_top)) return false;
+
     usermode_exit_status = UINT64_MAX;
-    nexus_enter_user(user_root_physical, USER_CODE_VA, USER_STACK_TOP);
+    nexus_enter_user(user_root_physical, USER_CODE_VA, USER_STACK_TOP,
+                     kernel_stack_top);
     return usermode_exit_status == USER_EXIT_STATUS;
 }

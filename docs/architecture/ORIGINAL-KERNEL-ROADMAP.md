@@ -593,3 +593,17 @@ Ethernet demultiplexing, an ARP cache, IPv4, DHCP, DNS, TCP, TLS, sockets,
 interrupt-driven packet delivery, or a browser network stack. The current
 driver supports one polling queue and a limited Intel PCI ID set; it is not
 yet a general NIC framework or hardened against arbitrary DMA devices.
+
+
+### Ethernet/ARP/IPv4/UDP foundation
+
+A small software network layer now polls the E1000 receive ring, demultiplexes
+Ethernet II ARP and IPv4 frames, validates IPv4 header checksums and lengths,
+and maintains a bounded ARP neighbour cache. It answers ARP requests for the
+local address once configured and exposes a bounded UDP transmit API for the
+next DHCP/DNS stages. The Terminal `net` command reports whether an Ethernet
+interface is active and whether an IPv4 address has been configured.
+
+At this milestone no IPv4 configuration method is enabled yet, so the interface
+will normally report that it has no IPv4 address. DHCP, DNS, TCP, TLS, IPv6,
+sockets, and the browser network backend remain future work.

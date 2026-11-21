@@ -8,6 +8,7 @@
 #include "desktop.h"
 #include "elf64.h"
 #include "e1000.h"
+#include "net.h"
 #include "gdt.h"
 #include "interrupts.h"
 #include "input.h"
@@ -180,6 +181,9 @@ void kmain(void) {
     serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
 
     timer_init(100);
+    if (e1000_ready() && !net_init()) {
+        serial_write("WARNING: Ethernet network layer did not initialize\\r\\n");
+    }
     serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\r\n");
 
     serial_write("K2: PIT configured for 100 Hz\r\n");
@@ -261,6 +265,7 @@ void kmain(void) {
     /* Timer and input IRQs wake the kernel while the event queue is drained. */
     __asm__ volatile ("sti" : : : "memory");
     for (;;) {
+        net_poll();
         struct nexus_input_event event;
         while (input_pop_event(&event)) {
             desktop_handle_input(&event);

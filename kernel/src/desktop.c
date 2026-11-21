@@ -5,6 +5,7 @@
 #include "fat32.h"
 #include "vfs.h"
 #include "process.h"
+#include "net.h"
 
 #include "graphics.h"
 #include "input.h"
@@ -436,7 +437,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime ls cat FILE run FILE ps clear";
+        const char *s = "help about mem uptime net ls cat FILE run FILE ps clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -471,6 +472,42 @@ static void terminal_execute(void) {
         for (size_t k = 0; number[k] != '\0' &&
              n < sizeof(terminal_output)-1U; ++k) terminal_output[n++] = number[k];
         terminal_output[n] = '\0';
+    } else if (terminal_input[0]=='n' && terminal_input[1]=='e' &&
+               terminal_input[2]=='t' && terminal_input[3]=='\0') {
+        struct nexus_net_info info;
+        if (!net_get_info(&info)) {
+            const char *message = "no Ethernet interface";
+            size_t out = 0U;
+            while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = message[out]; ++out;
+            }
+            terminal_output[out] = '\0';
+        } else if (!info.ipv4_configured) {
+            const char *message = "Ethernet ready; no IPv4 address yet";
+            size_t out = 0U;
+            while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = message[out]; ++out;
+            }
+            terminal_output[out] = '\0';
+        } else {
+            size_t out = 0U;
+            const char *label = "IPv4 ";
+            for (size_t i = 0; label[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i) {
+                terminal_output[out++] = label[i];
+            }
+            for (size_t i = 0; i < 4U; ++i) {
+                char number[21];
+                format_u64(info.ipv4[i], number);
+                for (size_t j = 0; number[j] != '\0' &&
+                     out < sizeof(terminal_output) - 2U; ++j) {
+                    terminal_output[out++] = number[j];
+                }
+                if (i != 3U && out < sizeof(terminal_output) - 1U)
+                    terminal_output[out++] = '.';
+            }
+            terminal_output[out] = '\0';
+        }
     } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
                terminal_input[2]=='\0') {
         if (!vfs_root_mounted()) scan_files_once();

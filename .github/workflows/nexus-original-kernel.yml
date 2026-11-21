@@ -115,6 +115,51 @@ jobs:
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 
+      - name: Resolve exception IP from UEFI log
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f uefi-serial.log ]]; then
+            python3 - <<'PY'
+          import re
+          import subprocess
+          from pathlib import Path
+
+          log = Path("uefi-serial.log").read_text(errors="replace")
+          matches = re.findall(r"Instruction pointer:\\s*(0x[0-9A-Fa-f]+)", log)
+          if not matches:
+              print("No CPU exception IP recorded.")
+              raise SystemExit(0)
+          target = int(matches[-1], 16)
+          symbols = subprocess.check_output(
+              ["nm", "-n", "build/nexus-kernel.elf"], text=True
+          ).splitlines()
+          previous = None
+          following = None
+          for line in symbols:
+              parts = line.split(maxsplit=2)
+              if len(parts) < 3:
+                  continue
+              try:
+                  address = int(parts[0], 16)
+              except ValueError:
+                  continue
+              if address <= target:
+                  previous = (address, parts[1], parts[2])
+              elif following is None:
+                  following = (address, parts[1], parts[2])
+                  break
+          print(f"Exception IP: 0x{target:016x}")
+          print("Nearest preceding symbol:", previous)
+          print("Next symbol:", following)
+          print("addr2line:")
+          print(subprocess.check_output(
+              ["addr2line", "-f", "-C", "-e", "build/nexus-kernel.elf",
+               hex(target)], text=True
+          ))
+          PY
+          fi
+
       - name: Boot test - legacy BIOS (SeaBIOS)
         shell: bash
         run: |

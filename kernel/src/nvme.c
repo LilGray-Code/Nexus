@@ -777,7 +777,7 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     }
     serial_write("GPT: validated header and entry CRCs; discovered test partition\r\n");
     if (!vfs_mount_root_fat32(registered, test_partition) ||
-        !vfs_root_mounted() || vfs_root_entry_count() != 1U) {
+        !vfs_root_mounted() || vfs_root_entry_count() != 2U) {
         serial_write("FAT32: CI root directory self-test failed\\r\\n");
         return false;
     }

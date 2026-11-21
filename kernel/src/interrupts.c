@@ -111,11 +111,24 @@ void idt_init(void) {
 
 __attribute__((noreturn))
 void exception_dispatch(const struct interrupt_frame *frame) {
+    uint16_t current_cs = 0U;
+    uint16_t current_ss = 0U;
+    __asm__ volatile ("mov %%cs, %0" : "=r"(current_cs));
+    __asm__ volatile ("mov %%ss, %0" : "=r"(current_ss));
+
     serial_write("\r\nNEXUS CPU EXCEPTION\r\n");
     serial_write("Vector: ");
     serial_write_hex(frame->vector);
     serial_write("\r\nError code: ");
     serial_write_hex(frame->error_code);
+    serial_write(" selector: ");
+    serial_write_hex(frame->error_code & 0xFFF8ULL);
+    serial_write("\r\nSaved CS: ");
+    serial_write_hex(frame->code_segment);
+    serial_write(" current CS: ");
+    serial_write_hex(current_cs);
+    serial_write(" current SS: ");
+    serial_write_hex(current_ss);
     serial_write("\r\nInstruction pointer: ");
     serial_write_hex(frame->instruction_pointer);
     serial_write("\r\nSystem halted.\r\n");

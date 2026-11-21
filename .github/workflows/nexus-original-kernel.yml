@@ -40,6 +40,11 @@ jobs:
             installer/tests/partition_plan_test.c \
             -o /tmp/nexus-partition-plan-test
           /tmp/nexus-partition-plan-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iinstaller installer/partition_plan.c installer/gpt_image.c \
+            installer/tests/gpt_image_test.c \
+            -o /tmp/nexus-gpt-image-test
+          /tmp/nexus-gpt-image-test
 
       - name: Build dual-mode ISO
         run: |

@@ -98,17 +98,42 @@ static uint8_t lfn_checksum(const uint8_t name[11]){
  for(unsigned i=0;i<11;i++)sum=(uint8_t)(((sum&1U)?0x80U:0U)+(sum>>1)+name[i]);
  return sum;
 }
-static bool long_config_name(const char*n,uint8_t alias[11]){
- static const char alias_text[]="LIMINE~1.CNF";
- if(!n)return false;
- static const char wanted[]="limine.conf";
- size_t i=0;
- for(;wanted[i]&&n[i];i++){
-  char ch=n[i];if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
-  if(ch!=wanted[i])return false;
+static bool long_name_info(const char*n,uint8_t alias[11],
+                            const char **long_name,uint32_t *lfn_count){
+ static const char config_alias[]="LIMINE~1.CNF";
+ static const char bios_alias[]="LIMINE~1.SYS";
+ static const char config_name[]="limine.conf";
+ static const char bios_name[]="limine-bios.sys";
+ if(!n||!long_name||!lfn_count)return false;
+ const char *wanted=NULL,*short_alias=NULL;
+ if(bytes_compare((const uint8_t*)n,(const uint8_t*)config_name,
+                  sizeof(config_name))==0){wanted=config_name;short_alias=config_alias;}
+ else if(bytes_compare((const uint8_t*)n,(const uint8_t*)bios_name,
+                       sizeof(bios_name))==0){wanted=bios_name;short_alias=bios_alias;}
+ else {
+  size_t i=0;
+  while(n[i]&&i<sizeof(config_name)-1U){
+   char ch=n[i];if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
+   if(ch!=config_name[i])break;
+   i++;
+  }
+  if(n[i]=='\\0'&&i==sizeof(config_name)-1U){wanted=config_name;short_alias=config_alias;}
+  else {
+   i=0;
+   while(n[i]&&i<sizeof(bios_name)-1U){
+    char ch=n[i];if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
+    if(ch!=bios_name[i])break;
+    i++;
+   }
+   if(n[i]=='\\0'&&i==sizeof(bios_name)-1U){wanted=bios_name;short_alias=bios_alias;}
+  }
  }
- if(wanted[i]||n[i])return false;
- return valid_name(alias_text,alias);
+ if(!wanted)return false;
+ if(!valid_name(short_alias,alias))return false;
+ *long_name=wanted;
+ size_t len=0;while(wanted[len])len++;
+ *lfn_count=(uint32_t)((len+1U+12U)/13U);
+ return *lfn_count>0U&&*lfn_count<=2U;
 }
 static bool valid_name(const char*n,uint8_t out[11]){
  if(!n||!*n)return false;
@@ -149,7 +174,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
  if(root-2U>=clusters){result=NEXUS_FAT32_FILE_INVALID;goto done;}
  uint64_t fat1=part+reserved,fat2=fat1+fat_size,data_start=part+data_rel;
  /* Partition LBAs are 64-bit: large GPT disks can place the ESP above 2 TiB. */
- uint32_t parent=root;bool has_lfn=false;
+ uint32_t parent=root;bool has_lfn=false;\n const char *lfn_name=NULL;uint32_t lfn_entries=0U;
  const char*component=name;
  for(;;){
   const char*slash=component;
@@ -183,8 +208,10 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    bool free_entry=sector[off]==0U||sector[off]==0xE5U;
    if(free_entry){
     if(!has_lfn){root_slot=s*bps/32U+off/32U;break;}
-    if(sector[off]==0U&&off+64U<=bps&&sector[off+32U]==0U){
-     lfn_slot=s*bps/32U+off/32U;root_slot=lfn_slot+1U;break;
+    if(sector[off]==0U&&off+(lfn_entries+1U)*32U<=bps){
+     lfn_slot=s*bps/32U+off/32U;
+     root_slot=lfn_slot+lfn_entries;
+     break;
     }
     continue;
    }
@@ -236,19 +263,25 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
  if(!read1(t,parent_lba+dir_sector,sector))goto done;
  if(has_lfn){
   static const uint8_t offsets[13]={1U,3U,5U,7U,9U,14U,16U,18U,20U,22U,24U,28U,30U};
-  static const char long_name[]="limine.conf";
-  uint8_t entry[32];for(unsigned i=0;i<32U;i++)entry[i]=0xFFU;
-  entry[0]=0x41U;entry[11]=0x0FU;entry[12]=0U;
-  entry[13]=lfn_checksum(shortname);put16(entry+26U,0U);
-  for(unsigned i=0;i<13U;i++){
-   uint16_t ch=i<sizeof(long_name)-1U?(uint8_t)long_name[i]:
-       (i==sizeof(long_name)-1U?0U:0xFFFFU);
-   put16(entry+offsets[i],ch);
-  }
   uint32_t lfn_sector=lfn_slot/(bps/32U);
   uint32_t lfn_off=(lfn_slot%(bps/32U))*32U;
   if(lfn_sector!=dir_sector){result=NEXUS_FAT32_FILE_INVALID;goto done;}
-  for(unsigned i=0;i<32U;i++)sector[lfn_off+i]=entry[i];
+  size_t long_length=0U;while(lfn_name[long_length])long_length++;
+  for(uint32_t entry_index=0U;entry_index<lfn_entries;entry_index++){
+   uint32_t order=lfn_entries-entry_index;
+   uint8_t entry[32];for(unsigned i=0;i<32U;i++)entry[i]=0xFFU;
+   entry[0]=(uint8_t)order|(entry_index==0U?0x40U:0U);
+   entry[11]=0x0FU;entry[12]=0U;
+   entry[13]=lfn_checksum(shortname);put16(entry+26U,0U);
+   for(unsigned i=0;i<13U;i++){
+    size_t char_index=(size_t)(order-1U)*13U+i;
+    uint16_t ch=char_index<long_length?(uint8_t)lfn_name[char_index]:
+      (char_index==long_length?0U:0xFFFFU);
+    put16(entry+offsets[i],ch);
+   }
+   uint32_t entry_off=lfn_off+entry_index*32U;
+   for(unsigned i=0;i<32U;i++)sector[entry_off+i]=entry[i];
+  }
  }
  for(unsigned i=0;i<11;i++)sector[dir_off+i]=shortname[i];
  sector[dir_off+11U]=0x20U;put16(sector+dir_off+20U,(uint16_t)(first>>16));

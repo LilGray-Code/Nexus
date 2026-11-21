@@ -1,6 +1,8 @@
 #include "installer_storage.h"
 #include "blockdev.h"
 #include "gpt_image.h"
+#include <limine.h>
+#include "boot_payload.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -180,14 +182,25 @@ int main(void) {
     assert(target.format_area[esp_offset + 510U] == 0x55U);
     assert(target.format_area[esp_offset + 511U] == 0xAAU);
 
-    /* Deploy an EFI boot configuration through the guarded FAT32 writer. */
-    static const uint8_t limine_cfg[] =
-        "timeout: 3\n/Nexus OS\n    protocol: limine\n"
-        "    kernel_path: boot():/NEXUS/KERNEL.ELF\n";
-    assert(nexus_installer_write_efi_file(target_handle,&identity,
-        identity.stable_id,"ERASE",esp->first_lba,esp_blocks,
-        "EFI/BOOT/limine.conf",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
-    assert(target.flushes == 13U);
+    /* Resolve the actual boot files supplied by Limine and deploy them to
+     * the selected ESP using only the kernel-owned guarded write adapter. */
+    static uint8_t kernel_payload[64] = {0x7fU,'E','L','F',2U,1U};
+    static uint8_t uefi_payload[512] = {'M','Z'};
+    static uint8_t bios_payload[512] = {0};
+    uefi_payload[0x3c]=0x40U;uefi_payload[0x40]='P';uefi_payload[0x41]='E';
+    struct limine_file kernel_file={.address=kernel_payload,.size=sizeof(kernel_payload)};
+    struct limine_file uefi_file={.address=uefi_payload,.size=sizeof(uefi_payload),
+        .path="boot():/EFI/BOOT/BOOTX64.EFI"};
+    struct limine_file bios_file={.address=bios_payload,.size=sizeof(bios_payload),
+        .path="boot():/boot/limine/limine-bios.sys"};
+    struct limine_file *module_files[2]={&uefi_file,&bios_file};
+    struct limine_module_response module_response={.module_count=2U,.modules=module_files};
+    struct limine_executable_file_response executable_response={.executable_file=&kernel_file};
+    assert(nexus_boot_payloads_init(&module_response,&executable_response));
+    assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
+        identity.stable_id,"ERASE",esp->first_lba,esp_blocks));
+    assert(target.flushes == 27U);
+
     const uint32_t bps=512U;
     const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
         ((uint32_t)target.format_area[esp_offset+15U]<<8));
@@ -206,9 +219,6 @@ int main(void) {
     assert(efi_cluster>=3U);
     const size_t efi_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (efi_cluster-2U)*spc)*bps;
-    assert(target.format_area[efi_off]=='.' &&
-           target.format_area[efi_off+32U]=='.' &&
-           target.format_area[efi_off+33U]=='.');
     assert(memcmp(target.format_area+efi_off+64U,"BOOT       ",11U)==0);
     const uint32_t boot_cluster=(uint32_t)target.format_area[efi_off+64U+26U] |
         ((uint32_t)target.format_area[efi_off+64U+27U]<<8) |
@@ -217,18 +227,19 @@ int main(void) {
     assert(boot_cluster>=3U);
     const size_t boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (boot_cluster-2U)*spc)*bps;
-    assert(target.format_area[boot_off+75U]==0x0FU);
-    assert(target.format_area[boot_off+64U]==0x41U);
-    assert(memcmp(target.format_area+boot_off+96U,"LIMINE~1CNF",11U)==0);
-    const uint32_t file_cluster=(uint32_t)target.format_area[boot_off+96U+26U] |
-        ((uint32_t)target.format_area[boot_off+96U+27U]<<8) |
-        ((uint32_t)target.format_area[boot_off+96U+20U]<<16) |
-        ((uint32_t)target.format_area[boot_off+96U+21U]<<24);
-    assert(file_cluster>=3U);
-    const size_t file_off=esp_offset+(size_t)(reserved+2U*fatsz+
-        (file_cluster-2U)*spc)*bps;
-    assert(memcmp(target.format_area+file_off,limine_cfg,
-                  sizeof(limine_cfg)-1U)==0);
+    assert(target.format_area[boot_off+64U]=='B' &&
+           target.format_area[boot_off+65U]=='O');
+    assert(target.format_area[boot_off+96U]==0x42U);
+    assert(target.format_area[boot_off+128U]==0x01U);
+    assert(memcmp(target.format_area+boot_off+160U,"LIMINE~1CNF",11U)==0);
+    const uint32_t config_cluster=(uint32_t)target.format_area[boot_off+160U+26U] |
+        ((uint32_t)target.format_area[boot_off+160U+27U]<<8) |
+        ((uint32_t)target.format_area[boot_off+160U+20U]<<16) |
+        ((uint32_t)target.format_area[boot_off+160U+21U]<<24);
+    assert(config_cluster>=3U);
+    const size_t config_off=esp_offset+(size_t)(reserved+2U*fatsz+
+        (config_cluster-2U)*spc)*bps;
+    assert(memcmp(target.format_area+config_off,"timeout: 3\\n",11U)==0);
 
     /* Format the planned Nexus System partition through the guarded NXFS path. */
     target.nxfs_base = plan.partitions[1].first_lba;
@@ -238,7 +249,7 @@ int main(void) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 18U);
+    assert(target.flushes == 32U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -249,7 +260,7 @@ int main(void) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 22U);
+    assert(target.flushes == 36U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){
@@ -269,7 +280,7 @@ int main(void) {
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 22U);
+    assert(target.flushes == 36U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

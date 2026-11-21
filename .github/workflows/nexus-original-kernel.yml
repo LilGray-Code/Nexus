@@ -62,7 +62,7 @@ jobs:
           /tmp/nexus-blockdev-identity-test
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src -Iinstaller kernel/src/blockdev.c kernel/src/gpt.c \
-            kernel/src/installer_storage.c installer/partition_plan.c \
+            kernel/src/installer_storage.c kernel/src/nxfs.c installer/partition_plan.c \
             installer/fat32_format.c installer/gpt_image.c installer/gpt_install.c \
             installer/tests/installer_storage_test.c \
             -o /tmp/nexus-installer-storage-test

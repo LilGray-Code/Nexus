@@ -3,6 +3,7 @@
 #include "blockdev.h"
 #include "fat32_format.h"
 #include "gpt.h"
+#include "nxfs.h"
 
 static bool installer_target_read(void *context, uint64_t lba,
                                   uint32_t blocks, void *buffer) {
@@ -39,6 +40,43 @@ static bool installer_is_exact_esp_partition(
         return matches;
     }
     return false;
+}
+
+static bool installer_is_exact_nxfs_partition(
+    const struct nexus_block_device *device,
+    const struct nexus_gpt_partition *requested) {
+    if (device == NULL || requested == NULL ||
+        !nxfs_partition_type_matches(requested) ||
+        !gpt_scan_device(device)) return false;
+    for (size_t i=0U;i<gpt_partition_count();++i) {
+        const struct nexus_gpt_partition *part=gpt_partition_at(i);
+        if (part == NULL || part->first_lba != requested->first_lba ||
+            part->last_lba != requested->last_lba) continue;
+        bool equal=true;
+        for (size_t b=0U;b<16U;++b) {
+            if (part->type_guid[b] != requested->type_guid[b] ||
+                part->unique_guid[b] != requested->unique_guid[b])
+                equal=false;
+        }
+        return equal;
+    }
+    return false;
+}
+bool nexus_installer_format_nxfs(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *captured_identity,
+    const char *typed_stable_id,
+    const char *typed_erase_phrase,
+    const struct nexus_gpt_partition *partition) {
+    if (device == NULL || captured_identity == NULL || partition == NULL ||
+        !blockdev_matches_identity(device, captured_identity->stable_id,
+            captured_identity->model, captured_identity->block_count,
+            captured_identity->block_size) ||
+        !installer_is_exact_nxfs_partition(device, partition))
+        return false;
+    struct nexus_gpt_partition validated = *partition;
+    return nxfs_format_install(device, &validated, typed_stable_id,
+                               typed_erase_phrase);
 }
 
 enum nexus_fat32_format_result nexus_installer_format_fat32(

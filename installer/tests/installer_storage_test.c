@@ -16,6 +16,8 @@ struct mock_disk {
     uint8_t first[EDGE_BLOCKS * 512U];
     uint8_t last[EDGE_BLOCKS * 512U];
     uint8_t format_area[FORMAT_BLOCKS * 512U];
+    uint64_t nxfs_base;
+    uint8_t nxfs_area[128U * 512U];
     unsigned flushes;
 };
 
@@ -29,6 +31,11 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
     }
     if (lba >= FORMAT_BASE && lba + count <= FORMAT_BASE + FORMAT_BLOCKS) {
         *base = disk->format_area + (lba - FORMAT_BASE) * 512ULL;
+        return true;
+    }
+    if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
+        lba + count <= disk->nxfs_base + 128U) {
+        *base = disk->nxfs_area + (lba - disk->nxfs_base) * 512ULL;
         return true;
     }
     if (lba >= DISK_BLOCKS - EDGE_BLOCKS) {
@@ -172,11 +179,22 @@ int main(void) {
     assert(target.format_area[esp_offset + 510U] == 0x55U);
     assert(target.format_area[esp_offset + 511U] == 0xAAU);
 
+    /* Format the planned Nexus System partition through the guarded NXFS path. */
+    target.nxfs_base = plan.partitions[1].first_lba;
+    assert(gpt_scan_device(target_handle));
+    const struct nexus_gpt_partition *system_part = gpt_partition_at(1U);
+    assert(system_part != NULL);
+    struct nexus_gpt_partition system_copy = *system_part;
+    assert(nexus_installer_format_nxfs(target_handle, &identity,
+        identity.stable_id, "ERASE", &system_copy));
+    assert(target.flushes == 12U);
+    assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
+
     /* FAT32 formatting rejects arbitrary LBAs and non-ESP GPT partitions. */
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 7U);
+    assert(target.flushes == 12U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

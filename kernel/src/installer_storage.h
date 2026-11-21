@@ -4,6 +4,7 @@
 #include "blockdev.h"
 #include "gpt_install.h"
 #include "fat32_format.h"
+#include "nxfs.h"
 
 struct nexus_installer_disk_identity {
     char stable_id[NEXUS_BLOCKDEV_ID_MAX];
@@ -16,6 +17,13 @@ struct nexus_installer_disk_identity {
  * destructive-write sessions. FAT32 formatting is restricted to an exact
  * GPT EFI System Partition; GPT writing changes metadata only. Neither
  * operation deploys system files or installs a bootloader. */
+bool nexus_installer_format_nxfs(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *captured_identity,
+    const char *typed_stable_id,
+    const char *typed_erase_phrase,
+    const struct nexus_gpt_partition *partition);
+
 enum nexus_fat32_format_result nexus_installer_format_fat32(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *captured_identity,

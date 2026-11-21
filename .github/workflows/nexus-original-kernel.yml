@@ -68,6 +68,14 @@ jobs:
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test
 
+      - name: Test FAT32 partition formatter
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iinstaller installer/fat32_format.c \
+            installer/tests/fat32_format_test.c \
+            -o /tmp/nexus-fat32-format-test
+          /tmp/nexus-fat32-format-test
+
       - name: Build dual-mode ISO
         run: |
           chmod +x build/build-iso.sh

@@ -150,15 +150,19 @@ void kmain(void) {
             serial_write("INSTALLER DEBUG: module count ");
             serial_write_hex(mods->module_count);
             serial_write("\r\n");
-            uint64_t limit = mods->module_count < 8U ? mods->module_count : 8U;
-            for (uint64_t i = 0U; i < limit; ++i) {
-                struct limine_file *file = mods->modules[i];
-                serial_write("INSTALLER DEBUG: module path ");
-                if (file != NULL && file->path != NULL)
-                    serial_write(file->path);
-                else
-                    serial_write("(null)");
-                serial_write("\r\n");
+            if (mods->modules == NULL) {
+                serial_write("INSTALLER DEBUG: module array is null\r\n");
+            } else {
+                uint64_t limit = mods->module_count < 8U ? mods->module_count : 8U;
+                for (uint64_t i = 0U; i < limit; ++i) {
+                    struct limine_file *file = mods->modules[i];
+                    serial_write("INSTALLER DEBUG: module path ");
+                    if (file != NULL && file->path != NULL)
+                        serial_write(file->path);
+                    else
+                        serial_write("(null)");
+                    serial_write("\r\n");
+                }
             }
         }
     }

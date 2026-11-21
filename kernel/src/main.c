@@ -9,6 +9,7 @@
 #include "memory.h"
 #include "pci.h"
 #include "serial.h"
+#include "storage.h"
 #include "scheduler.h"
 #include "timer.h"
 
@@ -196,6 +197,11 @@ void kmain(void) {
         serial_write("WARNING: no PCI devices discovered\r\n");
     }
     serial_write("NEXUS PCI ENUMERATION READY\r\n");
+
+    if (!storage_probe()) {
+        serial_write("WARNING: no mass-storage PCI controller discovered\\r\\n");
+    }
+    serial_write("NEXUS STORAGE DISCOVERY READY\\r\\n");
 
     timer_init(100);
     serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\r\n");

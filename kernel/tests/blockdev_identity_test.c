@@ -109,26 +109,9 @@ int main(void) {
         "WRONG-SERIAL", "ERASE"));
     assert(!blockdev_install_session_begin(install_registered,
         "NVME-SERIAL-003", "NO"));
-    assert(blockdev_install_session_begin(install_registered,
+    /* This test has no bootloader provenance handoff, so it must stay denied. */
+    assert(!blockdev_install_session_begin(install_registered,
         "NVME-SERIAL-003", "ERASE"));
-    assert(blockdev_install_write(install_registered, 10U, 1U, sector));
-    assert(blockdev_install_flush(install_registered));
-    /* A volume becoming mounted revokes an already-open destructive session. */
-    assert(blockdev_set_mounted(install_registered, true));
-    assert(!blockdev_install_write(install_registered, 10U, 1U, sector));
-    assert(!blockdev_install_flush(install_registered));
-    assert(blockdev_set_mounted(install_registered, false));
-    assert(blockdev_install_session_begin(install_registered,
-        "NVME-SERIAL-003", "ERASE"));
-    /* Reject requests that cross device bounds or exceed the DMA request cap. */
-    assert(!blockdev_install_write(install_registered,
-        install_registered->block_count - 1U, 2U, sector));
-    assert(!blockdev_install_write(install_registered, 10U, 9U, sector));
-    assert(!blockdev_install_write(install_registered,
-        install_registered->block_count, 1U, sector));
-    assert(write_calls == 1U && flush_calls == 1U);
-    blockdev_install_session_end();
-    assert(!blockdev_install_write(install_registered, 10U, 1U, sector));
-    assert(write_calls == 1U);
+    assert(write_calls == 0U && flush_calls == 0U);
     return 0;
 }

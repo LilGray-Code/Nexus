@@ -82,18 +82,40 @@ int main(void) {
     assert(!blockdev_write(install_registered, 0U, 1U, sector));
     assert(!blockdev_flush(install_registered));
     assert(!blockdev_install_write(install_registered, 0U, 1U, sector));
+    /* Boot provenance is unknown by default: fail closed. */
     assert(!blockdev_install_session_begin(install_registered,
-        "NVME-SERIAL-003", "ERASE", false, false, false));
+        "NVME-SERIAL-003", "ERASE"));
+    assert(!blockdev_set_boot_media_detection_complete());
+    assert(blockdev_set_boot_media(install_registered));
+    assert(blockdev_set_boot_media_detection_complete());
     assert(!blockdev_install_session_begin(install_registered,
-        "NVME-SERIAL-003", "ERASE", true, true, false));
+        "NVME-SERIAL-003", "ERASE"));
+    assert(!blockdev_set_boot_media_detection_complete());
+    blockdev_init();
+    install_disk = make_device("disk0", "NVME-SERIAL-003");
+    install_disk.flags = NEXUS_BLOCKDEV_READ_ONLY |
+                         NEXUS_BLOCKDEV_INSTALL_CAPABLE;
+    install_disk.write = test_write;
+    install_disk.flush = test_flush;
+    assert(blockdev_register(&install_disk));
+    install_registered = blockdev_at(0U);
+    struct nexus_block_device boot_disk = make_device("boot", "NVME-BOOT-001");
+    assert(blockdev_register(&boot_disk));
+    const struct nexus_block_device *boot_registered = blockdev_at(1U);
+    assert(blockdev_set_boot_media(boot_registered));
+    assert(blockdev_set_boot_media_detection_complete());
+    assert(!blockdev_install_session_begin(boot_registered,
+        "NVME-BOOT-001", "ERASE"));
+    assert(blockdev_set_mounted(install_registered, true));
     assert(!blockdev_install_session_begin(install_registered,
-        "NVME-SERIAL-003", "ERASE", true, false, true));
+        "NVME-SERIAL-003", "ERASE"));
+    assert(blockdev_set_mounted(install_registered, false));
     assert(!blockdev_install_session_begin(install_registered,
-        "WRONG-SERIAL", "ERASE", true, false, false));
+        "WRONG-SERIAL", "ERASE"));
     assert(!blockdev_install_session_begin(install_registered,
-        "NVME-SERIAL-003", "NO", true, false, false));
+        "NVME-SERIAL-003", "NO"));
     assert(blockdev_install_session_begin(install_registered,
-        "NVME-SERIAL-003", "ERASE", true, false, false));
+        "NVME-SERIAL-003", "ERASE"));
     assert(blockdev_install_write(install_registered, 10U, 1U, sector));
     assert(blockdev_install_flush(install_registered));
     /* Reject requests that cross device bounds or exceed the DMA request cap. */

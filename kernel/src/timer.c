@@ -25,6 +25,12 @@
 
 static volatile uint64_t tick_count;
 
+static inline uint8_t inb(uint16_t port) {
+    uint8_t value;
+    __asm__ volatile ("inb %1, %0" : "=a"(value) : "Nd"(port));
+    return value;
+}
+
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
@@ -147,4 +153,20 @@ void pic_irq_eoi(uint8_t irq) {
         outb(PIC2_COMMAND, 0x20);
     }
     outb(PIC1_COMMAND, 0x20);
+}
+
+void pic_irq_unmask(uint8_t irq) {
+    if (irq >= 16U) return;
+
+    if (irq < 8U) {
+        const uint8_t mask = inb(PIC1_DATA);
+        outb(PIC1_DATA, (uint8_t)(mask & (uint8_t)~(1U << irq)));
+        return;
+    }
+
+    const uint8_t slave_mask = inb(PIC2_DATA);
+    outb(PIC2_DATA,
+         (uint8_t)(slave_mask & (uint8_t)~(1U << (irq - 8U))));
+    const uint8_t master_mask = inb(PIC1_DATA);
+    outb(PIC1_DATA, (uint8_t)(master_mask & (uint8_t)~(1U << 2U)));
 }

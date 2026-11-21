@@ -7,7 +7,7 @@
 #include "blockdev.h"
 #include "desktop.h"
 #include "interrupts.h"
-#include "keyboard.h"
+#include "input.h"
 #include "ioapic.h"
 #include "memory.h"
 #include "pci.h"
@@ -193,24 +193,30 @@ void kmain(void) {
     serial_write("NEXUS K2 COOPERATIVE SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
-    keyboard_init();
-    serial_write("NEXUS PS2 KEYBOARD POLLING READY\r\n");
-    serial_write("NEXUS K0 BOOT COMPLETE\r\n");
+    const bool input_ready = input_init();
+    if (!input_ready) {
+        serial_write("INPUT: no PS/2 devices detected; desktop remains keyboard/mouse inactive\\r\\n");
+    }
+    serial_write("NEXUS K0 BOOT COMPLETE\\r\\n");
 
-    /* Timer interrupts wake the CPU while the legacy keyboard is polled. */
+    /* Timer and input IRQs wake the kernel while the event queue is drained. */
     __asm__ volatile ("sti" : : : "memory");
     for (;;) {
-        char key = 0;
-        while (keyboard_poll(&key)) {
-            serial_write("KEYBOARD: ");
-            if (key == '\n') serial_write("ENTER");
-            else if (key == '\b') serial_write("BACKSPACE");
-            else if (key == '\t') serial_write("TAB");
-            else {
-                char output[2] = {key, '\0'};
-                serial_write(output);
+        struct nexus_input_event event;
+        while (input_pop_event(&event)) {
+            if (event.type == NEXUS_INPUT_KEYBOARD) {
+                serial_write("INPUT: keyboard scancode=");
+                serial_write_hex(event.scancode);
+                serial_write("\\r\\n");
+            } else if (event.type == NEXUS_INPUT_MOUSE) {
+                serial_write("INPUT: mouse dx=");
+                serial_write_hex((uint16_t)event.mouse_dx);
+                serial_write(" dy=");
+                serial_write_hex((uint16_t)event.mouse_dy);
+                serial_write(" buttons=");
+                serial_write_hex(event.mouse_buttons);
+                serial_write("\\r\\n");
             }
-            serial_write("\r\n");
         }
         __asm__ volatile ("sti; hlt" : : : "memory");
     }

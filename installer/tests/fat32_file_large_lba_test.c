@@ -134,7 +134,7 @@ int main(void) {
     assert((get32(f2->bytes+24U)&0x0FFFFFFFU)==0x0FFFFFFFU);
     assert((get32(f1->bytes+32U)&0x0FFFFFFFU)==0x0FFFFFFFU);
     assert((get32(f2->bytes+32U)&0x0FFFFFFFU)==0x0FFFFFFFU);
-    static const char cfg[]="timeout: 3\\n";
+    static const char cfg[]="timeout: 3\n";
     assert(nexus_fat32_write_file(&target,PARTITION_LBA,TOTAL_SECTORS,
         "EFI/BOOT/limine.conf",cfg,sizeof(cfg)-1U)==NEXUS_FAT32_FILE_OK);
     bootdir=slot_for(&disk,boot_lba,false);

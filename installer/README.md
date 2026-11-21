@@ -168,6 +168,12 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   where a reserved sector is written, read back, and restored on a disposable
   QEMU image. The distributable ISO intentionally registers NVMe as read-only;
   normal boots do not write to user disks.
+- `installer/fat32_file.c` writes bounded nested FAT32 paths, allocates and
+  initializes one-cluster directories (including `.` and `..`), mirrors FAT
+  chains, verifies file sectors and directory entries, and emits the VFAT long
+  filename entry for Limine's required `limine.conf` name. Directory expansion
+  and general Unicode/long-name support are not implemented; full directories
+  fail closed. Host tests cover nested `EFI/BOOT` deployment and a >2 TiB LBA.
 - `installer/fat32_format.c` formats an existing partition as FAT32 with
   primary/backup boot sectors and FSInfo, two allocation tables, initialized
   reserved entries, and an empty root cluster. It uses bounded writes, flushes,

@@ -217,11 +217,13 @@ int main(void) {
     assert(boot_cluster>=3U);
     const size_t boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (boot_cluster-2U)*spc)*bps;
-    assert(memcmp(target.format_area+boot_off+64U,"LIMINE~1CNF",11U)==0);
-    const uint32_t file_cluster=(uint32_t)target.format_area[boot_off+64U+26U] |
-        ((uint32_t)target.format_area[boot_off+64U+27U]<<8) |
-        ((uint32_t)target.format_area[boot_off+64U+20U]<<16) |
-        ((uint32_t)target.format_area[boot_off+64U+21U]<<24);
+    assert(target.format_area[boot_off+75U]==0x0FU);
+    assert(target.format_area[boot_off+64U]==0x41U);
+    assert(memcmp(target.format_area+boot_off+96U,"LIMINE~1CNF",11U)==0);
+    const uint32_t file_cluster=(uint32_t)target.format_area[boot_off+96U+26U] |
+        ((uint32_t)target.format_area[boot_off+96U+27U]<<8) |
+        ((uint32_t)target.format_area[boot_off+96U+20U]<<16) |
+        ((uint32_t)target.format_area[boot_off+96U+21U]<<24);
     assert(file_cluster>=3U);
     const size_t file_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (file_cluster-2U)*spc)*bps;

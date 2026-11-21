@@ -51,7 +51,21 @@ a model-specific whitelist the definition of compatibility.
 
 ## Current status
 
-The current CI includes QEMU UEFI/Q35 and legacy BIOS/PC boot checks. The UEFI
-profile checks AHCI register and port discovery. A generic qemu64 profile with
-an emulated NVMe controller is being added. Storage discovery remains
-read-only: no disk commands, filesystem mounting, or writes are performed.
+The current CI includes two firmware paths with different virtual hardware:
+
+- UEFI / Q35 / qemu64 / 512 MiB, with both the chipset AHCI controller and an
+  emulated NVMe controller backed by a disposable 64 MiB image. CI checks PCI
+  detection of NVMe, AHCI register and port discovery, ACPI, timers, and the
+  cooperative scheduler.
+- Legacy BIOS / PC / max CPU / 512 MiB, which exercises the legacy boot path
+  and IDE controller discovery.
+
+Both paths also verify a bounded DMA page allocation whose entire 4 KiB page
+must fit below the 4 GiB physical-address boundary. The CI currently tests the
+allocator prerequisite only; it does not submit NVMe or ATA commands or
+transfer disk data. Storage discovery remains read-only: no disk commands,
+filesystem mounting, or writes are performed.
+
+Additional QEMU profiles for alternate memory sizes, additional chipsets, and
+USB/network/graphics/audio controllers remain planned. Physical compatibility
+will be validated across multiple vendors and generations as drivers mature.

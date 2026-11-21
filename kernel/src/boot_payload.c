@@ -32,16 +32,29 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
     struct limine_executable_file_response *executable = executable_response;
     payloads_ready = false;
     if (modules == NULL || executable == NULL ||
-        modules->module_count != 3U || modules->modules == NULL ||
-        executable->executable_file == NULL) return false;
+        modules->module_count < 3U || modules->module_count > 16U ||
+        modules->modules == NULL || executable->executable_file == NULL)
+        return false;
 
-    struct limine_file *uefi = modules->modules[0];
-    struct limine_file *bios_hdd = modules->modules[1];
-    struct limine_file *bios_sys = modules->modules[2];
+    struct limine_file *uefi = NULL;
+    struct limine_file *bios_hdd = NULL;
+    struct limine_file *bios_sys = NULL;
+    for (uint64_t i = 0U; i < modules->module_count; ++i) {
+        struct limine_file *file = modules->modules[i];
+        if (file == NULL || file->path == NULL) continue;
+        if (path_is(file->path, "boot():/EFI/BOOT/BOOTX64.EFI")) {
+            if (uefi != NULL) return false;
+            uefi = file;
+        } else if (path_is(file->path, "boot():/boot/limine/limine-bios-hdd.bin")) {
+            if (bios_hdd != NULL) return false;
+            bios_hdd = file;
+        } else if (path_is(file->path, "boot():/boot/limine/limine-bios.sys")) {
+            if (bios_sys != NULL) return false;
+            bios_sys = file;
+        }
+    }
     struct limine_file *kernel = executable->executable_file;
-    if (!path_is(uefi->path, "boot():/EFI/BOOT/BOOTX64.EFI") ||
-        !path_is(bios_hdd->path, "boot():/boot/limine/limine-bios-hdd.bin") ||
-        !path_is(bios_sys->path, "boot():/boot/limine/limine-bios.sys") ||
+    if (uefi == NULL || bios_hdd == NULL || bios_sys == NULL ||
         !blob_from_file(kernel, &payloads.kernel_elf, 64U) ||
         !blob_from_file(uefi, &payloads.uefi_loader, 512U) ||
         !blob_from_file(bios_hdd, &payloads.bios_hdd_image, 512U) ||

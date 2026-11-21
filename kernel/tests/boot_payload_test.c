@@ -14,8 +14,9 @@ int main(void) {
     struct limine_file e={.address=uefi,.size=sizeof(uefi),.path="boot():/EFI/BOOT/BOOTX64.EFI"};
     struct limine_file b={.address=bios_hdd,.size=sizeof(bios_hdd),.path="boot():/boot/limine/limine-bios-hdd.bin"};
     struct limine_file bs={.address=bios_sys,.size=sizeof(bios_sys),.path="boot():/boot/limine/limine-bios.sys"};
-    struct limine_file *items[3]={&e,&b,&bs};
-    struct limine_module_response mr={.module_count=3,.modules=items};
+    struct limine_file extra={.address=bios_sys,.size=sizeof(bios_sys),.path="boot():/unrelated/extra.bin"};
+    struct limine_file *items[4]={&bs,&e,&extra,&b};
+    struct limine_module_response mr={.module_count=4,.modules=items};
     struct limine_executable_file_response er={.executable_file=&k};
     assert(nexus_boot_payloads_init(&mr,&er));
     const struct nexus_boot_payloads *p=nexus_boot_payloads_get();

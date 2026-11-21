@@ -3,6 +3,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Installer is a single serialized kernel operation. Keep the large GPT
+ * workspace out of the limited kernel stack. */
+static struct nexus_gpt_image_buffers install_image_workspace;
+static uint8_t install_verify_workspace[NEXUS_GPT_IMAGE_ENTRY_BYTES];
+
 static bool bytes_equal(const uint8_t *a, const uint8_t *b, size_t length) {
     for (size_t i = 0U; i < length; ++i)
         if (a[i] != b[i]) return false;
@@ -13,7 +18,7 @@ static enum nexus_gpt_install_result write_and_verify(
     const struct nexus_gpt_install_target *target,
     uint64_t lba, uint32_t blocks, const uint8_t *expected,
     size_t bytes) {
-    uint8_t verify[NEXUS_GPT_IMAGE_ENTRY_BYTES];
+    uint8_t *verify = install_verify_workspace;
     const size_t capacity = (size_t)blocks * target->block_size;
     if (bytes > capacity || capacity > sizeof(verify))
         return NEXUS_GPT_INSTALL_INVALID;
@@ -35,7 +40,7 @@ enum nexus_gpt_install_result nexus_gpt_install_apply(
     const uint8_t *partition_guids,
     bool first_confirmation,
     bool second_confirmation) {
-    struct nexus_gpt_image_buffers image;
+    struct nexus_gpt_image_buffers *image = &install_image_workspace;
     uint64_t entry_blocks;
     uint64_t backup_entries_lba;
     const uint64_t backup_header_lba =
@@ -56,7 +61,7 @@ enum nexus_gpt_install_result nexus_gpt_install_apply(
     if (!target->identity_revalidated || !target->not_live_media ||
         !target->not_mounted)
         return NEXUS_GPT_INSTALL_UNSAFE_TARGET;
-    if (!nexus_gpt_image_build(plan, disk_guid, partition_guids, &image))
+    if (!nexus_gpt_image_build(plan, disk_guid, partition_guids, image))
         return NEXUS_GPT_INSTALL_INVALID;
 
     block_size = target->block_size;
@@ -68,20 +73,20 @@ enum nexus_gpt_install_result nexus_gpt_install_apply(
 
     /* Preserve a valid backup GPT before replacing the primary metadata. */
     result = write_and_verify(target, backup_entries_lba,
-                              (uint32_t)entry_blocks, image.backup_entries,
+                              (uint32_t)entry_blocks, image->backup_entries,
                               NEXUS_GPT_IMAGE_ENTRY_BYTES);
     if (result != NEXUS_GPT_INSTALL_OK) return result;
     result = write_and_verify(target, backup_header_lba, 1U,
-                              image.backup_header, block_size);
+                              image->backup_header, block_size);
     if (result != NEXUS_GPT_INSTALL_OK) return result;
     result = write_and_verify(target, 2U, (uint32_t)entry_blocks,
-                              image.primary_entries,
+                              image->primary_entries,
                               NEXUS_GPT_IMAGE_ENTRY_BYTES);
     if (result != NEXUS_GPT_INSTALL_OK) return result;
     result = write_and_verify(target, 1U, 1U,
-                              image.primary_header, block_size);
+                              image->primary_header, block_size);
     if (result != NEXUS_GPT_INSTALL_OK) return result;
     result = write_and_verify(target, 0U, 1U,
-                              image.protective_mbr, block_size);
+                              image->protective_mbr, block_size);
     return result;
 }

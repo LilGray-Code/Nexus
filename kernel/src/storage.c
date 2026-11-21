@@ -17,19 +17,19 @@ static bool ahci_register_probe(const struct nexus_pci_device *device) {
 
     /* PCI Command bit 1 is Memory Space Enable. Never turn it on here. */
     if ((device->command & 0x0002U) == 0) {
-        serial_write("AHCI: PCI memory decode is disabled; MMIO probe skipped\\r\\n");
+        serial_write("AHCI: PCI memory decode is disabled; MMIO probe skipped\r\n");
         return false;
     }
 
     struct nexus_pci_bar abar;
     if (!pci_decode_bar(device, 5, &abar) || abar.io_space || !abar.assigned) {
-        serial_write("AHCI: BAR5 is not an assigned memory BAR; MMIO probe skipped\\r\\n");
+        serial_write("AHCI: BAR5 is not an assigned memory BAR; MMIO probe skipped\r\n");
         return false;
     }
 
     volatile uint32_t *mapped_page = NULL;
     if (!paging_map_mmio_page(abar.base, &mapped_page) || mapped_page == NULL) {
-        serial_write("AHCI: unable to map ABAR page; MMIO probe skipped\\r\\n");
+        serial_write("AHCI: unable to map ABAR page; MMIO probe skipped\r\n");
         return false;
     }
 
@@ -46,7 +46,7 @@ static bool ahci_register_probe(const struct nexus_pci_device *device) {
     if (cap == 0 || cap == UINT32_MAX ||
         ghc == UINT32_MAX || pi == UINT32_MAX ||
         vs == 0 || vs == UINT32_MAX || ((vs >> 16) & 0xFFU) == 0) {
-        serial_write("AHCI: ABAR did not return a valid register signature\\r\\n");
+        serial_write("AHCI: ABAR did not return a valid register signature\r\n");
         return false;
     }
 
@@ -57,17 +57,17 @@ static bool ahci_register_probe(const struct nexus_pci_device *device) {
 
     serial_write("AHCI: CAP: ");
     serial_write_hex(cap);
-    serial_write("\\r\\nAHCI: GHC: ");
+    serial_write("\r\nAHCI: GHC: ");
     serial_write_hex(ghc);
-    serial_write("\\r\\nAHCI: PI: ");
+    serial_write("\r\nAHCI: PI: ");
     serial_write_hex(pi);
-    serial_write("\\r\\nAHCI: version: ");
+    serial_write("\r\nAHCI: version: ");
     serial_write_hex(vs);
-    serial_write("\\r\\nAHCI: ports implemented: ");
+    serial_write("\r\nAHCI: ports implemented: ");
     serial_write_hex(implemented_ports);
-    serial_write("\\r\\n");
-    serial_write("AHCI: register probe was read-only; no commands issued\\r\\n");
-    serial_write("NEXUS AHCI REGISTER PROBE READY\\r\\n");
+    serial_write("\r\n");
+    serial_write("AHCI: register probe was read-only; no commands issued\r\n");
+    serial_write("NEXUS AHCI REGISTER PROBE READY\r\n");
     return true;
 }
 

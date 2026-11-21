@@ -45,6 +45,7 @@ static bool write_blocks(void *ctx,uint64_t lba,uint32_t count,const void *buffe
 }
 static bool flush_disk(void *ctx) { return ctx!=NULL; }
 static void put16(uint8_t *p,uint16_t v) { p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8); }
+static uint16_t get16(const uint8_t *p) { return (uint16_t)p[0]|((uint16_t)p[1]<<8); }
 static uint32_t get32(const uint8_t *p) { return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); }
 static void put32(uint8_t *p,uint32_t v) {
     p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);
@@ -78,7 +79,6 @@ int main(void) {
         ((uint32_t)root->bytes[27]<<8)|((uint32_t)root->bytes[20]<<16)|
         ((uint32_t)root->bytes[21]<<24);
     assert(cluster==3U);
-    assert(cluster==3U);
     const uint64_t fat1=PARTITION_LBA+RESERVED_SECTORS;
     const uint64_t fat2=fat1+FAT_SECTORS;
     struct sector_slot *f1=slot_for(&disk,fat1,false);
@@ -109,16 +109,16 @@ int main(void) {
     assert(efi!=NULL && efi->bytes[0]=='.' && efi->bytes[32]=='.' &&
            efi->bytes[33]=='.');
     assert(memcmp(efi->bytes+64U,"BOOT       ",11U)==0);
-    uint32_t boot_cluster=get32(efi->bytes+64U+26U)|
-        (get32(efi->bytes+64U+20U)<<16);
+    uint32_t boot_cluster=(uint32_t)get16(efi->bytes+64U+26U)|
+        ((uint32_t)get16(efi->bytes+64U+20U)<<16);
     assert(boot_cluster>=3U);
     uint64_t boot_lba=data_start+(uint64_t)(boot_cluster-2U)*8U;
     struct sector_slot *bootdir=slot_for(&disk,boot_lba,false);
     assert(bootdir!=NULL && bootdir->bytes[0]=='.' &&
            bootdir->bytes[32]=='.' && bootdir->bytes[33]=='.');
     assert(memcmp(bootdir->bytes+64U,"BOOTX64 EFI",11U)==0);
-    uint32_t loader_cluster=get32(bootdir->bytes+64U+26U)|
-        (get32(bootdir->bytes+64U+20U)<<16);
+    uint32_t loader_cluster=(uint32_t)get16(bootdir->bytes+64U+26U)|
+        ((uint32_t)get16(bootdir->bytes+64U+20U)<<16);
     assert(loader_cluster>=3U);
     for(uint32_t i=0;i<sizeof(payload);++i) {
         uint32_t cluster_index=i/(SECTOR_BYTES*8U);
@@ -128,8 +128,12 @@ int main(void) {
         struct sector_slot *loader=slot_for(&disk,lba,false);
         assert(loader!=NULL && loader->bytes[in_cluster%SECTOR_BYTES]==payload[i]);
     }
-    assert(get32(f1->bytes+20U)==5U);
-    assert(get32(f2->bytes+20U)==5U);
+    assert((get32(f1->bytes+20U)&0x0FFFFFFFU)==0x0FFFFFFFU);
+    assert((get32(f2->bytes+20U)&0x0FFFFFFFU)==0x0FFFFFFFU);
+    assert((get32(f1->bytes+24U)&0x0FFFFFFFU)==0x0FFFFFFFU);
+    assert((get32(f2->bytes+24U)&0x0FFFFFFFU)==0x0FFFFFFFU);
+    assert((get32(f1->bytes+32U)&0x0FFFFFFFU)==0x0FFFFFFFU);
+    assert((get32(f2->bytes+32U)&0x0FFFFFFFU)==0x0FFFFFFFU);
     puts("NEXUS FAT32 LARGE-LBA FILE WRITER TEST PASSED");
     return 0;
 }

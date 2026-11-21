@@ -112,6 +112,7 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
     bool ok=fseek(f,(long)(DISK_BLOCKS*512ULL-1ULL),SEEK_SET)==0&&fputc(0,f)!=EOF;
     if(ok)ok=fseek(f,0,SEEK_SET)==0&&fwrite(disk->first,1U,sizeof(disk->first),f)==sizeof(disk->first);
     if(ok)ok=fseek(f,(long)(FORMAT_BASE*512ULL),SEEK_SET)==0&&fwrite(disk->format_area,1U,sizeof(disk->format_area),f)==sizeof(disk->format_area);
+    if(ok&&disk->bios_base!=0U)ok=fseek(f,(long)(disk->bios_base*512ULL),SEEK_SET)==0&&fwrite(disk->bios_area,1U,sizeof(disk->bios_area),f)==sizeof(disk->bios_area);
     if(ok)ok=fseek(f,(long)((DISK_BLOCKS-EDGE_BLOCKS)*512ULL),SEEK_SET)==0&&fwrite(disk->last,1U,sizeof(disk->last),f)==sizeof(disk->last);
     if(fclose(f)!=0)ok=false;
     return ok;
@@ -314,16 +315,6 @@ int main(int argc,char **argv) {
             break;
         }
     }
-    if(root_boot_cluster<3U){
-        for(size_t slot=0U;slot<16U;slot++){
-            const size_t entry_off=root_off+slot*32U;
-            fprintf(stderr,"root[%zu]=%.11s attr=%02x cluster=%02x%02x%02x%02x\\n",
-                slot,(const char*)(target.format_area+entry_off),
-                target.format_area[entry_off+11U],
-                target.format_area[entry_off+20U],target.format_area[entry_off+21U],
-                target.format_area[entry_off+26U],target.format_area[entry_off+27U]);
-        }
-    }
     assert(root_boot_cluster>=3U);
     const size_t root_boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (root_boot_cluster-2U)*spc)*bps;
@@ -378,7 +369,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 36U);
+    assert(target.flushes == 38U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

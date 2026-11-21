@@ -128,6 +128,25 @@ jobs:
           grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" installed-uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" installed-uefi-serial.log
 
+      - name: Boot the installed legacy BIOS target disk (SeaBIOS)
+        shell: bash
+        run: |
+          set +e
+          timeout -k 2s 18s qemu-system-x86_64 \
+            -machine pc -cpu qemu64 -m 512M \
+            -drive file=/tmp/nexus-installed-uefi.img,if=ide,index=0,format=raw \
+            -boot c -display none -serial file:installed-bios-serial.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
+            echo "Installed-disk BIOS QEMU exited unexpectedly: $status"
+            exit "$status"
+          fi
+          cat installed-bios-serial.log
+          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" installed-bios-serial.log
+          grep -q "NEXUS K0 BOOT COMPLETE" installed-bios-serial.log
+
       - name: Verify kernel ELF and ISO
         run: |
           file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso

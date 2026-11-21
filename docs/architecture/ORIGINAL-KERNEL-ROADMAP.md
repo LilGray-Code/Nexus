@@ -859,11 +859,30 @@ renders.
 
 ### Current installer status
 
-The installer specification exists, but the installer itself is not yet
-implemented. Current kernel storage is primarily read-only; the GPT self-test
-validates metadata in a disposable image but does not authorize real-disk
-writes. The current framebuffer shell is a kernel prototype, not yet a
-userland window system capable of hosting the finished installer.
+Implemented and host-tested foundations:
+
+- `installer/partition_plan.c`: pure UEFI/BIOS GPT partition planner with
+  512-byte and 4Kn support, alignment, bounds, and overflow checks.
+- `installer/gpt_image.c`: protective MBR plus primary/backup GPT metadata
+  serializer, type GUIDs, mirrored entry arrays, and CRC32 headers.
+- `installer/gpt_install.c`: guarded metadata transaction requiring two
+  confirmations and target-safety flags; backup-first write order, flush,
+  read-back verification, and injected mock-I/O failure tests.
+- Kernel desktop **Install F5** preview: displays selected block device,
+  capacity, sector size, and UEFI/BIOS layout without writing to disk.
+
+These installer modules and their mock-disk tests run in CI. The GPT
+transaction is not yet connected to the kernel's real block-device write path
+or invoked by the desktop. The release NVMe device remains read-only. The
+current desktop is still a framebuffer shell, not a full userland window
+manager.
+
+Still missing are a stable device-identity and mount-state service, production
+write authorization, integration of the GPT transaction with the kernel,
+NXFS format/check/recovery for installation targets, system-image deployment,
+Limine target-disk setup, first-boot provisioning, a complete graphical wizard,
+and interrupted-install recovery. The current ISO therefore contains an
+installer preview, not a functioning disk installer.
 
 ### Release gate
 

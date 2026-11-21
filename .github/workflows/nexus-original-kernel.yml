@@ -128,6 +128,7 @@ jobs:
           cat uefi-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
+          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" uefi-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
@@ -244,6 +245,7 @@ jobs:
           cat bios-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" bios-serial.log
           grep -q "NEXUS GDT TSS READY" bios-serial.log
+          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" bios-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
           grep -q "NEXUS RAMFS READY" bios-serial.log

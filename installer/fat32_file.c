@@ -106,30 +106,26 @@ static bool long_name_info(const char*n,uint8_t alias[11],
  static const char bios_name[]="limine-bios.sys";
  if(!n||!long_name||!lfn_count)return false;
  const char *wanted=NULL,*short_alias=NULL;
- if(bytes_compare((const uint8_t*)n,(const uint8_t*)config_name,
-                  sizeof(config_name))==0){wanted=config_name;short_alias=config_alias;}
- else if(bytes_compare((const uint8_t*)n,(const uint8_t*)bios_name,
-                       sizeof(bios_name))==0){wanted=bios_name;short_alias=bios_alias;}
- else {
-  size_t i=0;
-  while(n[i]&&i<sizeof(config_name)-1U){
+ size_t i=0;
+ while(n[i]&&i<sizeof(config_name)-1U){
+  char ch=n[i];if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
+  if(ch!=config_name[i])break;
+  i++;
+ }
+ if(n[i]=='\\0'&&i==sizeof(config_name)-1U){
+  wanted=config_name;short_alias=config_alias;
+ }else{
+  i=0;
+  while(n[i]&&i<sizeof(bios_name)-1U){
    char ch=n[i];if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
-   if(ch!=config_name[i])break;
+   if(ch!=bios_name[i])break;
    i++;
   }
-  if(n[i]=='\\0'&&i==sizeof(config_name)-1U){wanted=config_name;short_alias=config_alias;}
-  else {
-   i=0;
-   while(n[i]&&i<sizeof(bios_name)-1U){
-    char ch=n[i];if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
-    if(ch!=bios_name[i])break;
-    i++;
-   }
-   if(n[i]=='\\0'&&i==sizeof(bios_name)-1U){wanted=bios_name;short_alias=bios_alias;}
+  if(n[i]=='\\0'&&i==sizeof(bios_name)-1U){
+   wanted=bios_name;short_alias=bios_alias;
   }
  }
- if(!wanted)return false;
- if(!valid_name(short_alias,alias))return false;
+ if(!wanted||!valid_name(short_alias,alias))return false;
  *long_name=wanted;
  size_t len=0;while(wanted[len])len++;
  *lfn_count=(uint32_t)((len+1U+12U)/13U);

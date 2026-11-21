@@ -229,17 +229,36 @@ int main(void) {
         (boot_cluster-2U)*spc)*bps;
     assert(target.format_area[boot_off+64U]=='B' &&
            target.format_area[boot_off+65U]=='O');
-    assert(target.format_area[boot_off+96U]==0x42U);
-    assert(target.format_area[boot_off+128U]==0x01U);
-    assert(memcmp(target.format_area+boot_off+160U,"LIMINE~1CNF",11U)==0);
-    const uint32_t config_cluster=(uint32_t)target.format_area[boot_off+160U+26U] |
-        ((uint32_t)target.format_area[boot_off+160U+27U]<<8) |
-        ((uint32_t)target.format_area[boot_off+160U+20U]<<16) |
-        ((uint32_t)target.format_area[boot_off+160U+21U]<<24);
+    assert(target.format_area[boot_off+96U]==0x41U);
+    assert(memcmp(target.format_area+boot_off+128U,"LIMINE~1CNF",11U)==0);
+    const uint32_t config_cluster=(uint32_t)target.format_area[boot_off+128U+26U] |
+        ((uint32_t)target.format_area[boot_off+128U+27U]<<8) |
+        ((uint32_t)target.format_area[boot_off+128U+20U]<<16) |
+        ((uint32_t)target.format_area[boot_off+128U+21U]<<24);
     assert(config_cluster>=3U);
     const size_t config_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (config_cluster-2U)*spc)*bps;
     assert(memcmp(target.format_area+config_off,"timeout: 3\\n",11U)==0);
+
+    /* The BIOS stage-2 filename requires a two-entry VFAT long name. */
+    const uint32_t root_boot_cluster=(uint32_t)target.format_area[root_off+64U+26U] |
+        ((uint32_t)target.format_area[root_off+64U+27U]<<8) |
+        ((uint32_t)target.format_area[root_off+64U+20U]<<16) |
+        ((uint32_t)target.format_area[root_off+64U+21U]<<24);
+    assert(root_boot_cluster>=3U);
+    const size_t root_boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
+        (root_boot_cluster-2U)*spc)*bps;
+    assert(memcmp(target.format_area+root_boot_off+64U,"LIMINE     ",11U)==0);
+    const uint32_t limine_dir_cluster=(uint32_t)target.format_area[root_boot_off+64U+26U] |
+        ((uint32_t)target.format_area[root_boot_off+64U+27U]<<8) |
+        ((uint32_t)target.format_area[root_boot_off+64U+20U]<<16) |
+        ((uint32_t)target.format_area[root_boot_off+64U+21U]<<24);
+    assert(limine_dir_cluster>=3U);
+    const size_t limine_dir_off=esp_offset+(size_t)(reserved+2U*fatsz+
+        (limine_dir_cluster-2U)*spc)*bps;
+    assert(target.format_area[limine_dir_off+64U]==0x42U);
+    assert(target.format_area[limine_dir_off+96U]==0x01U);
+    assert(memcmp(target.format_area+limine_dir_off+128U,"LIMINE~1SYS",11U)==0);
 
     /* Format the planned Nexus System partition through the guarded NXFS path. */
     target.nxfs_base = plan.partitions[1].first_lba;

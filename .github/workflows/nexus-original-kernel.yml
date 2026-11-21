@@ -56,12 +56,12 @@ jobs:
             -o /tmp/nexus-installer-core-test
           /tmp/nexus-installer-core-test
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/blockdev.c \
+            -Ikernel/src kernel/src/blockdev.c kernel/src/gpt.c \
             kernel/tests/blockdev_identity_test.c \
             -o /tmp/nexus-blockdev-identity-test
           /tmp/nexus-blockdev-identity-test
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src -Iinstaller kernel/src/blockdev.c \
+            -Ikernel/src -Iinstaller kernel/src/blockdev.c kernel/src/gpt.c \
             kernel/src/installer_storage.c installer/partition_plan.c \
             installer/gpt_image.c installer/gpt_install.c \
             installer/tests/installer_storage_test.c \

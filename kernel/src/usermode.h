@@ -14,6 +14,8 @@ int64_t usermode_sys_open(uint64_t user_path);
 int64_t usermode_sys_read(uint64_t descriptor, uint64_t user_buffer,
                           uint64_t length);
 int64_t usermode_sys_close(uint64_t descriptor);
+int64_t usermode_sys_file_write(uint64_t user_path, uint64_t user_buffer,
+                                uint64_t length);
 
 extern volatile uint64_t usermode_exit_status;
 extern volatile bool usermode_exit_seen;

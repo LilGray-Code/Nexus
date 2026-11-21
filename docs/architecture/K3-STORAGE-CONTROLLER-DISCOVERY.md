@@ -1,71 +1,76 @@
-# K3 — Storage Controller Discovery and NVMe Identify
+# K3 — Storage Discovery and Read-Only Block Devices
 
 ## Status
 
-Nexus classifies PCI mass-storage controllers through PCI configuration-space
-enumeration. AHCI/SATA register and port discovery is read-only. The NVMe admin queue implements Identify Controller and Identify Namespace.
-The namespace is registered through a common read-only block-device API. The
-controller creates one I/O queue pair, and a CI-only self-test reads one block
-from a disposable QEMU image.
+Nexus discovers PCI mass-storage controllers and has a first read-only NVMe
+block-device path. The generic UEFI/Q35 QEMU profile exercises NVMe; the
+legacy BIOS/PC profile currently discovers IDE. AHCI register and port
+discovery is implemented, but AHCI data commands are not.
 
-## Controller discovery
+## Common block-device interface
 
-The classifier recognizes SCSI, IDE, RAID, ATA, SATA/AHCI, SAS, NVMe, and UFS
-PCI class codes. For each discovered controller it logs the PCI
-bus/device/function address, vendor/device IDs, programming interface, and
-decoded BAR resources.
+The kernel now has a small registry with a fixed maximum of eight devices.
+A registered device describes its name, logical block count, block size,
+maximum blocks per request, flags, driver context, and read callback.
 
-The AHCI probe reads CAP, GHC, PI, and VS from the assigned ABAR, then reads
-SSTS and signature values for implemented ports that fit within the mapped
-register page. It does not start an AHCI port or issue ATA/ATAPI commands.
-The QEMU UEFI profile exposes AHCI; the legacy BIOS profile currently exposes
-an IDE controller.
+The public read function rejects unregistered handles, null buffers, zero
+lengths, out-of-range LBAs, requests extending beyond the namespace, and
+requests above the device's per-request limit. Only devices explicitly marked
+read-only can be registered or read. There is no write callback or write API.
 
-## NVMe Identify Controller
+The current implementation is an early kernel service, not yet a complete
+storage subsystem: the registry is single-core, has no locking, no device
+removal, no partition abstraction, and no filesystem integration.
 
-The NVMe path is limited to PCI class 01/subclass 08/programming-interface 02.
+## NVMe implementation
+
+The NVMe path handles PCI class 01/subclass 08/programming-interface 02.
 It validates an assigned aligned BAR0, enables PCI memory decoding and bus
-mastering with a 16-bit PCI Command-register write (avoiding writes to the
-adjacent write-one-to-clear Status register), and maps the controller and
-admin doorbell pages.
+mastering with a 16-bit PCI Command-register write, and maps controller and
+doorbell registers.
 
-It checks that the controller supports the NVM command set, 4 KiB memory pages,
-at least 16 admin queue entries, and a doorbell stride supported by this first
-implementation. It allocates and clears three separate 4 KiB DMA pages below
-the 4 GiB boundary for the admin submission queue, completion queue, and
-Identify data. It configures a 16-entry admin queue, masks interrupts for
-polling, and sends NVMe Identify Controller (opcode 0x06, CNS=1). It then reads the
-controller namespace count and, when nonzero, issues Identify Namespace for
-NSID 1 (opcode 0x06, CNS=0). It validates NSZE and the active LBA format and
-reports namespace capacity in logical blocks and logical-block byte size. It
-then creates one I/O completion/submission queue pair and reads exactly LBA 0
-from NSID 1 into a DMA page. CI seeds that LBA with a fixed signature and
-requires the returned bytes to match.
+It validates supported NVM command set, 4 KiB page size, queue depth, and
+doorbell stride. It creates admin queues and issues Identify Controller and
+Identify Namespace for NSID 1. It reports controller identity, namespace
+capacity, and active logical block size.
 
-The controller identity returned by the QEMU UEFI test is vendor 1B36,
-model "QEMU NVMe Ctrl", serial "NEXUSNVME0001", firmware "8.2.2". The current
-CI requires the Identify completion marker and model field.
+It then creates one I/O completion queue and one I/O submission queue and
+registers NSID 1 as `nvme0n1`. The driver accepts read requests of up to one
+4 KiB page per request, copies data through a DMA32 bounce page, and serializes
+requests using a single in-flight command. The queue uses polling, not
+interrupts.
 
-## Safety and limitations
+## Verification and disk safety
 
-Identify Controller and Identify Namespace read controller/namespace
-metadata only. The block-device API currently advertises the namespace as
-read-only. A normal build registers the device but does not automatically read
-sectors. Only the CI self-test build issues exactly one NVMe Read command for
-one logical block at LBA 0 on the disposable QEMU namespace. No write opcode,
-format/sanitize command, or other sector access is issued. No filesystem is
-mounted.
+The QEMU CI self-test build is compiled with
+`NEXUS_STORAGE_SELFTEST`. Its disposable 64 MiB NVMe image has distinct
+signatures in LBA 0 and LBA 1; CI calls the common `blockdev_read` API twice
+and verifies both signatures. This verifies sequential requests and completion
+queue head advancement, without issuing any write opcode.
 
-The DMA allocator currently guarantees one 4 KiB page below a caller-provided
-physical-address ceiling. NVMe currently uses three separate pages, not a
-general contiguous DMA allocator. IOMMU/VT-d isolation, interrupt delivery,
-controller reset/recovery, additional namespace-ID discovery beyond NSID 1,
-request scheduling, timeouts
-based on CAP.TO, and broader doorbell-stride support remain future work.
-Bus mastering is enabled for the detected NVMe controller; no IOMMU mapping
-or device-specific DMA isolation is implemented yet. Do not treat this
-prototype as safe for untrusted PCI devices or as a production disk driver.
+The distributable ISO is rebuilt separately without
+`NEXUS_STORAGE_SELFTEST`. CI boots that image with an NVMe test device attached
+and confirms the block device is registered but the automatic sector-read
+self-test marker is absent. A normal build therefore does not automatically
+read user disk sectors during boot.
 
-Next storage milestones are multi-request queueing and recovery, AHCI
-command/IDENTIFY support, explicit sector reads, and filesystem layers. Sector writes remain out of scope
-until a separate, explicit storage-write design and test plan exists.
+No write operation, format, sanitize, or filesystem mount exists. The ISO is
+still a kernel prototype and is not an installer or daily-use operating
+system.
+
+## Limitations and next work
+
+The DMA allocator currently guarantees individual 4 KiB pages below a
+caller-supplied physical-address limit. The NVMe prototype uses separate
+pages; there is no general contiguous DMA allocator or IOMMU/VT-d isolation.
+The driver currently supports one NVMe controller, NSID 1, polling mode, one
+in-flight request, and a maximum transfer of one 4 KiB page. Error recovery,
+controller reset, device removal, multi-namespace support, queue locking,
+interrupt delivery, and concurrent I/O remain unfinished.
+
+AHCI currently performs read-only register and port discovery only. Next
+storage work includes broader request queueing and recovery, AHCI command
+list/FIS/PRDT handling and ATA IDENTIFY, an explicit partition layer, GPT
+parsing, and finally a read-only filesystem. Disk writes remain out of scope
+until a separately designed and reviewed write path and destructive-test plan
+exist.

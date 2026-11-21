@@ -1,4 +1,5 @@
 #include "fat32.h"
+#include "serial.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -97,6 +98,7 @@ bool fat32_mount(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition) {
     mounted_device = NULL;
     root_entry_count = 0;
+    uint32_t mount_stage = 0U;
     if (device == NULL || partition == NULL ||
         (device->block_size != 512U && device->block_size != 4096U) ||
         partition->first_lba > partition->last_lba ||
@@ -106,6 +108,7 @@ bool fat32_mount(const struct nexus_block_device *device,
     partition_start = partition->first_lba;
     partition_sectors = partition->last_lba - partition->first_lba + 1U;
     if (!read_volume_sector(0U, sector_buffer)) goto fail;
+    mount_stage = 1U;
 
     const uint16_t bytes_per_sector = le16(sector_buffer + 11U);
     const uint8_t spc = sector_buffer[13U];
@@ -126,6 +129,14 @@ bool fat32_mount(const struct nexus_block_device *device,
         root_entries != 0U || total16 != 0U || fat16 != 0U ||
         total32 == 0U || fat32 == 0U || fs_version != 0U ||
         root < 2U || total32 > partition_sectors) goto fail;
+    mount_stage = 2U;
+    serial_write("FAT32: BPB sectors=");
+    serial_write_hex(total32);
+    serial_write(" partition sectors=");
+    serial_write_hex(partition_sectors);
+    serial_write(" FAT sectors=");
+    serial_write_hex(fat32);
+    serial_write("\r\n");
 
     sectors_per_cluster = spc;
     fat_start = reserved;
@@ -135,12 +146,19 @@ bool fat32_mount(const struct nexus_block_device *device,
     if (data_start64 >= total32 || data_start64 > UINT32_MAX)
         goto fail;
     data_start = (uint32_t)data_start64;
+    mount_stage = 3U;
     const uint32_t data_sectors = total32 - data_start;
     cluster_count = data_sectors / sectors_per_cluster;
     if (cluster_count < 65525U || cluster_count > 0x0FFFFFF5U ||
         root >= cluster_count + 2U ||
         (uint64_t)fat32 * device->block_size / 4U < cluster_count + 2U)
         goto fail;
+    mount_stage = 4U;
+    serial_write("FAT32: cluster count=");
+    serial_write_hex(cluster_count);
+    serial_write(" data start=");
+    serial_write_hex(data_start);
+    serial_write("\r\n");
     root_cluster = root;
 
     uint32_t cluster = root_cluster;
@@ -155,7 +173,12 @@ bool fat32_mount(const struct nexus_block_device *device,
             for (uint32_t offset = 0; offset + 32U <= device->block_size;
                  offset += 32U) {
                 if (!add_directory_entry(sector_buffer + offset)) {
-                    if (sector_buffer[offset] == 0x00U) return true;
+                    if (sector_buffer[offset] == 0x00U) {
+                        serial_write("FAT32: root entries=");
+                        serial_write_hex(root_entry_count);
+                        serial_write("\r\n");
+                        return true;
+                    }
                     goto fail;
                 }
             }
@@ -168,6 +191,9 @@ bool fat32_mount(const struct nexus_block_device *device,
     }
 
 fail:
+    serial_write("FAT32: mount failed at stage=");
+    serial_write_hex(mount_stage);
+    serial_write("\r\n");
     mounted_device = NULL;
     root_entry_count = 0;
     return false;

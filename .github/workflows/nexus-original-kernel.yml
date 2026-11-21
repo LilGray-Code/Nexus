@@ -126,7 +126,11 @@ jobs:
           from pathlib import Path
 
           log = Path("uefi-serial.log").read_text(errors="replace")
-          matches = re.findall(r"Instruction pointer:\\s*(0x[0-9A-Fa-f]+)", log)
+          matches = [
+              line.split("Instruction pointer:", 1)[1].strip()
+              for line in log.splitlines()
+              if "Instruction pointer:" in line
+          ]
           if not matches:
               print("No CPU exception IP recorded.")
               raise SystemExit(0)

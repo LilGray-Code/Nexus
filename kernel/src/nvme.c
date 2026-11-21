@@ -776,8 +776,16 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         return false;
     }
     serial_write("GPT: validated header and entry CRCs; discovered test partition\r\n");
-    if (!vfs_mount_root_fat32(registered, test_partition) ||
-        !vfs_root_mounted() || vfs_root_entry_count() != 2U) {
+    const bool fat_mounted = vfs_mount_root_fat32(registered, test_partition);
+    serial_write("FAT32: VFS mount result=");
+    serial_write_hex(fat_mounted ? 1U : 0U);
+    if (fat_mounted) {
+        serial_write(" VFS root entries=");
+        serial_write_hex(vfs_root_entry_count());
+    }
+    serial_write("\\r\\n");
+    if (!fat_mounted || !vfs_root_mounted() ||
+        vfs_root_entry_count() != 2U) {
         serial_write("FAT32: CI root directory self-test failed\\r\\n");
         return false;
     }

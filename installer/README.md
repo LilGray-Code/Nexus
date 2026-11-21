@@ -127,15 +127,26 @@ No gate may be marked complete from compilation alone. Each exit requires captur
 
 ## Current implementation status
 
-- A pure, host-testable partition planner now exists in
+- A pure, host-testable partition planner exists in
   `installer/partition_plan.c`. It plans GPT partition extents for UEFI
   (512 MiB ESP) and legacy BIOS (2 MiB BIOS Boot partition), followed by an
   8 GiB Nexus System partition and an aligned remainder data partition.
   It supports 512-byte and 4096-byte logical sectors, checks arithmetic and
   bounds, and performs no disk I/O.
-- CI compiles and runs planner tests for UEFI, BIOS, 4Kn alignment, exact
-  partition sizes, non-overlap, invalid sector sizes, undersized disks, and
-  invalid firmware modes.
+- `installer/gpt_image.c` serializes a protective MBR, primary and backup GPT
+  headers, mirrored entry arrays, partition type GUIDs, and CRC32 checksums.
+  It performs no disk I/O. CI tests both 512-byte and 4Kn metadata and rejects
+  duplicate GUIDs and invalid layouts.
+- `installer/gpt_install.c` provides a guarded metadata-install transaction.
+  It requires two separate confirmations and flags proving target identity was
+  revalidated, the target is not live media, and it is not mounted. It writes
+  backup entries/header first, then primary entries/header, and the protective
+  MBR last; every phase is flushed and read back. Mock-disk CI tests verify
+  write order, read-back, rejection without confirmation, unsafe-target
+  rejection, and injected I/O failures.
+- The kernel desktop now has an **Install F5** screen that displays the selected
+  block device, capacity, sector size, and a UEFI or BIOS partition preview.
+  It is explicitly read-only and does not invoke the GPT install transaction.
 - The kernel has GPT primary/backup header and entry-array CRC validation,
   exercised against a disposable QEMU disk image.
 - NXFS has an early on-disk formatter/mounter, two checksummed superblocks,
@@ -147,9 +158,10 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   where a reserved sector is written, read back, and restored on a disposable
   QEMU image. The distributable ISO intentionally registers NVMe as read-only;
   normal boots do not write to user disks.
-- No GPT writer, general-purpose installer write authorization flow, graphical
-  installer wizard, installed-system deployment, or installed first boot is
-  currently available.
+- The GPT metadata transaction is not yet linked to the kernel's block-device
+  layer or called by the desktop. The graphical preview is not yet a complete
+  installer. System-image deployment, NXFS formatting on a selected target,
+  Limine target-disk installation, first boot, and recovery remain unimplemented.
 
 The partition planner is an implemented and tested foundation, not a usable
 installer. Disk-writing remains disabled in the distributable ISO until the

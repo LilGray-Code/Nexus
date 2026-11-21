@@ -35,6 +35,18 @@ static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
 }
 
+static void format_u64(uint64_t value, char output[21]) {
+    char reverse[20];
+    size_t count = 0;
+    do {
+        reverse[count++] = (char)('0' + (value % 10U));
+        value /= 10U;
+    } while (value != 0U && count < sizeof(reverse));
+    for (size_t i = 0; i < count; ++i)
+        output[i] = reverse[count - i - 1U];
+    output[count] = '\\0';
+}
+
 static void draw_shell(void) {
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
@@ -134,15 +146,24 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, text_y + 108U,
                                "GPT PARTITIONS DISCOVERED",
                                1, 108, 216, 229);
+            char count_text[21];
+            char first_text[21];
+            char last_text[21];
+            format_u64((uint64_t)files_partition_count, count_text);
+            format_u64(files_first_lba, first_text);
+            format_u64(files_last_lba, last_text);
             graphics_draw_text(text_x, text_y + 138U,
-                               "PARTITION 1 START LBA:",
-                               1, 233, 243, 252);
-            graphics_draw_text(text_x + 190U, text_y + 138U,
-                               "SEE SERIAL LOG FOR EXACT LBA",
-                               1, 170, 191, 211);
+                               "PARTITIONS:", 1, 233, 243, 252);
+            graphics_draw_text(text_x + 100U, text_y + 138U,
+                               count_text, 1, 170, 191, 211);
             graphics_draw_text(text_x, text_y + 168U,
-                               "READ ONLY PARTITION METADATA",
-                               1, 170, 191, 211);
+                               "FIRST LBA:", 1, 233, 243, 252);
+            graphics_draw_text(text_x + 100U, text_y + 168U,
+                               first_text, 1, 170, 191, 211);
+            graphics_draw_text(text_x, text_y + 198U,
+                               "LAST LBA:", 1, 233, 243, 252);
+            graphics_draw_text(text_x + 100U, text_y + 198U,
+                               last_text, 1, 170, 191, 211);
         }
         graphics_draw_text(text_x, text_y + 208U,
                            "PRESS ESC TO RETURN HOME",

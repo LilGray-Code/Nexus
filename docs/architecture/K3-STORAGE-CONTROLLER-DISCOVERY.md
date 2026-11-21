@@ -3,8 +3,9 @@
 ## Status
 
 Nexus classifies PCI mass-storage controllers through PCI configuration-space
-enumeration. AHCI/SATA register and port discovery is read-only. The NVMe admin queue now implements Identify Controller and Identify Namespace
-(metadata-only operations; no sector reads or writes).
+enumeration. AHCI/SATA register and port discovery is read-only. The NVMe admin queue implements Identify Controller and Identify Namespace.
+It also creates one I/O queue pair and performs a single read-only block probe
+against a disposable QEMU test image.
 
 ## Controller discovery
 
@@ -35,7 +36,10 @@ Identify data. It configures a 16-entry admin queue, masks interrupts for
 polling, and sends NVMe Identify Controller (opcode 0x06, CNS=1). It then reads the
 controller namespace count and, when nonzero, issues Identify Namespace for
 NSID 1 (opcode 0x06, CNS=0). It validates NSZE and the active LBA format and
-reports namespace capacity in logical blocks and logical-block byte size.
+reports namespace capacity in logical blocks and logical-block byte size. It
+then creates one I/O completion/submission queue pair and reads exactly LBA 0
+from NSID 1 into a DMA page. CI seeds that LBA with a fixed signature and
+requires the returned bytes to match.
 
 The controller identity returned by the QEMU UEFI test is vendor 1B36,
 model "QEMU NVMe Ctrl", serial "NEXUSNVME0001", firmware "8.2.2". The current
@@ -44,8 +48,9 @@ CI requires the Identify completion marker and model field.
 ## Safety and limitations
 
 Identify Controller and Identify Namespace read controller/namespace
-metadata only. They do not issue read/write commands, format/sanitize
-commands, or any sector I/O. It does not mount filesystems or expose an OS block device. The
+metadata only. The I/O path issues exactly one NVMe Read command for one
+logical block at LBA 0 on the disposable QEMU namespace. No write opcode,
+format/sanitize command, or other sector access is issued. It does not mount filesystems or expose an OS block device. The
 QEMU test image is disposable and is not accessed at the namespace/sector
 level.
 
@@ -59,6 +64,6 @@ Bus mastering is enabled for the detected NVMe controller; no IOMMU mapping
 or device-specific DMA isolation is implemented yet. Do not treat this
 prototype as safe for untrusted PCI devices or as a production disk driver.
 
-Next storage milestones are a common block-device interface, AHCI command/IDENTIFY support, sector reads from explicitly
+Next storage milestones are a common read-only block-device interface, AHCI command/IDENTIFY support, sector reads from explicitly
 selected test media, and filesystem layers. Sector writes remain out of scope
 until a separate, explicit storage-write design and test plan exists.

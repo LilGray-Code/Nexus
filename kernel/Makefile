@@ -11,7 +11,7 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 	-mcmodel=kernel -I$(DEPS) -Isrc -I../installer
 CFLAGS += $(EXTRA_CFLAGS)
 LDFLAGS := -nostdlib -static -z max-page-size=0x1000 -T linker/x86_64.ld
-C_OBJECTS := $(OUT)/main.o $(OUT)/boot_payload.o $(OUT)/gdt.o $(OUT)/elf64.o $(OUT)/e1000.o $(OUT)/net.o $(OUT)/process.o $(OUT)/usermode.o $(OUT)/serial.o $(OUT)/memory.o $(OUT)/acpi.o $(OUT)/pci.o $(OUT)/blockdev.o $(OUT)/gpt.o $(OUT)/fat32.o $(OUT)/nxfs.o $(OUT)/vfs.o $(OUT)/graphics.o $(OUT)/desktop.o $(OUT)/input.o $(OUT)/nvme.o $(OUT)/storage.o $(OUT)/ioapic.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o $(OUT)/scheduler.o $(OUT)/partition_plan.o $(OUT)/gpt_image.o $(OUT)/gpt_install.o $(OUT)/installer_storage.o $(OUT)/fat32_format.o $(OUT)/fat32_file.o
+C_OBJECTS := $(OUT)/main.o $(OUT)/boot_payload.o $(OUT)/gdt.o $(OUT)/elf64.o $(OUT)/e1000.o $(OUT)/net.o $(OUT)/process.o $(OUT)/usermode.o $(OUT)/serial.o $(OUT)/memory.o $(OUT)/acpi.o $(OUT)/pci.o $(OUT)/blockdev.o $(OUT)/gpt.o $(OUT)/fat32.o $(OUT)/nxfs.o $(OUT)/vfs.o $(OUT)/graphics.o $(OUT)/desktop.o $(OUT)/input.o $(OUT)/nvme.o $(OUT)/storage.o $(OUT)/ioapic.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o $(OUT)/scheduler.o $(OUT)/partition_plan.o $(OUT)/gpt_image.o $(OUT)/gpt_install.o $(OUT)/installer_storage.o $(OUT)/fat32_format.o $(OUT)/fat32_file.o $(OUT)/bios_install.o
 OBJECTS := $(C_OBJECTS) $(OUT)/isr.o $(OUT)/context.o $(OUT)/gdt_asm.o $(OUT)/usermode_asm.o
 
 .PHONY: all clean
@@ -36,6 +36,9 @@ $(OUT)/fat32_file.o: ../installer/fat32_file.c ../installer/fat32_file.h ../inst
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/gpt_install.o: ../installer/gpt_install.c ../installer/gpt_install.h | $(OUT)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUT)/bios_install.o: ../installer/bios_install.c ../installer/bios_install.h | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/isr.o: src/isr.S | $(OUT)

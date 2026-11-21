@@ -32,6 +32,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file
 
+      - name: Test Nexus installer partition planner (host-only, no disk writes)
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iinstaller installer/partition_plan.c \
+            installer/tests/partition_plan_test.c \
+            -o /tmp/nexus-partition-plan-test
+          /tmp/nexus-partition-plan-test
+
       - name: Build dual-mode ISO
         run: |
           chmod +x build/build-iso.sh

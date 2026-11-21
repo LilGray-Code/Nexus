@@ -4,6 +4,7 @@
 #include "blockdev.h"
 #include "gpt_install.h"
 #include "fat32_format.h"
+#include "fat32_file.h"
 #include "nxfs.h"
 
 struct nexus_installer_disk_identity {
@@ -30,6 +31,9 @@ bool nexus_installer_format_nxfs(
     const char *typed_erase_phrase,
     const struct nexus_gpt_partition *partition);
 
+enum nexus_fat32_file_result nexus_installer_write_efi_file(
+ const struct nexus_block_device*,const struct nexus_installer_disk_identity*,
+ const char*,const char*,uint64_t,uint64_t,const char*,const void*,uint32_t);
 enum nexus_fat32_format_result nexus_installer_format_fat32(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *captured_identity,

@@ -2,6 +2,7 @@
 
 #include "blockdev.h"
 #include "fat32_format.h"
+#include "fat32_file.h"
 #include "gpt.h"
 #include "nxfs.h"
 
@@ -94,6 +95,28 @@ bool nexus_installer_format_nxfs(
     struct nexus_gpt_partition validated = *partition;
     return nxfs_format_install(device, &validated, typed_stable_id,
                                typed_erase_phrase);
+}
+
+enum nexus_fat32_file_result nexus_installer_write_efi_file(
+ const struct nexus_block_device *device,
+ const struct nexus_installer_disk_identity *identity,
+ const char *typed_id,const char *typed_erase,
+ uint64_t first,uint64_t blocks,const char *name,const void *data,uint32_t length){
+ if(!device||!identity||!blocks||
+    !blockdev_matches_identity(device,identity->stable_id,identity->model,
+      identity->block_count,identity->block_size)||
+    !installer_is_exact_esp_partition(device,first,blocks))
+  return NEXUS_FAT32_FILE_INVALID;
+ if(!blockdev_install_session_begin(device,typed_id,typed_erase))
+  return NEXUS_FAT32_FILE_INVALID;
+ const struct nexus_fat32_format_target target={
+  .block_count=device->block_count,.block_size=device->block_size,
+  .max_blocks_per_request=device->max_blocks_per_request,
+  .context=(void*)device,.write=installer_target_write,
+  .read=installer_target_read,.flush=installer_target_flush};
+ const enum nexus_fat32_file_result result=nexus_fat32_write_root_file(
+  &target,first,blocks,name,data,length);
+ blockdev_install_session_end();return result;
 }
 
 enum nexus_fat32_format_result nexus_installer_format_fat32(

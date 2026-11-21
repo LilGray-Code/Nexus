@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "NexusOS-Standalone-GitHub-Build-v5.tar.xz"
+      - ".github/workflows/nexus-build.yml"
   workflow_dispatch:
 
 permissions:
@@ -44,7 +45,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             debian:trixie \
-            bash -lc './build/prepare-build-host.sh && ./build/build-iso.sh'
+            bash -lc 'node -e "const fs=require(\"fs\"); const f=\"NexusDesktop/package.json\"; const p=JSON.parse(fs.readFileSync(f,\"utf8\")); p.homepage=p.homepage||\"https://github.com/LilGray-Code/Nexus\"; fs.writeFileSync(f,JSON.stringify(p,null,2)+\"\\n\")" && ./build/prepare-build-host.sh && ./build/build-iso.sh'
 
       - name: Verify ISO and checksum
         shell: bash

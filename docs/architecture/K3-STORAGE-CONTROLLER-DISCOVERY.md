@@ -24,6 +24,7 @@ controller registers, issue ATA/NVMe commands, or access sectors. It does not mo
 The next storage milestones are controller-specific MMIO/resource validation,
 an AHCI read-only identify path, an NVMe identify path, and then block-device
 and filesystem layers. The current AHCI register probe only reads CAP, GHC,
-PI, and VS from the assigned ABAR after checking PCI Memory Space Enable. It
-does not issue commands, start ports, enable bus mastering, or write AHCI
+PI, and VS from the assigned ABAR after checking PCI Memory Space Enable. The
+QEMU legacy-BIOS test reads version 1.0 and reports six implemented ports.
+It does not issue commands, start ports, enable bus mastering, or write AHCI
 registers. Each later stage needs separate tests before disk access.

@@ -50,6 +50,21 @@ bool storage_probe(void) {
         serial_write(" prog-if=");
         serial_write_hex(device->programming_interface);
         serial_write("\r\n");
+        
+        for (uint8_t bar_index = 0; bar_index < NEXUS_PCI_BAR_COUNT; ++bar_index) {
+            struct nexus_pci_bar bar;
+            if (!pci_decode_bar(device, bar_index, &bar)) continue;
+
+            serial_write("STORAGE: BAR ");
+            serial_write_hex(bar_index);
+            serial_write(bar.io_space ? " I/O" : " MMIO");
+            serial_write(bar.is_64bit ? " 64-bit" : " 32-bit");
+            if (bar.prefetchable) serial_write(" prefetchable");
+            serial_write(bar.assigned ? " base=" : " unassigned base=");
+            serial_write_hex(bar.base);
+            serial_write("\r\n");
+        }
+
     }
 
     serial_write("STORAGE: controllers discovered: ");

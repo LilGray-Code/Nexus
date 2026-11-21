@@ -1,0 +1,66 @@
+name: Build Nexus OS ISO
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "NexusOS-Standalone-GitHub-Build-v5.tar.xz"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-iso:
+    name: Build Debian 13 BIOS/UEFI installer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s NexusOS-Standalone-GitHub-Build-v5.tar.xz
+          echo "0354c907bb78df89607983731b07b9c83890b942a208a1a60e95fd4388941150  NexusOS-Standalone-GitHub-Build-v5.tar.xz" | sha256sum -c -
+
+      - name: Extract source
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -xJf NexusOS-Standalone-GitHub-Build-v5.tar.xz
+          chmod +x build/*.sh
+          test -f build/build-iso.sh
+          test -f NexusDesktop/ai.html
+
+      - name: Build inside Debian 13
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --privileged \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            debian:trixie \
+            bash -lc './build/prepare-build-host.sh && ./build/build-iso.sh'
+
+      - name: Verify ISO and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/NexusOS-Standalone-amd64.iso
+          cd release
+          sha256sum -c SHA256SUMS.txt
+          file NexusOS-Standalone-amd64.iso
+
+      - name: Upload installable ISO
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexusOS-Standalone-amd64-ISO
+          path: |
+            release/NexusOS-Standalone-amd64.iso
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30

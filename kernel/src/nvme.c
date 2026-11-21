@@ -199,23 +199,33 @@ static bool nvme_block_transfer(struct nvme_io_state *state,
         __asm__ volatile ("pause");
     }
 
-    if (!completed || completion->command_id != command_id ||
-        ((completion_status >> 1) & 0xFFU) != 0U ||
-        ((completion_status >> 9) & 0x07U) != 0U) {
-        serial_write(write ? "NVMe: block write failed, completion status="
-                           : "NVMe: block read failed, completion status=");
+    if (!completed || completion->command_id != command_id) {
+        serial_write(write ? "NVMe: block write did not complete, status="
+                           : "NVMe: block read did not complete, status=");
         serial_write_hex(completion_status);
         serial_write("\r\n");
         state->busy = false;
         return false;
     }
 
+    const bool command_ok =
+        ((completion_status >> 1) & 0xFFU) == 0U &&
+        ((completion_status >> 9) & 0x07U) == 0U;
     __asm__ volatile ("sfence" : : : "memory");
     state->completion_head =
         (uint16_t)((state->completion_head + 1U) % NVME_IO_QUEUE_DEPTH);
     if (state->completion_head == 0U) state->completion_phase ^= 1U;
     state->doorbells[(3U * state->doorbell_stride_bytes) / 4U] =
         state->completion_head;
+
+    if (!command_ok) {
+        serial_write(write ? "NVMe: block write returned error, status="
+                           : "NVMe: block read returned error, status=");
+        serial_write_hex(completion_status);
+        serial_write("\r\n");
+        state->busy = false;
+        return false;
+    }
 
     if (read) {
         uint8_t *output = (uint8_t *)buffer;
@@ -232,6 +242,7 @@ static bool nvme_block_read(void *context, uint64_t lba,
                                lba, block_count, buffer);
 }
 
+#ifdef NEXUS_STORAGE_SELFTEST
 static bool nvme_block_write(void *context, uint64_t lba,
                              uint32_t block_count, const void *buffer) {
     return nvme_block_transfer((struct nvme_io_state *)context, 0x01U,
@@ -281,26 +292,31 @@ static bool nvme_block_flush(void *context) {
         __asm__ volatile ("pause");
     }
 
-    const bool success = completed && completion->command_id == command_id &&
-        ((completion_status >> 1) & 0xFFU) == 0U &&
-        ((completion_status >> 9) & 0x07U) == 0U;
-    if (!success) {
-        serial_write("NVMe: flush failed, completion status=");
+    if (!completed || completion->command_id != command_id) {
+        serial_write("NVMe: flush did not complete, status=");
         serial_write_hex(completion_status);
         serial_write("\r\n");
         state->busy = false;
         return false;
     }
-
+    const bool success =
+        ((completion_status >> 1) & 0xFFU) == 0U &&
+        ((completion_status >> 9) & 0x07U) == 0U;
     __asm__ volatile ("sfence" : : : "memory");
     state->completion_head =
         (uint16_t)((state->completion_head + 1U) % NVME_IO_QUEUE_DEPTH);
     if (state->completion_head == 0U) state->completion_phase ^= 1U;
     state->doorbells[(3U * state->doorbell_stride_bytes) / 4U] =
         state->completion_head;
+    if (!success) {
+        serial_write("NVMe: flush returned error, status=");
+        serial_write_hex(completion_status);
+        serial_write("\r\n");
+    }
     state->busy = false;
-    return true;
+    return success;
 }
+#endif
 
 bool nvme_identify_probe(const struct nexus_pci_device *device) {
     if (device == NULL || device->class_code != 0x01 ||

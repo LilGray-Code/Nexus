@@ -193,9 +193,9 @@ void scheduler_wait(void) {
 __attribute__((noreturn))
 static void scheduler_thread_exit(void) {
     struct nexus_thread *old = current_thread;
+    __asm__ volatile ("cli" : : : "memory");
     old->finished = true;
 
-    __asm__ volatile ("cli" : : : "memory");
     struct nexus_thread *next = next_runnable_thread(old);
     current_thread = next;
     arch_context_switch(&old->saved_stack, next->saved_stack);

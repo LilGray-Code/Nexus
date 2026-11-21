@@ -16,7 +16,8 @@ enum desktop_view {
     DESKTOP_HOME = 0,
     DESKTOP_FILES,
     DESKTOP_BROWSER,
-    DESKTOP_SETTINGS
+    DESKTOP_SETTINGS,
+    DESKTOP_TERMINAL
 };
 
 static enum desktop_view active_view = DESKTOP_HOME;
@@ -38,6 +39,9 @@ static char files_preview[41];
 static char files_listing[6][13];
 static size_t files_listing_count;
 static size_t files_selected_index;
+static char terminal_input[64];
+static size_t terminal_input_length;
+static char terminal_output[160];
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -99,6 +103,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_FILES) window_title = "FILES";
     if (active_view == DESKTOP_BROWSER) window_title = "NEXUS BROWSER";
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
+    if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     graphics_draw_text(panel_x + 18U, panel_y + 15U, window_title,
                        1, 225, 241, 255);
 
@@ -214,6 +219,24 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 342U,
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
+    } else if (active_view == DESKTOP_TERMINAL) {
+        graphics_draw_text(text_x, text_y, "NEXUS COMMAND SHELL",
+                           2, 239, 249, 255);
+        graphics_draw_text(text_x, text_y + 42U,
+                           "READ ONLY SYSTEM COMMANDS",
+                           1, 108, 216, 229);
+        graphics_draw_text(text_x, text_y + 82U, terminal_output,
+                           1, 170, 225, 190);
+        graphics_draw_text(text_x, text_y + 128U, "nexus> ",
+                           1, 119, 229, 211);
+        graphics_draw_text(text_x + 56U, text_y + 128U, terminal_input,
+                           1, 239, 249, 255);
+        graphics_draw_text(text_x, text_y + 180U,
+                           "HELP  ABOUT  LS  CAT FILE  CLEAR",
+                           1, 170, 191, 211);
+        graphics_draw_text(text_x, text_y + 210U,
+                           "PRESS ESC TO RETURN HOME",
+                           1, 119, 229, 211);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER",
                            2, 239, 249, 255);
@@ -251,7 +274,7 @@ static void draw_shell(void) {
     graphics_fill_rect(0, height - bottom_bar, width, 2,
                        38, 75, 105);
     graphics_draw_text(18U, height - bottom_bar / 2U - 4U,
-                       "F1 FILES  F2 BROWSER  F3 SETTINGS  ESC HOME",
+                       "F1 FILES  F2 BROWSER  F3 SETTINGS  F4 TERMINAL  ESC HOME",
                        1, 178, 202, 221);
 }
 
@@ -386,6 +409,86 @@ static void scan_files_once(void) {
     serial_write("FILES: no supported read-only FAT32 GPT volume found\r\n");
 }
 
+static char terminal_scancode_char(uint8_t code) {
+    static const char map[58] = {
+        [0x02]='1',[0x03]='2',[0x04]='3',[0x05]='4',[0x06]='5',
+        [0x07]='6',[0x08]='7',[0x09]='8',[0x0A]='9',[0x0B]='0',
+        [0x0C]='-',[0x0D]='=',[0x10]='q',[0x11]='w',[0x12]='e',
+        [0x13]='r',[0x14]='t',[0x15]='y',[0x16]='u',[0x17]='i',
+        [0x18]='o',[0x19]='p',[0x1A]='[',[0x1B]=']',[0x1E]='a',
+        [0x1F]='s',[0x20]='d',[0x21]='f',[0x22]='g',[0x23]='h',
+        [0x24]='j',[0x25]='k',[0x26]='l',[0x27]=';',[0x28]='\'',
+        [0x2B]='\\',[0x2C]='z',[0x2D]='x',[0x2E]='c',[0x2F]='v',
+        [0x30]='b',[0x31]='n',[0x32]='m',[0x33]=',[',[0x34]='.',
+        [0x35]='/',[0x39]=' '
+    };
+    return code < sizeof(map) ? map[code] : '\0';
+}
+
+static void terminal_execute(void) {
+    terminal_output[0] = '\0';
+    if (terminal_input_length == 0U) return;
+    terminal_input[terminal_input_length] = '\0';
+    if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
+        terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
+        terminal_input[4] == '\0') {
+        const char *s = "help about ls cat FILE clear";
+        size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
+        terminal_output[i]='\0';
+    } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
+               terminal_input[2]=='o' && terminal_input[3]=='u' &&
+               terminal_input[4]=='t' && terminal_input[5]=='\0') {
+        const char *s = "Nexus OS original x86-64 kernel";
+        size_t i=0; while(s[i]!='\0' && i<sizeof(terminal_output)-1U){terminal_output[i]=s[i];++i;} terminal_output[i]='\0';
+    } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
+               terminal_input[2]=='\0') {
+        size_t out=0;
+        if (!vfs_root_mounted()) {
+            const char *s="no mounted volume";
+            while(s[out]!='\0' && out<sizeof(terminal_output)-1U){terminal_output[out]=s[out];++out;}
+        } else {
+            for(size_t n=0;n<vfs_root_entry_count();++n) {
+                struct nexus_vfs_dirent e;
+                if(!vfs_root_entry(n,&e)) continue;
+                for(size_t k=0;e.name[k]!='\0' && out<sizeof(terminal_output)-2U;++k)
+                    terminal_output[out++]=e.name[k];
+                if(out<sizeof(terminal_output)-1U) terminal_output[out++]=' ';
+            }
+            if(out==0U) { terminal_output[out++]='('; terminal_output[out++]='e'; terminal_output[out++]=')'; }
+        }
+        terminal_output[out]='\0';
+    } else if (terminal_input[0]=='c' && terminal_input[1]=='a' &&
+               terminal_input[2]=='t' && terminal_input[3]==' ') {
+        const char *name=terminal_input+4;
+        struct nexus_vfs_file file;
+        if(vfs_open_readonly(name,&file)) {
+            uint8_t data[sizeof(terminal_output)-1U]; size_t got=0;
+            if(vfs_read(&file,data,sizeof(data),&got)) {
+                for(size_t n=0;n<got;++n) {
+                    uint8_t ch=data[n];
+                    terminal_output[n]=(ch>=0x20U && ch<=0x7EU)?(char)ch:' ';
+                }
+                terminal_output[got]='\0';
+            } else terminal_output[0]='?';
+            vfs_close(&file);
+        } else {
+            const char *s="file not found";
+            size_t n=0; while(s[n]!='\0' && n<sizeof(terminal_output)-1U){terminal_output[n]=s[n];++n;}
+            terminal_output[n]='\0';
+        }
+    } else if (terminal_input[0]=='c' && terminal_input[1]=='l' &&
+               terminal_input[2]=='e' && terminal_input[3]=='a' &&
+               terminal_input[4]=='r' && terminal_input[5]=='\0') {
+        terminal_output[0]='\0';
+    } else {
+        const char *s="unknown command (type help)";
+        size_t n=0; while(s[n]!='\0' && n<sizeof(terminal_output)-1U){terminal_output[n]=s[n];++n;}
+        terminal_output[n]='\0';
+    }
+    terminal_input_length=0;
+    terminal_input[0]='\0';
+}
+
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
     if (event->type == NEXUS_INPUT_MOUSE) {
@@ -460,6 +563,22 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (event->type != NEXUS_INPUT_KEYBOARD) return;
     /* Set-1 make codes only; break codes are ignored. */
+    if (active_view == DESKTOP_TERMINAL) {
+        if ((event->scancode & 0x80U) != 0U) return;
+        if (event->scancode == 0x1CU) {
+            terminal_execute();
+        } else if (event->scancode == 0x0EU) {
+            if (terminal_input_length > 0U)
+                terminal_input[--terminal_input_length] = '\0';
+        } else {
+            const char ch = terminal_scancode_char(event->scancode);
+            if (ch != '\0' && terminal_input_length < sizeof(terminal_input)-1U) {
+                terminal_input[terminal_input_length++] = ch;
+                terminal_input[terminal_input_length] = '\0';
+            }
+        }
+        draw_shell(); draw_pointer(); return;
+    }
     if (active_view == DESKTOP_FILES && files_fat32_ok) {
         if (event->scancode == 0x48U && files_listing_count > 0U) {
             if (files_selected_index > 0U) --files_selected_index;
@@ -511,6 +630,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         case 0x3BU: next_view = DESKTOP_FILES; break;
         case 0x3CU: next_view = DESKTOP_BROWSER; break;
         case 0x3DU: next_view = DESKTOP_SETTINGS; break;
+        case 0x3EU: next_view = DESKTOP_TERMINAL; break;
         case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
     }

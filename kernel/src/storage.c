@@ -40,7 +40,7 @@ bool storage_probe(void) {
         serial_write(" at ");
         serial_write_hex(device->bus);
         serial_write(":");
-        serial_write_hex(device->device);
+        serial_write_hex(device->slot);
         serial_write(".");
         serial_write_hex(device->function);
         serial_write(" vendor=");

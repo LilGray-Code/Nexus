@@ -1,5 +1,6 @@
 #include "timer.h"
 
+#include "paging.h"
 #include "serial.h"
 
 #include <stdbool.h>
@@ -19,6 +20,7 @@
 #define IA32_X2APIC_LVT_LINT0 0x835
 #define APIC_BASE_ENABLE   (1ULL << 11)
 #define APIC_BASE_X2APIC   (1ULL << 10)
+#define APIC_PHYSICAL_MASK 0x0000000FFFFFF000ULL
 
 static volatile uint64_t tick_count;
 
@@ -42,32 +44,48 @@ static void write_msr(uint32_t msr, uint64_t value) {
     __asm__ volatile ("wrmsr" : : "c"(msr), "a"(low), "d"(high));
 }
 
-/*
- * Use x2APIC's MSR interface for LINT0 ExtINT routing. The bootloader's
- * higher-half direct map does not promise that the Local APIC MMIO page is
- * mapped, so the xAPIC memory-mapped registers must not be dereferenced here.
- */
 static bool local_apic_enable_pic_virtual_wire(void) {
     uint32_t eax = 1, ebx, ecx, edx;
     __asm__ volatile ("cpuid"
                       : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
     (void)ebx;
 
-    if ((edx & (1U << 9)) == 0) return false;   /* APIC present */
-    if ((ecx & (1U << 21)) == 0) return false;  /* x2APIC supported */
+    if ((edx & (1U << 9)) == 0) return false;
 
     uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
-    apic_base |= APIC_BASE_ENABLE | APIC_BASE_X2APIC;
+    apic_base |= APIC_BASE_ENABLE;
+
+    if ((ecx & (1U << 21)) != 0) {
+        /* x2APIC-capable processors use the architectural MSR interface. */
+        apic_base |= APIC_BASE_X2APIC;
+        write_msr(IA32_APIC_BASE_MSR, apic_base);
+        write_msr(IA32_X2APIC_TPR, 0);
+
+        uint64_t svr = read_msr(IA32_X2APIC_SVR);
+        svr = (svr & ~0xFFULL) | 0x1FFULL;
+        write_msr(IA32_X2APIC_SVR, svr);
+        write_msr(IA32_X2APIC_LVT_LINT0, 0x700);
+        serial_write("K2: x2APIC LINT0 configured for PIC ExtINT\r\n");
+        return true;
+    }
+
+    /* xAPIC mode: map the APIC page explicitly; never assume HHDM covers MMIO. */
+    apic_base &= ~APIC_BASE_X2APIC;
     write_msr(IA32_APIC_BASE_MSR, apic_base);
 
-    /* Accept all priorities and enable the local APIC software interface. */
-    write_msr(IA32_X2APIC_TPR, 0);
-    uint64_t svr = read_msr(IA32_X2APIC_SVR);
-    svr = (svr & ~0xFFULL) | 0x1FFULL;
-    write_msr(IA32_X2APIC_SVR, svr);
+    const uint64_t apic_physical = apic_base & APIC_PHYSICAL_MASK;
+    volatile uint32_t *lapic = NULL;
+    if (!paging_map_mmio_page(apic_physical, &lapic) || lapic == NULL) {
+        serial_write("K2: unable to map xAPIC MMIO page\r\n");
+        return false;
+    }
 
-    /* Unmasked LINT0 ExtINT input: forward the legacy PIC interrupt. */
-    write_msr(IA32_X2APIC_LVT_LINT0, 0x700);
+    lapic[0x80 / 4] = 0;
+    lapic[0x350 / 4] = 0x700;
+    uint32_t svr = lapic[0xF0 / 4];
+    lapic[0xF0 / 4] = (svr & ~0xFFU) | 0x1FFU;
+    __asm__ volatile ("mfence" : : : "memory");
+    serial_write("K2: xAPIC MMIO mapped; LINT0 configured for PIC ExtINT\r\n");
     return true;
 }
 
@@ -106,10 +124,8 @@ void timer_init(uint32_t frequency_hz) {
     tick_count = 0;
     pic_remap();
 
-    if (local_apic_enable_pic_virtual_wire()) {
-        serial_write("K2: x2APIC LINT0 configured for PIC ExtINT\r\n");
-    } else {
-        serial_write("K2: x2APIC unavailable; PIC/PIT route not enabled on this platform\r\n");
+    if (!local_apic_enable_pic_virtual_wire()) {
+        serial_write("K2: Local APIC virtual-wire setup failed\r\n");
     }
 
     outb(PIT_COMMAND, 0x36);

@@ -88,7 +88,7 @@ jobs:
           grep -q "AHCI: ports implemented:" uefi-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" uefi-serial.log
           grep -q "NEXUS DESKTOP FRAMEBUFFER READY" uefi-serial.log
-          grep -q "NEXUS PS2 KEYBOARD POLLING READY" uefi-serial.log
+          grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 
       - name: Boot test - legacy BIOS (SeaBIOS)

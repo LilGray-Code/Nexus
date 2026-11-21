@@ -13,7 +13,8 @@
 
 enum nexus_firmware_mode {
     NEXUS_FIRMWARE_UEFI = 1,
-    NEXUS_FIRMWARE_LEGACY_BIOS = 2
+    NEXUS_FIRMWARE_LEGACY_BIOS = 2,
+    NEXUS_FIRMWARE_DUAL = 3
 };
 
 enum nexus_partition_kind {

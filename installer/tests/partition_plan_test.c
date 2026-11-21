@@ -40,6 +40,19 @@ static void test_bios_plan(void) {
     assert(plan.partitions[2].kind == NEXUS_PARTITION_DATA);
 }
 
+static void test_dual_firmware_plan(void) {
+    struct nexus_partition_plan plan;
+    assert(nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
+        512ULL,512U,NEXUS_FIRMWARE_DUAL,&plan));
+    assert(plan.partition_count==4U);
+    assert(plan.partitions[0].kind==NEXUS_PARTITION_ESP);
+    assert(plan.partitions[1].kind==NEXUS_PARTITION_BIOS_BOOT);
+    assert(plan.partitions[2].kind==NEXUS_PARTITION_SYSTEM);
+    assert(plan.partitions[3].kind==NEXUS_PARTITION_DATA);
+    for(size_t i=1U;i<plan.partition_count;i++)
+        assert(plan.partitions[i-1U].last_lba<plan.partitions[i].first_lba);
+}
+
 static void test_4kn_plan(void) {
     struct nexus_partition_plan plan;
     assert(nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
@@ -66,6 +79,7 @@ static void test_rejects_unsafe_inputs(void) {
 int main(void) {
     test_uefi_plan();
     test_bios_plan();
+    test_dual_firmware_plan();
     test_4kn_plan();
     test_rejects_unsafe_inputs();
     puts("NEXUS INSTALLER PARTITION PLANNER TESTS PASSED");

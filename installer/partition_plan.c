@@ -75,7 +75,8 @@ bool nexus_partition_plan_create(uint64_t disk_block_count,
         (logical_block_size & (logical_block_size - 1U)) != 0U ||
         NEXUS_PLAN_ALIGNMENT_BYTES % logical_block_size != 0U ||
         (firmware != NEXUS_FIRMWARE_UEFI &&
-         firmware != NEXUS_FIRMWARE_LEGACY_BIOS) ||
+         firmware != NEXUS_FIRMWARE_LEGACY_BIOS &&
+         firmware != NEXUS_FIRMWARE_DUAL) ||
         disk_block_count < 128U) return false;
 
     alignment = NEXUS_PLAN_ALIGNMENT_BYTES / logical_block_size;
@@ -94,13 +95,15 @@ bool nexus_partition_plan_create(uint64_t disk_block_count,
     out->first_usable_lba = first;
     out->last_usable_lba = last;
 
-    if (firmware == NEXUS_FIRMWARE_UEFI) {
+    if (firmware == NEXUS_FIRMWARE_UEFI || firmware == NEXUS_FIRMWARE_DUAL) {
         if (!mib_to_blocks(NEXUS_PLAN_ESP_MIB, logical_block_size,
                            &esp_blocks)) return false;
         if (!append_partition(out, NEXUS_PARTITION_ESP, first, esp_blocks,
                               alignment, &next)) goto fail;
         if (!round_up_u64(next, alignment, &first)) goto fail;
-    } else {
+    }
+    if (firmware == NEXUS_FIRMWARE_LEGACY_BIOS ||
+        firmware == NEXUS_FIRMWARE_DUAL) {
         if (!mib_to_blocks(NEXUS_PLAN_BIOS_BOOT_MIB, logical_block_size,
                            &bios_blocks) ||
             !append_partition(out, NEXUS_PARTITION_BIOS_BOOT, first,

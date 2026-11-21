@@ -6,6 +6,7 @@
 #include "gpt.h"
 #include "nxfs.h"
 #include "boot_payload.h"
+#include "bios_install.h"
 
 static bool installer_target_read(void *context, uint64_t lba,
                                   uint32_t blocks, void *buffer) {
@@ -120,6 +121,51 @@ enum nexus_fat32_file_result nexus_installer_write_efi_file(
  blockdev_install_session_end();return result;
 }
 
+
+static bool installer_is_exact_bios_partition(
+    const struct nexus_block_device *device,
+    const struct nexus_gpt_partition *requested) {
+    static const uint8_t bios_guid[16]={
+        'H','a','h','!','I','d','o','n','t','N','e','e','d','E','F','I'
+    };
+    if(device==NULL||requested==NULL||requested->last_lba<requested->first_lba||
+       !gpt_scan_device(device))return false;
+    for(size_t i=0U;i<gpt_partition_count();++i){
+        const struct nexus_gpt_partition *part=gpt_partition_at(i);
+        if(part==NULL||part->first_lba!=requested->first_lba||
+           part->last_lba!=requested->last_lba)continue;
+        for(size_t b=0U;b<16U;++b)
+            if(part->type_guid[b]!=bios_guid[b]||
+               part->unique_guid[b]!=requested->unique_guid[b])return false;
+        return true;
+    }
+    return false;
+}
+
+bool nexus_installer_install_bios_bootloader(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const char *typed_id,const char *typed_erase,
+    const struct nexus_gpt_partition *bios_partition) {
+    const struct nexus_boot_payloads *p=nexus_boot_payloads_get();
+    if(!device||!identity||!bios_partition||!p||
+       !blockdev_matches_identity(device,identity->stable_id,identity->model,
+          identity->block_count,identity->block_size)||
+       !installer_is_exact_bios_partition(device,bios_partition))return false;
+    if(!blockdev_install_session_begin(device,typed_id,typed_erase))return false;
+    const struct nexus_bios_install_target target={
+      .block_count=device->block_count,.block_size=device->block_size,
+      .max_blocks_per_request=device->max_blocks_per_request,
+      .context=(void*)device,.read=installer_target_read,
+      .write=installer_target_write,.flush=installer_target_flush
+    };
+    const bool ok=nexus_bios_install_apply(&target,
+      bios_partition->first_lba,
+      bios_partition->last_lba-bios_partition->first_lba+1U,
+      p->bios_stage2.data,p->bios_stage2.size);
+    blockdev_install_session_end();
+    return ok;
+}
 
 bool nexus_installer_deploy_boot_payloads(
  const struct nexus_block_device *device,

@@ -29,8 +29,10 @@ Two test threads yield explicitly; CI requires the trace A-B-A-B-A-B and
 checks both counters reach three.
 
 The cooperative scheduler is deliberately non-preemptive. Its boot test runs
-with interrupts disabled. The PIT timer is independently verified but does
-not yet drive the scheduler.
+with interrupts disabled. CI run [44871736233](https://github.com/LilGray-Code/Nexus/actions/runs/44871736233)
+passed under both OVMF and SeaBIOS. Both serial logs reported five PIT ticks
+and the exact A-B-A-B-A-B round-robin trace. The PIT timer is independently
+verified but does not yet drive the scheduler.
 
 ## Remaining K2 work
 

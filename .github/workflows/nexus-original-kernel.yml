@@ -31,7 +31,7 @@ jobs:
       - name: Install build and emulator dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file
+          sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file dosfstools mtools
 
       - name: Test Nexus installer partition planner (host-only, no disk writes)
         run: |
@@ -109,6 +109,12 @@ jobs:
           /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
             build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios-hdd.bin \
             build/limine-binary/limine-bios.sys /tmp/nexus-installed-uefi.img
+          sfdisk --dump /tmp/nexus-installed-uefi.img
+          dd if=/tmp/nexus-installed-uefi.img of=/tmp/nexus-installed-esp.img \
+            bs=512 skip=2048 count=1048576 status=none
+          fsck.fat -n /tmp/nexus-installed-esp.img
+          mdir -i /tmp/nexus-installed-esp.img ::/EFI/BOOT
+          mdir -i /tmp/nexus-installed-esp.img ::/boot/limine
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-installed-uefi-vars.fd
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \

@@ -260,10 +260,10 @@ workflow remain on `main`.
   built-in screens, not full applications; Files has no filesystem browser and
   Browser has no network stack or rendering engine.
 - The shell consumes queued keyboard and mouse events. Keyboard shortcuts
-  change views; the current development commit adds a mouse pointer and
-  clickable home-screen tiles. Mouse interaction is still awaiting the latest
-  CI result and physical-device testing. Redrawing the framebuffer for pointer
-  updates is intentionally simple and will need optimization.
+  change views; a mouse pointer and clickable home-screen tiles are implemented.
+  The latest CI run compiles and boots this shell, but does not synthesize mouse
+  clicks or prove pointer behavior on physical hardware. Redrawing the framebuffer
+  for pointer updates is intentionally simple and will need optimization.
 - The PS/2 controller driver configures keyboard and mouse ports with bounded
   controller waits, enables IRQ1/IRQ12 only for devices that acknowledge setup,
   parses three-byte mouse packets, and queues input events in a fixed-size
@@ -297,24 +297,28 @@ workflow remain on `main`.
   reads two sequential LBAs from a disposable QEMU image and verifies distinct
   signatures; the distributable ISO is rebuilt without the test-read option.
 
-### Latest verified storage build
+### Latest verified original-kernel build
 
 CI run
-[44877677450](https://github.com/LilGray-Code/Nexus/actions/runs/44877677450)
+[44878420894](https://github.com/LilGray-Code/Nexus/actions/runs/44878420894)
 passed the full workflow: compilation, ELF/ISO verification, UEFI boot,
-legacy BIOS boot, PS/2 keyboard initialization, two sequential NVMe
-block-device reads, a clean distributable build, and a final UEFI boot of that
-distributable image.
+legacy BIOS boot, read-only NVMe block-device reads, GPT header and partition
+entry CRC validation on a disposable test image, a clean distributable build,
+and a final UEFI boot of that distributable image.
 
-The CI self-test build uses a disposable 64 MiB QEMU disk image with distinct
-signatures in LBA 0 and LBA 1. The common blockdev_read API read both sectors
-sequentially and verified both signatures. No disk write command is issued.
+The CI-only GPT self-test uses a generated disposable 64 MiB QEMU disk image.
+It contains a protective MBR, primary and backup GPT metadata, and one known
+partition spanning LBAs 2048 through 4095. The parser validates the primary
+header CRC and entry-array CRC, checks usable-LBA bounds, and discovers the
+expected partition. The normal distributable ISO is built without the
+NEXUS_STORAGE_SELFTEST option and does not automatically scan or read disk
+sectors on boot.
 
-The uploaded distributable ISO is rebuilt without the
-NEXUS_STORAGE_SELFTEST compile option. CI boots it with an NVMe test device
-attached, confirms that the read-only block device registers, and confirms
-that the automatic sector-read test marker is absent. Normal boots therefore
-do not automatically read disk sectors.
+The current parser is deliberately bounded: it supports 512-byte and 4096-byte
+logical sectors, at most 128 entries and 64 KiB of entry data, stores at most
+16 non-empty partitions, and exposes metadata only. It does not yet validate
+the backup GPT header, detect overlapping partitions, mount a filesystem,
+interpret partition names, or write to storage.
 
 The current CI profiles are deliberately generic rather than laptop-specific:
 UEFI/Q35 with a qemu64 CPU and AHCI plus NVMe, and legacy BIOS/PC with the max
@@ -323,13 +327,12 @@ sizes, chipsets, and controller combinations remain planned.
 
 These are still bring-up prototypes, not a daily-use operating system. The
 allocator is monotonic and has no page-free operation or general heap.
-Exception handling is fatal-only. The NVMe work is an admin Identify prototype,
-the block-device API is read-only and the NVMe driver currently supports one
-in-flight request at a time with a one-page transfer limit; there is no write
-support, IOMMU/VT-d isolation, general DMA allocator, multi-namespace support,
-or recovery path. AHCI does not yet issue
-ATA IDENTIFY or data commands. No physical hardware compatibility is claimed
-until tests are recorded across multiple vendors and generations.
+Exception handling is fatal-only. The NVMe driver supports one in-flight
+request at a time with a one-page transfer limit; there is no write support,
+IOMMU/VT-d isolation, general DMA allocator, multi-namespace support, or
+recovery path. AHCI does not yet issue ATA IDENTIFY or data commands. No
+physical hardware compatibility is claimed until tests are recorded across
+multiple vendors and generations.
 
 ### Next implementation sequence
 

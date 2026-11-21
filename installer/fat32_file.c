@@ -13,6 +13,7 @@ static uint16_t le16(const uint8_t*p){return (uint16_t)(p[0]|((uint16_t)p[1]<<8)
 static uint32_t le32(const uint8_t*p){return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
 static void put16(uint8_t*p,uint16_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
 static void put32(uint8_t*p,uint32_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2]=(uint8_t)(v>>16);p[3]=(uint8_t)(v>>24);}
+static int bytes_compare(const uint8_t*a,const uint8_t*b,size_t n){for(size_t i=0;i<n;i++)if(a[i]!=b[i])return 1;return 0;}
 static bool read1(const struct nexus_fat32_format_target*t,uint64_t l,void*b){return t->read(t->context,l,1U,b);}
 static bool write1(const struct nexus_fat32_format_target*t,uint64_t l,const void*b){return t->write(t->context,l,1U,b);}
 
@@ -47,7 +48,7 @@ static bool directory_child(const struct nexus_fat32_format_target*t,
     continue;
    }
    if(sector[off+11U]==0x0FU)continue;
-   if(__builtin_memcmp(sector+off,name,11U)==0){
+   if(bytes_compare(sector+off,name,11U)==0){
     if((sector[off+11U]&0x10U)==0U)return false;
     *out=(uint32_t)le16(sector+off+26U)|
          ((uint32_t)le16(sector+off+20U)<<16);
@@ -88,7 +89,7 @@ static bool directory_child(const struct nexus_fat32_format_target*t,
  put32(sector+free_off+28U,0U);
  if(!write1(t,dir_lba+free_sector,sector)||!t->flush(t->context))return false;
  if(!read1(t,dir_lba+free_sector,verify)||
-    __builtin_memcmp(sector,verify,bps)!=0)return false;
+    bytes_compare(sector,verify,bps)!=0)return false;
  *out=child;return true;
 }
 static bool valid_name(const char*n,uint8_t out[11]);
@@ -188,7 +189,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
     continue;
    }
    if(sector[off+11U]!=0x0FU&&sector[off+11U]!=0x08U&&
-      __builtin_memcmp(sector+off,shortname,11U)==0){result=NEXUS_FAT32_FILE_EXISTS;goto done;}
+      bytes_compare(sector+off,shortname,11U)==0){result=NEXUS_FAT32_FILE_EXISTS;goto done;}
   }
  }
  if(root_slot==UINT32_MAX){result=NEXUS_FAT32_FILE_NO_SPACE;goto done;}
@@ -224,7 +225,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    for(uint32_t j=0;j<n;j++)sector[j]=src[j];
    if(!write1(t,base+sec,sector)||
       !read1(t,base+sec,verify)||
-      __builtin_memcmp(sector,verify,bps)!=0) {
+      bytes_compare(sector,verify,bps)!=0) {
     result=NEXUS_FAT32_FILE_VERIFY;goto done;
    }
    src+=n;remaining-=n;
@@ -254,7 +255,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
  put16(sector+dir_off+26U,(uint16_t)first);put32(sector+dir_off+28U,length);
  if(!write1(t,parent_lba+dir_sector,sector)||!t->flush(t->context))goto done;
  if(!read1(t,parent_lba+dir_sector,verify))goto done;
- if(__builtin_memcmp(sector,verify,bps)!=0){result=NEXUS_FAT32_FILE_VERIFY;goto done;}
+ if(bytes_compare(sector,verify,bps)!=0){result=NEXUS_FAT32_FILE_VERIFY;goto done;}
  result=NEXUS_FAT32_FILE_OK;
 done:busy=false;return result;
 }

@@ -126,11 +126,15 @@ void exception_dispatch(const struct interrupt_frame *frame) {
 void interrupt_dispatch(const struct interrupt_frame *frame) {
     if (frame->vector == 128U) {
         if ((frame->code_segment & 3U) == 3U && frame->rax == 2U) {
+            struct interrupt_frame *mutable_frame =
+                (struct interrupt_frame *)(uintptr_t)frame;
             if (frame->rdi != 1U ||
                 !usermode_sys_write(frame->rsi, frame->rdx)) {
-                serial_write("USERMODE: rejected write syscall\\r\\n");
-                for (;;) __asm__ volatile ("cli; hlt" : : : "memory");
+                usermode_write_rejected = true;
+                mutable_frame->rax = UINT64_MAX;
+                return;
             }
+            mutable_frame->rax = frame->rdx;
             return;
         }
         if ((frame->code_segment & 3U) == 3U && frame->rax == 1U) {
@@ -143,7 +147,7 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
             mutable_frame->flags &= ~0x200ULL;
             return;
         }
-        serial_write("USERMODE: invalid syscall or privilege level\\r\\n");
+        serial_write("USERMODE: invalid syscall or privilege level\r\n");
         for (;;) __asm__ volatile ("cli; hlt" : : : "memory");
     }
 

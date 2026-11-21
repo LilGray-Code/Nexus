@@ -139,6 +139,57 @@ bool paging_map_mmio_page(uint64_t physical_address,
  * Kernel mappings in the high half remain shared, while user mappings are
  * created beneath a private lower-half tree.
  */
+
+static bool destroy_user_page_table(uint64_t table_physical,
+                                     unsigned int level) {
+    if (level == 0U) return false;
+    volatile uint64_t *table =
+        (volatile uint64_t *)memory_phys_to_virt(table_physical);
+    if (table == NULL) return false;
+
+    for (size_t i = 0; i < 512U; ++i) {
+        const uint64_t entry = table[i];
+        if ((entry & PAGE_PRESENT) == 0U) continue;
+        if ((entry & PAGE_USER) == 0U) return false;
+
+        if (level == 1U) {
+            if (!memory_free_page(entry & PAGE_ADDRESS_MASK)) return false;
+        } else {
+            if ((entry & PAGE_LARGE) != 0U) return false;
+            const uint64_t child = entry & PAGE_ADDRESS_MASK;
+            if (!destroy_user_page_table(child, level - 1U) ||
+                !memory_free_page(child)) return false;
+        }
+        table[i] = 0;
+    }
+    return true;
+}
+
+bool paging_destroy_user_address_space(uint64_t root_physical) {
+    if ((root_physical & 0xFFFULL) != 0U) return false;
+
+    uint64_t cr3, cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    if ((cr3 & PAGE_ADDRESS_MASK) == root_physical) return false;
+
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    volatile uint64_t *root =
+        (volatile uint64_t *)memory_phys_to_virt(root_physical);
+    if (root == NULL) return false;
+
+    const uint64_t low_entry = root[0];
+    if ((low_entry & PAGE_PRESENT) != 0U) {
+        if ((low_entry & PAGE_USER) == 0U ||
+            (low_entry & PAGE_LARGE) != 0U) return false;
+        const uint64_t low_table = low_entry & PAGE_ADDRESS_MASK;
+        if (!destroy_user_page_table(low_table, levels - 1U) ||
+            !memory_free_page(low_table)) return false;
+        root[0] = 0;
+    }
+    return memory_free_page(root_physical);
+}
+
 bool paging_create_user_address_space(uint64_t *root_physical) {
     if (root_physical == NULL) return false;
 

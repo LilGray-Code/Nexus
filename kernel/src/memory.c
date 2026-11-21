@@ -5,8 +5,10 @@
 
 #define MEMORY_MAX_REGIONS 256U
 #define MEMORY_FIRST_ALLOCATABLE 0x100000ULL
+#define MEMORY_MAX_FREED_PAGES 8192U
 
 struct memory_region {
+    uint64_t start;
     uint64_t next;
     uint64_t end;
 };
@@ -17,6 +19,8 @@ static size_t current_region;
 static uint64_t direct_map_offset;
 static uint64_t total_bytes;
 static uint64_t free_bytes;
+static uint64_t freed_pages[MEMORY_MAX_FREED_PAGES];
+static size_t freed_page_count;
 static bool initialized;
 
 static bool add_overflow_u64(uint64_t a, uint64_t b, uint64_t *result) {
@@ -30,6 +34,7 @@ bool memory_init(const struct limine_memmap_response *map,
     current_region = 0;
     total_bytes = 0;
     free_bytes = 0;
+    freed_page_count = 0;
     initialized = false;
 
     if (map == NULL || hhdm == NULL || map->entries == NULL) return false;
@@ -60,6 +65,7 @@ bool memory_init(const struct limine_memmap_response *map,
         if (usable_region_count >= MEMORY_MAX_REGIONS) break;
 
         const uint64_t bytes = end - start;
+        usable_regions[usable_region_count].start = start;
         usable_regions[usable_region_count].next = start;
         usable_regions[usable_region_count].end = end;
         ++usable_region_count;
@@ -82,6 +88,13 @@ bool memory_init(const struct limine_memmap_response *map,
 
 bool memory_alloc_page(uint64_t *physical_address) {
     if (!initialized || physical_address == NULL) return false;
+
+    if (freed_page_count != 0U) {
+        *physical_address = freed_pages[--freed_page_count];
+        if (free_bytes >= NEXUS_PAGE_SIZE) free_bytes -= NEXUS_PAGE_SIZE;
+        else free_bytes = 0;
+        return true;
+    }
 
     while (current_region < usable_region_count) {
         struct memory_region *region = &usable_regions[current_region];
@@ -114,6 +127,20 @@ bool memory_alloc_dma_page(uint64_t max_address_exclusive,
         return false;
     }
 
+    /* Reuse reclaimed pages that satisfy the device's DMA address ceiling. */
+    for (size_t i = freed_page_count; i > 0U; --i) {
+        const size_t index = i - 1U;
+        const uint64_t candidate = freed_pages[index];
+        if (candidate <= max_address_exclusive - NEXUS_PAGE_SIZE) {
+            *physical_address = candidate;
+            freed_pages[index] = freed_pages[freed_page_count - 1U];
+            --freed_page_count;
+            if (free_bytes >= NEXUS_PAGE_SIZE) free_bytes -= NEXUS_PAGE_SIZE;
+            else free_bytes = 0;
+            return true;
+        }
+    }
+
     for (size_t i = 0; i < usable_region_count; ++i) {
         struct memory_region *region = &usable_regions[i];
         if (region->next >= region->end) continue;
@@ -136,6 +163,50 @@ bool memory_alloc_dma_page(uint64_t max_address_exclusive,
     }
 
     return false;
+}
+
+/*
+ * Return a page previously handed out by this allocator. The early allocator
+ * uses a bounded LIFO free list; it rejects unaligned, foreign, and duplicate
+ * frees. SMP synchronization and a larger bitmap allocator are future work.
+ */
+bool memory_free_page(uint64_t physical_address) {
+    if (!initialized ||
+        (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
+        freed_page_count >= MEMORY_MAX_FREED_PAGES) {
+        return false;
+    }
+
+    for (size_t i = 0; i < freed_page_count; ++i) {
+        if (freed_pages[i] == physical_address) return false;
+    }
+
+    bool was_allocated = false;
+    for (size_t i = 0; i < usable_region_count; ++i) {
+        const struct memory_region *region = &usable_regions[i];
+        if (physical_address >= region->start &&
+            physical_address < region->next &&
+            region->next - physical_address >= NEXUS_PAGE_SIZE &&
+            physical_address < region->end) {
+            was_allocated = true;
+            break;
+        }
+    }
+    if (!was_allocated) return false;
+
+    freed_pages[freed_page_count++] = physical_address;
+    if (UINT64_MAX - free_bytes < NEXUS_PAGE_SIZE) free_bytes = UINT64_MAX;
+    else free_bytes += NEXUS_PAGE_SIZE;
+    return true;
+}
+
+bool memory_allocator_selftest(void) {
+    uint64_t first, second, reused;
+    if (!memory_alloc_page(&first) || !memory_alloc_page(&second)) return false;
+    if (first == second || !memory_free_page(first)) return false;
+    if (memory_free_page(first)) return false;
+    if (!memory_alloc_page(&reused) || reused != first) return false;
+    return memory_free_page(second) && memory_free_page(reused);
 }
 
 void *memory_phys_to_virt(uint64_t physical_address) {

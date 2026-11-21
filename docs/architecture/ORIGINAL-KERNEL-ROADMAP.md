@@ -499,3 +499,19 @@ This remains an early single-process implementation. It does not yet reclaim
 address-space pages, handle page faults as recoverable process faults, switch
 between multiple user processes, or provide a mature per-process resource
 table.
+
+
+### User address-space teardown and page reuse
+
+The bootstrap physical allocator now has a bounded free-page stack. It validates
+page alignment and allocator ownership, rejects double frees, reuses reclaimed
+pages for normal and DMA-constrained allocations, and includes a boot-time
+allocation/reuse self-test. The private user address-space destroy path walks
+only the lower-half user page-table tree, frees mapped user pages and
+intermediate tables, and refuses to destroy the active CR3. The ring-3 ELF
+self-test now tears down its address space after returning to the kernel.
+
+This is an early single-core reclamation path with a fixed 8,192-page free-list
+capacity. It is not yet SMP-safe, does not provide per-page reference counts,
+and cannot safely reclaim shared pages. The loader still supports a single
+bootstrap process; preemptive multi-process scheduling remains future work.

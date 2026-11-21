@@ -51,7 +51,7 @@ jobs:
           truncate -s 64M nvme-test.img
           python3 build/create-gpt-test-image.py nvme-test.img
           set +e
-          timeout 12s qemu-system-x86_64 \
+          timeout -k 2s 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
@@ -61,7 +61,7 @@ jobs:
             -monitor none -no-reboot -no-shutdown
           status=$?
           set -e
-          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
             echo "UEFI QEMU exited unexpectedly: $status"
             exit "$status"
           fi
@@ -70,6 +70,8 @@ jobs:
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
+          grep -q "NEXUS PAGE RECLAIM READY" uefi-serial.log
+          grep -q "NEXUS NX PAGE PROTECTION READY" uefi-serial.log
           grep -q "NEXUS USER MODE" uefi-serial.log
           grep -q "K2: hardware timer ticks received:" uefi-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" uefi-serial.log
@@ -108,7 +110,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          timeout 12s qemu-system-x86_64 \
+          timeout -k 2s 12s qemu-system-x86_64 \
             -machine pc -cpu max -m 512M \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:bios-serial.log \
@@ -124,6 +126,8 @@ jobs:
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" bios-serial.log
+          grep -q "NEXUS PAGE RECLAIM READY" bios-serial.log
+          grep -q "NEXUS NX PAGE PROTECTION READY" bios-serial.log
           grep -q "NEXUS USER MODE" bios-serial.log
           grep -q "K2: hardware timer ticks received:" bios-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" bios-serial.log
@@ -147,7 +151,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          timeout 6s qemu-system-x86_64 \
+          timeout -k 2s 6s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
@@ -165,6 +169,8 @@ jobs:
           grep -q "NEXUS NVME BLOCK DEVICE READY" release-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" release-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" release-serial.log
+          grep -q "NEXUS PAGE RECLAIM READY" release-serial.log
+          grep -q "NEXUS NX PAGE PROTECTION READY" release-serial.log
           grep -q "NEXUS NVME IDENTIFY READY" release-serial.log
           if grep -q "NEXUS NVME READ ONLY READY" release-serial.log; then
             echo "Release ISO unexpectedly ran CI sector-read self-test"

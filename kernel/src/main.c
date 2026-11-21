@@ -106,10 +106,16 @@ void kmain(void) {
     }
 
     if (paging_enable_nx()) {
-        serial_write("NEXUS NX PAGE PROTECTION READY\\r\\n");
+        serial_write("NEXUS NX PAGE PROTECTION READY\r\n");
     } else {
-        serial_write("WARNING: CPU does not support NX page protection\\r\\n");
+        serial_write("WARNING: CPU does not support NX page protection\r\n");
     }
+
+    if (!memory_allocator_selftest()) {
+        serial_write("ERROR: physical page reclamation self-test failed\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS PAGE RECLAIM READY\r\n");
 
     uint64_t first_page = 0;
     if (!memory_alloc_page(&first_page) ||
@@ -222,7 +228,7 @@ void kmain(void) {
         serial_write("ERROR: CPL3 user-mode self-test failed\\r\\n");
         halt_forever();
     }
-    serial_write("NEXUS ELF64 USER LOADER READY\\r\\n");
+    serial_write("NEXUS ELF64 USER LOADER READY\r\n");
     serial_write("NEXUS USER MODE SELFTEST READY\\r\\n");
     serial_write("NEXUS K0 BOOT COMPLETE\\r\\n");
 

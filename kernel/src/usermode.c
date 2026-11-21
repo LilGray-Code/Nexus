@@ -165,8 +165,10 @@ bool usermode_run_selftest(void) {
     usermode_write_rejected = false;
     nexus_enter_user(user_root_physical, entry_point, stack_pointer,
                      kernel_stack_top);
-    return usermode_exit_status == USER_EXIT_STATUS &&
-           usermode_write_rejected;
+    const bool selftest_ok =
+        usermode_exit_status == USER_EXIT_STATUS && usermode_write_rejected;
+    if (!paging_destroy_user_address_space(user_root_physical)) return false;
+    return selftest_ok;
 }
 
 bool usermode_sys_write(uint64_t user_address, uint64_t length) {

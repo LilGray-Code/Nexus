@@ -27,6 +27,10 @@ static inline uint32_t inl(uint16_t port) {
     return value;
 }
 
+static inline void outw(uint16_t port, uint16_t value) {
+    __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+
 /*
  * PCI Configuration Mechanism #1. This writes only the address selector at
  * CF8 and reads the selected config dword at CFC; it never writes device
@@ -102,6 +106,26 @@ static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
                                 (uint8_t)(0x10U + i * 4U));
         }
     }
+}
+
+bool pci_enable_memory_bus_master(const struct nexus_pci_device *device) {
+    if (device == NULL) return false;
+
+    /*
+     * PCI Status is write-one-to-clear. Write only the low 16-bit Command
+     * register so we do not accidentally clear status bits by echoing them.
+     */
+    const uint32_t address = 0x80000000U |
+        ((uint32_t)device->bus << 16) |
+        ((uint32_t)device->slot << 11) |
+        ((uint32_t)device->function << 8) |
+        0x04U;
+    outl(PCI_CONFIG_ADDRESS, address);
+    outw(PCI_CONFIG_DATA, (uint16_t)(device->command | 0x0006U));
+
+    const uint32_t updated = pci_config_read(device->bus, device->slot,
+                                             device->function, 0x04);
+    return (updated & 0x0006U) == 0x0006U;
 }
 
 bool pci_init(void) {

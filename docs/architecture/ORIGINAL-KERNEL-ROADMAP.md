@@ -1,6 +1,6 @@
 # Nexus OS: Original Kernel Architecture and Migration Roadmap
 
-**Status:** K0 and K1 passed BIOS/UEFI QEMU CI; K2 PIC/PIT timer interrupt path passed; cooperative scheduler prototype under validation  
+**Status:** K0, K1, K2 timer IRQ, and cooperative scheduler smoke test passed BIOS/UEFI QEMU CI; APIC/IOAPIC, preemption, and SMP remain open  
 **Target:** x86-64 PCs, with UEFI and legacy BIOS boot in the first public release  
 **Reference hardware:** Dell Latitude 5410  
 **Long-term requirement:** Nexus-owned kernel and userland; no FreeBSD or Linux kernel at runtime.
@@ -276,12 +276,11 @@ IOAPIC routing, APIC timer calibration, SMP, and preemption remain unfinished.
 ### Current development increment
 
 A cooperative scheduler prototype has been added on the branch. It uses
-statically allocated stacks and an x86-64 assembly context switch. The QEMU
-acceptance test creates two workers and requires the alternating
-`A-B-A-B-A-B` trace, with both workers completing three turns. This test is
-non-preemptive and is not evidence of SMP or interrupt-driven scheduling.
-Its build and firmware tests must pass before treating the increment as
-validated.
+statically allocated stacks and an x86-64 assembly context switch. CI run
+[44871736233](https://github.com/LilGray-Code/Nexus/actions/runs/44871736233)
+passed OVMF and SeaBIOS. Both serial logs show two workers completing three
+turns in the required `A-B-A-B-A-B` order. This test is non-preemptive and is
+not evidence of SMP or interrupt-driven scheduling.
 
 ### Next implementation sequence
 

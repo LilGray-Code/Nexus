@@ -170,11 +170,16 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   stable identity and geometry, obtains a kernel-owned destructive-write
   session, and routes bounded reads, writes, and flushes through that session.
   The adapter is linked into the kernel build but is not called by the desktop.
-- Kernel authorization deliberately remains fail-closed: no code currently
-  proves which registered physical device supplied the running Limine boot
-  image. `blockdev_install_session_begin` therefore rejects every target until
-  a trusted boot-medium identity is registered and detection is marked complete.
-  Do not infer this identity from device order, model, or capacity.
+- The kernel now has a fail-closed provenance resolver:
+  `blockdev_set_boot_media_from_gpt_partition_guid` accepts a bootloader-
+  supplied GPT partition unique GUID, validates primary and backup GPT metadata
+  on every registered disk, and accepts only exactly one matching disk. The
+  lower-level setters are private to `blockdev.c`; other kernel/UI code cannot
+  mark an arbitrary device as the boot disk through the public API.
+- The bootloader does **not yet supply** that GUID to Nexus. Until a custom
+  Limine handoff extension is implemented and tested for UEFI and BIOS,
+  `blockdev_install_session_begin` remains fail-closed and rejects all targets.
+  Never infer boot identity from device order, model, or capacity.
 - The distributable NVMe driver remains read-only. The kernel adapter is not
   sufficient evidence for enabling release writes: it still needs boot-source
   provenance, UI confirmation wiring, a kernel adapter test, and disposable-

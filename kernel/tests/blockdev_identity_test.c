@@ -92,12 +92,6 @@ int main(void) {
     /* Boot provenance is unknown by default: fail closed. */
     assert(!blockdev_install_session_begin(install_registered,
         "NVME-SERIAL-003", "ERASE"));
-    assert(!blockdev_set_boot_media_detection_complete());
-    assert(blockdev_set_boot_media(install_registered));
-    assert(blockdev_set_boot_media_detection_complete());
-    assert(!blockdev_install_session_begin(install_registered,
-        "NVME-SERIAL-003", "ERASE"));
-    assert(!blockdev_set_boot_media_detection_complete());
     blockdev_init();
     install_disk = make_device("disk0", "NVME-SERIAL-003");
     install_disk.flags = NEXUS_BLOCKDEV_READ_ONLY |
@@ -106,14 +100,7 @@ int main(void) {
     install_disk.flush = test_flush;
     assert(blockdev_register(&install_disk));
     install_registered = blockdev_at(0U);
-    struct nexus_block_device boot_disk = make_device("boot", "NVME-BOOT-001");
-    boot_disk.read = test_read_second;
-    assert(blockdev_register(&boot_disk));
-    const struct nexus_block_device *boot_registered = blockdev_at(1U);
-    assert(blockdev_set_boot_media(boot_registered));
-    assert(blockdev_set_boot_media_detection_complete());
-    assert(!blockdev_install_session_begin(boot_registered,
-        "NVME-BOOT-001", "ERASE"));
+    assert(install_registered != NULL);
     assert(blockdev_set_mounted(install_registered, true));
     assert(!blockdev_install_session_begin(install_registered,
         "NVME-SERIAL-003", "ERASE"));

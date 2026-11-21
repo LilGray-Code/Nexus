@@ -121,6 +121,13 @@ int main(void) {
            boot_image.backup_header, 512U);
     const uint8_t missing_guid[16] = {0xFEU};
     assert(!blockdev_set_boot_media_from_gpt_partition_guid(missing_guid));
+    /* Two valid disks carrying the same partition GUID are ambiguous. */
+    memcpy(target.first, boot.first, sizeof(target.first));
+    memcpy(target.last, boot.last, sizeof(target.last));
+    assert(!blockdev_set_boot_media_from_gpt_partition_guid(
+        &partition_guids[0][0]));
+    memset(target.first, 0, sizeof(target.first));
+    memset(target.last, 0, sizeof(target.last));
     assert(blockdev_set_boot_media_from_gpt_partition_guid(
         &partition_guids[0][0]));
     assert(!blockdev_set_boot_media_from_gpt_partition_guid(

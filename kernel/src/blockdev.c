@@ -137,7 +137,7 @@ static size_t blockdev_index(const struct nexus_block_device *device) {
     return NEXUS_BLOCKDEV_MAX_DEVICES;
 }
 
-bool blockdev_set_boot_media(const struct nexus_block_device *device) {
+static bool blockdev_set_boot_media(const struct nexus_block_device *device) {
     if (blockdev_index(device) == NEXUS_BLOCKDEV_MAX_DEVICES ||
         boot_media_detection_complete) return false;
     if (boot_media_device != NULL && boot_media_device != device) return false;
@@ -181,7 +181,7 @@ bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_gui
     return true;
 }
 
-bool blockdev_set_boot_media_detection_complete(void) {
+static bool blockdev_set_boot_media_detection_complete(void) {
     if (boot_media_device == NULL || boot_media_detection_complete) return false;
     boot_media_detection_complete = true;
     return true;

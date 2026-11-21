@@ -4,7 +4,10 @@
 #include <stdbool.h>
 #include <limine.h>
 
-/* Draws the first in-kernel desktop shell on a Limine RGB framebuffer. */
+#include "input.h"
+
+/* Draws the in-kernel framebuffer desktop and handles basic app navigation. */
 bool desktop_show(const struct limine_framebuffer *framebuffer);
+void desktop_handle_input(const struct nexus_input_event *event);
 
 #endif

@@ -96,6 +96,12 @@ int main(void) {
         "NVME-SERIAL-003", "ERASE", true, false, false));
     assert(blockdev_install_write(install_registered, 10U, 1U, sector));
     assert(blockdev_install_flush(install_registered));
+    /* Reject requests that cross device bounds or exceed the DMA request cap. */
+    assert(!blockdev_install_write(install_registered,
+        install_registered->block_count - 1U, 2U, sector));
+    assert(!blockdev_install_write(install_registered, 10U, 9U, sector));
+    assert(!blockdev_install_write(install_registered,
+        install_registered->block_count, 1U, sector));
     assert(write_calls == 1U && flush_calls == 1U);
     blockdev_install_session_end();
     assert(!blockdev_install_write(install_registered, 10U, 1U, sector));

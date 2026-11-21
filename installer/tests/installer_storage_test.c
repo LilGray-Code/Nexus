@@ -182,8 +182,8 @@ int main(void) {
 
     /* Deploy an EFI boot configuration through the guarded FAT32 writer. */
     static const uint8_t limine_cfg[] =
-        "timeout: 3\\n/Nexus OS\\n    protocol: limine\\n"
-        "    kernel_path: boot():/NEXUS/KERNEL.ELF\\n";
+        "timeout: 3\n/Nexus OS\n    protocol: limine\n"
+        "    kernel_path: boot():/NEXUS/KERNEL.ELF\n";
     assert(nexus_installer_write_efi_file(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks,
         "LIMINE.CFG",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
@@ -227,7 +227,7 @@ int main(void) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 16U);
+    assert(target.flushes == 17U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

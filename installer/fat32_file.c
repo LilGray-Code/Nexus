@@ -14,7 +14,7 @@ static void put32(uint8_t*p,uint32_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2
 static bool read1(const struct nexus_fat32_format_target*t,uint64_t l,void*b){return t->read(t->context,l,1U,b);}
 static bool write1(const struct nexus_fat32_format_target*t,uint64_t l,const void*b){return t->write(t->context,l,1U,b);}
 static bool valid_name(const char*n,uint8_t out[11]){
- if(!n||!*n)return false;for(unsigned i=0;i<11;i++)out[i]=' ';
+ if(!n||!*n)return false;\n for(unsigned i=0;i<11;i++)out[i]=' ';
  unsigned base=0,ext=0;bool dot=false;
  for(unsigned i=0;n[i];i++){unsigned char c=(unsigned char)n[i];if(c=='.'){if(dot||base==0)return false;dot=true;continue;}
  if(c<33||c>126||c=='/'||c=='\\'||c==' ')return false;
@@ -67,10 +67,10 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
   if(!first)first=c;
   if(previous){
    uint32_t poff=(previous*4U)%bps;uint64_t plba=fat1+((uint64_t)previous*4U)/bps;
-   if(!read1(t,plba,sector))goto done;put32(sector+poff,c);
+   if(!read1(t,plba,sector))goto done;\n   put32(sector+poff,c);
    if(!write1(t,plba,sector))goto done;
    uint64_t p2=fat2+((uint64_t)previous*4U)/bps;
-   if(!read1(t,p2,sector))goto done;put32(sector+poff,c);
+   if(!read1(t,p2,sector))goto done;\n   put32(sector+poff,c);
    if(!write1(t,p2,sector))goto done;
   }
   previous=c;found++;
@@ -78,10 +78,10 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
  if(found!=needed){result=NEXUS_FAT32_FILE_NO_SPACE;goto done;}
  if(needed){
   uint32_t off=(previous*4U)%bps;uint64_t lba=fat1+((uint64_t)previous*4U)/bps;
-  if(!read1(t,lba,sector))goto done;put32(sector+off,0x0FFFFFFFU);
+  if(!read1(t,lba,sector))goto done;\n  put32(sector+off,0x0FFFFFFFU);
   if(!write1(t,lba,sector))goto done;
   lba=fat2+((uint64_t)previous*4U)/bps;
-  if(!read1(t,lba,sector))goto done;put32(sector+off,0x0FFFFFFFU);
+  if(!read1(t,lba,sector))goto done;\n  put32(sector+off,0x0FFFFFFFU);
   if(!write1(t,lba,sector))goto done;
  }
  /* Mirror the first-cluster FAT link in both FAT copies. */
@@ -89,7 +89,7 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
   if(!read1(t,lba,sector))goto done; /* preserve value already set by next-link update */
   if(!write1(t,lba,sector))goto done;
   lba=fat2+((uint64_t)first*4U)/bps;
-  if(!read1(t,lba,sector)||!write1(t,lba,sector))goto done;(void)off;
+  if(!read1(t,lba,sector)||!write1(t,lba,sector))goto done;\n  (void)off;
  }
  /* Rewalk the allocation in ascending order and write file data. */
  uint32_t cluster=first,remaining=length;const uint8_t*src=data;
@@ -104,7 +104,7 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
   }
   /* Next cluster is found by scanning FAT for the first allocated successor. */
   uint32_t off=(cluster*4U)%bps;uint64_t lba=fat1+((uint64_t)cluster*4U)/bps;
-  if(!read1(t,lba,sector))goto done;uint32_t next=le32(sector+off)&0x0FFFFFFFU;
+  if(!read1(t,lba,sector))goto done;\n  uint32_t next=le32(sector+off)&0x0FFFFFFFU;
   if(k+1U<needed){if(next<2U||next>=clusters+2U){result=NEXUS_FAT32_FILE_IO;goto done;}cluster=next;}
  }
  /* Commit one root entry after data and FAT are durable. */

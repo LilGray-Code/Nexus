@@ -270,7 +270,8 @@ static bool translate_user_address(uint64_t root_physical,
                                    unsigned int levels,
                                    uint64_t address,
                                    uint64_t *physical_address,
-                                   uint64_t *mapping_size) {
+                                   uint64_t *mapping_size,
+                                   bool require_writable) {
     if (physical_address == NULL || mapping_size == NULL) return false;
 
     volatile uint64_t *table =
@@ -283,7 +284,8 @@ static bool translate_user_address(uint64_t root_physical,
         const uint64_t entry = table[index];
 
         if ((entry & (PAGE_PRESENT | PAGE_USER)) !=
-            (PAGE_PRESENT | PAGE_USER)) {
+            (PAGE_PRESENT | PAGE_USER) ||
+            (require_writable && (entry & PAGE_WRITABLE) == 0U)) {
             return false;
         }
 
@@ -345,7 +347,7 @@ bool paging_copy_from_user(void *destination, uint64_t source, size_t length) {
         uint64_t physical;
         uint64_t mapping_size;
         if (!translate_user_address(root_physical, levels, current,
-                                    &physical, &mapping_size)) {
+                                    &physical, &mapping_size, false)) {
             return false;
         }
 
@@ -364,5 +366,81 @@ bool paging_copy_from_user(void *destination, uint64_t source, size_t length) {
         remaining -= chunk;
     }
 
+    return true;
+}
+
+
+/* Validate every page of a user destination, including its writable bit. */
+bool paging_user_range_writable(uint64_t destination, size_t length) {
+    if (length == 0U) return true;
+    const uint64_t byte_count = (uint64_t)length;
+    if ((size_t)byte_count != length ||
+        destination > UINT64_MAX - byte_count) return false;
+
+    uint64_t cr3, cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    const unsigned int user_bits = levels == 5U ? 56U : 47U;
+    const uint64_t user_limit = 1ULL << user_bits;
+    const uint64_t end = destination + byte_count;
+    if (destination >= user_limit || end > user_limit) return false;
+
+    const uint64_t root_physical = cr3 & PAGE_ADDRESS_MASK;
+    uint64_t current = destination;
+    uint64_t remaining = byte_count;
+    while (remaining != 0U) {
+        uint64_t physical;
+        uint64_t mapping_size;
+        if (!translate_user_address(root_physical, levels, current,
+                                    &physical, &mapping_size, true)) {
+            return false;
+        }
+        (void)physical;
+        const uint64_t offset = current & (mapping_size - 1ULL);
+        uint64_t chunk = mapping_size - offset;
+        if (chunk > remaining) chunk = remaining;
+        current += chunk;
+        remaining -= chunk;
+    }
+    return true;
+}
+
+/* Copy kernel-owned bytes into a validated, writable user range. */
+bool paging_copy_to_user(uint64_t destination, const void *source,
+                         size_t length) {
+    if (length == 0U) return true;
+    if (source == NULL ||
+        !paging_user_range_writable(destination, length)) return false;
+
+    uint64_t cr3, cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    const uint64_t root_physical = cr3 & PAGE_ADDRESS_MASK;
+    const uint8_t *input = (const uint8_t *)source;
+    uint64_t current = destination;
+    uint64_t remaining = (uint64_t)length;
+
+    while (remaining != 0U) {
+        uint64_t physical;
+        uint64_t mapping_size;
+        if (!translate_user_address(root_physical, levels, current,
+                                    &physical, &mapping_size, true)) {
+            return false;
+        }
+        const uint64_t offset = current & (mapping_size - 1ULL);
+        uint64_t chunk = mapping_size - offset;
+        if (chunk > remaining) chunk = remaining;
+
+        volatile uint8_t *output =
+            (volatile uint8_t *)memory_phys_to_virt(physical);
+        if (output == NULL) return false;
+        for (uint64_t i = 0; i < chunk; ++i) output[i] = input[i];
+
+        input += (size_t)chunk;
+        current += chunk;
+        remaining -= chunk;
+    }
     return true;
 }

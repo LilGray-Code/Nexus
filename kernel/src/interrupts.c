@@ -147,6 +147,20 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                 mutable_frame->rax = frame->rdx;
                 return;
 
+            case NEXUS_SYS_OPEN:
+                mutable_frame->rax = (uint64_t)usermode_sys_open(frame->rdi);
+                return;
+
+            case NEXUS_SYS_READ:
+                mutable_frame->rax =
+                    (uint64_t)usermode_sys_read(frame->rdi, frame->rsi,
+                                                frame->rdx);
+                return;
+
+            case NEXUS_SYS_CLOSE:
+                mutable_frame->rax = (uint64_t)usermode_sys_close(frame->rdi);
+                return;
+
             case NEXUS_SYS_EXIT:
                 usermode_exit_status = frame->rdi;
                 mutable_frame->instruction_pointer =

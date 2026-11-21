@@ -14,5 +14,7 @@ bool paging_destroy_user_address_space(uint64_t root_physical);
 bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
                           uint64_t page_physical, bool writable, bool executable);
 bool paging_copy_from_user(void *destination, uint64_t source, size_t length);
+bool paging_user_range_writable(uint64_t destination, size_t length);
+bool paging_copy_to_user(uint64_t destination, const void *source, size_t length);
 
 #endif

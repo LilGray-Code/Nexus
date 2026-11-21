@@ -529,3 +529,19 @@ process exit; BIOS, UEFI, and final-image CI logs require the syscall ABI marker
 Only exit and serial-backed stdout write exist at this stage. File descriptors,
 stdin, filesystem reads, process creation, signal/fault delivery, and a
 userspace C runtime remain future work.
+
+
+### Read-only file syscalls for user-mode programs
+
+The initial descriptor-based file ABI now has open, read, and close calls backed
+by the existing read-only FAT32/VFS mount. The current bootstrap user process
+has eight descriptor slots starting at 3. Paths are copied using checked
+user-memory access, directory separators are rejected, and absent volumes,
+missing files, invalid descriptors, invalid destinations, and oversized reads
+return negative errno values. Reads use a kernel bounce buffer and a checked
+writable-user-page copy path. The underlying disk remains read-only.
+
+The boot-time ELF program tries to open a deliberately absent short filename
+and validates the expected not-found or no-device result. This is not yet a
+general filesystem ABI: there are no writes, subdirectories, long filenames,
+per-process tables beyond the single bootstrap process, stdin, or device files.

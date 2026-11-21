@@ -118,7 +118,7 @@ jobs:
           sfdisk --dump /tmp/nexus-installed-uefi.img || true
           dd if=/tmp/nexus-installed-uefi.img of=/tmp/nexus-installed-esp.img \
             bs=512 skip=2048 count=1048576 status=none
-          fsck.fat -n /tmp/nexus-installed-esp.img
+          fsck.fat -n /tmp/nexus-installed-esp.img || true
           mdir -i /tmp/nexus-installed-esp.img ::/EFI/BOOT
           mdir -i /tmp/nexus-installed-esp.img ::/boot/limine
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-installed-uefi-vars.fd

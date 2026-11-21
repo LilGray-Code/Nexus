@@ -29,7 +29,7 @@ disabled until the Nexus block-write, filesystem, partition-table, and
 power-loss safety tests pass.
 
 See [the original-kernel roadmap](docs/architecture/ORIGINAL-KERNEL-ROADMAP.md)
-and [the custom installer specification](installer/README.md) for the active
+and [the custom installer specification](https://github.com/LilGray-Code/Nexus/blob/nexus-original-kernel-roadmap/installer/README.md) for the active
 architecture and acceptance gates.
 
 ## Compatibility target

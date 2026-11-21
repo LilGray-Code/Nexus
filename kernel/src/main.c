@@ -6,6 +6,7 @@
 #include "interrupts.h"
 #include "memory.h"
 #include "serial.h"
+#include "timer.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
@@ -139,7 +140,22 @@ void kmain(void) {
     serial_write_hex(first_page);
     serial_write("\r\n");
 
+    timer_init(100);
+    serial_write("K2: PIC remapped and PIT configured for 100 Hz\r\n");
+
+    const uint64_t target_tick = timer_ticks() + 5;
+    __asm__ volatile ("sti" : : : "memory");
+    while (timer_ticks() < target_tick) {
+        __asm__ volatile ("hlt" : : : "memory");
+    }
+    __asm__ volatile ("cli" : : : "memory");
+
+    serial_write("K2: hardware timer ticks received: ");
+    serial_write_hex(timer_ticks());
+    serial_write("\r\n");
+
     show_splash();
+    serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     serial_write("NEXUS K0 BOOT COMPLETE\r\n");
     halt_forever();

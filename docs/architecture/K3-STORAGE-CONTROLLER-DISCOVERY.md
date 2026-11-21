@@ -25,6 +25,7 @@ The next storage milestones are controller-specific MMIO/resource validation,
 an AHCI read-only identify path, an NVMe identify path, and then block-device
 and filesystem layers. The current AHCI register probe only reads CAP, GHC,
 PI, and VS from the assigned ABAR after checking PCI Memory Space Enable. The
-QEMU legacy-BIOS test reads version 1.0 and reports six implemented ports.
+QEMU UEFI test reads version 1.0 and reports six implemented ports; the legacy
+BIOS test currently exposes an IDE controller instead.
 It does not issue commands, start ports, enable bus mastering, or write AHCI
 registers. Each later stage needs separate tests before disk access.

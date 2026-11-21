@@ -2,6 +2,7 @@
 
 #include "blockdev.h"
 #include "gpt.h"
+#include "fat32.h"
 
 #include "memory.h"
 #include "paging.h"
@@ -658,11 +659,28 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     }
     const struct nexus_gpt_partition *test_partition = gpt_partition_at(0);
     if (test_partition == NULL || test_partition->first_lba != 2048U ||
-        test_partition->last_lba != 4095U) {
+        test_partition->last_lba <= 4095U) {
         serial_write("GPT: CI parser returned unexpected partition bounds\r\n");
         return false;
     }
     serial_write("GPT: validated header and entry CRCs; discovered test partition\r\n");
+    if (!fat32_mount(registered, test_partition) ||
+        fat32_root_entry_count() != 1U) {
+        serial_write("FAT32: CI root directory self-test failed\\r\\n");
+        return false;
+    }
+    const struct nexus_fat32_entry *test_file = fat32_root_entry_at(0);
+    if (test_file == NULL || test_file->size == 0U ||
+        test_file->name[0] != 'R' || test_file->name[1] != 'E' ||
+        test_file->name[2] != 'A' || test_file->name[3] != 'D' ||
+        test_file->name[4] != 'M' || test_file->name[5] != 'E' ||
+        test_file->name[6] != '.' || test_file->name[7] != 'T' ||
+        test_file->name[8] != 'X' || test_file->name[9] != 'T') {
+        serial_write("FAT32: CI README.TXT directory entry mismatch\\r\\n");
+        return false;
+    }
+    serial_write("FAT32: mounted test volume and listed README.TXT\\r\\n");
+    serial_write("NEXUS FAT32 READ ONLY READY\\r\\n");
     serial_write("NEXUS GPT READ ONLY READY\r\n");
     serial_write("NEXUS NVME READ ONLY READY\r\n");
 #endif

@@ -109,6 +109,25 @@ void idt_init(void) {
     __asm__ volatile ("lidt %0" : : "m"(idtr));
 }
 
+static void syscall_frame_trace(const char *phase,
+                                 const struct interrupt_frame *frame) {
+    serial_write("SYSCALL ");
+    serial_write(phase);
+    serial_write(" nr=");
+    serial_write_hex(frame->rax);
+    serial_write(" rip=");
+    serial_write_hex(frame->instruction_pointer);
+    serial_write(" cs=");
+    serial_write_hex(frame->code_segment);
+    serial_write(" flags=");
+    serial_write_hex(frame->flags);
+    serial_write(" rsp=");
+    serial_write_hex(frame->user_stack_pointer);
+    serial_write(" ss=");
+    serial_write_hex(frame->user_stack_segment);
+    serial_write("\r\n");
+}
+
 __attribute__((noreturn))
 void exception_dispatch(const struct interrupt_frame *frame) {
     uint16_t current_cs = 0U;
@@ -147,32 +166,39 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
 
         struct interrupt_frame *mutable_frame =
             (struct interrupt_frame *)(uintptr_t)frame;
+        syscall_frame_trace("enter", frame);
         switch (frame->rax) {
             case NEXUS_SYS_WRITE:
                 if (frame->rdi != 1U) {
                     mutable_frame->rax = (uint64_t)(int64_t)-NEXUS_EBADF;
+                    syscall_frame_trace("return", mutable_frame);
                     return;
                 }
                 if (!usermode_sys_write(frame->rsi, frame->rdx)) {
                     usermode_write_rejected = true;
                     mutable_frame->rax = (uint64_t)(int64_t)-NEXUS_EFAULT;
+                    syscall_frame_trace("return", mutable_frame);
                     return;
                 }
                 mutable_frame->rax = frame->rdx;
+                syscall_frame_trace("return", mutable_frame);
                 return;
 
             case NEXUS_SYS_OPEN:
                 mutable_frame->rax = (uint64_t)usermode_sys_open(frame->rdi);
+                syscall_frame_trace("return", mutable_frame);
                 return;
 
             case NEXUS_SYS_READ:
                 mutable_frame->rax =
                     (uint64_t)usermode_sys_read(frame->rdi, frame->rsi,
                                                 frame->rdx);
+                syscall_frame_trace("return", mutable_frame);
                 return;
 
             case NEXUS_SYS_CLOSE:
                 mutable_frame->rax = (uint64_t)usermode_sys_close(frame->rdi);
+                syscall_frame_trace("return", mutable_frame);
                 return;
 
             case NEXUS_SYS_EXIT:
@@ -182,10 +208,12 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                     (uint64_t)(uintptr_t)nexus_user_return;
                 mutable_frame->code_segment = 0x08U;
                 mutable_frame->flags &= ~0x200ULL;
+                syscall_frame_trace("exit", mutable_frame);
                 return;
 
             default:
                 mutable_frame->rax = (uint64_t)(int64_t)-NEXUS_ENOSYS;
+                syscall_frame_trace("return", mutable_frame);
                 return;
         }
     }

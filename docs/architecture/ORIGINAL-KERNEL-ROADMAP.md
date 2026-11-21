@@ -402,3 +402,13 @@ short text preview. CI uses a disposable GPT/FAT32 NVMe image with a README
 file and a cross-cluster read test. This is not yet a full file manager:
 subdirectories, long file names, FAT consistency recovery, multiple mounts,
 write support, permissions, and user-mode file APIs are not implemented.
+
+
+### Desktop terminal application
+
+The framebuffer desktop now includes a keyboard-driven terminal view (F4).
+Its bounded command set is read-only: `help`, `about`, `ls`, `cat FILE`,
+and `clear`. Directory listing and file reads go through the VFS and do not
+modify storage. The terminal is currently a kernel-integrated shell, not a
+separate ring-3 process; command history, pipes, scripting, permissions, and
+a general executable loader remain future work.

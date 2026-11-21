@@ -252,7 +252,7 @@ int main(int argc,char **argv) {
     assert(nexus_boot_payloads_init(&module_response,&executable_response));
     assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks));
-    assert(target.flushes == 27U);
+    assert(target.flushes == 29U);
 
     /* Install BIOS stage-1 into LBA 0 and stage-2 into the authenticated
      * GPT BIOS Boot partition, using the same kernel-owned write gate. */
@@ -264,7 +264,7 @@ int main(int argc,char **argv) {
     struct nexus_gpt_partition bios_copy=*bios_part;
     assert(nexus_installer_install_bios_bootloader(target_handle,&identity,
         identity.stable_id,"ERASE",&bios_copy));
-    assert(target.flushes==29U);
+    assert(target.flushes==31U);
     assert(memcmp(target.bios_area,bios_hdd_payload+512U,
         bios_hdd_payload_size-512U)==0);
     assert(target.first[510U]==0x55U&&target.first[511U]==0xAAU);
@@ -347,7 +347,7 @@ int main(int argc,char **argv) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 34U);
+    assert(target.flushes == 36U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -358,7 +358,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 38U);
+    assert(target.flushes == 40U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

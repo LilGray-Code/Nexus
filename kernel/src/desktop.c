@@ -437,7 +437,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime net ls cat FILE run FILE ps clear";
+        const char *s = "help about mem uptime net dns HOST ls cat FILE run FILE ps clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -520,6 +520,31 @@ static void terminal_execute(void) {
                 }
                 if (i != 3U && out < sizeof(terminal_output) - 1U)
                     terminal_output[out++] = '.';
+            }
+            terminal_output[out] = '\0';
+        }
+    } else if (terminal_input[0]=='d' && terminal_input[1]=='n' &&
+               terminal_input[2]=='s' && terminal_input[3]==' ') {
+        uint8_t address[4];
+        if (net_dns_resolve(terminal_input + 4, address, 600U)) {
+            size_t out = 0U;
+            for (size_t i = 0; i < 4U; ++i) {
+                char number[21];
+                format_u64(address[i], number);
+                for (size_t j = 0; number[j] != '\0' &&
+                     out < sizeof(terminal_output) - 2U; ++j) {
+                    terminal_output[out++] = number[j];
+                }
+                if (i != 3U && out < sizeof(terminal_output) - 1U)
+                    terminal_output[out++] = '.';
+            }
+            terminal_output[out] = '\0';
+        } else {
+            const char *message = "DNS lookup failed";
+            size_t out = 0U;
+            while (message[out] != '\0' &&
+                   out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = message[out]; ++out;
             }
             terminal_output[out] = '\0';
         }

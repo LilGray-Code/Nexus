@@ -611,3 +611,17 @@ sockets, and the browser network backend remain future work.
 Terminal's `net` command now prints the DHCP-provided gateway alongside the
 leased IPv4 address, while the network status API retains subnet-mask and DNS
 server configuration for follow-on resolver and route work.
+
+
+### DNS A-record resolver
+
+The DHCP-provided DNS server can now be queried using bounded UDP DNS A-record
+requests. The resolver validates response source, transaction ID, QR/RCODE,
+question/answer bounds, compressed owner-name encodings, and A/IN record length;
+it waits for ARP resolution and then polls the NIC until the configured timeout.
+Terminal adds \`dns HOST\` to resolve a host name and display its IPv4 address.
+
+This is not yet a general resolver: it handles a single synchronous A query,
+one outstanding request, IPv4 DNS over UDP only, and no CNAME chase, AAAA,
+search domains, caching, TCP fallback, or DNSSEC. TCP/TLS and the browser engine
+remain unimplemented.

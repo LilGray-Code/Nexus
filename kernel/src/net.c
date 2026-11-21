@@ -19,6 +19,9 @@
 #define NET_DHCP_MAX_RETRIES 5U
 #define NET_DHCP_CLIENT_PORT 68U
 #define NET_DHCP_SERVER_PORT 67U
+#define NET_DNS_SERVER_PORT 53U
+#define NET_DNS_CLIENT_PORT 53000U
+#define NET_DNS_PACKET_SIZE 512U
 #define ETHERTYPE_IPV4 0x0800U
 #define ETHERTYPE_ARP 0x0806U
 #define IP_PROTOCOL_UDP 17U
@@ -55,6 +58,12 @@ static uint8_t dns_ipv4[4];
 static uint32_t dhcp_transaction_id;
 static uint64_t dhcp_last_send_tick;
 static uint32_t dhcp_retry_count;
+static bool dns_query_active;
+static bool dns_query_done;
+static bool dns_query_success;
+static uint16_t dns_query_id;
+static uint16_t dns_next_id = 0x4E58U;
+static uint8_t dns_query_result[4];
 static uint8_t rx_frame[NET_MAX_FRAME];
 
 static uint16_t read_be16(const uint8_t *p) {
@@ -205,6 +214,8 @@ static void receive_arp(const uint8_t *arp, size_t length) {
 
 static void receive_dhcp(const uint8_t *packet, size_t length,
                         const uint8_t source_ip[4]);
+static void receive_dns(const uint8_t *packet, size_t length,
+                        const uint8_t source_ip[4]);
 
 static void receive_ipv4(const uint8_t *ip, size_t length) {
     if (length < NET_IPV4_HEADER || (ip[0] >> 4) != 4U) return;
@@ -226,6 +237,10 @@ static void receive_ipv4(const uint8_t *ip, size_t length) {
     if (source_port == NET_DHCP_SERVER_PORT &&
         destination_port == NET_DHCP_CLIENT_PORT) {
         receive_dhcp(udp + 8U, udp_length - 8U, ip + 12U);
+    }
+    else if (source_port == NET_DNS_SERVER_PORT &&
+             destination_port == NET_DNS_CLIENT_PORT) {
+        receive_dns(udp + 8U, udp_length - 8U, ip + 12U);
     }
 }
 
@@ -417,6 +432,168 @@ static void dhcp_retry(void) {
     (void)send_dhcp_message(message_type);
 }
 
+
+
+static bool dns_skip_name(const uint8_t *packet, size_t length,
+                          size_t *offset) {
+    if (packet == NULL || offset == NULL) return false;
+    while (*offset < length) {
+        const uint8_t label = packet[(*offset)++];
+        if (label == 0U) return true;
+        if ((label & 0xC0U) == 0xC0U) {
+            if (*offset >= length) return false;
+            ++(*offset);
+            return true;
+        }
+        if ((label & 0xC0U) != 0U || label > 63U ||
+            (size_t)label > length - *offset) return false;
+        *offset += label;
+    }
+    return false;
+}
+
+static void receive_dns(const uint8_t *packet, size_t length,
+                        const uint8_t source_ip[4]) {
+    if (!dns_query_active || packet == NULL || source_ip == NULL ||
+        length < 12U || !equal_bytes(source_ip, dns_ipv4, 4U) ||
+        read_be16(packet) != dns_query_id) return;
+
+    const uint16_t flags = read_be16(packet + 2U);
+    if ((flags & 0x8000U) == 0U || (flags & 0x000FU) != 0U) {
+        dns_query_done = true;
+        dns_query_success = false;
+        return;
+    }
+
+    const uint16_t questions = read_be16(packet + 4U);
+    const uint16_t answers = read_be16(packet + 6U);
+    size_t cursor = 12U;
+    for (uint16_t i = 0; i < questions; ++i) {
+        if (!dns_skip_name(packet, length, &cursor) ||
+            cursor > length || length - cursor < 4U) {
+            dns_query_done = true;
+            return;
+        }
+        cursor += 4U;
+    }
+
+    for (uint16_t i = 0; i < answers; ++i) {
+        if (!dns_skip_name(packet, length, &cursor) ||
+            cursor > length || length - cursor < 10U) {
+            dns_query_done = true;
+            return;
+        }
+        const uint16_t type = read_be16(packet + cursor);
+        const uint16_t klass = read_be16(packet + cursor + 2U);
+        const uint16_t data_length = read_be16(packet + cursor + 8U);
+        cursor += 10U;
+        if ((size_t)data_length > length - cursor) {
+            dns_query_done = true;
+            return;
+        }
+        if (type == 1U && klass == 1U && data_length == 4U) {
+            copy_bytes(dns_query_result, packet + cursor, 4U);
+            dns_query_success = true;
+            dns_query_done = true;
+            return;
+        }
+        cursor += data_length;
+    }
+    dns_query_done = true;
+    dns_query_success = false;
+}
+
+bool net_dns_resolve(const char *hostname, uint8_t result[4],
+                     uint64_t timeout_ticks) {
+    if (!network.ready || dhcp_state != NET_DHCP_BOUND ||
+        hostname == NULL || result == NULL || timeout_ticks == 0U ||
+        ipv4_zero(dns_ipv4)) return false;
+
+    uint8_t query[NET_DNS_PACKET_SIZE];
+    for (size_t i = 0; i < sizeof(query); ++i) query[i] = 0U;
+
+    dns_query_id = ++dns_next_id;
+    if (dns_query_id == 0U) dns_query_id = ++dns_next_id;
+    write_be16(query, dns_query_id);
+    write_be16(query + 2U, 0x0100U); /* recursion desired */
+    write_be16(query + 4U, 1U);      /* one question */
+
+    size_t cursor = 12U;
+    size_t input = 0U;
+    size_t host_length = 0U;
+    while (hostname[host_length] != '\0') {
+        if (host_length >= 253U) return false;
+        ++host_length;
+    }
+    if (host_length == 0U) return false;
+    if (hostname[host_length - 1U] == '.') --host_length;
+    if (host_length == 0U) return false;
+
+    while (input < host_length) {
+        size_t label_length = 0U;
+        while (input + label_length < host_length &&
+               hostname[input + label_length] != '.') {
+            const char ch = hostname[input + label_length];
+            const bool valid = (ch >= 'a' && ch <= 'z') ||
+                               (ch >= 'A' && ch <= 'Z') ||
+                               (ch >= '0' && ch <= '9') || ch == '-';
+            if (!valid || label_length >= 63U) return false;
+            ++label_length;
+        }
+        if (label_length == 0U || cursor + label_length + 1U >= sizeof(query))
+            return false;
+        query[cursor++] = (uint8_t)label_length;
+        for (size_t i = 0; i < label_length; ++i) {
+            char ch = hostname[input + i];
+            if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+            query[cursor++] = (uint8_t)ch;
+        }
+        input += label_length;
+        if (input < host_length) {
+            if (hostname[input] != '.') return false;
+            ++input;
+        }
+    }
+    if (cursor + 5U > sizeof(query)) return false;
+    query[cursor++] = 0U;
+    write_be16(query + cursor, 1U); cursor += 2U; /* A */
+    write_be16(query + cursor, 1U); cursor += 2U; /* IN */
+
+    dns_query_active = true;
+    dns_query_done = false;
+    dns_query_success = false;
+
+    const uint64_t start = timer_ticks();
+    uint8_t neighbor[6];
+    while (!arp_lookup(dns_ipv4, neighbor) &&
+           timer_ticks() - start < timeout_ticks / 2U) {
+        (void)send_arp_request(dns_ipv4);
+        net_poll();
+        __asm__ volatile ("pause");
+    }
+    if (!arp_lookup(dns_ipv4, neighbor)) {
+        dns_query_active = false;
+        return false;
+    }
+
+    if (!net_udp_send(dns_ipv4, NET_DNS_CLIENT_PORT,
+                      NET_DNS_SERVER_PORT, query, (uint16_t)cursor)) {
+        dns_query_active = false;
+        return false;
+    }
+
+    const uint64_t query_start = timer_ticks();
+    while (!dns_query_done &&
+           timer_ticks() - query_start < timeout_ticks) {
+        net_poll();
+        __asm__ volatile ("pause");
+    }
+    dns_query_active = false;
+    if (!dns_query_done || !dns_query_success) return false;
+    copy_bytes(result, dns_query_result, 4U);
+    return true;
+}
+
 static void receive_frame(const uint8_t *frame, size_t length) {
     if (frame == NULL || length < NET_ETHERNET_HEADER) return;
     const uint16_t type = read_be16(frame + 12U);
@@ -442,6 +619,10 @@ bool net_init(void) {
     dhcp_transaction_id = 0U;
     dhcp_retry_count = 0U;
     dhcp_last_send_tick = 0U;
+    dns_query_active = false;
+    dns_query_done = false;
+    dns_query_success = false;
+    dns_next_id = 0x4E58U;
     if (!e1000_get_mac(network.mac)) return false;
     network.ready = true;
     network.ipv4_id = 1U;
@@ -480,6 +661,24 @@ bool net_get_info(struct nexus_net_info *info) {
     return true;
 }
 
+static bool ipv4_same_subnet(const uint8_t left[4],
+                             const uint8_t right[4]) {
+    bool mask_known = false;
+    bool same = true;
+    for (size_t i = 0; i < 4U; ++i) {
+        if (subnet_mask[i] != 0U) mask_known = true;
+        if ((left[i] & subnet_mask[i]) != (right[i] & subnet_mask[i]))
+            same = false;
+    }
+    /* Without a subnet mask, only the local address is known to be on-link. */
+    return mask_known ? same : equal_bytes(left, right, 4U);
+}
+
+static bool ipv4_is_limited_broadcast(const uint8_t address[4]) {
+    return address[0] == 255U && address[1] == 255U &&
+           address[2] == 255U && address[3] == 255U;
+}
+
 bool net_udp_send(const uint8_t destination_ipv4[4],
                   uint16_t source_port, uint16_t destination_port,
                   const void *payload, uint16_t payload_length) {
@@ -489,9 +688,20 @@ bool net_udp_send(const uint8_t destination_ipv4[4],
         return false;
     }
     uint8_t destination_mac[6];
-    if (!arp_lookup(destination_ipv4, destination_mac)) {
-        (void)send_arp_request(destination_ipv4);
-        return false;
+    static const uint8_t broadcast_mac[6] =
+        {0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU};
+    if (ipv4_is_limited_broadcast(destination_ipv4)) {
+        copy_bytes(destination_mac, broadcast_mac, 6U);
+    } else {
+        const uint8_t *next_hop = destination_ipv4;
+        if (!ipv4_same_subnet(network.ipv4, destination_ipv4)) {
+            if (ipv4_zero(gateway_ipv4)) return false;
+            next_hop = gateway_ipv4;
+        }
+        if (!arp_lookup(next_hop, destination_mac)) {
+            (void)send_arp_request(next_hop);
+            return false;
+        }
     }
 
     uint8_t packet[NET_IPV4_HEADER + NET_UDP_HEADER + 1400U];

@@ -685,3 +685,9 @@ sandbox. It must not be used to submit passwords, tokens, or other private
 information. The release browser milestone remains blocked on maintained TLS
 and certificate verification, a proper renderer, app isolation, and a safe
 browser-engine integration plan.
+
+The Settings tile now displays live memory totals/free memory, uptime, Ethernet
+and DHCP state, leased IP/gateway/DNS values, and whether the VFS is using a
+read-only FAT32 volume with RAM overlay or volatile RAM alone. It is a system
+status page; persistent settings, power management, and hardware controls are
+not yet implemented.

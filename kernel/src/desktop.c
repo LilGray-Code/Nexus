@@ -71,6 +71,32 @@ static void format_u64(uint64_t value, char output[21]) {
     output[count] = '\0';
 }
 
+static void format_labeled_u64(const char *label, uint64_t value,
+                                 char output[64]) {
+    size_t length = 0U;
+    while (label[length] != '\0' && length < 63U) {
+        output[length] = label[length];
+        ++length;
+    }
+    char number[21];
+    format_u64(value, number);
+    for (size_t i = 0; number[i] != '\0' && length < 63U; ++i)
+        output[length++] = number[i];
+    output[length] = '\0';
+}
+
+static void format_ipv4_address(const uint8_t address[4], char output[16]) {
+    size_t length = 0U;
+    for (size_t part = 0; part < 4U; ++part) {
+        char number[21];
+        format_u64(address[part], number);
+        for (size_t i = 0; number[i] != '\0' && length < 15U; ++i)
+            output[length++] = number[i];
+        if (part != 3U && length < 15U) output[length++] = '.';
+    }
+    output[length] = '\0';
+}
+
 static void draw_shell(void) {
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
@@ -283,20 +309,70 @@ static void draw_shell(void) {
                            "PLAIN HTTP ONLY - DO NOT SEND PRIVATE DATA",
                            1, 239, 177, 119);
     } else {
-        graphics_draw_text(text_x, text_y, "SYSTEM SETTINGS",
+        graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
                            2, 239, 249, 255);
-        graphics_draw_text(text_x, text_y + 48U,
-                           "ARCHITECTURE X86 64",
-                           1, 108, 216, 229);
-        graphics_draw_text(text_x, text_y + 78U,
-                           "BOOT MODES UEFI AND LEGACY BIOS",
-                           1, 233, 243, 252);
-        graphics_draw_text(text_x, text_y + 108U,
-                           "DISPLAY AND INPUT DRIVERS IN DEVELOPMENT",
+
+        char line[64];
+        format_labeled_u64("MEMORY TOTAL: ", memory_total_bytes(), line);
+        graphics_draw_text(text_x, text_y + 42U, line, 1,
+                           233, 243, 252);
+        format_labeled_u64("MEMORY FREE: ", memory_free_bytes(), line);
+        graphics_draw_text(text_x, text_y + 66U, line, 1,
+                           170, 225, 190);
+        format_labeled_u64("UPTIME SECONDS: ", timer_ticks() / 100U, line);
+        graphics_draw_text(text_x, text_y + 90U, line, 1,
+                           233, 243, 252);
+
+        struct nexus_net_info info;
+        if (net_get_info(&info) && info.interface_ready) {
+            graphics_draw_text(text_x, text_y + 126U,
+                               info.ipv4_configured
+                                   ? "NETWORK: ETHERNET / DHCP BOUND"
+                                   : "NETWORK: ETHERNET / DHCP WAITING",
+                               1, 108, 216, 229);
+            if (info.ipv4_configured) {
+                char address[16];
+                format_ipv4_address(info.ipv4, address);
+                graphics_draw_text(text_x, text_y + 150U,
+                                   "IP ADDRESS:", 1, 233, 243, 252);
+                graphics_draw_text(text_x + 100U, text_y + 150U,
+                                   address, 1, 170, 225, 190);
+                format_ipv4_address(info.gateway, address);
+                graphics_draw_text(text_x, text_y + 174U,
+                                   "GATEWAY:", 1, 233, 243, 252);
+                graphics_draw_text(text_x + 100U, text_y + 174U,
+                                   address, 1, 170, 225, 190);
+                format_ipv4_address(info.dns_server, address);
+                graphics_draw_text(text_x, text_y + 198U,
+                                   "DNS SERVER:", 1, 233, 243, 252);
+                graphics_draw_text(text_x + 100U, text_y + 198U,
+                                   address, 1, 170, 225, 190);
+            }
+        } else {
+            graphics_draw_text(text_x, text_y + 126U,
+                               "NETWORK: NO ETHERNET INTERFACE",
+                               1, 239, 177, 119);
+        }
+
+        if (vfs_root_mounted()) {
+            graphics_draw_text(text_x, text_y + 234U,
+                               "STORAGE: FAT32 READ-ONLY + RAM OVERLAY",
+                               1, 108, 216, 229);
+        } else if (vfs_has_filesystem()) {
+            graphics_draw_text(text_x, text_y + 234U,
+                               "STORAGE: VOLATILE RAM FILESYSTEM",
+                               1, 239, 177, 119);
+        } else {
+            graphics_draw_text(text_x, text_y + 234U,
+                               "STORAGE: NO FILESYSTEM MOUNTED",
+                               1, 239, 177, 119);
+        }
+        graphics_draw_text(text_x, text_y + 282U,
+                           "DISK WRITES ARE DISABLED IN THIS BUILD",
+                           1, 239, 177, 119);
+        graphics_draw_text(text_x, text_y + 330U,
+                           "ESC RETURNS HOME - STATUS REFRESHES ON INPUT",
                            1, 170, 191, 211);
-        graphics_draw_text(text_x, text_y + 158U,
-                           "PRESS ESC TO RETURN HOME",
-                           1, 119, 229, 211);
     }
 
     graphics_fill_rect(0, height - bottom_bar, width, bottom_bar,

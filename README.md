@@ -14,9 +14,9 @@ cooperative scheduler foundation, ring-3 ELF execution, read-only GPT/FAT32
 storage and VFS, volatile RAM filesystem, Intel E1000 networking, DHCP, DNS,
 and an early single-connection TCP/plain-HTTP client.
 
-The Files view is being connected to the unified VFS and volatile RAM overlay.
-The Browser view is still an early placeholder; plain HTTP retrieval through
-the terminal is not a modern browser. HTTPS/TLS, certificate validation,
+The Files view browses the unified VFS, including the volatile RAM overlay.
+The Browser tile has an interactive plain-HTTP text viewer backed by the
+kernel DNS/TCP client; this is not a modern browser and does not support TLS. HTTPS/TLS, certificate validation,
 HTML/CSS/JavaScript rendering, preemptive user-process scheduling, persistent
 writable storage, broad USB/Wi-Fi/audio/GPU drivers, power management, installer,
 recovery, and release hardening are not yet complete.

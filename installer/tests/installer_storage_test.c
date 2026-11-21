@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #define DISK_BLOCKS (16ULL * 1024ULL * 1024ULL * 1024ULL / 512ULL)
 #define EDGE_BLOCKS 64U
@@ -86,7 +87,15 @@ static struct nexus_block_device make_device(const char *name,
     d.flush = mock_flush;
     return d;
 }
-int main(void) {
+int main(int argc,char **argv) {
+    uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios=NULL;
+    uint32_t external_kernel_size=0U,external_uefi_size=0U,external_bios_size=0U;
+    if(argc!=1&&argc!=5)return 2;
+    if(argc==5){
+        assert(load_payload_file(argv[1],&external_kernel,&external_kernel_size));
+        assert(load_payload_file(argv[2],&external_uefi,&external_uefi_size));
+        assert(load_payload_file(argv[3],&external_bios,&external_bios_size));
+    }
     static struct mock_disk boot = {0};
     static struct mock_disk target = {0};
     blockdev_init();
@@ -184,14 +193,20 @@ int main(void) {
 
     /* Resolve the actual boot files supplied by Limine and deploy them to
      * the selected ESP using only the kernel-owned guarded write adapter. */
-    static uint8_t kernel_payload[64] = {0x7fU,'E','L','F',2U,1U};
-    static uint8_t uefi_payload[512] = {'M','Z'};
-    static uint8_t bios_payload[512] = {0};
-    uefi_payload[0x3c]=0x40U;uefi_payload[0x40]='P';uefi_payload[0x41]='E';
-    struct limine_file kernel_file={.address=kernel_payload,.size=sizeof(kernel_payload)};
-    struct limine_file uefi_file={.address=uefi_payload,.size=sizeof(uefi_payload),
+    static uint8_t fake_kernel[64] = {0x7fU,'E','L','F',2U,1U};
+    static uint8_t fake_uefi[512] = {'M','Z'};
+    static uint8_t fake_bios[512] = {0};
+    fake_uefi[0x3c]=0x40U;fake_uefi[0x40]='P';fake_uefi[0x41]='E';
+    uint8_t *kernel_payload=argc==5?external_kernel:fake_kernel;
+    uint8_t *uefi_payload=argc==5?external_uefi:fake_uefi;
+    uint8_t *bios_payload=argc==5?external_bios:fake_bios;
+    uint32_t kernel_payload_size=argc==5?external_kernel_size:(uint32_t)sizeof(fake_kernel);
+    uint32_t uefi_payload_size=argc==5?external_uefi_size:(uint32_t)sizeof(fake_uefi);
+    uint32_t bios_payload_size=argc==5?external_bios_size:(uint32_t)sizeof(fake_bios);
+    struct limine_file kernel_file={.address=kernel_payload,.size=kernel_payload_size};
+    struct limine_file uefi_file={.address=uefi_payload,.size=uefi_payload_size,
         .path="boot():/EFI/BOOT/BOOTX64.EFI"};
-    struct limine_file bios_file={.address=bios_payload,.size=sizeof(bios_payload),
+    struct limine_file bios_file={.address=bios_payload,.size=bios_payload_size,
         .path="boot():/boot/limine/limine-bios.sys"};
     struct limine_file *module_files[2]={&uefi_file,&bios_file};
     struct limine_module_response module_response={.module_count=2U,.modules=module_files};
@@ -347,6 +362,8 @@ int main(void) {
     assert(blockdev_register(&optical_device));
     assert(!blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
 
+    if(argc==5)assert(dump_installed_disk(argv[4],&target));
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
+    free(external_kernel);free(external_uefi);free(external_bios);
     return 0;
 }

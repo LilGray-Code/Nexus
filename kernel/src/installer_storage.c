@@ -147,7 +147,9 @@ bool nexus_installer_deploy_boot_payloads(
   "interface_branding_colour: 18D2EB\n"
   "\n/Nexus OS\n"
   "    protocol: limine\n"
-  "    path: boot():/NEXUS/KERNEL.ELF\n";
+  "    path: boot():/NEXUS/KERNEL.ELF\n"
+  "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
+  "    module_path: boot():/boot/limine/limine-bios.sys\n";
  if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
     esp_first,esp_blocks,"EFI/BOOT/limine.conf",
     config,(uint32_t)(sizeof(config)-1U))!=NEXUS_FAT32_FILE_OK)return false;

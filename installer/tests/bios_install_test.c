@@ -19,7 +19,7 @@ static bool wr(void *ctx,uint64_t lba,uint32_t n,const void *buf){
 }
 static bool fl(void *ctx){((struct disk*)ctx)->flushes++;return true;}
 int main(void){
- uint8_t storage[DISK_BLOCKS*512U];memset(storage,0,sizeof(storage));
+ static uint8_t storage[DISK_BLOCKS*512U];memset(storage,0,sizeof(storage));
  struct disk d={.bytes=storage};
  storage[510]=0x55U;storage[511]=0xAAU;
  for(unsigned i=440U;i<510U;i++)storage[i]=(uint8_t)(i^0x5aU);
@@ -30,7 +30,6 @@ int main(void){
  assert(nexus_bios_install_apply(&t,BIOS_FIRST,BIOS_BLOCKS,image,sizeof(image)));
  assert(d.flushes==2U&&d.writes>=3U);
  assert(memcmp(storage+(size_t)BIOS_FIRST*512U,image+512U,7000U)==0);
- assert(memcmp(storage+218U,image+218U,0U)==0);
  for(unsigned i=218U;i<224U;i++)assert(storage[i]==(uint8_t)(i+7U));
  for(unsigned i=440U;i<510U;i++)assert(storage[i]==(uint8_t)(i^0x5aU));
  uint64_t encoded=0U;for(unsigned i=0;i<8U;i++)encoded|=(uint64_t)storage[0x1a4U+i]<<(i*8U);

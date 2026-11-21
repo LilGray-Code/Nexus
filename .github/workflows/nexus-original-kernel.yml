@@ -68,6 +68,13 @@ jobs:
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test
 
+      - name: Test Limine BIOS boot-sector and stage-2 installation
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iinstaller installer/bios_install.c installer/tests/bios_install_test.c \
+            -o /tmp/nexus-bios-install-test
+          /tmp/nexus-bios-install-test
+
       - name: Test installer boot-payload validation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

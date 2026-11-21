@@ -68,6 +68,24 @@ jobs:
           sha256sum -c SHA256SUMS.txt
           file NexusOS-Standalone-amd64.iso
 
+      - name: Write release build manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(sha256sum NexusOS-Standalone-GitHub-Build-v5.tar.xz | awk '{print $1}')"
+          iso_sha="$(sha256sum release/NexusOS-Standalone-amd64.iso | awk '{print $1}')"
+          {
+            echo "Product: Nexus OS"
+            echo "Build type: Debian 13 standalone amd64 installer"
+            echo "Git commit: $GITHUB_SHA"
+            echo "Source archive SHA-256: $source_sha"
+            echo "ISO SHA-256: $iso_sha"
+            echo "Built at (UTC): $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } > release/BUILD-INFO.txt
+          cd release
+          sha256sum NexusOS-Standalone-amd64.iso BUILD-INFO.txt > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+
       - name: Install firmware boot-test tools
         shell: bash
         run: |
@@ -127,5 +145,6 @@ jobs:
           path: |
             release/NexusOS-Standalone-amd64.iso
             release/SHA256SUMS.txt
+            release/BUILD-INFO.txt
           if-no-files-found: error
           retention-days: 30

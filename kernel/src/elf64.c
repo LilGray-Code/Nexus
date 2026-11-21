@@ -10,6 +10,9 @@
 #define ELF64_ET_EXEC 2U
 #define ELF64_EM_X86_64 62U
 #define ELF64_PT_LOAD 1U
+#define ELF64_PT_DYNAMIC 2U
+#define ELF64_PT_INTERP 3U
+#define ELF64_PT_TLS 7U
 #define ELF64_PF_X 0x1U
 #define ELF64_PF_W 0x2U
 #define ELF64_PF_R 0x4U
@@ -88,7 +91,7 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
 
     const uint64_t phoff = header->program_header_offset;
     const uint64_t phnum = header->program_header_count;
-    if (phoff > (uint64_t)file_size ||
+    if ((phoff & 7U) != 0U || phoff > (uint64_t)file_size ||
         phnum > ((uint64_t)file_size - phoff) /
                 ELF64_PROGRAM_HEADER_SIZE) {
         return false;
@@ -102,6 +105,12 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
         const uint64_t offset = phoff + i * ELF64_PROGRAM_HEADER_SIZE;
         const struct elf64_program_header *program =
             (const struct elf64_program_header *)(const void *)(bytes + offset);
+        /* Dynamic linking and TLS are not supported by the static ABI. */
+        if (program->type == ELF64_PT_DYNAMIC ||
+            program->type == ELF64_PT_INTERP ||
+            program->type == ELF64_PT_TLS) {
+            return false;
+        }
         if (program->type != ELF64_PT_LOAD) continue;
 
         if (parsed.segment_count >= NEXUS_ELF64_MAX_LOAD_SEGMENTS ||
@@ -249,6 +258,42 @@ bool nexus_elf64_selftest(void) {
 
     /* Program-header tables must be wholly contained in the input file. */
     header->program_header_offset = sizeof(fixture.bytes) - 8U;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
+        return false;
+    }
+    header->program_header_offset = ELF64_HEADER_SIZE;
+
+    /* Segment alignment must be a power of two with matching offsets. */
+    program->alignment = 3U;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
+        return false;
+    }
+    program->alignment = ELF64_PAGE_SIZE;
+
+    /* Two load segments may not share a page with different protections. */
+    header->program_header_count = 2U;
+    struct elf64_program_header *second =
+        (struct elf64_program_header *)(void *)(
+            fixture.bytes + ELF64_HEADER_SIZE + ELF64_PROGRAM_HEADER_SIZE);
+    *second = *program;
+    second->offset = 0x1004U;
+    second->virtual_address = 0x401800ULL;
+    second->alignment = 1U;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
+        return false;
+    }
+
+    /* Static executables must not request a dynamic linker or TLS runtime. */
+    header->program_header_count = 2U;
+    second->type = ELF64_PT_INTERP;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
+        return false;
+    }
+    second->type = ELF64_PT_DYNAMIC;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
+        return false;
+    }
+    second->type = ELF64_PT_TLS;
     if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
         return false;
     }

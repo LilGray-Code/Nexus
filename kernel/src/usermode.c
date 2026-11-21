@@ -1,8 +1,8 @@
 #include "usermode.h"
 
-#include "memory.h"
 #include "gdt.h"
-#include "serial.h"
+#include "memory.h"
+#include "paging.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -22,7 +22,7 @@
 uint64_t usermode_saved_cr3;
 uintptr_t usermode_saved_rsp;
 volatile uint64_t usermode_exit_status = UINT64_MAX;
-static volatile bool usermode_write_seen;
+volatile bool usermode_write_rejected;
 
 extern void nexus_enter_user(uint64_t root_physical,
                              uint64_t entry_point,
@@ -111,49 +111,69 @@ bool usermode_run_selftest(void) {
     code_pt[0] = code_physical | PAGE_PRESENT | PAGE_USER;
     stack_pt[0] = stack_physical | PAGE_PRESENT |
                   PAGE_WRITABLE | PAGE_USER;
+    (void)stack_page;
 
     /*
-     * Ring-3 test calls write(stdout, message, 15), then exit(42).
-     * The message is embedded at USER_CODE_VA + 54 in the RX code page.
+     * The test first attempts an invalid high-half pointer, then writes a
+     * valid user string, and finally exits with status 42.
      */
     static const uint8_t test_program[] = {
+        /* write(1, 0xFFFF800000000000, 1) must fail safely. */
         0x48, 0xC7, 0xC0, 0x02, 0x00, 0x00, 0x00,
         0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00,
-        0x48, 0xC7, 0xC6, 0x36, 0x00, 0x40, 0x00,
+        0x48, 0xBE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0xFF, 0xFF,
+        0x48, 0xC7, 0xC2, 0x01, 0x00, 0x00, 0x00,
+        0xCD, 0x80,
+        /* write(1, message, 15) must succeed. */
+        0x48, 0xC7, 0xC0, 0x02, 0x00, 0x00, 0x00,
+        0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00,
+        0x48, 0xC7, 0xC6, 0x00, 0x00, 0x00, 0x00,
         0x48, 0xC7, 0xC2, 0x0F, 0x00, 0x00, 0x00,
         0xCD, 0x80,
+        /* exit(42) */
         0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00,
         0x48, 0xC7, 0xC7, 0x2A, 0x00, 0x00, 0x00,
         0xCD, 0x80,
-        0xEB, 0xFE,
-        0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
-        'N','E','X','U','S',' ','U','S','E','R',' ','M','O','D','E'
+        0xEB, 0xFE
     };
+    static const char test_message[] = "NEXUS USER MODE";
+    const size_t message_offset = sizeof(test_program);
+    const uint32_t message_address = (uint32_t)(USER_CODE_VA + message_offset);
+    const size_t message_immediate_offset = 50U;
+
     for (size_t i = 0; i < sizeof(test_program); ++i)
         code_page[i] = test_program[i];
-    (void)stack_page;
+    for (size_t i = 0; i < sizeof(test_message) - 1U; ++i)
+        code_page[message_offset + i] = (uint8_t)test_message[i];
+    for (size_t i = 0; i < sizeof(message_address); ++i) {
+        code_page[message_immediate_offset + i] =
+            (uint8_t)(message_address >> (i * 8U));
+    }
 
     const uint64_t kernel_stack_top = (uint64_t)(uintptr_t)
         (usermode_kernel_stack + sizeof(usermode_kernel_stack));
     if (!gdt_set_kernel_stack(kernel_stack_top)) return false;
 
     usermode_exit_status = UINT64_MAX;
-    usermode_write_seen = false;
+    usermode_write_rejected = false;
     nexus_enter_user(user_root_physical, USER_CODE_VA, USER_STACK_TOP,
                      kernel_stack_top);
-    return usermode_exit_status == USER_EXIT_STATUS && usermode_write_seen;
+    return usermode_exit_status == USER_EXIT_STATUS &&
+           usermode_write_rejected;
 }
 
 bool usermode_sys_write(uint64_t user_address, uint64_t length) {
+    static char kernel_buffer[USER_WRITE_MAX];
     if (length == 0U) return true;
-    if (length > USER_WRITE_MAX || user_address < USER_CODE_VA ||
-        user_address > USER_CODE_VA + PAGE_SIZE ||
-        length > (USER_CODE_VA + PAGE_SIZE) - user_address) {
+    if (length > USER_WRITE_MAX ||
+        !paging_copy_from_user(kernel_buffer, user_address, (size_t)length)) {
         return false;
     }
-    /* This initial syscall deliberately accepts only the mapped RX test page. */
-    serial_write_n((const char *)(uintptr_t)user_address, (size_t)length);
+
+    /* Never dereference a userspace pointer directly in ring 0. */
+    extern void serial_write_n(const char *text, size_t length);
+    serial_write_n(kernel_buffer, (size_t)length);
+    extern void serial_write(const char *text);
     serial_write("\r\n");
-    usermode_write_seen = true;
     return true;
 }

@@ -55,20 +55,24 @@ static volatile uint32_t scheduler_trace_count;
 static void scheduler_worker_a(void *argument) {
     (void)argument;
     for (uint32_t i = 0; i < 3; ++i) {
+        const uint64_t start = timer_ticks();
+        while (timer_ticks() == start)
+            __asm__ volatile ("pause");
         scheduler_count_a++;
         if (scheduler_trace_count < 6)
             scheduler_trace[scheduler_trace_count++] = 1;
-        scheduler_yield();
     }
 }
 
 static void scheduler_worker_b(void *argument) {
     (void)argument;
     for (uint32_t i = 0; i < 3; ++i) {
+        const uint64_t start = timer_ticks();
+        while (timer_ticks() == start)
+            __asm__ volatile ("pause");
         scheduler_count_b++;
         if (scheduler_trace_count < 6)
             scheduler_trace[scheduler_trace_count++] = 2;
-        scheduler_yield();
     }
 }
 
@@ -212,6 +216,7 @@ void kmain(void) {
     }
 
     scheduler_start();
+    scheduler_wait();
 
     bool scheduler_ok = scheduler_count_a == 3 &&
                         scheduler_count_b == 3 &&
@@ -225,7 +230,7 @@ void kmain(void) {
         serial_write("ERROR: cooperative scheduler round-robin test failed\r\n");
         halt_forever();
     }
-    serial_write("K2: cooperative scheduler test passed (A-B-A-B-A-B)\r\n");
+    serial_write("K2: preemptive kernel-thread test passed (timer-driven A/B alternation)\r\n");
 
     if (framebuffer_request.response != NULL &&
         framebuffer_request.response->framebuffer_count > 0) {
@@ -233,7 +238,7 @@ void kmain(void) {
     } else {
         serial_write("DESKTOP: no framebuffer supplied by bootloader\r\n");
     }
-    serial_write("NEXUS K2 COOPERATIVE SCHEDULER READY\r\n");
+    serial_write("NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     const bool input_ready = input_init();

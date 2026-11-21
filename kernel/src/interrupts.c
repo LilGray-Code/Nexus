@@ -2,6 +2,7 @@
 #include "input.h"
 #include "usermode.h"
 #include "syscall.h"
+#include "scheduler.h"
 
 #include "serial.h"
 #include "timer.h"
@@ -186,6 +187,7 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
             input_mouse_interrupt();
         }
         pic_irq_eoi(irq);
+        if (irq == 0U) scheduler_preempt();
         return;
     }
 

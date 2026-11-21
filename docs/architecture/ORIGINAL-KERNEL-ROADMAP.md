@@ -691,3 +691,25 @@ and DHCP state, leased IP/gateway/DNS values, and whether the VFS is using a
 read-only FAT32 volume with RAM overlay or volatile RAM alone. It is a system
 status page; persistent settings, power management, and hardware controls are
 not yet implemented.
+
+### Timer-preemptive kernel-thread scheduler
+
+The fixed-size kernel-thread scheduler now includes the main thread in its
+round-robin run queue and is preempted from the PIT IRQ path after the PIC EOI.
+The context switch preserves each suspended call chain, including interrupt
+frames. Interrupt-enable state is tracked per suspended thread so a thread
+resumed inside an interrupt handler does not accidentally enable nested IRQs.
+New threads are started with interrupts enabled; voluntary yields preserve the
+call site's original IF state. Threads can be created after scheduler start
+until the fixed four-worker slot capacity is consumed.
+
+The boot test now runs two CPU-bound workers that wait for timer ticks without
+calling yield. The main thread blocks with HLT while PIT interrupts time-slice
+the workers; CI requires the A/B trace and completion counts. This verifies
+preemptive **kernel-thread** scheduling on the single boot CPU.
+
+This is not yet a user-process scheduler. Ring-3 programs are still launched
+synchronously; their syscall state, file descriptors, CR3/TSS stack ownership,
+page-fault recovery, and address-space context are not yet stored per runnable
+process. SMP, priorities, blocking queues, wait/exit semantics, thread
+cancellation, and stack reclamation are also future work.

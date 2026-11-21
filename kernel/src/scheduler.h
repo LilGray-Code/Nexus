@@ -8,6 +8,8 @@ typedef void (*nexus_thread_entry_t)(void *argument);
 void scheduler_init(void);
 bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument);
 void scheduler_start(void);
+void scheduler_wait(void);
 void scheduler_yield(void);
+void scheduler_preempt(void);
 
 #endif

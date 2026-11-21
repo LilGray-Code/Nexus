@@ -27,5 +27,8 @@ and filesystem layers. The current AHCI register probe only reads CAP, GHC,
 PI, and VS from the assigned ABAR after checking PCI Memory Space Enable. The
 QEMU UEFI test reads version 1.0 and reports six implemented ports; the legacy
 BIOS test currently exposes an IDE controller instead.
+It also reads each implemented port's SSTS and signature registers where they
+fit in the currently mapped ABAR page, reporting link state and ATA/ATAPI type.
 It does not issue commands, start ports, enable bus mastering, or write AHCI
-registers. Each later stage needs separate tests before disk access.
+registers. Ports outside the mapped page are skipped. Each later stage needs
+separate tests before disk access.

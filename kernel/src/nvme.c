@@ -628,17 +628,29 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
 #ifdef NEXUS_STORAGE_SELFTEST
     uint8_t verification_buffer[4096];
     if (!blockdev_read(registered, 0, 1, verification_buffer)) {
-        serial_write("NVMe: CI block-device read self-test failed\r\n");
+        serial_write("NVMe: CI block-device read self-test failed at LBA 0\r\n");
         return false;
     }
     static const char expected_test_data[] = "NEXUS-READ-ONLY-TEST";
     for (size_t i = 0; i < sizeof(expected_test_data) - 1U; ++i) {
         if (verification_buffer[i] != (uint8_t)expected_test_data[i]) {
-            serial_write("NVMe: CI read data did not match test image signature\r\n");
+            serial_write("NVMe: CI read data did not match LBA 0 test signature\r\n");
             return false;
         }
     }
-    serial_write("NVMe: blockdev_read verified LBA 0 test signature\r\n");
+
+    if (!blockdev_read(registered, 1, 1, verification_buffer)) {
+        serial_write("NVMe: CI block-device read self-test failed at LBA 1\r\n");
+        return false;
+    }
+    static const char second_sector_data[] = "NEXUS-SECOND-SECTOR";
+    for (size_t i = 0; i < sizeof(second_sector_data) - 1U; ++i) {
+        if (verification_buffer[i] != (uint8_t)second_sector_data[i]) {
+            serial_write("NVMe: CI read data did not match LBA 1 test signature\r\n");
+            return false;
+        }
+    }
+    serial_write("NVMe: blockdev_read verified LBAs 0 and 1\r\n");
     serial_write("NEXUS NVME READ ONLY READY\r\n");
 #endif
 

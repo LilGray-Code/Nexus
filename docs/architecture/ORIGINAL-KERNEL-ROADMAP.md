@@ -267,9 +267,10 @@ workflow remain on `main`.
 - **AHCI discovery:** The generic UEFI/Q35 profile reads AHCI CAP, GHC, PI, VS,
   and implemented-port link/signature registers. The legacy BIOS/PC profile
   currently exposes IDE.
-- **NVMe Identify Controller:** The generic UEFI/Q35 profile configures an
-  NVMe admin queue using three separate DMA32 pages and completes the
-  read-only Identify Controller command.
+- **NVMe namespace and read probe:** The generic UEFI/Q35 profile identifies
+  the controller and NSID 1, reports namespace capacity/LBA size, creates one
+  I/O queue pair, and reads LBA 0 from a disposable QEMU image seeded with a
+  known signature. The returned bytes must match; no write command is issued.
 
 ### Latest verified storage build
 
@@ -278,8 +279,9 @@ CI run
 passed build, ELF/ISO verification, UEFI boot, legacy BIOS boot, and artifact
 upload. In UEFI QEMU, the kernel identified the emulated controller as vendor
 `1B36`, model `QEMU NVMe Ctrl`, serial `NEXUSNVME0001`, firmware `8.2.2`.
-The test uses a disposable 64 MiB QEMU disk image but does not issue namespace
-or sector commands and does not modify the image.
+The test uses a disposable 64 MiB QEMU disk image. It identifies the controller
+and namespace, then reads exactly one 512-byte logical block at LBA 0 and
+verifies a known signature. No disk write command is issued.
 
 The current CI profiles are deliberately generic rather than laptop-specific:
 UEFI/Q35 with a qemu64 CPU and AHCI plus NVMe, and legacy BIOS/PC with the max
@@ -289,15 +291,18 @@ sizes, chipsets, and controller combinations remain planned.
 These are still bring-up prototypes, not a daily-use operating system. The
 allocator is monotonic and has no page-free operation or general heap.
 Exception handling is fatal-only. The NVMe work is an admin Identify prototype,
-not a block driver: there is no namespace discovery, sector I/O, IOMMU/VT-d
+not a block driver: the NVMe read path is a one-block QEMU prototype, not a general block driver;
+there is no multi-request queueing, write support, IOMMU/VT-d
 isolation, general DMA allocator, or recovery path. AHCI does not yet issue
 ATA IDENTIFY or data commands. No physical hardware compatibility is claimed
 until tests are recorded across multiple vendors and generations.
 
 ### Next implementation sequence
 
-1. Add NVMe Identify Namespace and validate namespace capacity and LBA format.
-2. Introduce a common block-device interface, retaining read-only behavior.
+1. Introduce a common read-only block-device interface around the NVMe read
+   prototype, including bounds checking and queue ownership.
+2. Expand NVMe read support to multiple blocks and requests with timeouts,
+   recovery, and DMA lifetime management.
 3. Implement AHCI command-list/FIS/PRDT setup and ATA IDENTIFY, then bounded
    reads from explicitly selected disposable test media.
 4. Add IOMMU/VT-d awareness, DMA ownership/lifetime rules, controller recovery,

@@ -142,6 +142,25 @@ bool vfs_ramfs_remove(const char *name) {
     return true;
 }
 
+/*
+ * Remove only from writable Nexus-owned storage. FAT32 is deliberately
+ * read-only, so a name found only on FAT32 is never deleted here.
+ */
+bool vfs_remove_file(const char *name) {
+    if (name == NULL) return false;
+
+    /* A volatile overlay shadows a persistent file with the same name. */
+    if (ramfs_find(name) != NULL) return vfs_ramfs_remove(name);
+
+    if (!nxfs_root_mounted || !nxfs_is_writable()) return false;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && name_equal(entry->name, name))
+            return nxfs_remove_file(entry->name);
+    }
+    return false;
+}
+
 bool vfs_mount_root_fat32(const struct nexus_block_device *device,
                           const struct nexus_gpt_partition *partition) {
     root_mounted = false;
@@ -384,5 +403,10 @@ bool vfs_ramfs_selftest(void) {
     for (size_t i = 0; i < bytes_read; ++i) {
         if (buffer[i] != (uint8_t)payload[i]) return false;
     }
-    return vfs_ramfs_remove("NXRAM.TST");
+    if (!vfs_remove_file("NXRAM.TST")) return false;
+    if (vfs_open_readonly("NXRAM.TST", &file)) {
+        vfs_close(&file);
+        return false;
+    }
+    return true;
 }

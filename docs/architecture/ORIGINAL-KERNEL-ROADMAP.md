@@ -316,9 +316,10 @@ sectors on boot.
 
 The current parser is deliberately bounded: it supports 512-byte and 4096-byte
 logical sectors, at most 128 entries and 64 KiB of entry data, stores at most
-16 non-empty partitions, and exposes metadata only. It does not yet validate
-the backup GPT header, detect overlapping partitions, mount a filesystem,
-interpret partition names, or write to storage.
+16 non-empty partitions, and exposes metadata only. It validates primary and
+backup GPT metadata and both partition-array CRCs, requires a protective MBR,
+and rejects overlapping partitions and duplicate partition GUIDs. It does not
+mount a filesystem, interpret partition names, or write to storage.
 
 The current CI profiles are deliberately generic rather than laptop-specific:
 UEFI/Q35 with a qemu64 CPU and AHCI plus NVMe, and legacy BIOS/PC with the max
@@ -382,4 +383,4 @@ with F1. It displays the discovered partition count and first partition LBA
 range for the first disk with a valid GPT. This is intentionally not a mounted
 filesystem or a general file manager yet. The normal boot path does not
 automatically read user disk sectors; the read occurs only after an explicit
-Files action. The latest CI run for this UI/storage integration is in progress.
+Files action. CI run 44879132430 passed compilation, UEFI and legacy-BIOS boot tests, the NVMe/GPT self-test, and the final distributable ISO boot check. The distributable ISO is built without CI-only automatic disk reads.

@@ -50,6 +50,11 @@ jobs:
             installer/gpt_install.c installer/tests/gpt_install_test.c \
             -o /tmp/nexus-gpt-install-test
           /tmp/nexus-gpt-install-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iinstaller installer/partition_plan.c installer/installer_core.c \
+            installer/tests/installer_core_test.c \
+            -o /tmp/nexus-installer-core-test
+          /tmp/nexus-installer-core-test
 
       - name: Build dual-mode ISO
         run: |

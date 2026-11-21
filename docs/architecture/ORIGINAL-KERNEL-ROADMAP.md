@@ -1,6 +1,6 @@
 # Nexus OS: Original Kernel Architecture and Migration Roadmap
 
-**Status:** Architecture proposal / implementation roadmap  
+**Status:** K0 and K1 passed BIOS/UEFI QEMU CI; K2 PIC/PIT timer interrupt path passed; cooperative scheduler prototype under validation  
 **Target:** x86-64 PCs, with UEFI and legacy BIOS boot in the first public release  
 **Reference hardware:** Dell Latitude 5410  
 **Long-term requirement:** Nexus-owned kernel and userland; no FreeBSD or Linux kernel at runtime.
@@ -243,12 +243,58 @@ A successful ISO build is not proof of hardware compatibility. Physical-hardware
 4. **Boot portability:** BIOS and UEFI are separate paths and must have separate automated test jobs.
 5. **Project scale:** A production-quality general-purpose OS is a multi-year effort. The first realistic deliverable is a small bootable kernel prototype, not a replacement for Windows or a mature desktop OS.
 
-## 10. Immediate next implementation sequence
+## 10. Current implementation status and next sequence
 
-1. Create a new `nexus-original-kernel` branch from the current project.
-2. Add the directory skeleton, pinned toolchain manifest, linker script, and serial-only kernel entry.
-3. Pin Limine and build the first hybrid ISO.
-4. Add OVMF and SeaBIOS CI smoke tests.
-5. Only after both boot paths pass, begin memory management and exception handling.
+The original-kernel implementation lives on the separate
+`nexus-original-kernel-roadmap` branch. The Debian-based prototype and its
+workflow remain on `main`.
 
-This roadmap is a plan, not a claim that the original kernel, drivers, installer, or ISO have already been implemented.
+### Validated prototypes
+
+- **K0 — Boot contract:** A freestanding x86-64 ELF kernel builds into a
+  hybrid BIOS/UEFI ISO. CI run
+  [44870153869](https://github.com/LilGray-Code/Nexus/actions/runs/44870153869)
+  passed OVMF and SeaBIOS boot checks.
+- **K1 — Early CPU and memory:** The kernel installs exception IDT gates,
+  consumes the Limine memory map and HHDM response, and allocates a 4 KiB
+  physical page. CI run
+  [44870391280](https://github.com/LilGray-Code/Nexus/actions/runs/44870391280)
+  passed both firmware tests.
+- **K2 — Timer interrupt:** The 8259 PIC is remapped, PIT channel 0 is set to
+  100 Hz, and Local APIC LINT0 routes PIC ExtINT to the CPU. x2APIC-capable
+  CPUs use the MSR interface; xAPIC uses an explicit uncached MMIO mapping.
+  CI run
+  [44871433999](https://github.com/LilGray-Code/Nexus/actions/runs/44871433999)
+  passed OVMF and SeaBIOS, with five PIT ticks observed in each serial log.
+
+These are bring-up prototypes, not a daily-use operating system. The physical
+Latitude 5410 has not yet been tested. The current allocator is monotonic and
+has no page-free operation or heap. Exception handling is fatal-only. K2's
+timer path is a single-core legacy PIC/PIT compatibility path; ACPI MADT,
+IOAPIC routing, APIC timer calibration, SMP, and preemption remain unfinished.
+
+### Current development increment
+
+A cooperative scheduler prototype has been added on the branch. It uses
+statically allocated stacks and an x86-64 assembly context switch. The QEMU
+acceptance test creates two workers and requires the alternating
+`A-B-A-B-A-B` trace, with both workers completing three turns. This test is
+non-preemptive and is not evidence of SMP or interrupt-driven scheduling.
+Its build and firmware tests must pass before treating the increment as
+validated.
+
+### Next implementation sequence
+
+1. Finish and validate the cooperative scheduler and stack-switching test.
+2. Add ACPI RSDP/RSDT/XSDT parsing and MADT processor/APIC topology discovery.
+3. Implement IOAPIC routing and a calibrated Local APIC timer, while retaining
+   a validated single-core fallback.
+4. Add interrupt-safe preemption, sleep/wakeup queues, and scheduler tests.
+5. Bring up additional CPU cores and add per-CPU state only after single-core
+   context-switching and interrupt invariants are stable.
+6. Continue into PCI discovery and read-only storage identification before
+   attempting userland or destructive installation.
+
+A successful CI ISO build is not proof of hardware compatibility. Physical
+hardware testing must be recorded separately, starting with non-destructive
+USB boot and read-only device discovery.

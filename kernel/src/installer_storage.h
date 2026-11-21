@@ -33,8 +33,10 @@ bool nexus_installer_format_nxfs(
     const struct nexus_gpt_partition *partition);
 
 bool nexus_installer_deploy_boot_payloads(
- const struct nexus_block_device*,const struct nexus_installer_disk_identity*,
- const char*,const char*,uint64_t,uint64_t);
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const char *typed_stable_id, const char *typed_erase_phrase,
+    uint64_t esp_first_lba, uint64_t esp_block_count);
 
 enum nexus_fat32_file_result nexus_installer_write_efi_file(
  const struct nexus_block_device*,const struct nexus_installer_disk_identity*,

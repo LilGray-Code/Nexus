@@ -142,6 +142,25 @@ void kmain(void) {
         serial_write("INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available\\r\\n");
     } else {
         serial_write("INSTALLER: boot payload set unavailable or invalid; deployment disabled\\r\\n");
+        struct limine_module_response *mods =
+            (struct limine_module_response *)module_request.response;
+        if (mods == NULL) {
+            serial_write("INSTALLER DEBUG: module response is null\\r\\n");
+        } else {
+            serial_write("INSTALLER DEBUG: module count ");
+            serial_write_hex(mods->module_count);
+            serial_write("\\r\\n");
+            uint64_t limit = mods->module_count < 8U ? mods->module_count : 8U;
+            for (uint64_t i = 0U; i < limit; ++i) {
+                struct limine_file *file = mods->modules[i];
+                serial_write("INSTALLER DEBUG: module path ");
+                if (file != NULL && file->path != NULL)
+                    serial_write(file->path);
+                else
+                    serial_write("(null)");
+                serial_write("\\r\\n");
+            }
+        }
     }
 
     if (!gdt_init()) {

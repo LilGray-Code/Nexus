@@ -1,5 +1,6 @@
 .section .text
 .extern exception_dispatch
+.extern interrupt_dispatch
 
 .macro ISR_NO_ERROR number
     .global isr\number
@@ -16,6 +17,15 @@ isr\number:
 isr\number:
     pushq $\number
     jmp exception_common
+.endm
+
+.macro IRQ_STUB number
+    .global irq\number
+    .type irq\number, @function
+irq\number:
+    pushq $0
+    pushq $\number
+    jmp interrupt_common
 .endm
 
 ISR_NO_ERROR 0
@@ -51,6 +61,23 @@ ISR_ERROR    29
 ISR_ERROR    30
 ISR_NO_ERROR 31
 
+IRQ_STUB 32
+IRQ_STUB 33
+IRQ_STUB 34
+IRQ_STUB 35
+IRQ_STUB 36
+IRQ_STUB 37
+IRQ_STUB 38
+IRQ_STUB 39
+IRQ_STUB 40
+IRQ_STUB 41
+IRQ_STUB 42
+IRQ_STUB 43
+IRQ_STUB 44
+IRQ_STUB 45
+IRQ_STUB 46
+IRQ_STUB 47
+
 .type exception_common, @function
 exception_common:
     cli
@@ -70,14 +97,56 @@ exception_common:
     pushq %r13
     pushq %r14
     pushq %r15
-
     movq %rsp, %rdi
     andq $-16, %rsp
     call exception_dispatch
-
 1:
     cli
     hlt
     jmp 1b
+
+.type interrupt_common, @function
+interrupt_common:
+    cli
+    cld
+    pushq %rax
+    pushq %rbx
+    pushq %rcx
+    pushq %rdx
+    pushq %rbp
+    pushq %rsi
+    pushq %rdi
+    pushq %r8
+    pushq %r9
+    pushq %r10
+    pushq %r11
+    pushq %r12
+    pushq %r13
+    pushq %r14
+    pushq %r15
+
+    movq %rsp, %rdi
+    movq %rsp, %r12
+    andq $-16, %rsp
+    call interrupt_dispatch
+    movq %r12, %rsp
+
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rdi
+    popq %rsi
+    popq %rbp
+    popq %rdx
+    popq %rcx
+    popq %rbx
+    popq %rax
+    addq $16, %rsp
+    iretq
 
 .section .note.GNU-stack,"",@progbits

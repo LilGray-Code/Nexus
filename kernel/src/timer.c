@@ -4,6 +4,7 @@
 #include "serial.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define PIC1_COMMAND 0x20

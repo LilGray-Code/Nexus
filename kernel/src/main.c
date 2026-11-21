@@ -5,6 +5,7 @@
 
 #include "acpi.h"
 #include "interrupts.h"
+#include "ioapic.h"
 #include "memory.h"
 #include "serial.h"
 #include "scheduler.h"
@@ -177,6 +178,12 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("NEXUS ACPI MADT READY\\r\\n");
+
+    if (!ioapic_probe()) {
+        serial_write("ERROR: I/O APIC read-only probe failed\\r\\n");
+        halt_forever();
+    }
+    serial_write("NEXUS IOAPIC PROBE READY\\r\\n");
 
     timer_init(100);
     serial_write("K2: PIC remapped and PIT configured for 100 Hz\r\n");

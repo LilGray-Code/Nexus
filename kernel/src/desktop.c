@@ -561,7 +561,7 @@ static void terminal_execute(void) {
             size_t out = 0U;
             while (message[out] != '\0' &&
                    out < sizeof(terminal_output) - 1U) {
-                terminal_output[out++] = message[out];
+                terminal_output[out] = message[out]; ++out;
             }
             terminal_output[out] = '\0';
         } else if (!net_tcp_connect(address, 80U, 800U)) {
@@ -569,7 +569,7 @@ static void terminal_execute(void) {
             size_t out = 0U;
             while (message[out] != '\0' &&
                    out < sizeof(terminal_output) - 1U) {
-                terminal_output[out++] = message[out];
+                terminal_output[out] = message[out]; ++out;
             }
             terminal_output[out] = '\0';
         } else {
@@ -597,7 +597,7 @@ static void terminal_execute(void) {
                 size_t out = 0U;
                 while (message[out] != '\0' &&
                        out < sizeof(terminal_output) - 1U) {
-                    terminal_output[out++] = message[out];
+                    terminal_output[out] = message[out]; ++out;
                 }
                 terminal_output[out] = '\0';
             } else {
@@ -622,7 +622,7 @@ static void terminal_execute(void) {
                     size_t out = 0U;
                     while (message[out] != '\0' &&
                            out < sizeof(terminal_output) - 1U) {
-                        terminal_output[out++] = message[out];
+                        terminal_output[out] = message[out]; ++out;
                     }
                     terminal_output[out] = '\0';
                 } else {

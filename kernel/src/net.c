@@ -13,6 +13,7 @@
 #define NET_UDP_HEADER 8U
 #define NET_ARP_PACKET 28U
 #define NET_ARP_CACHE_SIZE 8U
+#define NET_ARP_RETRY_TICKS 25U
 #define NET_DHCP_OPTIONS_OFFSET 240U
 #define NET_DHCP_PACKET_SIZE 320U
 #define NET_DHCP_RETRY_TICKS 300U
@@ -604,9 +605,16 @@ bool net_dns_resolve(const char *hostname, uint8_t result[4],
         dns_query_active = false;
         return false;
     }
+    bool arp_probe_sent = false;
+    uint64_t last_arp_tick = 0U;
     while (!arp_lookup(next_hop, neighbor) &&
            timer_ticks() - start < arp_budget) {
-        (void)send_arp_request(next_hop);
+        const uint64_t now = timer_ticks();
+        if (!arp_probe_sent || now - last_arp_tick >= NET_ARP_RETRY_TICKS) {
+            (void)send_arp_request(next_hop);
+            last_arp_tick = now;
+            arp_probe_sent = true;
+        }
         net_poll();
         __asm__ volatile ("pause");
     }
@@ -914,9 +922,16 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
     uint64_t arp_budget = timeout_ticks / 2U;
     if (arp_budget == 0U) arp_budget = 1U;
     const uint64_t arp_start = timer_ticks();
+    bool arp_probe_sent = false;
+    uint64_t last_arp_tick = 0U;
     while (!arp_lookup(next_hop, neighbor) &&
            timer_ticks() - arp_start < arp_budget) {
-        (void)send_arp_request(next_hop);
+        const uint64_t now = timer_ticks();
+        if (!arp_probe_sent || now - last_arp_tick >= NET_ARP_RETRY_TICKS) {
+            (void)send_arp_request(next_hop);
+            last_arp_tick = now;
+            arp_probe_sent = true;
+        }
         net_poll();
         __asm__ volatile ("pause");
     }

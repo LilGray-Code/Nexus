@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nexus-original-kernel-${{ github.ref }}
+  group: nexus-original-kernel-v2-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

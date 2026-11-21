@@ -126,13 +126,13 @@ jobs:
         shell: bash
         run: |
           set +e
-          timeout 6s qemu-system-x86_64 \\
-            -machine q35 -cpu qemu64 -m 512M \\
-            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \\
-            -drive file=nvme-test.img,if=none,id=nvm0,format=raw \\
-            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \\
-            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \\
-            -boot d -display none -serial file:release-serial.log \\
+          timeout 6s qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
+            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
+            -boot d -display none -serial file:release-serial.log \
             -monitor none -no-reboot -no-shutdown
           status=$?
           set -e

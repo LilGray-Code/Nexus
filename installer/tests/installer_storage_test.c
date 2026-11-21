@@ -279,12 +279,20 @@ int main(int argc,char **argv) {
         ((uint32_t)target.format_area[esp_offset+39U]<<24);
     const uint32_t spc=target.format_area[esp_offset+13U];
     const size_t root_off=esp_offset+(size_t)(reserved+2U*fatsz)*bps;
-    assert(memcmp(target.format_area+root_off,"EFI        ",11U)==0);
-    assert(target.format_area[root_off+11U]==0x10U);
-    const uint32_t efi_cluster=(uint32_t)target.format_area[root_off+26U] |
-        ((uint32_t)target.format_area[root_off+27U]<<8) |
-        ((uint32_t)target.format_area[root_off+20U]<<16) |
-        ((uint32_t)target.format_area[root_off+21U]<<24);
+    assert(memcmp(target.format_area+root_off,"NEXUS OS   ",11U)==0);
+    assert(target.format_area[root_off+11U]==0x08U);
+    uint32_t efi_cluster=0U;
+    for(size_t slot=0U;slot<16U;slot++){
+        const size_t entry_off=root_off+slot*32U;
+        if(memcmp(target.format_area+entry_off,"EFI        ",11U)==0 &&
+           target.format_area[entry_off+11U]==0x10U){
+            efi_cluster=(uint32_t)target.format_area[entry_off+26U] |
+                ((uint32_t)target.format_area[entry_off+27U]<<8) |
+                ((uint32_t)target.format_area[entry_off+20U]<<16) |
+                ((uint32_t)target.format_area[entry_off+21U]<<24);
+            break;
+        }
+    }
     assert(efi_cluster>=3U);
     const size_t efi_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (efi_cluster-2U)*spc)*bps;
@@ -385,6 +393,8 @@ int main(int argc,char **argv) {
         target_handle->stable_id, "ERASE", &plan, disk_guid,
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_UNSAFE_TARGET);
 
+    if(argc==6)assert(dump_installed_disk(argv[5],&target));
+
     /* MBR provenance must also be unique across all registered disks. */
     blockdev_init();
     memset(boot.first, 0, sizeof(boot.first));
@@ -426,7 +436,6 @@ int main(int argc,char **argv) {
     assert(blockdev_register(&optical_device));
     assert(!blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
 
-    if(argc==6)assert(dump_installed_disk(argv[5],&target));
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
     free(external_kernel);free(external_uefi);free(external_bios_hdd);free(external_bios_sys);
     return 0;

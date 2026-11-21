@@ -129,6 +129,12 @@ enum nexus_fat32_format_result nexus_fat32_format(
        !write_blocks(t,fat2,1U,workspace))goto io_error;
     for(size_t i=0U;i<sizeof(workspace);++i)workspace[i]=0U;
     if(!write_blocks(t,data_start,spc,workspace))goto io_error;
+    /* FAT32's BPB volume label must have a matching root directory entry. */
+    for(uint32_t i=0U;i<t->block_size;++i)workspace[i]=0U;
+    const char volume_label[11]={'N','E','X','U','S',' ','O','S',' ',' ',' '};
+    for(uint32_t i=0U;i<11U;++i)workspace[i]=(uint8_t)volume_label[i];
+    workspace[11U]=0x08U;
+    if(!write_blocks(t,data_start,1U,workspace))goto io_error;
     make_fsinfo(workspace,t->block_size);
     if(!write_blocks(t,start+1U,1U,workspace)||
        !write_blocks(t,start+BACKUP_FSINFO,1U,workspace))goto io_error;
@@ -151,6 +157,9 @@ enum nexus_fat32_format_result nexus_fat32_format(
     if(!verify_sector(t,fat1,verify_workspace)||
        !verify_sector(t,fat2,verify_workspace))goto verify_error;
     for(uint32_t i=0U;i<t->block_size;++i)verify_workspace[i]=0U;
+    const char verify_label[11]={'N','E','X','U','S',' ','O','S',' ',' ',' '};
+    for(uint32_t i=0U;i<11U;++i)verify_workspace[i]=(uint8_t)verify_label[i];
+    verify_workspace[11U]=0x08U;
     if(!verify_sector(t,data_start,verify_workspace))goto verify_error;
     busy=false;return NEXUS_FAT32_FORMAT_OK;
 io_error:

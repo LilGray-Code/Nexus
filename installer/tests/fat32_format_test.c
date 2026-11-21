@@ -54,6 +54,8 @@ int main(void){
     assert(disk.first[6U*512U+510U]==0x55U);
     assert(disk.first[512U]==0x52U);
     assert(disk.first[32U*512U]==0xF8U);
+    assert(memcmp(disk.special[1],"NEXUS OS   ",11U)==0);
+    assert(disk.special[1][11U]==0x08U);
     assert(disk.flushes==2U);
     assert(nexus_fat32_format(&t,0U,1024U,1U)==NEXUS_FAT32_FORMAT_TOO_SMALL);
     assert(nexus_fat32_format(&t,DISK_BLOCKS-10U,20U,1U)==NEXUS_FAT32_FORMAT_INVALID);

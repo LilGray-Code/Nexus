@@ -31,7 +31,7 @@ static bool fat_set(const struct nexus_fat32_format_target*t,uint64_t fat1,
 }
 static bool directory_child(const struct nexus_fat32_format_target*t,
  uint64_t fat1,uint64_t fat2,uint64_t data_start,uint32_t bps,
- uint32_t spc,uint32_t clusters,uint32_t parent,const uint8_t name[11],
+ uint32_t spc,uint32_t clusters,uint32_t root,uint32_t parent,const uint8_t name[11],
  uint32_t*out){
  if(parent<2U||parent>=clusters+2U||!out)return false;
  uint64_t dir_lba=data_start+(uint64_t)(parent-2U)*spc;
@@ -177,7 +177,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    if(!valid_name(partname,shortpart)){result=NEXUS_FAT32_FILE_INVALID;goto done;}
    uint32_t child=0;
    if(!directory_child(t,fat1,fat2,data_start,bps,spc,clusters,
-                       parent,shortpart,&child)){
+                       root,parent,shortpart,&child)){
     result=NEXUS_FAT32_FILE_NO_SPACE;goto done;
    }
    parent=child;component=slash+1;

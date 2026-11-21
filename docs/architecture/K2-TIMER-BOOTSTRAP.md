@@ -1,6 +1,8 @@
-# K2: Legacy PIC/PIT Timer Bring-up
+# K2: Timer Interrupt and Cooperative Scheduling
 
-K2 adds the first hardware interrupt path on top of K1.
+K2 now has two validated early-kernel capabilities:
+
+## PIC/PIT timer interrupt
 
 - The IDT has exception gates for vectors 0–31 and hardware IRQ gates for
   vectors 32–47.
@@ -8,28 +10,35 @@ K2 adds the first hardware interrupt path on top of K1.
   registers, call the C interrupt dispatcher, restore the interrupted context,
   and return with `iretq`.
 - The 8259 PIC is remapped to vectors 32–47. Only IRQ0 is unmasked.
-- PIT channel 0 is configured for a nominal 100 Hz clock. The kernel enables
-  interrupts briefly, waits for at least five timer ticks, then reports the
-  count over COM1.
-- On CPUs advertising x2APIC, the kernel enables x2APIC mode and configures
-  Local APIC LINT0 for unmasked ExtINT delivery from the legacy PIC. It uses
-  the x2APIC MSR interface; it does not assume the bootloader's HHDM maps
-  Local APIC MMIO.
+- PIT channel 0 is configured for a nominal 100 Hz clock.
+- Local APIC LINT0 is configured for ExtINT delivery from the legacy PIC.
+  CPUs advertising x2APIC use the MSR interface; xAPIC uses an explicit,
+  uncached MMIO page mapping. The kernel does not assume that adding the HHDM
+  offset automatically maps device memory.
 
-The initial implementation exposed an important distinction: adding an
-HHDM offset to the Local APIC physical address does not establish a page-table
-mapping. The kernel therefore avoids xAPIC MMIO access until it has its own
-verified MMIO mapping facility. CPUs without x2APIC support are reported as
-unsupported by this early timer route rather than being subjected to an
-unmapped register write.
+CI run [44871433999](https://github.com/LilGray-Code/Nexus/actions/runs/44871433999)
+passed under both OVMF and SeaBIOS. Both serial logs reported five PIT ticks,
+the K2 timer marker, and the K0 boot marker.
 
-This is an early single-processor compatibility path. It is not the final
-interrupt architecture: ACPI MADT parsing, IOAPIC routing, APIC timer
-calibration, PCI interrupt routing, SMP startup, per-CPU state, run queues,
-preemption, and a scheduler remain outstanding. The PIC/PIT path is retained
-as a legacy fallback while those facilities are developed.
+## Cooperative kernel threads
 
-The CI workflow uses QEMU's maximum supported CPU model and must build the
-hybrid ISO, verify its checksum, and receive timer ticks under OVMF and
-SeaBIOS. QEMU validation is not a substitute for physical Dell Latitude 5410
-testing.
+The kernel has a single-core cooperative scheduler prototype with four
+statically allocated thread slots and 16 KiB stacks. An x86-64 assembly
+context switch saves/restores callee-saved integer registers and RSP.
+Two test threads yield explicitly; CI requires the trace A-B-A-B-A-B and
+checks both counters reach three.
+
+The cooperative scheduler is deliberately non-preemptive. Its boot test runs
+with interrupts disabled. The PIT timer is independently verified but does
+not yet drive the scheduler.
+
+## Remaining K2 work
+
+This is not a production scheduler or a complete interrupt architecture.
+Outstanding work includes ACPI MADT parsing, IOAPIC support, APIC timer
+calibration, interrupt-safe preemption, sleep/wakeup queues, scheduler
+priorities, FPU/SIMD context policy, per-CPU state, SMP startup, run queues,
+and stress tests on physical hardware.
+
+The OVMF/SeaBIOS tests are emulator validation only. They do not establish
+compatibility with a physical Dell Latitude 5410.

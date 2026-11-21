@@ -187,7 +187,7 @@ int main(void) {
     assert(nexus_installer_write_efi_file(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks,
         "LIMINE.CFG",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
-    assert(target.flushes == 8U);
+    assert(target.flushes == 9U);
     const uint32_t bps=512U;
     const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
         ((uint32_t)target.format_area[esp_offset+15U]<<8));
@@ -216,7 +216,7 @@ int main(void) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 13U);
+    assert(target.flushes == 14U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -227,7 +227,7 @@ int main(void) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 17U);
+    assert(target.flushes == 18U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

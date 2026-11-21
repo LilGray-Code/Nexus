@@ -193,11 +193,6 @@ void kmain(void) {
     }
     serial_write("NEXUS IOAPIC PROBE READY\r\n");
 
-    if (!pci_init()) {
-        serial_write("WARNING: no PCI devices discovered\r\n");
-    }
-    serial_write("NEXUS PCI ENUMERATION READY\r\n");
-
     if (!storage_probe()) {
         serial_write("WARNING: no mass-storage PCI controller discovered\r\n");
     }

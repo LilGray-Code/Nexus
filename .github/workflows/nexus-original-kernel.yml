@@ -109,13 +109,15 @@ jobs:
           /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
             build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios-hdd.bin \
             build/limine-binary/limine-bios.sys /tmp/nexus-installed-uefi.img
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-installed-uefi-vars.fd
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-installed-uefi-vars.fd \
             -drive file=/tmp/nexus-installed-uefi.img,if=none,id=installed,format=raw \
             -device nvme,drive=installed,serial=NEXUSINSTALL0001 \
-            -boot c -display none -serial file:installed-uefi-serial.log \
+            -boot order=c -display none -serial file:installed-uefi-serial.log \
             -monitor none -no-reboot -no-shutdown
           status=$?
           set -e

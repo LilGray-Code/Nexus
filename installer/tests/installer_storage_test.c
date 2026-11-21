@@ -186,8 +186,8 @@ int main(void) {
         "    kernel_path: boot():/NEXUS/KERNEL.ELF\n";
     assert(nexus_installer_write_efi_file(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks,
-        "LIMINE.CFG",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
-    assert(target.flushes == 9U);
+        "EFI/BOOT/LOADER.CFG",limine_cfg,sizeof(limine_cfg)-1U)==NEXUS_FAT32_FILE_OK);
+    assert(target.flushes == 13U);
     const uint32_t bps=512U;
     const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
         ((uint32_t)target.format_area[esp_offset+15U]<<8));
@@ -195,16 +195,36 @@ int main(void) {
         ((uint32_t)target.format_area[esp_offset+37U]<<8) |
         ((uint32_t)target.format_area[esp_offset+38U]<<16) |
         ((uint32_t)target.format_area[esp_offset+39U]<<24);
+    const uint32_t spc=target.format_area[esp_offset+13U];
     const size_t root_off=esp_offset+(size_t)(reserved+2U*fatsz)*bps;
-    assert(memcmp(target.format_area+root_off,"LIMINE  CFG",11U)==0);
-    assert(target.format_area[root_off+11U]==0x20U);
-    const uint32_t file_cluster=(uint32_t)target.format_area[root_off+26U] |
+    assert(memcmp(target.format_area+root_off,"EFI        ",11U)==0);
+    assert(target.format_area[root_off+11U]==0x10U);
+    const uint32_t efi_cluster=(uint32_t)target.format_area[root_off+26U] |
         ((uint32_t)target.format_area[root_off+27U]<<8) |
         ((uint32_t)target.format_area[root_off+20U]<<16) |
         ((uint32_t)target.format_area[root_off+21U]<<24);
+    assert(efi_cluster>=3U);
+    const size_t efi_off=esp_offset+(size_t)(reserved+2U*fatsz+
+        (efi_cluster-2U)*spc)*bps;
+    assert(target.format_area[efi_off]=='.' &&
+           target.format_area[efi_off+32U]=='.' &&
+           target.format_area[efi_off+33U]=='.');
+    assert(memcmp(target.format_area+efi_off+64U,"BOOT       ",11U)==0);
+    const uint32_t boot_cluster=(uint32_t)target.format_area[efi_off+64U+26U] |
+        ((uint32_t)target.format_area[efi_off+64U+27U]<<8) |
+        ((uint32_t)target.format_area[efi_off+64U+20U]<<16) |
+        ((uint32_t)target.format_area[efi_off+64U+21U]<<24);
+    assert(boot_cluster>=3U);
+    const size_t boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
+        (boot_cluster-2U)*spc)*bps;
+    assert(memcmp(target.format_area+boot_off+64U,"LOADER  CFG",11U)==0);
+    const uint32_t file_cluster=(uint32_t)target.format_area[boot_off+64U+26U] |
+        ((uint32_t)target.format_area[boot_off+64U+27U]<<8) |
+        ((uint32_t)target.format_area[boot_off+64U+20U]<<16) |
+        ((uint32_t)target.format_area[boot_off+64U+21U]<<24);
     assert(file_cluster>=3U);
     const size_t file_off=esp_offset+(size_t)(reserved+2U*fatsz+
-        (file_cluster-2U)*8U)*bps;
+        (file_cluster-2U)*spc)*bps;
     assert(memcmp(target.format_area+file_off,limine_cfg,
                   sizeof(limine_cfg)-1U)==0);
 
@@ -216,7 +236,7 @@ int main(void) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 14U);
+    assert(target.flushes == 22U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -227,7 +247,7 @@ int main(void) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 18U);
+    assert(target.flushes == 22U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

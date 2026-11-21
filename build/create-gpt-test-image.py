@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a disposable 64 MiB GPT disk image for Nexus CI only."""
+"""Create a disposable 64 MiB GPT + FAT32 disk image for Nexus CI only."""
 import struct
 import sys
 import uuid
@@ -15,7 +15,8 @@ ENTRY_SECTORS = ENTRY_BYTES // SECTOR
 FIRST_USABLE = 2 + ENTRY_SECTORS
 LAST_USABLE = TOTAL_SECTORS - ENTRY_SECTORS - 2
 PARTITION_FIRST = 2048
-PARTITION_LAST = 4095
+PARTITION_LAST = LAST_USABLE
+README = b"Nexus OS read-only FAT32 filesystem test.\r\n"
 
 def make_header(current, backup, entries_lba, disk_guid, entries_crc):
     fields = struct.pack(
@@ -27,13 +28,71 @@ def make_header(current, backup, entries_lba, disk_guid, entries_crc):
     crc = zlib.crc32(fields) & 0xFFFFFFFF
     return fields[:16] + struct.pack("<I", crc) + fields[20:] + bytes(SECTOR - 92)
 
+def make_fat32(image):
+    volume_sectors = PARTITION_LAST - PARTITION_FIRST + 1
+    reserved = 32
+    fats = 2
+    sectors_per_fat = 1
+    while True:
+        clusters = volume_sectors - reserved - fats * sectors_per_fat
+        needed = ((clusters + 2) * 4 + SECTOR - 1) // SECTOR
+        if needed == sectors_per_fat:
+            break
+        sectors_per_fat = needed
+
+    boot = bytearray(SECTOR)
+    boot[0:3] = b"\xEB\x58\x90"
+    boot[3:11] = b"NEXUSOS "
+    struct.pack_into("<HBHBHHBHHHII", boot, 11,
+                     SECTOR, 1, reserved, fats, 0, 0, 0xF8, 0, 63, 255,
+                     PARTITION_FIRST, volume_sectors)
+    struct.pack_into("<IHHIHH", boot, 36,
+                     sectors_per_fat, 0, 0, 2, 1, 6)
+    boot[64] = 0x80
+    boot[66] = 0x29
+    struct.pack_into("<I", boot, 67, 0x4E455855)
+    boot[71:82] = b"NEXUS TEST "
+    boot[82:90] = b"FAT32   "
+    boot[510:512] = b"\x55\xAA"
+
+    start = PARTITION_FIRST * SECTOR
+    image[start:start + SECTOR] = boot
+
+    fsinfo = bytearray(SECTOR)
+    struct.pack_into("<I", fsinfo, 0, 0x41615252)
+    struct.pack_into("<I", fsinfo, 484, 0x61417272)
+    struct.pack_into("<I", fsinfo, 488, max(0, clusters - 2))
+    struct.pack_into("<I", fsinfo, 492, 4)
+    struct.pack_into("<I", fsinfo, 508, 0xAA550000)
+    image[start + SECTOR:start + 2 * SECTOR] = fsinfo
+
+    fat_start = PARTITION_FIRST + reserved
+    fat = bytearray(sectors_per_fat * SECTOR)
+    struct.pack_into("<IIII", fat, 0,
+                     0x0FFFFFF8, 0xFFFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF)
+    for copy in range(fats):
+        offset = (fat_start + copy * sectors_per_fat) * SECTOR
+        image[offset:offset + len(fat)] = fat
+
+    data_start = PARTITION_FIRST + reserved + fats * sectors_per_fat
+    root = bytearray(SECTOR)
+    root_entry = bytearray(32)
+    root_entry[0:11] = b"README  TXT"
+    root_entry[11] = 0x20
+    struct.pack_into("<HHI", root_entry, 20, 0, 3, len(README))
+    root[0:32] = root_entry
+    root[32] = 0
+    offset = data_start * SECTOR
+    image[offset:offset + SECTOR] = root
+    file_sector = (data_start + 1) * SECTOR
+    image[file_sector:file_sector + len(README)] = README
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: create-gpt-test-image.py IMAGE")
     path = Path(sys.argv[1])
     image = bytearray(TOTAL_SECTORS * SECTOR)
 
-    # Keep the known LBA0 test signature in the protective MBR boot-code area.
     image[:len(b"NEXUS-READ-ONLY-TEST")] = b"NEXUS-READ-ONLY-TEST"
     mbr_entry = struct.pack("<B3sB3sII", 0, b"\x00\x02\x00", 0xEE,
                             b"\xff\xff\xff", 1, TOTAL_SECTORS - 1)
@@ -59,13 +118,12 @@ def main():
           primary_entries_lba * SECTOR + ENTRY_BYTES] = entries
     image[backup_entries_lba * SECTOR:
           backup_entries_lba * SECTOR + ENTRY_BYTES] = entries
+    image[SECTOR:2 * SECTOR] = make_header(
+        1, TOTAL_SECTORS - 1, primary_entries_lba, disk_guid, entries_crc)
+    image[(TOTAL_SECTORS - 1) * SECTOR:] = make_header(
+        TOTAL_SECTORS - 1, 1, backup_entries_lba, disk_guid, entries_crc)
 
-    primary = make_header(1, TOTAL_SECTORS - 1, primary_entries_lba,
-                          disk_guid, entries_crc)
-    backup = make_header(TOTAL_SECTORS - 1, 1, backup_entries_lba,
-                         disk_guid, entries_crc)
-    image[SECTOR:2 * SECTOR] = primary
-    image[(TOTAL_SECTORS - 1) * SECTOR:] = backup
+    make_fat32(image)
     path.write_bytes(image)
 
 if __name__ == "__main__":

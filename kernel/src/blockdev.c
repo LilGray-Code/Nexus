@@ -185,7 +185,7 @@ bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_gui
     return true;
 }
 
-static bool blockdev_set_boot_media_from_gpt_disk_guid(const uint8_t disk_guid[16]) {
+bool blockdev_set_boot_media_from_gpt_disk_guid(const uint8_t disk_guid[16]) {
     if (disk_guid == NULL || boot_media_detection_complete || boot_media_device != NULL) return false;
     uint8_t nonzero = 0U; for (size_t i=0U;i<16U;++i) nonzero |= disk_guid[i];
     if (nonzero == 0U) return false;
@@ -226,7 +226,7 @@ bool blockdev_set_boot_media_external(uint32_t source_kind) {
     boot_media_detection_complete=true;
     return true;
 }
-bool blockdev_set_boot_media_detection_complete(void) {
+static bool blockdev_set_boot_media_detection_complete(void) {
     if (boot_media_device == NULL || boot_media_detection_complete) return false;
     boot_media_detection_complete = true;
     return true;

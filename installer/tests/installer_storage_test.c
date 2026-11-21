@@ -6,24 +6,43 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DISK_BLOCKS (64ULL * 1024ULL * 1024ULL / 512ULL)
-#define DISK_BYTES (DISK_BLOCKS * 512ULL)
+#define DISK_BLOCKS (16ULL * 1024ULL * 1024ULL * 1024ULL / 512ULL)
+#define EDGE_BLOCKS 64U
 
-struct mock_disk { uint8_t *bytes; unsigned flushes; };
+struct mock_disk {
+    uint8_t first[EDGE_BLOCKS * 512U];
+    uint8_t last[EDGE_BLOCKS * 512U];
+    unsigned flushes;
+};
+
+static bool mock_range(struct mock_disk *disk, uint64_t lba,
+                       uint32_t count, uint8_t **base) {
+    if (disk == NULL || count == 0U || lba > DISK_BLOCKS ||
+        count > DISK_BLOCKS - lba) return false;
+    if (lba + count <= EDGE_BLOCKS) {
+        *base = disk->first + lba * 512ULL;
+        return true;
+    }
+    if (lba >= DISK_BLOCKS - EDGE_BLOCKS) {
+        *base = disk->last + (lba - (DISK_BLOCKS - EDGE_BLOCKS)) * 512ULL;
+        return true;
+    }
+    return false;
+}
 
 static bool mock_read(void *context, uint64_t lba, uint32_t count, void *buffer) {
     struct mock_disk *disk = context;
-    if (disk == NULL || buffer == NULL || lba > DISK_BLOCKS ||
-        count > DISK_BLOCKS - lba) return false;
-    memcpy(buffer, disk->bytes + lba * 512ULL, (size_t)count * 512U);
+    uint8_t *base = NULL;
+    if (buffer == NULL || !mock_range(disk, lba, count, &base)) return false;
+    memcpy(buffer, base, (size_t)count * 512U);
     return true;
 }
 static bool mock_write(void *context, uint64_t lba, uint32_t count,
                        const void *buffer) {
     struct mock_disk *disk = context;
-    if (disk == NULL || buffer == NULL || lba > DISK_BLOCKS ||
-        count > DISK_BLOCKS - lba) return false;
-    memcpy(disk->bytes + lba * 512ULL, buffer, (size_t)count * 512U);
+    uint8_t *base = NULL;
+    if (buffer == NULL || !mock_range(disk, lba, count, &base)) return false;
+    memcpy(base, buffer, (size_t)count * 512U);
     return true;
 }
 static bool mock_flush(void *context) {
@@ -49,9 +68,8 @@ static struct nexus_block_device make_device(const char *name,
     return d;
 }
 int main(void) {
-    struct mock_disk boot = { .bytes = calloc(1U, (size_t)DISK_BYTES) };
-    struct mock_disk target = { .bytes = calloc(1U, (size_t)DISK_BYTES) };
-    assert(boot.bytes != NULL && target.bytes != NULL);
+    struct mock_disk boot = {0};
+    struct mock_disk target = {0};
     blockdev_init();
     struct nexus_block_device boot_device =
         make_device("boot", "TEST-BOOT-0001", &boot);
@@ -114,8 +132,6 @@ int main(void) {
     assert(nexus_installer_write_gpt(target_handle, &identity,
         target_handle->stable_id, "ERASE", &plan, disk_guid,
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_UNSAFE_TARGET);
-    free(boot.bytes);
-    free(target.bytes);
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
     return 0;
 }

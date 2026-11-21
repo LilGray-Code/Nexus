@@ -40,6 +40,11 @@ jobs:
           readelf -l build/nexus-kernel.elf
           (cd release && sha256sum --check SHA256SUMS.txt)
 
+      - name: Debug kernel code around timer wait
+        run: |
+          objdump -d --start-address=0xffffffff80001480 --stop-address=0xffffffff80001530 build/nexus-kernel.elf
+          nm -n build/nexus-kernel.elf | grep -E 'kmain|interrupt_dispatch|ioapic_send_eoi|exception_dispatch'
+
       - name: Boot test - UEFI (OVMF)
         shell: bash
         run: |

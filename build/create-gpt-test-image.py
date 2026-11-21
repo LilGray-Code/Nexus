@@ -15,7 +15,10 @@ ENTRY_SECTORS = ENTRY_BYTES // SECTOR
 FIRST_USABLE = 2 + ENTRY_SECTORS
 LAST_USABLE = TOTAL_SECTORS - ENTRY_SECTORS - 2
 PARTITION_FIRST = 2048
-PARTITION_LAST = LAST_USABLE
+PARTITION_LAST = 102399
+NXFS_FIRST = 102400
+NXFS_LAST = LAST_USABLE
+NXFS_TYPE_GUID = uuid.UUID("4E585346-0001-4E58-9A11-4E5855534653")
 README_PREFIX = b"Nexus OS read-only FAT32 filesystem test.\r\n"
 README = README_PREFIX + b" " * (SECTOR - len(README_PREFIX)) + b"FAT32-CROSS-CLUSTER-READ-OK"
 
@@ -148,6 +151,31 @@ def make_fat32(image):
     image[fragmented_file_sector:
           fragmented_file_sector + len(README) - SECTOR] = README[SECTOR:]
 
+def make_nxfs(image):
+    """Format a fresh dedicated NexusFS test partition."""
+    block_size = SECTOR
+    partition_blocks = NXFS_LAST - NXFS_FIRST + 1
+    blocks_per_slot = (16 * 1024 + block_size - 1) // block_size
+    data_start = 19
+    if partition_blocks < data_start + 16 * 2 * blocks_per_slot:
+        raise ValueError("NXFS test partition is too small")
+
+    def make_superblock():
+        block = bytearray(block_size)
+        block[0:8] = b"NEXUSFS1"
+        struct.pack_into("<IIIIQIII", block, 8,
+                         1, block_size, 16, 16 * 1024,
+                         partition_blocks, 3, data_start, blocks_per_slot)
+        struct.pack_into("<I", block, 60, zlib.crc32(block[:60]) & 0xFFFFFFFF)
+        return block
+
+    start = NXFS_FIRST * SECTOR
+    superblock = make_superblock()
+    image[start:start + SECTOR] = superblock
+    image[start + SECTOR:start + 2 * SECTOR] = superblock
+    # Journal, entry table, and file banks remain zeroed on a fresh volume.
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: create-gpt-test-image.py IMAGE")
@@ -172,6 +200,15 @@ def main():
     struct.pack_into("<QQQ", entry, 32, PARTITION_FIRST, PARTITION_LAST, 0)
     entry[56:56 + len(name)] = name
     entries[:ENTRY_SIZE] = entry
+
+    nxfs_entry = bytearray(ENTRY_SIZE)
+    nxfs_unique_guid = uuid.UUID("7C1D9E5A-8E8A-4D13-9D9E-2B4D3E5A1002")
+    nxfs_name = "NEXUS DATA".encode("utf-16le")
+    nxfs_entry[0:16] = NXFS_TYPE_GUID.bytes_le
+    nxfs_entry[16:32] = nxfs_unique_guid.bytes_le
+    struct.pack_into("<QQQ", nxfs_entry, 32, NXFS_FIRST, NXFS_LAST, 0)
+    nxfs_entry[56:56 + len(nxfs_name)] = nxfs_name
+    entries[ENTRY_SIZE:2 * ENTRY_SIZE] = nxfs_entry
     entries_crc = zlib.crc32(entries) & 0xFFFFFFFF
     disk_guid = uuid.UUID("5A0D8E11-4E58-49C8-9B2C-9C9B2B1A0001")
 
@@ -187,6 +224,7 @@ def main():
         TOTAL_SECTORS - 1, 1, backup_entries_lba, disk_guid, entries_crc)
 
     make_fat32(image)
+    make_nxfs(image)
     path.write_bytes(image)
 
 if __name__ == "__main__":

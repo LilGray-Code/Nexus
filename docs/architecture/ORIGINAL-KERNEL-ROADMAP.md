@@ -731,3 +731,27 @@ partition metadata, FAT32 structures, or files are targeted. This is a driver
 and test-path foundation, not a persistent writable filesystem: FAT32 writes,
 a journal, crash recovery, explicit volume selection, permissions, and a safe
 installer remain necessary before normal users' disks can be modified.
+
+### Dedicated NexusFS persistent data partition
+
+The disposable CI GPT image now contains a second, dedicated partition with a
+Nexus-specific GPT type GUID. A new bounded NXFS implementation mounts only
+that partition type, validates mirrored superblocks and per-file metadata
+checksums, stores files in fixed double-buffered extents, and uses a one-block
+write-ahead journal. File updates write the inactive data bank and flush it
+before committing the metadata journal; mount replays a valid pending journal
+and verifies data CRCs. Delete is journaled as a tombstone. Capacity is 16
+files, up to 16 KiB each, with no directories or allocation outside the fixed
+slots.
+
+CI now formats a fresh NXFS volume in the disposable image and tests create,
+read, overwrite to the alternate bank, delete, and simulated recovery from a
+journal record written before the metadata update. The UEFI storage test also
+retains the independent reserved-LBA NVMe write/flush/restore test.
+
+This is an experimental persistent store, not a general-purpose filesystem or
+installer. It is not yet integrated into the user-facing VFS/Files view, has no
+directory tree, free-space allocator, repair utility, encryption, permissions,
+or robust multi-crash journal replay. Release NVMe registration remains
+read-only until a dedicated NXFS partition has been explicitly selected and
+the installer/update/recovery flow is ready.

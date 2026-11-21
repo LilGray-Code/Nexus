@@ -4,6 +4,7 @@
 #include "gpt.h"
 #include "fat32.h"
 #include "vfs.h"
+#include "nxfs.h"
 
 #include "memory.h"
 #include "paging.h"
@@ -761,13 +762,16 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         }
     }
     serial_write("NVMe: blockdev_read verified LBAs 0 and 1\r\n");
-    if (!gpt_scan_device(registered) || gpt_partition_count() != 1U) {
-        serial_write("GPT: CI parser self-test failed to discover one partition\r\n");
+    if (!gpt_scan_device(registered) || gpt_partition_count() != 2U) {
+        serial_write("GPT: CI parser self-test failed to discover two partitions\r\n");
         return false;
     }
     const struct nexus_gpt_partition *test_partition = gpt_partition_at(0);
+    const struct nexus_gpt_partition *nxfs_partition = gpt_partition_at(1);
     if (test_partition == NULL || test_partition->first_lba != 2048U ||
-        test_partition->last_lba <= 4095U) {
+        test_partition->last_lba != 102399U ||
+        nxfs_partition == NULL || nxfs_partition->first_lba != 102400U ||
+        !nxfs_partition_type_matches(nxfs_partition)) {
         serial_write("GPT: CI parser returned unexpected partition bounds\r\n");
         return false;
     }
@@ -878,6 +882,17 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     }
     serial_write("NVMe: disposable reserved-sector write and restore verified\r\n");
     serial_write("NEXUS NVME WRITE SELFTEST READY\r\n");
+
+    if (!nxfs_mount(registered, nxfs_partition)) {
+        serial_write("NXFS: CI test partition mount failed\r\n");
+        return false;
+    }
+    if (!nxfs_selftest()) {
+        serial_write("NXFS: journal, copy-on-write, or persistence self-test failed\r\n");
+        return false;
+    }
+    serial_write("NXFS: copy-on-write file update and journal recovery verified\r\n");
+    serial_write("NEXUS NXFS JOURNAL READY\r\n");
 
 #endif
 

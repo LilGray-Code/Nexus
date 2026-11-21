@@ -21,16 +21,38 @@ static enum nexus_gpt_install_result write_and_verify(
     size_t bytes) {
     uint8_t *verify = install_verify_workspace;
     const size_t capacity = (size_t)blocks * target->block_size;
-    if (bytes > capacity || capacity > sizeof(install_verify_workspace))
-        return NEXUS_GPT_INSTALL_INVALID;
-    if (!target->write(target->context, lba, blocks, expected) ||
-        !target->flush(target->context))
+    const uint32_t max_blocks = target->max_blocks_per_request != 0U
+        ? target->max_blocks_per_request : blocks;
+    if (bytes > capacity || capacity > sizeof(install_verify_workspace) ||
+        max_blocks == 0U) return NEXUS_GPT_INSTALL_INVALID;
+
+    /* Respect the controller's transfer limit. A 512-byte-sector GPT entry
+     * array is 32 sectors and exceeds this NVMe driver's eight-sector DMA cap. */
+    uint32_t completed = 0U;
+    while (completed < blocks) {
+        uint32_t chunk = blocks - completed;
+        if (chunk > max_blocks) chunk = max_blocks;
+        const size_t offset = (size_t)completed * target->block_size;
+        if (!target->write(target->context, lba + completed, chunk,
+                           expected + offset))
+            return NEXUS_GPT_INSTALL_IO_ERROR;
+        completed += chunk;
+    }
+    if (!target->flush(target->context))
         return NEXUS_GPT_INSTALL_IO_ERROR;
-    for (size_t i = 0U; i < capacity; ++i) verify[i] = 0U;
-    if (!target->read(target->context, lba, blocks, verify))
-        return NEXUS_GPT_INSTALL_IO_ERROR;
-    if (!bytes_equal(verify, expected, capacity))
-        return NEXUS_GPT_INSTALL_VERIFY_ERROR;
+
+    completed = 0U;
+    while (completed < blocks) {
+        uint32_t chunk = blocks - completed;
+        if (chunk > max_blocks) chunk = max_blocks;
+        const size_t offset = (size_t)completed * target->block_size;
+        const size_t chunk_bytes = (size_t)chunk * target->block_size;
+        for (size_t i = 0U; i < chunk_bytes; ++i) verify[i] = 0U;
+        if (!target->read(target->context, lba + completed, chunk, verify) ||
+            !bytes_equal(verify, expected + offset, chunk_bytes))
+            return NEXUS_GPT_INSTALL_VERIFY_ERROR;
+        completed += chunk;
+    }
     return NEXUS_GPT_INSTALL_OK;
 }
 

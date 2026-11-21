@@ -7,6 +7,11 @@ static size_t registered_count;
 static const struct nexus_block_device *boot_media_device;
 static bool boot_media_detection_complete;
 static bool mounted_devices[NEXUS_BLOCKDEV_MAX_DEVICES];
+static const struct nexus_block_device *install_session_device;
+static char install_session_id[NEXUS_BLOCKDEV_ID_MAX];
+static char install_session_model[NEXUS_BLOCKDEV_MODEL_MAX];
+static uint64_t install_session_block_count;
+static uint32_t install_session_block_size;
 
 void blockdev_init(void) {
     blockdev_install_session_end();
@@ -222,12 +227,6 @@ bool blockdev_install_write_supported(const struct nexus_block_device *device) {
         device->write == NULL || device->flush == NULL) return false;
     return true;
 }
-
-static const struct nexus_block_device *install_session_device;
-static char install_session_id[NEXUS_BLOCKDEV_ID_MAX];
-static char install_session_model[NEXUS_BLOCKDEV_MODEL_MAX];
-static uint64_t install_session_block_count;
-static uint32_t install_session_block_size;
 
 static bool blockdev_exact_text(const char *expected, const char *provided,
                                 size_t capacity) {

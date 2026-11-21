@@ -4,9 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Pin to the published v12.9.6 binary release and verify its upstream digest.
-LIMINE_VERSION="12.9.6"
-LIMINE_SHA256="b38aabb042b0c0f9f562b7741be3c1204838d7bbacfa78bb411c674bd5b984ee"
+LIMINE_VERSION="12.10.0"
+LIMINE_SHA256="365ba8785d4e4b55c3368738a642681b31f606afec9f77179e07fc26ebe841e2"
 PROTOCOL_COMMIT="877c2d4c50e170575f8b8e7fbf7b8fa89b1dc157"
 
 mkdir -p deps build release

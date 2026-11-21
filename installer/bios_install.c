@@ -8,6 +8,11 @@
 #define BIOS_IO_CHUNK_BYTES 4096U
 #define BIOS_IO_CHUNK_BLOCKS (BIOS_IO_CHUNK_BYTES / BIOS_SECTOR_SIZE)
 
+static bool bytes_equal(const uint8_t *a,const uint8_t *b,size_t n){
+    for(size_t i=0U;i<n;i++)if(a[i]!=b[i])return false;
+    return true;
+}
+
 static void put64le(uint8_t *p,uint64_t v){
     for(unsigned i=0;i<8U;i++)p[i]=(uint8_t)(v>>(i*8U));
 }
@@ -68,7 +73,7 @@ bool nexus_bios_install_apply(const struct nexus_bios_install_target *t,
         const uint64_t remain=stage_bytes-byte_off;
         const size_t useful=(size_t)(remain<(uint64_t)n*BIOS_SECTOR_SIZE?
                                       remain:(uint64_t)n*BIOS_SECTOR_SIZE);
-        if(memcmp(chunk,src+BIOS_SECTOR_SIZE+(size_t)byte_off,useful)!=0)
+        if(!bytes_equal(chunk,src+BIOS_SECTOR_SIZE+(size_t)byte_off,useful))
             return false;
         done+=n;
     }
@@ -76,5 +81,5 @@ bool nexus_bios_install_apply(const struct nexus_bios_install_target *t,
     if(!t->write(t->context,0U,1U,new_mbr)||!t->flush(t->context))return false;
     uint8_t verify[BIOS_SECTOR_SIZE];
     if(!t->read(t->context,0U,1U,verify))return false;
-    return memcmp(verify,new_mbr,sizeof(verify))==0;
+    return bytes_equal(verify,new_mbr,sizeof(verify));
 }

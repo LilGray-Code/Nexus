@@ -36,6 +36,18 @@ jobs:
           test -f build/build-iso.sh
           test -f NexusDesktop/ai.html
 
+      - name: Set desktop package metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("NexusDesktop/package.json")
+          data = json.loads(path.read_text())
+          data.setdefault("homepage", "https://github.com/LilGray-Code/Nexus")
+          path.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+
       - name: Build inside Debian 13
         shell: bash
         run: |
@@ -45,7 +57,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             debian:trixie \
-            bash -lc 'node -e "const fs=require(\"fs\"); const f=\"NexusDesktop/package.json\"; const p=JSON.parse(fs.readFileSync(f,\"utf8\")); p.homepage=p.homepage||\"https://github.com/LilGray-Code/Nexus\"; fs.writeFileSync(f,JSON.stringify(p,null,2)+\"\\n\")" && ./build/prepare-build-host.sh && ./build/build-iso.sh'
+            bash -lc './build/prepare-build-host.sh && ./build/build-iso.sh'
 
       - name: Verify ISO and checksum
         shell: bash

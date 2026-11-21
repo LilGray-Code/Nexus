@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #define NVME_REG_CAP   0x000U
+#define NVME_REG_INTMS 0x00CU
 #define NVME_REG_CC    0x014U
 #define NVME_REG_CSTS  0x01CU
 #define NVME_REG_AQA   0x024U
@@ -148,8 +149,8 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         return false;
     }
 
-    const uint16_t maximum_queue_entries =
-        (uint16_t)(capability & 0xFFFFU) + 1U;
+    const uint32_t maximum_queue_entries =
+        (uint32_t)(capability & 0xFFFFU) + 1U;
     const uint8_t doorbell_stride = (uint8_t)((capability >> 32) & 0x0FU);
     const uint8_t minimum_page_size = (uint8_t)((capability >> 48) & 0x0FU);
     const bool nvm_command_set_supported =
@@ -224,7 +225,10 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     *(volatile uint64_t *)(uintptr_t)&registers[NVME_REG_ACQ / 4U] =
         completion_physical;
 
-    /* 4 KiB memory page, 64-byte SQ entries, 16-byte CQ entries, polling mode. */
+    /* Polling mode: mask controller interrupts before enabling admin queues. */
+    registers[NVME_REG_INTMS / 4U] = UINT32_MAX;
+
+    /* 4 KiB memory page, 64-byte SQ entries, 16-byte CQ entries. */
     registers[NVME_REG_CC / 4U] =
         NVME_CC_ENABLE | (6U << 16) | (4U << 20);
     if (!nvme_wait_ready(registers, true)) {

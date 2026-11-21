@@ -10,8 +10,8 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 	-mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only \
 	-mcmodel=kernel -I$(DEPS) -Isrc
 LDFLAGS := -nostdlib -static -z max-page-size=0x1000 -T linker/x86_64.ld
-C_OBJECTS := $(OUT)/main.o $(OUT)/serial.o $(OUT)/memory.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o
-OBJECTS := $(C_OBJECTS) $(OUT)/isr.o
+C_OBJECTS := $(OUT)/main.o $(OUT)/serial.o $(OUT)/memory.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o $(OUT)/scheduler.o
+OBJECTS := $(C_OBJECTS) $(OUT)/isr.o $(OUT)/context.o
 
 .PHONY: all clean
 all: $(OUT)/nexus-kernel.elf
@@ -23,6 +23,9 @@ $(OUT)/%.o: src/%.c | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/isr.o: src/isr.S | $(OUT)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUT)/context.o: src/context.S | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/nexus-kernel.elf: $(OBJECTS) linker/x86_64.ld

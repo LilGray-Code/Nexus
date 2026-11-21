@@ -44,6 +44,7 @@ bool vfs_has_filesystem(void);
 bool vfs_ramfs_create(const char *name);
 bool vfs_ramfs_write(const char *name, const void *data, size_t length);
 bool vfs_ramfs_remove(const char *name);
+bool vfs_remove_file(const char *name);
 bool vfs_ramfs_selftest(void);
 size_t vfs_root_entry_count(void);
 bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry);

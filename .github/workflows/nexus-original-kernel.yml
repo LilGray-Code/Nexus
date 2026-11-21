@@ -43,6 +43,8 @@ jobs:
       - name: Debug kernel code around timer wait
         run: |
           objdump -d --start-address=0xffffffff80001480 --stop-address=0xffffffff80001530 build/nexus-kernel.elf
+          objdump -d --disassemble=interrupt_dispatch build/nexus-kernel.elf
+          objdump -d --disassemble=ioapic_send_eoi build/nexus-kernel.elf
           nm -n build/nexus-kernel.elf | grep -E 'kmain|interrupt_dispatch|ioapic_send_eoi|exception_dispatch'
 
       - name: Boot test - UEFI (OVMF)

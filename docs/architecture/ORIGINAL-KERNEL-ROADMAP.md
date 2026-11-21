@@ -789,3 +789,27 @@ remain read-only, and no user disk is modified automatically at boot.
 The latest development commits are being checked by the dedicated BIOS/UEFI
 GitHub Actions workflow. This feature is not considered complete until the
 updated build and both firmware boot tests pass.
+
+
+### Bounded user-mode file-write syscall
+
+The initial ring-3 syscall ABI now includes a file-write operation. A program
+passes a validated 8.3 filename, a userspace buffer, and a byte count. The
+kernel copies the path and payload through checked user-memory access, rejects
+path separators and unterminated/oversized names, and caps a single write at
+the 4 KiB RAM overlay limit. The VFS routes writes to an explicitly mounted
+writable NexusFS volume when available; otherwise it uses volatile RAMFS.
+FAT32 is never writable through this call. An error on an explicitly writable
+NexusFS device is returned rather than silently downgraded to RAM.
+
+The VFS self-test now exercises the generic write path and reads the result
+back through the unified VFS, checking the expected backing store (NexusFS
+when writable, RAMFS otherwise) before removal. User-mode open now accepts any
+mounted VFS store, including RAM-only/NXFS-only systems, rather than requiring
+a FAT32 mount.
+
+This is still a single-bootstrap-process ABI. There are no per-process file
+descriptor tables, create/open flags, append semantics, directories, access
+controls, or full POSIX compatibility. The 4 KiB syscall limit and 8.3 names
+are intentionally conservative; persistent storage still requires an
+explicitly prepared and mounted NexusFS partition.

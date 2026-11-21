@@ -126,8 +126,9 @@ enum nexus_fat32_format_result nexus_fat32_format(
     put32(workspace,0x0FFFFFF8U);put32(workspace+4U,0xFFFFFFFFU);
     put32(workspace+8U,EOC);
     if(!write_blocks(t,fat1,1U,workspace)||
-       !write_blocks(t,fat2,1U,workspace)||
-       !write_blocks(t,data_start,spc,workspace))goto io_error;
+       !write_blocks(t,fat2,1U,workspace))goto io_error;
+    for(size_t i=0U;i<sizeof(workspace);++i)workspace[i]=0U;
+    if(!write_blocks(t,data_start,spc,workspace))goto io_error;
     make_fsinfo(workspace,t->block_size);
     if(!write_blocks(t,start+1U,1U,workspace)||
        !write_blocks(t,start+BACKUP_FSINFO,1U,workspace))goto io_error;

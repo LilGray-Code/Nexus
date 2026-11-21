@@ -43,10 +43,12 @@ installer engine specification, GPT planner, metadata serializer, guarded
 transaction, safety invariants, and implementation gates are in
 [installer/README.md](installer/README.md).
 
-The GPT transaction currently runs only against an in-memory mock disk in CI.
-It requires two confirmations and refuses unverified, live, or mounted targets.
-It is not yet wired to real block-device writes. No completed installation or
-disk-writing capability is claimed.
+The GPT transaction is host-tested against an in-memory mock disk in CI. Its
+kernel adapter revalidates device identity and obtains a kernel-owned write
+session before issuing GPT metadata writes. However, the session cannot open
+until the boot chain positively identifies the live boot medium; that firmware
+provenance integration is not implemented. The UI is not connected, and no
+completed installation or release-ISO disk-writing capability is claimed.
 
 ## Build and test
 

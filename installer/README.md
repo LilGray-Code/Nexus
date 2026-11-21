@@ -1,8 +1,9 @@
 # Nexus Installer
 
-**Status:** architecture and safety contract defined; implementation is gated on
-writable block I/O, a crash-consistent on-disk filesystem, and a Nexus live
-userland. This is not yet an installable or disk-writing program.
+**Status:** GPT metadata writer and kernel block-device adapter are implemented
+and linked into the kernel build. Destructive writes remain fail-closed because
+boot-medium provenance is not yet established by the boot chain. The UI is a
+read-only preview; no installable system image or complete installer exists.
 
 ## Product requirement
 
@@ -164,10 +165,23 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   where a reserved sector is written, read back, and restored on a disposable
   QEMU image. The distributable ISO intentionally registers NVMe as read-only;
   normal boots do not write to user disks.
-- The GPT metadata transaction is not yet linked to the kernel's block-device
-  layer or called by the desktop. The graphical preview is not yet a complete
-  installer. System-image deployment, NXFS formatting on a selected target,
-  Limine target-disk installation, first boot, and recovery remain unimplemented.
+- `kernel/src/installer_storage.c` now adapts the GPT transaction to the
+  registered kernel block-device API. It revalidates the selected device's
+  stable identity and geometry, obtains a kernel-owned destructive-write
+  session, and routes bounded reads, writes, and flushes through that session.
+  The adapter is linked into the kernel build but is not called by the desktop.
+- Kernel authorization deliberately remains fail-closed: no code currently
+  proves which registered physical device supplied the running Limine boot
+  image. `blockdev_install_session_begin` therefore rejects every target until
+  a trusted boot-medium identity is registered and detection is marked complete.
+  Do not infer this identity from device order, model, or capacity.
+- The distributable NVMe driver remains read-only. The kernel adapter is not
+  sufficient evidence for enabling release writes: it still needs boot-source
+  provenance, UI confirmation wiring, a kernel adapter test, and disposable-
+  disk fault-injection tests.
+- The graphical preview is not yet a complete installer. System-image
+  deployment, NXFS formatting on a selected target, Limine target-disk
+  installation, first boot, and recovery remain unimplemented.
 
 The partition planner is an implemented and tested foundation, not a usable
 installer. Disk-writing remains disabled in the distributable ISO until the

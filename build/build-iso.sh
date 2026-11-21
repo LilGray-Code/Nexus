@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-LIMINE_VERSION="12.10.0"
-LIMINE_SHA256="365ba8785d4e4b55c3368738a642681b31f606afec9f77179e07fc26ebe841e2"
+# Pin to the published v12.9.6 binary release and verify its upstream digest.
+LIMINE_VERSION="12.9.6"
+LIMINE_SHA256="b38aabb042b0c0f9f562b7741be3c1204838d7bbacfa78bb411c674bd5b984ee"
 PROTOCOL_COMMIT="877c2d4c50e170575f8b8e7fbf7b8fa89b1dc157"
 
 mkdir -p deps build release
@@ -16,9 +17,9 @@ git -C deps/limine-protocol fetch --depth 1 origin "$PROTOCOL_COMMIT"
 git -C deps/limine-protocol checkout --detach "$PROTOCOL_COMMIT"
 
 curl --fail --location --retry 3 \
-  "https://github.com/Limine-Bootloader/Limine/releases/download/v\${LIMINE_VERSION}/limine-binary.tar.gz" \
+  "https://github.com/Limine-Bootloader/Limine/releases/download/v${LIMINE_VERSION}/limine-binary.tar.gz" \
   -o build/limine-binary.tar.gz
-echo "\${LIMINE_SHA256}  build/limine-binary.tar.gz" | sha256sum --check -
+echo "${LIMINE_SHA256}  build/limine-binary.tar.gz" | sha256sum --check -
 
 rm -rf build/limine-binary
 tar -xzf build/limine-binary.tar.gz -C build

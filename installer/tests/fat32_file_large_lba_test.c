@@ -134,6 +134,22 @@ int main(void) {
     assert((get32(f2->bytes+24U)&0x0FFFFFFFU)==0x0FFFFFFFU);
     assert((get32(f1->bytes+32U)&0x0FFFFFFFU)==0x0FFFFFFFU);
     assert((get32(f2->bytes+32U)&0x0FFFFFFFU)==0x0FFFFFFFU);
+    static const char cfg[]="timeout: 3\\n";
+    assert(nexus_fat32_write_file(&target,PARTITION_LBA,TOTAL_SECTORS,
+        "EFI/BOOT/limine.conf",cfg,sizeof(cfg)-1U)==NEXUS_FAT32_FILE_OK);
+    bootdir=slot_for(&disk,boot_lba,false);
+    assert(bootdir!=NULL);
+    assert(bootdir->bytes[96U]==0x41U && bootdir->bytes[107U]==0x0FU);
+    assert(memcmp(bootdir->bytes+128U,"LIMINE~1CNF",11U)==0);
+    uint8_t sum=0;for(unsigned i=0;i<11U;i++)
+        sum=(uint8_t)(((sum&1U)?0x80U:0U)+(sum>>1)+bootdir->bytes[128U+i]);
+    assert(bootdir->bytes[109U]==sum);
+    const uint32_t cfg_cluster=(uint32_t)get16(bootdir->bytes+128U+26U)|
+        ((uint32_t)get16(bootdir->bytes+128U+20U)<<16);
+    assert(cfg_cluster>=3U);
+    struct sector_slot *cfg_sector=slot_for(&disk,
+        data_start+(uint64_t)(cfg_cluster-2U)*8U,false);
+    assert(cfg_sector!=NULL && memcmp(cfg_sector->bytes,cfg,sizeof(cfg)-1U)==0);
     puts("NEXUS FAT32 LARGE-LBA FILE WRITER TEST PASSED");
     return 0;
 }

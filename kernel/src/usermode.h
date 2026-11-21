@@ -9,6 +9,7 @@ bool usermode_run_selftest(void);
 bool usermode_sys_write(uint64_t user_address, uint64_t length);
 
 extern volatile uint64_t usermode_exit_status;
+extern volatile bool usermode_write_rejected;
 void nexus_user_return(void);
 
 #endif

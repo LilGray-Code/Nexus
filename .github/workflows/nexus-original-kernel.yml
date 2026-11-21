@@ -63,7 +63,7 @@ jobs:
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src -Ikernel/include -Iinstaller kernel/src/blockdev.c kernel/src/gpt.c \
             kernel/src/installer_storage.c kernel/src/boot_payload.c kernel/src/nxfs.c installer/partition_plan.c \
-            installer/fat32_format.c installer/fat32_file.c installer/gpt_image.c installer/gpt_install.c \
+            installer/fat32_format.c installer/fat32_file.c installer/bios_install.c installer/gpt_image.c installer/gpt_install.c \
             installer/tests/installer_storage_test.c \
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test

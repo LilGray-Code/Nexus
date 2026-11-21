@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define PCI_CONFIG_ADDRESS 0x0CF8U
-#define PCI_CONFIG_DATA    0x0CF CU
+#define PCI_CONFIG_DATA    0x0CFCU
 #define PCI_ENABLE_BIT     0x80000000U
 #define PCI_MAX_BUSES      256U
 #define PCI_MAX_DEVICES    32U

@@ -252,7 +252,9 @@ static void draw_shell(void) {
                 graphics_draw_text(text_x, text_y + 194U,
                                    installer_firmware == NEXUS_FIRMWARE_UEFI
                                        ? "FIRMWARE PLAN: UEFI / GPT"
-                                       : "FIRMWARE PLAN: LEGACY BIOS / GPT",
+                                       : (installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS
+                                           ? "FIRMWARE PLAN: LEGACY BIOS / GPT"
+                                           : "FIRMWARE PLAN: UEFI + BIOS / GPT"),
                                    1, 108, 216, 229);
                 if (installer_plan_valid) {
                     graphics_draw_text(text_x, text_y + 222U,
@@ -288,7 +290,7 @@ static void draw_shell(void) {
                                        1, 239, 177, 119);
                 }
                 graphics_draw_text(text_x, text_y + 354U,
-                                   "UP/DOWN SELECT DRIVE  F1 UEFI  F2 BIOS",
+                                   "UP/DOWN DRIVE  F1 UEFI  F2 BIOS  F3 DUAL",
                                    1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 378U,
                                    "READ ONLY PREVIEW - INSTALLATION NOT ENABLED",
@@ -1420,6 +1422,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             installer_refresh_plan();
         } else if (event->scancode == 0x3CU) {
             installer_firmware = NEXUS_FIRMWARE_LEGACY_BIOS;
+            installer_refresh_plan();
+        } else if (event->scancode == 0x3DU) {
+            installer_firmware = NEXUS_FIRMWARE_DUAL;
             installer_refresh_plan();
         } else if (event->scancode == 0x48U && blockdev_count() > 0U) {
             if (installer_selected_device > 0U) --installer_selected_device;

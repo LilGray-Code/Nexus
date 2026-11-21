@@ -47,6 +47,14 @@ static char terminal_input[64];
 static size_t terminal_input_length;
 static char terminal_output[160];
 
+#define NEXUS_BROWSER_LINE_COUNT 9U
+#define NEXUS_BROWSER_LINE_WIDTH 72U
+static char browser_address[96];
+static size_t browser_address_length;
+static char browser_status[80] = "Enter host/path; HTTP only, no HTTPS";
+static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
+static size_t browser_line_count;
+
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
 }
@@ -249,26 +257,31 @@ static void draw_shell(void) {
         graphics_draw_text(text_x + 56U, text_y + 128U, terminal_input,
                            1, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 180U,
-                           "HELP  ABOUT  MEM  UPTIME  NET  DNS  HTTP  LS  CAT  RAM FILES",
+                           "HELP  ABOUT  MEM  NET  DNS  HTTP  FILES  RAM",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 210U,
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_BROWSER) {
-        graphics_draw_text(text_x, text_y, "NEXUS BROWSER",
+        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - HTTP TEXT VIEW",
                            2, 239, 249, 255);
-        graphics_draw_text(text_x, text_y + 48U,
-                           "BROWSER ENGINE PORT IS IN DEVELOPMENT",
+        graphics_draw_text(text_x, text_y + 38U, "HOST/PATH:",
                            1, 108, 216, 229);
-        graphics_draw_text(text_x, text_y + 78U,
-                           "THE ORIGINAL BROWSER UI IS PRESERVED",
-                           1, 233, 243, 252);
-        graphics_draw_text(text_x, text_y + 108U,
-                           "NETWORK AND TLS SUPPORT ARE REQUIRED",
+        graphics_draw_text(text_x + 82U, text_y + 38U, browser_address,
+                           1, 239, 249, 255);
+        graphics_draw_text(text_x, text_y + 66U, browser_status,
+                           1, 170, 225, 190);
+        for (size_t row = 0; row < browser_line_count; ++row) {
+            graphics_draw_text(text_x, text_y + 108U + row * 24U,
+                               browser_lines[row], 1,
+                               233, 243, 252);
+        }
+        graphics_draw_text(text_x, text_y + 360U,
+                           "ENTER LOADS  BACKSPACE EDITS  ESC HOME",
                            1, 170, 191, 211);
-        graphics_draw_text(text_x, text_y + 158U,
-                           "PRESS ESC TO RETURN HOME",
-                           1, 119, 229, 211);
+        graphics_draw_text(text_x, text_y + 382U,
+                           "PLAIN HTTP ONLY - DO NOT SEND PRIVATE DATA",
+                           1, 239, 177, 119);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM SETTINGS",
                            2, 239, 249, 255);
@@ -504,6 +517,209 @@ static char terminal_scancode_char(uint8_t code) {
         [0x35]='/',[0x39]=' '
     };
     return code < sizeof(map) ? map[code] : '\0';
+}
+
+static void browser_set_status(const char *message) {
+    size_t i = 0U;
+    if (message == NULL) message = "";
+    while (message[i] != '\0' && i < sizeof(browser_status) - 1U) {
+        browser_status[i] = message[i];
+        ++i;
+    }
+    browser_status[i] = '\0';
+}
+
+static void browser_clear_page(void) {
+    browser_line_count = 1U;
+    for (size_t row = 0; row < NEXUS_BROWSER_LINE_COUNT; ++row) {
+        for (size_t column = 0; column < NEXUS_BROWSER_LINE_WIDTH; ++column)
+            browser_lines[row][column] = '\0';
+    }
+}
+
+static void browser_append_page_char(char value) {
+    if (browser_line_count == 0U) browser_line_count = 1U;
+    if (value == '\r') return;
+    if (value == '\n') {
+        if (browser_line_count < NEXUS_BROWSER_LINE_COUNT)
+            ++browser_line_count;
+        return;
+    }
+    if (value == '\t') value = ' ';
+    if ((unsigned char)value < 0x20U || (unsigned char)value > 0x7EU)
+        value = ' ';
+    char *line = browser_lines[browser_line_count - 1U];
+    size_t length = 0U;
+    while (length < NEXUS_BROWSER_LINE_WIDTH - 1U && line[length] != '\0')
+        ++length;
+    if (value == ' ' && (length == 0U || line[length - 1U] == ' '))
+        return;
+    if (length >= NEXUS_BROWSER_LINE_WIDTH - 1U) {
+        if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT) return;
+        ++browser_line_count;
+        line = browser_lines[browser_line_count - 1U];
+        length = 0U;
+    }
+    line[length] = value;
+    line[length + 1U] = '\0';
+}
+
+static void browser_render_body(const uint8_t *data, size_t length) {
+    browser_clear_page();
+    if (data == NULL) return;
+
+    size_t body = 0U;
+    for (size_t i = 0; i + 3U < length; ++i) {
+        if (data[i] == '\r' && data[i + 1U] == '\n' &&
+            data[i + 2U] == '\r' && data[i + 3U] == '\n') {
+            body = i + 4U;
+            break;
+        }
+    }
+
+    bool in_tag = false;
+    bool in_entity = false;
+    for (size_t i = body; i < length; ++i) {
+        const char ch = (char)data[i];
+        if (in_tag) {
+            if (ch == '>') {
+                in_tag = false;
+                browser_append_page_char(' ');
+            }
+            continue;
+        }
+        if (in_entity) {
+            if (ch == ';') {
+                in_entity = false;
+                browser_append_page_char(' ');
+            }
+            continue;
+        }
+        if (ch == '<') {
+            in_tag = true;
+            continue;
+        }
+        if (ch == '&') {
+            in_entity = true;
+            continue;
+        }
+        browser_append_page_char(ch);
+        if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT &&
+            i + 1U < length) {
+            char *last = browser_lines[NEXUS_BROWSER_LINE_COUNT - 1U];
+            if (last[NEXUS_BROWSER_LINE_WIDTH - 2U] != '\0') break;
+        }
+    }
+}
+
+static bool browser_append_text(char *buffer, size_t capacity,
+                                size_t *length, const char *text) {
+    if (buffer == NULL || length == NULL || text == NULL) return false;
+    while (*text != '\0') {
+        if (*length >= capacity) return false;
+        buffer[(*length)++] = *text++;
+    }
+    return true;
+}
+
+static void browser_navigate(void) {
+    browser_clear_page();
+    if (browser_address_length == 0U) {
+        browser_set_status("Enter a host or host/path first");
+        return;
+    }
+
+    char host[64];
+    char path[96];
+    size_t host_length = 0U;
+    size_t path_length = 0U;
+    bool in_path = false;
+    path[path_length++] = '/';
+    for (size_t i = 0; i < browser_address_length; ++i) {
+        const char ch = browser_address[i];
+        if (!in_path && ch == '/') {
+            in_path = true;
+            path_length = 0U;
+            path[path_length++] = '/';
+            continue;
+        }
+        if (!in_path) {
+            if (host_length >= sizeof(host) - 1U) {
+                browser_set_status("Host name is too long");
+                return;
+            }
+            host[host_length++] = ch;
+        } else {
+            if (path_length >= sizeof(path) - 1U ||
+                ch < 0x21 || ch > 0x7E) {
+                browser_set_status("Invalid or overlong URL path");
+                return;
+            }
+            path[path_length++] = ch;
+        }
+    }
+    if (host_length == 0U) {
+        browser_set_status("Enter a host name");
+        return;
+    }
+    host[host_length] = '\0';
+    path[path_length] = '\0';
+
+    browser_set_status("Resolving host...");
+    uint8_t address[4];
+    if (!net_dns_resolve(host, address, 600U)) {
+        browser_set_status("DNS failed; check DHCP/network");
+        return;
+    }
+    browser_set_status("Opening TCP connection...");
+    if (!net_tcp_connect(address, 80U, 800U)) {
+        browser_set_status("TCP connection to port 80 failed");
+        return;
+    }
+
+    char request[256];
+    size_t request_length = 0U;
+    bool request_ok =
+        browser_append_text(request, sizeof(request), &request_length,
+                            "GET ") &&
+        browser_append_text(request, sizeof(request), &request_length, path) &&
+        browser_append_text(request, sizeof(request), &request_length,
+                            " HTTP/1.0\r\nHost: ") &&
+        browser_append_text(request, sizeof(request), &request_length, host) &&
+        browser_append_text(request, sizeof(request), &request_length,
+                            "\r\nConnection: close\r\nUser-Agent: Nexus/0.1\r\n\r\n");
+    if (!request_ok || !net_tcp_send(request, (uint16_t)request_length)) {
+        browser_set_status("HTTP request could not be sent");
+        net_tcp_close();
+        return;
+    }
+
+    uint8_t response[1536];
+    size_t response_length = 0U;
+    const uint64_t start = timer_ticks();
+    uint64_t last_data = start;
+    browser_set_status("Receiving plain HTTP response...");
+    while (timer_ticks() - start < 600U &&
+           (response_length == 0U || timer_ticks() - last_data < 40U) &&
+           response_length < sizeof(response)) {
+        net_poll();
+        const size_t received =
+            net_tcp_receive(response + response_length,
+                            sizeof(response) - response_length);
+        if (received != 0U) {
+            response_length += received;
+            last_data = timer_ticks();
+        }
+        __asm__ volatile ("pause");
+    }
+    net_tcp_close();
+
+    if (response_length == 0U) {
+        browser_set_status("No HTTP response received");
+        return;
+    }
+    browser_render_body(response, response_length);
+    browser_set_status("Loaded HTTP text; no TLS or script execution");
 }
 
 static void terminal_execute(void) {
@@ -992,6 +1208,26 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (event->type != NEXUS_INPUT_KEYBOARD) return;
     /* Set-1 make codes only; break codes are ignored. */
+    if (active_view == DESKTOP_BROWSER) {
+        if ((event->scancode & 0x80U) != 0U) return;
+        if (event->scancode == 0x01U) {
+            active_view = DESKTOP_HOME;
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x1CU) {
+            browser_navigate();
+        } else if (event->scancode == 0x0EU) {
+            if (browser_address_length > 0U)
+                browser_address[--browser_address_length] = '\0';
+        } else {
+            const char ch = terminal_scancode_char(event->scancode);
+            if (ch != '\0' && browser_address_length < sizeof(browser_address)-1U) {
+                browser_address[browser_address_length++] = ch;
+                browser_address[browser_address_length] = '\0';
+            }
+        }
+        draw_shell(); draw_pointer(); return;
+    }
     if (active_view == DESKTOP_TERMINAL) {
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x1CU) {

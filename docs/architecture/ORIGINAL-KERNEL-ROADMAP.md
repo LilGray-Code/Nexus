@@ -667,3 +667,21 @@ The Files view refreshes from the unified VFS when opened and after terminal
 commands. It can display and preview the RAM filesystem even without a mounted
 disk, and shows disk-backed entries alongside the RAM overlay when FAT32 is
 mounted. RAM files remain volatile; disk media remains read-only.
+
+
+### Nexus Browser first interactive network view
+
+F2 now opens a keyboard-editable browser address field. Entering a host or
+host/path performs DNS A lookup, establishes the bounded TCP client connection
+to port 80, sends a small HTTP/1.0 GET request, and displays a bounded plain-text
+view of the response body with basic HTML tag stripping. Backspace edits the
+address and Escape returns to the desktop. This confirms the browser screen can
+use the kernel network stack rather than relying only on the Terminal command.
+
+This is a deliberately limited HTTP text viewer, not a modern browser. It has
+no HTTPS/TLS, certificate validation, HTML layout, CSS, JavaScript, cookies,
+tabs, downloads, history, bookmarks, renderer process, or network security
+sandbox. It must not be used to submit passwords, tokens, or other private
+information. The release browser milestone remains blocked on maintained TLS
+and certificate verification, a proper renderer, app isolation, and a safe
+browser-engine integration plan.

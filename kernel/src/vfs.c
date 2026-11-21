@@ -197,6 +197,21 @@ bool vfs_save_ram_file_to_nxfs(const char *name) {
     return nxfs_write_file(name, entry->data, entry->size);
 }
 
+/*
+ * User-facing writes prefer the explicitly mounted persistent NexusFS volume.
+ * If it is absent or read-only, writes go to the volatile RAM overlay. Never
+ * fall through to FAT32 and never disguise a failed writable-NXFS write as a
+ * successful RAM-only write.
+ */
+bool vfs_write_file(const char *name, const void *data, size_t length) {
+    if (name == NULL || (length != 0U && data == NULL)) return false;
+    if (nxfs_root_mounted && nxfs_is_writable()) {
+        if (length > NEXUS_NXFS_MAX_FILE_BYTES) return false;
+        return nxfs_write_file(name, data, length);
+    }
+    return vfs_ramfs_write(name, data, length);
+}
+
 size_t vfs_root_entry_count(void) {
     size_t count = root_mounted ? fat32_root_entry_count() : 0U;
     if (nxfs_root_mounted) count += nxfs_entry_count();

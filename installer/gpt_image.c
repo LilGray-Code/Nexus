@@ -126,11 +126,19 @@ static bool validate_plan(const struct nexus_partition_plan *plan,
                 return false;
         previous_last = part->last_lba;
     }
-    if (plan->partition_count != 3U ||
-        (plan->partitions[0].kind != NEXUS_PARTITION_ESP &&
-         plan->partitions[0].kind != NEXUS_PARTITION_BIOS_BOOT) ||
-        plan->partitions[1].kind != NEXUS_PARTITION_SYSTEM ||
-        plan->partitions[2].kind != NEXUS_PARTITION_DATA) return false;
+    if (plan->partition_count == 3U) {
+        if ((plan->partitions[0].kind != NEXUS_PARTITION_ESP &&
+             plan->partitions[0].kind != NEXUS_PARTITION_BIOS_BOOT) ||
+            plan->partitions[1].kind != NEXUS_PARTITION_SYSTEM ||
+            plan->partitions[2].kind != NEXUS_PARTITION_DATA) return false;
+    } else if (plan->partition_count == 4U) {
+        if (plan->partitions[0].kind != NEXUS_PARTITION_ESP ||
+            plan->partitions[1].kind != NEXUS_PARTITION_BIOS_BOOT ||
+            plan->partitions[2].kind != NEXUS_PARTITION_SYSTEM ||
+            plan->partitions[3].kind != NEXUS_PARTITION_DATA) return false;
+    } else {
+        return false;
+    }
     return true;
 }
 

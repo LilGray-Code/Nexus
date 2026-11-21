@@ -78,6 +78,22 @@ static void test_uefi_image(void) {
     assert(image.primary_entries[128] == 0x46U); /* Nexus NXFS GUID */
 }
 
+static void test_dual_firmware_image(void) {
+    struct nexus_partition_plan plan;
+    struct nexus_gpt_image_buffers image;
+    uint8_t disk_guid[16], partition_guids[4][16];
+    fill_guids(disk_guid,partition_guids);
+    assert(nexus_partition_plan_create(64ULL*1024ULL*1024ULL*1024ULL/512ULL,
+        512U,NEXUS_FIRMWARE_DUAL,&plan));
+    assert(nexus_gpt_image_build(&plan,disk_guid,&partition_guids[0][0],&image));
+    assert(image.primary_entries[0]==0x28U);
+    assert(image.primary_entries[128]=='H');
+    assert(image.primary_entries[256]==0x46U);
+    assert(image.primary_entries[384]==0x46U);
+    for(size_t i=0U;i<NEXUS_GPT_IMAGE_ENTRY_BYTES;i++)
+        assert(image.primary_entries[i]==image.backup_entries[i]);
+}
+
 static void test_4kn_image(void) {
     struct nexus_partition_plan plan;
     struct nexus_gpt_image_buffers image;
@@ -111,6 +127,7 @@ static void test_rejects_duplicate_guids_and_invalid_plan(void) {
 
 int main(void) {
     test_uefi_image();
+    test_dual_firmware_image();
     test_4kn_image();
     test_rejects_duplicate_guids_and_invalid_plan();
     puts("NEXUS GPT IMAGE SERIALIZATION TESTS PASSED");

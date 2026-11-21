@@ -16,13 +16,15 @@ and an early single-connection TCP/plain-HTTP client.
 
 The Files view browses the unified VFS, including the volatile RAM overlay
 and an explicitly mounted NexusFS data partition. The Files view and Terminal
-can remove files only from volatile RAM or a writable NexusFS volume; FAT32
+can create, replace, and remove files in volatile RAM or a writable NexusFS
+volume; ring-3 programs also have a bounded file-write syscall. FAT32 remains
+read-only; FAT32
 remains read-only. The release NVMe device is still registered read-only, so
 normal release boots cannot modify user disks. The Browser tile has an
 interactive plain-HTTP text viewer backed by the kernel DNS/TCP client; this is
 not a modern browser and does not support TLS. HTTPS/TLS, certificate
 validation, HTML/CSS/JavaScript rendering, preemptive user-process scheduling,
-a general-purpose writable filesystem, broad USB/Wi-Fi/audio/GPU drivers,
+multi-process user scheduling, broad USB/Wi-Fi/audio/GPU drivers,
 power management, installer, recovery, and release hardening are not yet
 complete.
 

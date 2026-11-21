@@ -53,6 +53,7 @@ jobs:
           set +e
           timeout -k 2s 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
+            -netdev user,id=n0 -device e1000,netdev=n0 \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
             -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
@@ -82,6 +83,7 @@ jobs:
           grep -q "NEXUS ACPI MADT READY" uefi-serial.log
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log
+          grep -q "NEXUS E1000 TX READY" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" uefi-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" uefi-serial.log
@@ -116,6 +118,7 @@ jobs:
           set +e
           timeout -k 2s 12s qemu-system-x86_64 \
             -machine pc -cpu max -m 512M \
+            -netdev user,id=n0 -device e1000,netdev=n0 \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:bios-serial.log \
             -monitor none -no-reboot -no-shutdown
@@ -140,6 +143,7 @@ jobs:
           grep -q "NEXUS ACPI MADT READY" bios-serial.log
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" bios-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" bios-serial.log
+          grep -q "NEXUS E1000 TX READY" bios-serial.log
           grep -q "PCI: functions discovered:" bios-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log

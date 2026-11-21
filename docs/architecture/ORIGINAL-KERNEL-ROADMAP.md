@@ -575,3 +575,21 @@ build reports the on-disk ELF execution test as skipped rather than failing
 the boot. The UEFI profile attaches the disposable NVMe image and must emit
 the HELLO.ELF stdout and exit-status assertions; a mounted volume with a bad
 or unlaunchable test file remains a hard test failure.
+
+
+### First Intel E1000 Ethernet driver
+
+The kernel now detects a small Intel 82540/82545/82546/82574-compatible PCI
+device set, enables PCI memory decoding and bus mastering, maps E1000 MMIO
+register pages, reads the MAC address registers, allocates DMA32 transmit and
+receive descriptor rings plus packet buffers, and configures polling-mode
+receive/transmit. The packet API sends and receives bounded Ethernet frames;
+the boot path transmits a broadcast ARP probe. UEFI and BIOS QEMU profiles
+attach an E1000 model using the user-mode network backend and require the
+transmit-completion marker.
+
+This is only the first hardware/data-link stage. It does not yet implement
+Ethernet demultiplexing, an ARP cache, IPv4, DHCP, DNS, TCP, TLS, sockets,
+interrupt-driven packet delivery, or a browser network stack. The current
+driver supports one polling queue and a limited Intel PCI ID set; it is not
+yet a general NIC framework or hardened against arbitrary DMA devices.

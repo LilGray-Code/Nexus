@@ -7,6 +7,7 @@
 #include "blockdev.h"
 #include "desktop.h"
 #include "elf64.h"
+#include "e1000.h"
 #include "gdt.h"
 #include "interrupts.h"
 #include "input.h"
@@ -157,6 +158,15 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("NEXUS PCI DISCOVERY READY\r\n");
+
+    if (e1000_init()) {
+        if (e1000_send_arp_probe()) {
+            serial_write("NEXUS E1000 TX READY\r\n");
+        } else {
+            serial_write("WARNING: E1000 ARP probe transmit did not complete\r\n");
+        }
+    }
+
 
     if (!ioapic_probe()) {
         serial_write("ERROR: I/O APIC read-only probe failed\r\n");

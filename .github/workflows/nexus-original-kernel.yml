@@ -1,0 +1,89 @@
+name: Nexus Original Kernel - BIOS and UEFI
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/**"
+      - "boot/**"
+      - "build/**"
+      - ".github/workflows/nexus-original-kernel.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and boot-test Nexus x86-64 kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Install build and emulator dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file
+
+      - name: Build dual-mode ISO
+        run: |
+          chmod +x build/build-iso.sh
+          ./build/build-iso.sh
+
+      - name: Verify kernel ELF and ISO
+        run: |
+          file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso
+          readelf -h build/nexus-kernel.elf
+          readelf -l build/nexus-kernel.elf
+          (cd release && sha256sum --check SHA256SUMS.txt)
+
+      - name: Boot test - UEFI (OVMF)
+        shell: bash
+        run: |
+          set +e
+          timeout 12s qemu-system-x86_64 \
+            -machine q35 -m 512M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
+            -boot d -display none -serial file:uefi-serial.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+            echo "UEFI QEMU exited unexpectedly: $status"
+            exit "$status"
+          fi
+          cat uefi-serial.log
+          grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
+
+      - name: Boot test - legacy BIOS (SeaBIOS)
+        shell: bash
+        run: |
+          set +e
+          timeout 12s qemu-system-x86_64 \
+            -machine pc -m 512M \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
+            -boot d -display none -serial file:bios-serial.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+            echo "BIOS QEMU exited unexpectedly: $status"
+            exit "$status"
+          fi
+          cat bios-serial.log
+          grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
+
+      - name: Upload original-kernel prototype
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexusOS-OriginalKernel-BIOS-UEFI
+          path: |
+            release/NexusOS-OriginalKernel-x86_64.iso
+            release/SHA256SUMS.txt
+            build/nexus-kernel.elf
+          if-no-files-found: error
+          retention-days: 30

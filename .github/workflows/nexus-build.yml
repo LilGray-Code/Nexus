@@ -118,11 +118,7 @@ jobs:
         run: |
           set -euo pipefail
           set +e
-          timeout --signal=TERM --kill-after=5s 20s qemu-system-x86_64 \
-            -machine pc,accel=tcg -m 2048 \
-            -cdrom release/NexusOS-Standalone-amd64.iso -boot order=d \
-            -display none -serial file:/tmp/nexus-bios-serial.log \
-            -monitor none -no-reboot -no-shutdown
+          timeout --signal=TERM --kill-after=5s 20s qemu-system-x86_64 -machine pc,accel=tcg -m 2048 -cdrom release/NexusOS-Standalone-amd64.iso -boot order=d -display none -serial file:/tmp/nexus-bios-serial.log -monitor none -no-reboot -no-shutdown
           status=$?
           set -e
           if [ "$status" -ne 124 ]; then
@@ -138,11 +134,7 @@ jobs:
           firmware="$(find /usr/share -type f -iname 'OVMF_CODE*.fd' | head -n 1)"
           test -n "$firmware"
           set +e
-          timeout --signal=TERM --kill-after=5s 20s qemu-system-x86_64 \
-            -machine q35,accel=tcg -m 2048 -bios "$firmware" \
-            -cdrom release/NexusOS-Standalone-amd64.iso -boot order=d \
-            -display none -serial file:/tmp/nexus-uefi-serial.log \
-            -monitor none -no-reboot -no-shutdown
+          timeout --signal=TERM --kill-after=5s 20s qemu-system-x86_64 -machine q35,accel=tcg -m 2048 -bios "$firmware" -cdrom release/NexusOS-Standalone-amd64.iso -boot order=d -display none -serial file:/tmp/nexus-uefi-serial.log -monitor none -no-reboot -no-shutdown
           status=$?
           set -e
           if [ "$status" -ne 124 ]; then

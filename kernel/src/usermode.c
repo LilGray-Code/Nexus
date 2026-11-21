@@ -328,7 +328,7 @@ int64_t usermode_sys_file_write(uint64_t user_path,
         return -NEXUS_EFAULT;
     size_t path_length = 0U;
     while (path_length < sizeof(path) && path[path_length] != '\0') {
-        if (path[path_length] == '/' || path[path_length] == '\\\\')
+        if (path[path_length] == '/' || path[path_length] == '\\')
             return -NEXUS_EINVAL;
         ++path_length;
     }

@@ -235,6 +235,16 @@ static void draw_shell(void) {
                                    "CAPACITY (GiB):", 1, 233, 243, 252);
                 graphics_draw_text(text_x + 140U, text_y + 138U,
                                    capacity, 1, 170, 225, 190);
+                graphics_draw_text(text_x + 250U, text_y + 138U,
+                                   blockdev_identity_is_unique(device)
+                                       ? "IDENTITY: UNIQUE"
+                                       : "IDENTITY: NOT SAFE",
+                                   1, blockdev_identity_is_unique(device)
+                                       ? 108 : 239,
+                                   blockdev_identity_is_unique(device)
+                                       ? 216 : 177,
+                                   blockdev_identity_is_unique(device)
+                                       ? 229 : 119);
                 graphics_draw_text(text_x, text_y + 166U,
                                    "LOGICAL SECTOR:", 1, 233, 243, 252);
                 graphics_draw_text(text_x + 140U, text_y + 166U,

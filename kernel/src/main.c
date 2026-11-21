@@ -193,6 +193,25 @@ void kmain(void) {
     serial_write("NEXUS K2 COOPERATIVE SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
-    serial_write("NEXUS K0 BOOT COMPLETE\r\n");
-    halt_forever();
+    keyboard_init();
+    serial_write("NEXUS PS2 KEYBOARD POLLING READY\\r\\n");
+    serial_write("NEXUS K0 BOOT COMPLETE\\r\\n");
+
+    /* Timer interrupts wake the CPU while the legacy keyboard is polled. */
+    __asm__ volatile ("sti" : : : "memory");
+    for (;;) {
+        char key = 0;
+        while (keyboard_poll(&key)) {
+            serial_write("KEYBOARD: ");
+            if (key == '\\n') serial_write("ENTER");
+            else if (key == '\\b') serial_write("BACKSPACE");
+            else if (key == '\\t') serial_write("TAB");
+            else {
+                char output[2] = {key, '\\0'};
+                serial_write(output);
+            }
+            serial_write("\\r\\n");
+        }
+        __asm__ volatile ("sti; hlt" : : : "memory");
+    }
 }

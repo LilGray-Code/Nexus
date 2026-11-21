@@ -404,11 +404,12 @@ void vfs_close(struct nexus_vfs_file *file) {
 
 bool vfs_ramfs_selftest(void) {
     static const char payload[] = "NEXUS RAMFS READY";
-    if (!vfs_ramfs_write("NXRAM.TST", payload, sizeof(payload) - 1U))
+    if (!vfs_write_file("NXRAM.TST", payload, sizeof(payload) - 1U))
         return false;
 
     struct nexus_vfs_file file;
-    if (!vfs_open_readonly("nxram.tst", &file) || !file.ram_file)
+    if (!vfs_open_readonly("nxram.tst", &file) ||
+        (vfs_nxfs_writable() ? !file.nxfs_file : !file.ram_file))
         return false;
     uint8_t buffer[32];
     size_t bytes_read = 0U;

@@ -32,17 +32,20 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
     struct limine_executable_file_response *executable = executable_response;
     payloads_ready = false;
     if (modules == NULL || executable == NULL ||
-        modules->module_count != 2U || modules->modules == NULL ||
+        modules->module_count != 3U || modules->modules == NULL ||
         executable->executable_file == NULL) return false;
 
     struct limine_file *uefi = modules->modules[0];
-    struct limine_file *bios = modules->modules[1];
+    struct limine_file *bios_hdd = modules->modules[1];
+    struct limine_file *bios_sys = modules->modules[2];
     struct limine_file *kernel = executable->executable_file;
     if (!path_is(uefi->path, "boot():/EFI/BOOT/BOOTX64.EFI") ||
-        !path_is(bios->path, "boot():/boot/limine/limine-bios.sys") ||
+        !path_is(bios_hdd->path, "boot():/boot/limine/limine-bios-hdd.bin") ||
+        !path_is(bios_sys->path, "boot():/boot/limine/limine-bios.sys") ||
         !blob_from_file(kernel, &payloads.kernel_elf, 64U) ||
         !blob_from_file(uefi, &payloads.uefi_loader, 512U) ||
-        !blob_from_file(bios, &payloads.bios_stage2, 512U)) return false;
+        !blob_from_file(bios_hdd, &payloads.bios_hdd_image, 512U) ||
+        !blob_from_file(bios_sys, &payloads.bios_sys, 512U)) return false;
 
     const uint8_t *k = payloads.kernel_elf.data;
     if (k[0] != 0x7fU || k[1] != 'E' || k[2] != 'L' || k[3] != 'F' ||
@@ -54,6 +57,8 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
     if (pe > payloads.uefi_loader.size - 4U ||
         e[pe] != 'P' || e[pe + 1U] != 'E' ||
         e[pe + 2U] != 0U || e[pe + 3U] != 0U) return false;
+    if (payloads.bios_hdd_image.data[510U] != 0x55U ||
+        payloads.bios_hdd_image.data[511U] != 0xAAU) return false;
     payloads_ready = true;
     return true;
 }

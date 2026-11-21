@@ -107,8 +107,8 @@ jobs:
         shell: bash
         run: |
           /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
-            build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios.sys \
-            /tmp/nexus-installed-uefi.img
+            build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios-hdd.bin \
+            build/limine-binary/limine-bios.sys /tmp/nexus-installed-uefi.img
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \

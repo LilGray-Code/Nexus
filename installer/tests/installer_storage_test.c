@@ -119,13 +119,14 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
 }
 
 int main(int argc,char **argv) {
-    uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios=NULL;
-    uint32_t external_kernel_size=0U,external_uefi_size=0U,external_bios_size=0U;
-    if(argc!=1&&argc!=5)return 2;
+    uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios_hdd=NULL,*external_bios_sys=NULL;
+    uint32_t external_kernel_size=0U,external_uefi_size=0U,external_bios_hdd_size=0U,external_bios_sys_size=0U;
+    if(argc!=1&&argc!=6)return 2;
     if(argc==5){
         assert(load_payload_file(argv[1],&external_kernel,&external_kernel_size));
         assert(load_payload_file(argv[2],&external_uefi,&external_uefi_size));
-        assert(load_payload_file(argv[3],&external_bios,&external_bios_size));
+        assert(load_payload_file(argv[3],&external_bios_hdd,&external_bios_hdd_size));
+        assert(load_payload_file(argv[4],&external_bios_sys,&external_bios_sys_size));
     }
     static struct mock_disk boot = {0};
     static struct mock_disk target = {0};
@@ -226,10 +227,11 @@ int main(int argc,char **argv) {
      * the selected ESP using only the kernel-owned guarded write adapter. */
     static uint8_t fake_kernel[64] = {0x7fU,'E','L','F',2U,1U};
     static uint8_t fake_uefi[512] = {'M','Z'};
-    static uint8_t fake_bios[1024] = {0};
-    fake_bios[510]=0x55U;fake_bios[511]=0xAAU;
+    static uint8_t fake_bios_hdd[1024] = {0};
+    static uint8_t fake_bios_sys[512] = {0};
+    fake_bios_hdd[510]=0x55U;fake_bios_hdd[511]=0xAAU;
     fake_uefi[0x3c]=0x40U;fake_uefi[0x40]='P';fake_uefi[0x41]='E';
-    uint8_t *kernel_payload=argc==5?external_kernel:fake_kernel;
+    uint8_t *kernel_payload=argc==6?external_kernel:fake_kernel;
     uint8_t *uefi_payload=argc==5?external_uefi:fake_uefi;
     uint8_t *bios_payload=argc==5?external_bios:fake_bios;
     uint32_t kernel_payload_size=argc==5?external_kernel_size:(uint32_t)sizeof(fake_kernel);
@@ -238,10 +240,12 @@ int main(int argc,char **argv) {
     struct limine_file kernel_file={.address=kernel_payload,.size=kernel_payload_size};
     struct limine_file uefi_file={.address=uefi_payload,.size=uefi_payload_size,
         .path="boot():/EFI/BOOT/BOOTX64.EFI"};
-    struct limine_file bios_file={.address=bios_payload,.size=bios_payload_size,
+    struct limine_file bios_hdd_file={.address=bios_hdd_payload,.size=bios_hdd_payload_size,
+        .path="boot():/boot/limine/limine-bios-hdd.bin"};
+    struct limine_file bios_sys_file={.address=bios_sys_payload,.size=bios_sys_payload_size,
         .path="boot():/boot/limine/limine-bios.sys"};
-    struct limine_file *module_files[2]={&uefi_file,&bios_file};
-    struct limine_module_response module_response={.module_count=2U,.modules=module_files};
+    struct limine_file *module_files[3]={&uefi_file,&bios_hdd_file,&bios_sys_file};
+    struct limine_module_response module_response={.module_count=3U,.modules=module_files};
     struct limine_executable_file_response executable_response={.executable_file=&kernel_file};
     assert(nexus_boot_payloads_init(&module_response,&executable_response));
     assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
@@ -259,8 +263,8 @@ int main(int argc,char **argv) {
     assert(nexus_installer_install_bios_bootloader(target_handle,&identity,
         identity.stable_id,"ERASE",&bios_copy));
     assert(target.flushes==29U);
-    assert(memcmp(target.bios_area,bios_payload+512U,
-        bios_payload_size-512U)==0);
+    assert(memcmp(target.bios_area,bios_hdd_payload+512U,
+        bios_hdd_payload_size-512U)==0);
     assert(target.first[510U]==0x55U&&target.first[511U]==0xAAU);
     assert(memcmp(target.first+440U,boot_image.protective_mbr+440U,70U)==0);
 
@@ -328,7 +332,10 @@ int main(int argc,char **argv) {
         (limine_dir_cluster-2U)*spc)*bps;
     assert(target.format_area[limine_dir_off+64U]==0x42U);
     assert(target.format_area[limine_dir_off+96U]==0x01U);
-    assert(memcmp(target.format_area+limine_dir_off+128U,"LIMINE~1SYS",11U)==0);
+    assert(memcmp(target.format_area+limine_dir_off+128U,"LIMINE~1BIN",11U)==0);
+    assert(target.format_area[limine_dir_off+160U]==0x42U);
+    assert(target.format_area[limine_dir_off+192U]==0x01U);
+    assert(memcmp(target.format_area+limine_dir_off+224U,"LIMINE~1SYS",11U)==0);
 
     /* Format the planned Nexus System partition through the guarded NXFS path. */
     target.nxfs_base = plan.partitions[2].first_lba;
@@ -417,8 +424,8 @@ int main(int argc,char **argv) {
     assert(blockdev_register(&optical_device));
     assert(!blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
 
-    if(argc==5)assert(dump_installed_disk(argv[4],&target));
+    if(argc==6)assert(dump_installed_disk(argv[5],&target));
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
-    free(external_kernel);free(external_uefi);free(external_bios);
+    free(external_kernel);free(external_uefi);free(external_bios_hdd);free(external_bios_sys);
     return 0;
 }

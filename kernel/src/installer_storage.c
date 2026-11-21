@@ -162,7 +162,7 @@ bool nexus_installer_install_bios_bootloader(
     const bool ok=nexus_bios_install_apply(&target,
       bios_partition->first_lba,
       bios_partition->last_lba-bios_partition->first_lba+1U,
-      p->bios_stage2.data,p->bios_stage2.size);
+      p->bios_hdd_image.data,p->bios_hdd_image.size);
     blockdev_install_session_end();
     return ok;
 }
@@ -184,8 +184,11 @@ bool nexus_installer_deploy_boot_payloads(
     esp_first,esp_blocks,"NEXUS/KERNEL.ELF",
     p->kernel_elf.data,p->kernel_elf.size)!=NEXUS_FAT32_FILE_OK)return false;
  if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
+    esp_first,esp_blocks,"boot/limine/limine-bios-hdd.bin",
+    p->bios_hdd_image.data,p->bios_hdd_image.size)!=NEXUS_FAT32_FILE_OK)return false;
+ if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
     esp_first,esp_blocks,"boot/limine/limine-bios.sys",
-    p->bios_stage2.data,p->bios_stage2.size)!=NEXUS_FAT32_FILE_OK)return false;
+    p->bios_sys.data,p->bios_sys.size)!=NEXUS_FAT32_FILE_OK)return false;
  static const char config[]=
   "timeout: 3\n"
   "default_entry: 1\n"
@@ -195,6 +198,7 @@ bool nexus_installer_deploy_boot_payloads(
   "    protocol: limine\n"
   "    path: boot():/NEXUS/KERNEL.ELF\n"
   "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
+  "    module_path: boot():/boot/limine/limine-bios-hdd.bin\n"
   "    module_path: boot():/boot/limine/limine-bios.sys\n";
  if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
     esp_first,esp_blocks,"EFI/BOOT/limine.conf",

@@ -28,12 +28,14 @@ mkdir -p "$ISO_ROOT/boot/limine" "$ISO_ROOT/EFI/BOOT"
 cp build/nexus-kernel.elf "$ISO_ROOT/boot/nexus-kernel.elf"
 cp boot/limine.conf "$ISO_ROOT/boot/limine/limine.conf"
 cp build/limine-binary/limine-bios.sys "$ISO_ROOT/boot/limine/"
+cp build/limine-binary/limine-bios-hdd.bin "$ISO_ROOT/boot/limine/"
 cp build/limine-binary/limine-bios-cd.bin "$ISO_ROOT/boot/limine/"
 cp build/limine-binary/limine-uefi-cd.bin "$ISO_ROOT/boot/limine/"
 cp build/limine-binary/BOOTX64.EFI "$ISO_ROOT/EFI/BOOT/"
 # Keep installer payload paths identical to the Limine module request order.
 test -s "$ISO_ROOT/EFI/BOOT/BOOTX64.EFI"
 test -s "$ISO_ROOT/boot/limine/limine-bios.sys"
+test -s "$ISO_ROOT/boot/limine/limine-bios-hdd.bin"
 test -s "$ISO_ROOT/boot/nexus-kernel.elf"
 
 xorriso -as mkisofs \

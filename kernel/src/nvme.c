@@ -116,6 +116,20 @@ static bool nvme_wait_ready(volatile uint32_t *registers, bool ready) {
     return false;
 }
 
+static void nvme_copy_identify_field(char *destination, size_t capacity,
+                                       const volatile uint8_t *source,
+                                       size_t source_size) {
+    if (destination == NULL || capacity == 0U || source == NULL) return;
+    size_t length = source_size < capacity - 1U
+        ? source_size : capacity - 1U;
+    for (size_t i = 0U; i < length; ++i) {
+        const uint8_t ch = source[i];
+        destination[i] = (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : '?';
+    }
+    while (length > 0U && destination[length - 1U] == ' ') --length;
+    destination[length] = '\0';
+}
+
 static void nvme_log_identify_field(const char *label,
                                     const volatile uint8_t *field,
                                     size_t field_size) {
@@ -491,6 +505,12 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     serial_write("NVMe: Identify Controller vendor ID: ");
     serial_write_hex(vendor_id);
     serial_write("\r\n");
+    char device_serial[21];
+    char device_model[41];
+    nvme_copy_identify_field(device_serial, sizeof(device_serial),
+                             identify_bytes + 4U, 20U);
+    nvme_copy_identify_field(device_model, sizeof(device_model),
+                             identify_bytes + 24U, 40U);
     nvme_log_identify_field("NVMe: serial: ", identify_bytes + 4U, 20U);
     nvme_log_identify_field("NVMe: model: ", identify_bytes + 24U, 40U);
     nvme_log_identify_field("NVMe: firmware: ", identify_bytes + 64U, 8U);
@@ -705,6 +725,8 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
 
     struct nexus_block_device block_device = {
         .name = "nvme0n1",
+        .stable_id = "NVME-UNKNOWN",
+        .model = "NVMe storage device",
         .block_count = namespace_size,
         .block_size = logical_block_size,
         .max_blocks_per_request = 4096U / logical_block_size,
@@ -720,6 +742,28 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         .flush = nvme_block_flush
 #endif
     };
+    /* Prefer the controller serial as the stable confirmation identifier. */
+    if (device_serial[0] != '\0') {
+        size_t id_length = 5U;
+        const char prefix[] = "NVME-";
+        for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
+            block_device.stable_id[i] = prefix[i];
+        while (device_serial[id_length - 5U] != '\0' &&
+               id_length < sizeof(block_device.stable_id) - 1U) {
+            block_device.stable_id[id_length] = device_serial[id_length - 5U];
+            ++id_length;
+        }
+        block_device.stable_id[id_length] = '\0';
+    }
+    if (device_model[0] != '\0') {
+        size_t i = 0U;
+        while (device_model[i] != '\0' &&
+               i < sizeof(block_device.model) - 1U) {
+            block_device.model[i] = device_model[i];
+            ++i;
+        }
+        block_device.model[i] = '\0';
+    }
     if (!blockdev_register(&block_device)) {
         nvme_io.initialized = false;
         serial_write("NVMe: unable to register read-only block device\r\n");

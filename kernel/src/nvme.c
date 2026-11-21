@@ -257,7 +257,7 @@ static bool nvme_block_read(void *context, uint64_t lba,
                                lba, block_count, buffer);
 }
 
-#ifdef NEXUS_STORAGE_SELFTEST
+#if 1
 static bool nvme_block_write(void *context, uint64_t lba,
                              uint32_t block_count, const void *buffer) {
     return nvme_block_transfer((struct nvme_io_state *)context, 0x01U,
@@ -733,14 +733,13 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
 #ifdef NEXUS_STORAGE_SELFTEST
         .flags = NEXUS_BLOCKDEV_WRITABLE,
 #else
-        .flags = NEXUS_BLOCKDEV_READ_ONLY,
+        .flags = NEXUS_BLOCKDEV_READ_ONLY |
+                 NEXUS_BLOCKDEV_INSTALL_CAPABLE,
 #endif
         .context = &nvme_io,
         .read = nvme_block_read,
-#ifdef NEXUS_STORAGE_SELFTEST
         .write = nvme_block_write,
         .flush = nvme_block_flush
-#endif
     };
     /* Prefer the controller serial as the stable confirmation identifier. */
     if (device_serial[0] != '\0') {

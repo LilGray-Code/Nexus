@@ -147,6 +147,8 @@ static bool blockdev_set_boot_media(const struct nexus_block_device *device) {
     return true;
 }
 
+static bool blockdev_set_boot_media_detection_complete(void);
+
 bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_guid[16]) {
     if (partition_guid == NULL || boot_media_detection_complete ||
         boot_media_device != NULL) return false;

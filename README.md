@@ -21,28 +21,37 @@ cooperative scheduler foundation, ring-3 ELF execution, read-only GPT/FAT32
 storage and VFS, volatile RAM filesystem, Intel E1000 networking, DHCP, DNS,
 and an early single-connection TCP/plain-HTTP client.
 
-This is still an early prototype. It does not yet provide a complete desktop
-OS, durable installable filesystem, safe disk-writing stack, custom installer,
-modern browser, broad USB/Wi-Fi/audio/GPU drivers, or full recovery/update
-system.
+The desktop now includes an **Install F5** graphical preview with target-device
+capacity, logical sector size, and UEFI/legacy-BIOS partition planning. It is
+read-only and cannot install or modify a disk. A host-tested GPT metadata
+serializer and guarded mock-disk transaction exist, but they are not connected
+to the kernel's release block-device path. The release NVMe device remains
+read-only.
+
+This is still an early prototype, not a complete desktop OS. Durable installable
+filesystem hardening, a full installer wizard, system-image deployment,
+target-disk bootloader installation, first boot, recovery/update flows, modern
+browser/TLS, broad USB/Wi-Fi/audio/GPU drivers, power management, and release
+hardening remain incomplete.
 
 ## First-party graphical installer
 
 Nexus will have its own graphical installer, running directly in the Nexus live
 environment. It will not launch or depend on another distribution's installer
-or package manager. The installer specification, proposed UEFI/BIOS disk
-layouts, safety invariants, and implementation gates are in
+or package manager. The current UI is only a read-only preview; the actual
+installer engine specification, GPT planner, metadata serializer, guarded
+transaction, safety invariants, and implementation gates are in
 [installer/README.md](installer/README.md).
 
-The installer is deliberately non-destructive until the kernel has a tested
-write-capable block layer, crash-consistent NXFS, GPT write/read-back tests, and
-recovery handling. No installer completion or disk-write capability is claimed
-yet.
+The GPT transaction currently runs only against an in-memory mock disk in CI.
+It requires two confirmations and refuses unverified, live, or mounted targets.
+It is not yet wired to real block-device writes. No completed installation or
+disk-writing capability is claimed.
 
 ## Build and test
 
 See the [original-kernel architecture roadmap](docs/architecture/ORIGINAL-KERNEL-ROADMAP.md)
 and [GitHub Actions](https://github.com/LilGray-Code/Nexus/actions) for BIOS/UEFI
 build and QEMU test status. A buildable ISO is not a finished OS: release
-requires verified boots, installer and first-boot tests, recovery tests, and a
-multi-vendor x86-64 hardware matrix.
+requires verified boots, actual installer and first-boot tests, recovery tests,
+and a multi-vendor x86-64 hardware matrix.

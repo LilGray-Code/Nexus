@@ -441,3 +441,24 @@ bytes, writes only to the serial console, and has no process-specific address
 space object, file-descriptor table, page-fault recovery, or concurrent
 memory-unmapping support. It is not yet a general user-copy implementation
 for a preemptive multi-process kernel.
+
+
+### ELF64 executable validation foundation
+
+The kernel now has a bounded ELF64 parser for little-endian x86-64 ET_EXEC
+images. It validates the ELF identity and machine, exact header layouts,
+program-header table bounds, load-segment file/memory ranges, user virtual
+address limits, power-of-two alignment rules, non-overlapping page ranges,
+and the W^X policy. The entry point must fall inside an executable load
+segment. Dynamic linking and ET_DYN/PIE are deliberately not accepted yet.
+
+A boot-time in-memory fixture exercises a valid image plus malformed magic,
+out-of-bounds file data, writable-executable segments, an invalid entry point,
+and a truncated program-header table. CI now requires this validation marker
+in both UEFI and legacy-BIOS boots and in the final distributable-ISO boot.
+
+This is the executable-format validation layer only. It does not yet allocate
+and map segment pages, zero BSS, establish per-process page tables, apply
+relocations, resolve dynamic dependencies, or transfer control to a loaded
+program. The next userland step is a bounded loader built on this parser,
+followed by process lifecycle and IPC.

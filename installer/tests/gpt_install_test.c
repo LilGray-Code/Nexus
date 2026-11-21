@@ -116,7 +116,6 @@ static struct nexus_gpt_install_target target_for(struct mock_disk *disk) {
 
 static void test_requires_two_confirmations(void) {
     struct nexus_partition_plan plan;
-    struct nexus_gpt_image_buffers image;
     struct mock_disk disk;
     uint8_t disk_guid[16], parts[4][16];
     fill_guids(disk_guid, parts);
@@ -132,7 +131,6 @@ static void test_requires_two_confirmations(void) {
                                    &parts[0][0], true, false) ==
            NEXUS_GPT_INSTALL_NOT_CONFIRMED);
     assert(disk.writes == 0U);
-    (void)image;
 }
 
 static void test_rejects_unsafe_targets_without_writes(void) {

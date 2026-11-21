@@ -174,24 +174,24 @@ void kmain(void) {
 
     if (rsdp_request.response == NULL ||
         !acpi_init(rsdp_request.response->address)) {
-        serial_write("ERROR: ACPI RSDP/MADT discovery failed\\r\\n");
+        serial_write("ERROR: ACPI RSDP/MADT discovery failed\r\n");
         halt_forever();
     }
-    serial_write("NEXUS ACPI MADT READY\\r\\n");
+    serial_write("NEXUS ACPI MADT READY\r\n");
 
     if (!ioapic_probe()) {
-        serial_write("ERROR: I/O APIC read-only probe failed\\r\\n");
+        serial_write("ERROR: I/O APIC read-only probe failed\r\n");
         halt_forever();
     }
-    serial_write("NEXUS IOAPIC PROBE READY\\r\\n");
+    serial_write("NEXUS IOAPIC PROBE READY\r\n");
 
     if (!pci_init()) {
-        serial_write("WARNING: no PCI devices discovered\\r\\n");
+        serial_write("WARNING: no PCI devices discovered\r\n");
     }
-    serial_write("NEXUS PCI ENUMERATION READY\\r\\n");
+    serial_write("NEXUS PCI ENUMERATION READY\r\n");
 
     timer_init(100);
-    serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\\r\\n");
+    serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\r\n");
 
     serial_write("K2: PIT configured for 100 Hz\r\n");
 

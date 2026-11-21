@@ -750,6 +750,14 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
             block_device.stable_id[id_length] = device_serial[id_length - 5U];
             ++id_length;
         }
+        /* A controller may expose multiple namespaces. Include the NSID
+         * so confirmation identifies this exact block namespace, not merely
+         * the controller containing it. This driver currently binds NSID 1. */
+        static const char namespace_suffix[] = "-NS1";
+        for (size_t i = 0U; i < sizeof(namespace_suffix) - 1U; ++i) {
+            if (id_length >= sizeof(block_device.stable_id) - 1U) break;
+            block_device.stable_id[id_length++] = namespace_suffix[i];
+        }
         block_device.stable_id[id_length] = '\0';
     }
     if (device_model[0] != '\0') {

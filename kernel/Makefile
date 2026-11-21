@@ -1,7 +1,7 @@
 CC ?= gcc
 LD ?= ld
 OUT := ../build
-DEPS := ../deps/limine-protocol/include
+DEPS := include
 
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector \

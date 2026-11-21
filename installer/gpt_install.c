@@ -7,6 +7,7 @@
  * workspace out of the limited kernel stack. */
 static struct nexus_gpt_image_buffers install_image_workspace;
 static uint8_t install_verify_workspace[NEXUS_GPT_IMAGE_ENTRY_BYTES];
+static bool install_transaction_busy;
 
 static bool bytes_equal(const uint8_t *a, const uint8_t *b, size_t length) {
     for (size_t i = 0U; i < length; ++i)
@@ -20,7 +21,7 @@ static enum nexus_gpt_install_result write_and_verify(
     size_t bytes) {
     uint8_t *verify = install_verify_workspace;
     const size_t capacity = (size_t)blocks * target->block_size;
-    if (bytes > capacity || capacity > sizeof(verify))
+    if (bytes > capacity || capacity > sizeof(install_verify_workspace))
         return NEXUS_GPT_INSTALL_INVALID;
     if (!target->write(target->context, lba, blocks, expected) ||
         !target->flush(target->context))
@@ -33,7 +34,7 @@ static enum nexus_gpt_install_result write_and_verify(
     return NEXUS_GPT_INSTALL_OK;
 }
 
-enum nexus_gpt_install_result nexus_gpt_install_apply(
+static enum nexus_gpt_install_result nexus_gpt_install_apply_locked(
     const struct nexus_gpt_install_target *target,
     const struct nexus_partition_plan *plan,
     const uint8_t disk_guid[16],
@@ -88,5 +89,23 @@ enum nexus_gpt_install_result nexus_gpt_install_apply(
     if (result != NEXUS_GPT_INSTALL_OK) return result;
     result = write_and_verify(target, 0U, 1U,
                               image->protective_mbr, block_size);
+    return result;
+}
+
+/* The large serialization and verification buffers are shared static storage.
+ * Serialize access so a second installer request cannot corrupt an active write. */
+enum nexus_gpt_install_result nexus_gpt_install_apply(
+    const struct nexus_gpt_install_target *target,
+    const struct nexus_partition_plan *plan,
+    const uint8_t disk_guid[16],
+    const uint8_t *partition_guids,
+    bool first_confirmation,
+    bool second_confirmation) {
+    if (install_transaction_busy) return NEXUS_GPT_INSTALL_UNSAFE_TARGET;
+    install_transaction_busy = true;
+    const enum nexus_gpt_install_result result = nexus_gpt_install_apply_locked(
+        target, plan, disk_guid, partition_guids,
+        first_confirmation, second_confirmation);
+    install_transaction_busy = false;
     return result;
 }

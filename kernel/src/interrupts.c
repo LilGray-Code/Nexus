@@ -3,6 +3,7 @@
 #include "usermode.h"
 #include "syscall.h"
 #include "scheduler.h"
+#include "gdt.h"
 
 #include "serial.h"
 #include "timer.h"
@@ -207,6 +208,15 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                 mutable_frame->instruction_pointer =
                     (uint64_t)(uintptr_t)nexus_user_return;
                 mutable_frame->code_segment = 0x08U;
+                /*
+                 * The exit trampoline resumes in ring 0. Replace the saved
+                 * outer-ring stack fields as well: leaving SS=0x1B in a
+                 * ring-0 return frame makes IRET reject the stack selector
+                 * on CPUs that validate/pop the full 64-bit return frame.
+                 * nexus_user_return switches to the original caller stack.
+                 */
+                mutable_frame->user_stack_pointer = gdt_get_kernel_stack();
+                mutable_frame->user_stack_segment = 0x10U;
                 mutable_frame->flags &= ~0x200ULL;
                 syscall_frame_trace("exit", mutable_frame);
                 return;

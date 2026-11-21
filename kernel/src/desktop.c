@@ -472,6 +472,7 @@ static void terminal_execute(void) {
         terminal_output[n] = '\0';
     } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
                terminal_input[2]=='\0') {
+        if (!vfs_root_mounted()) scan_files_once();
         size_t out=0;
         if (!vfs_root_mounted()) {
             const char *s="no mounted volume";
@@ -489,6 +490,7 @@ static void terminal_execute(void) {
         terminal_output[out]='\0';
     } else if (terminal_input[0]=='c' && terminal_input[1]=='a' &&
                terminal_input[2]=='t' && terminal_input[3]==' ') {
+        if (!vfs_root_mounted()) scan_files_once();
         const char *name=terminal_input+4;
         struct nexus_vfs_file file;
         if(vfs_open_readonly(name,&file)) {

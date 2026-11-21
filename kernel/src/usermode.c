@@ -81,13 +81,23 @@ static const uint8_t test_program[] = {
     0x48, 0xC7, 0xC2, 0x0F, 0x00, 0x00, 0x00,
     0xCD, 0x80,
 
-    /* open("NOTHERE.NXS") must return -ENOENT or -ENODEV. */
+    /* open("../NEXUS") must reject path traversal with -EINVAL. */
     0x48, 0xC7, 0xC0, 0x03, 0x00, 0x00, 0x00,
     0x48, 0xC7, 0xC7, 0x00, 0x00, 0x00, 0x00,
     0xCD, 0x80,
-    0x48, 0x83, 0xF8, 0xFE, 0x74, 0x08,
-    0x48, 0x83, 0xF8, 0xED, 0x74, 0x02,
-    0xEB, 0xFE,
+    0x48, 0x83, 0xF8, 0xEA, 0x74, 0x02, 0xEB, 0xFE,
+
+    /* read(3, ..., 1) on an unused descriptor must return -EBADF. */
+    0x48, 0xC7, 0xC0, 0x04, 0x00, 0x00, 0x00,
+    0x48, 0xC7, 0xC7, 0x03, 0x00, 0x00, 0x00,
+    0xCD, 0x80,
+    0x48, 0x83, 0xF8, 0xF7, 0x74, 0x02, 0xEB, 0xFE,
+
+    /* close(3) on an unused descriptor must return -EBADF. */
+    0x48, 0xC7, 0xC0, 0x05, 0x00, 0x00, 0x00,
+    0x48, 0xC7, 0xC7, 0x03, 0x00, 0x00, 0x00,
+    0xCD, 0x80,
+    0x48, 0x83, 0xF8, 0xF7, 0x74, 0x02, 0xEB, 0xFE,
 
     /* exit(42) */
     0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00,
@@ -97,7 +107,7 @@ static const uint8_t test_program[] = {
 };
 
 static const char test_message[] = "NEXUS USER MODE";
-static const char test_missing_path[] = "NOTHERE.NXS";
+static const char test_invalid_path[] = "../NEXUS";
 static const size_t test_message_immediate_offset = 75U;
 static const size_t test_path_immediate_offset = 98U;
 
@@ -110,7 +120,7 @@ static bool build_test_elf(size_t *file_size) {
 
     const size_t message_offset = sizeof(test_program);
     const size_t message_file_size = sizeof(test_message) - 1U;
-    const size_t path_file_size = sizeof(test_missing_path);
+    const size_t path_file_size = sizeof(test_invalid_path);
     const size_t path_offset = sizeof(test_program) + message_file_size;
     const size_t segment_file_size =
         sizeof(test_program) + message_file_size + path_file_size;
@@ -176,7 +186,7 @@ static bool build_test_elf(size_t *file_size) {
     }
     for (size_t i = 0; i < sizeof(test_missing_path); ++i) {
         usermode_test_elf[segment_file_offset + path_offset + i] =
-            (uint8_t)test_missing_path[i];
+            (uint8_t)test_invalid_path[i];
     }
 
     *file_size = total_size;

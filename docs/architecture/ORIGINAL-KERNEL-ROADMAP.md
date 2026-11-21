@@ -541,7 +541,13 @@ missing files, invalid descriptors, invalid destinations, and oversized reads
 return negative errno values. Reads use a kernel bounce buffer and a checked
 writable-user-page copy path. The underlying disk remains read-only.
 
-The boot-time ELF program tries to open a deliberately absent short filename
-and validates the expected not-found or no-device result. This is not yet a
+The boot-time ELF program validates path-traversal rejection and the invalid
+descriptor results from read and close without relying on the contents or
+presence of a physical disk. This is not yet a
 general filesystem ABI: there are no writes, subdirectories, long filenames,
 per-process tables beyond the single bootstrap process, stdin, or device files.
+
+
+The terminal now performs read-only volume discovery when the user explicitly
+runs `ls` or `cat`, instead of requiring the Files view to have been opened
+first. It still does not auto-scan disks on boot.

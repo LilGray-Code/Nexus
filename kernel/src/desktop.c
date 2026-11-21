@@ -143,7 +143,7 @@ static void draw_shell(void) {
                                1, 170, 191, 211);
         } else if (!files_scan_ok) {
             graphics_draw_text(text_x, text_y + 108U,
-                               "NO VALID GPT PARTITION TABLE FOUND",
+                               "NO SUPPORTED FAT32 GPT PARTITION FOUND",
                                1, 239, 177, 119);
         } else {
             graphics_draw_text(text_x, text_y + 108U,
@@ -270,6 +270,51 @@ static void draw_pointer(void) {
     graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
 }
 
+static void scan_files_once(void) {
+    if (files_scanned) return;
+    files_scanned = true;
+    files_scan_ok = false;
+    files_fat32_ok = false;
+    files_partition_count = 0;
+    files_first_lba = 0;
+    files_last_lba = 0;
+    for (size_t n = 0; n < sizeof(files_first_name); ++n)
+        files_first_name[n] = '\0';
+
+    for (size_t i = 0; i < blockdev_count(); ++i) {
+        const struct nexus_block_device *device = blockdev_at(i);
+        if (device == NULL || !gpt_scan_device(device)) continue;
+        const size_t count = gpt_partition_count();
+        for (size_t p = 0; p < count; ++p) {
+            const struct nexus_gpt_partition *part = gpt_partition_at(p);
+            if (part == NULL || !fat32_mount(device, part)) continue;
+            files_scan_ok = true;
+            files_fat32_ok = true;
+            files_partition_count = count;
+            files_first_lba = part->first_lba;
+            files_last_lba = part->last_lba;
+            if (fat32_root_entry_count() > 0U) {
+                const struct nexus_fat32_entry *entry =
+                    fat32_root_entry_at(0);
+                if (entry != NULL) {
+                    size_t length = 0;
+                    while (length < sizeof(files_first_name) - 1U &&
+                           entry->name[length] != '\0') {
+                        files_first_name[length] = entry->name[length];
+                        ++length;
+                    }
+                    files_first_name[length] = '\0';
+                }
+            }
+            serial_write("FILES: mounted read-only FAT32 volume on ");
+            serial_write(device->name);
+            serial_write("\r\n");
+            return;
+        }
+    }
+    serial_write("FILES: no supported read-only FAT32 GPT volume found\r\n");
+}
+
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
     if (event->type == NEXUS_INPUT_MOUSE) {
@@ -306,6 +351,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         (uint64_t)pointer_x < tx + tw) {
                         active_view = i == 0U ? DESKTOP_FILES :
                                       (i == 1U ? DESKTOP_BROWSER : DESKTOP_SETTINGS);
+                        if (active_view == DESKTOP_FILES) scan_files_once();
                         serial_write("DESKTOP: app tile opened by mouse\\r\\n");
                         break;
                     }
@@ -325,45 +371,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
     }
-    if (next_view == DESKTOP_FILES && !files_scanned) {
-        files_scanned = true;
-        files_scan_ok = false;
-        files_partition_count = 0;
-        for (size_t i = 0; i < blockdev_count(); ++i) {
-            const struct nexus_block_device *device = blockdev_at(i);
-            if (device != NULL && gpt_scan_device(device)) {
-                files_scan_ok = true;
-                files_partition_count = gpt_partition_count();
-                if (files_partition_count > 0U) {
-                    const struct nexus_gpt_partition *part = gpt_partition_at(0);
-                    if (part != NULL) {
-                        files_first_lba = part->first_lba;
-                        files_last_lba = part->last_lba;
-                        files_fat32_ok = fat32_mount(device, part);
-                        if (files_fat32_ok && fat32_root_entry_count() > 0U) {
-                            const struct nexus_fat32_entry *entry =
-                                fat32_root_entry_at(0);
-                            if (entry != NULL) {
-                                size_t n = 0;
-                                while (n < sizeof(files_first_name) - 1U &&
-                                       entry->name[n] != '\0') {
-                                    files_first_name[n] = entry->name[n];
-                                    ++n;
-                                }
-                                files_first_name[n] = '\0';
-                            }
-                        }
-                    }
-                }
-                serial_write("FILES: read-only GPT scan found partitions on ");
-                serial_write(device->name);
-                serial_write("\\r\\n");
-                break;
-            }
-        }
-        if (!files_scan_ok)
-            serial_write("FILES: no valid GPT disk discovered during user-requested scan\\r\\n");
-    }
+    if (next_view == DESKTOP_FILES) scan_files_once();
     if (next_view == active_view) return;
     active_view = next_view;
     draw_shell();

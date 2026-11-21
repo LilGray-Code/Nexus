@@ -5,8 +5,24 @@
 #include <stdint.h>
 #include <string.h>
 
+static unsigned int write_calls;
+static unsigned int flush_calls;
+
 static bool test_read(void *context, uint64_t lba, uint32_t count, void *buffer) {
     (void)context; (void)lba; (void)count; (void)buffer;
+    return true;
+}
+
+static bool test_write(void *context, uint64_t lba, uint32_t count,
+                       const void *buffer) {
+    (void)context; (void)lba; (void)count; (void)buffer;
+    ++write_calls;
+    return true;
+}
+
+static bool test_flush(void *context) {
+    (void)context;
+    ++flush_calls;
     return true;
 }
 
@@ -76,5 +92,24 @@ int main(void) {
     uint8_t sector[512] = {0};
     assert(!blockdev_write(install_registered, 0U, 1U, sector));
     assert(!blockdev_flush(install_registered));
+    assert(!blockdev_install_write(install_registered, 0U, 1U, sector));
+    assert(!blockdev_install_session_begin(install_registered,
+        "NVME-SERIAL-003", "ERASE", false, false, false));
+    assert(!blockdev_install_session_begin(install_registered,
+        "NVME-SERIAL-003", "ERASE", true, true, false));
+    assert(!blockdev_install_session_begin(install_registered,
+        "NVME-SERIAL-003", "ERASE", true, false, true));
+    assert(!blockdev_install_session_begin(install_registered,
+        "WRONG-SERIAL", "ERASE", true, false, false));
+    assert(!blockdev_install_session_begin(install_registered,
+        "NVME-SERIAL-003", "NO", true, false, false));
+    assert(blockdev_install_session_begin(install_registered,
+        "NVME-SERIAL-003", "ERASE", true, false, false));
+    assert(blockdev_install_write(install_registered, 10U, 1U, sector));
+    assert(blockdev_install_flush(install_registered));
+    assert(write_calls == 1U && flush_calls == 1U);
+    blockdev_install_session_end();
+    assert(!blockdev_install_write(install_registered, 10U, 1U, sector));
+    assert(write_calls == 1U);
     return 0;
 }

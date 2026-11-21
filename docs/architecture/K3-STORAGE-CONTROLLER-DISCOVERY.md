@@ -4,8 +4,9 @@
 
 Nexus classifies PCI mass-storage controllers through PCI configuration-space
 enumeration. AHCI/SATA register and port discovery is read-only. The NVMe admin queue implements Identify Controller and Identify Namespace.
-It also creates one I/O queue pair and performs a single read-only block probe
-against a disposable QEMU test image.
+The namespace is registered through a common read-only block-device API. The
+controller creates one I/O queue pair, and a CI-only self-test reads one block
+from a disposable QEMU image.
 
 ## Controller discovery
 
@@ -48,11 +49,12 @@ CI requires the Identify completion marker and model field.
 ## Safety and limitations
 
 Identify Controller and Identify Namespace read controller/namespace
-metadata only. The I/O path issues exactly one NVMe Read command for one
-logical block at LBA 0 on the disposable QEMU namespace. No write opcode,
-format/sanitize command, or other sector access is issued. It does not mount filesystems or expose an OS block device. The
-QEMU test image is disposable and is not accessed at the namespace/sector
-level.
+metadata only. The block-device API currently advertises the namespace as
+read-only. A normal build registers the device but does not automatically read
+sectors. Only the CI self-test build issues exactly one NVMe Read command for
+one logical block at LBA 0 on the disposable QEMU namespace. No write opcode,
+format/sanitize command, or other sector access is issued. No filesystem is
+mounted.
 
 The DMA allocator currently guarantees one 4 KiB page below a caller-provided
 physical-address ceiling. NVMe currently uses three separate pages, not a
@@ -64,6 +66,6 @@ Bus mastering is enabled for the detected NVMe controller; no IOMMU mapping
 or device-specific DMA isolation is implemented yet. Do not treat this
 prototype as safe for untrusted PCI devices or as a production disk driver.
 
-Next storage milestones are a common read-only block-device interface, AHCI command/IDENTIFY support, sector reads from explicitly
-selected test media, and filesystem layers. Sector writes remain out of scope
+Next storage milestones are multi-request queueing and recovery, AHCI
+command/IDENTIFY support, explicit sector reads, and filesystem layers. Sector writes remain out of scope
 until a separate, explicit storage-write design and test plan exists.

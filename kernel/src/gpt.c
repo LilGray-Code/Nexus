@@ -50,7 +50,8 @@ static bool guid_is_zero(const uint8_t *guid) {
 static bool validate_header(const struct nexus_block_device *device,
                             uint8_t *header, uint64_t *entries_lba,
                             uint32_t *entry_count, uint32_t *entry_size,
-                            uint32_t *entries_crc) {
+                            uint32_t *entries_crc, uint64_t *first_usable_out,
+                            uint64_t *last_usable_out) {
     if (device == NULL || device->block_size < GPT_HEADER_MIN_SIZE ||
         device->block_size > GPT_IO_BUFFER_SIZE ||
         device->block_size % GPT_ENTRY_MIN_SIZE != 0 ||
@@ -94,7 +95,7 @@ static bool validate_header(const struct nexus_block_device *device,
         *entries_lba < 2U || *entries_lba >= device->block_count ||
         *entry_count == 0U || *entry_count > GPT_MAX_ENTRY_COUNT ||
         *entry_size < GPT_ENTRY_MIN_SIZE || *entry_size > 512U ||
-        (*entry_size & 7U) != 0U) {
+        (*entry_size & 7U) != 0U || device->block_size % *entry_size != 0U) {
         return false;
     }
 
@@ -107,6 +108,8 @@ static bool validate_header(const struct nexus_block_device *device,
         *entries_lba + entry_blocks > first_usable) {
         return false;
     }
+    *first_usable_out = first_usable;
+    *last_usable_out = last_usable;
     return true;
 }
 
@@ -125,8 +128,11 @@ bool gpt_scan_device(const struct nexus_block_device *device) {
     uint32_t entry_count = 0;
     uint32_t entry_size = 0;
     uint32_t expected_entries_crc = 0;
+    uint64_t first_usable = 0;
+    uint64_t last_usable = 0;
     if (!validate_header(device, io_buffer, &entries_lba, &entry_count,
-                         &entry_size, &expected_entries_crc)) {
+                         &entry_size, &expected_entries_crc,
+                         &first_usable, &last_usable)) {
         return false;
     }
 
@@ -158,13 +164,10 @@ bool gpt_scan_device(const struct nexus_block_device *device) {
             const uint64_t first = read_le64(entry + 32U);
             const uint64_t last = read_le64(entry + 40U);
             const uint64_t attributes = read_le64(entry + 48U);
-            if (first > last || last >= device->block_count ||
-                first < read_le64(io_buffer /* replaced below */)) {
-                /* Bounds are checked against the header in a separate pass. */
-                if (first > last || last >= device->block_count) {
-                    partition_count = 0;
-                    return false;
-                }
+            if (first < first_usable || last > last_usable ||
+                first > last || last >= device->block_count) {
+                partition_count = 0;
+                return false;
             }
             if (partition_count >= NEXUS_GPT_MAX_PARTITIONS) continue;
             struct nexus_gpt_partition *part =

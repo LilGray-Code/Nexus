@@ -50,6 +50,20 @@ bool blockdev_write(const struct nexus_block_device *device,
 bool blockdev_flush(const struct nexus_block_device *device);
 /* Reports hardware support only; this does not authorize or perform writes. */
 bool blockdev_install_write_supported(const struct nexus_block_device *device);
+/* Opens a narrowly scoped destructive-write session after explicit confirmation.
+ * boot_media_known must only be true when firmware/boot-chain inspection proved
+ * the target is not the medium currently running Nexus. */
+bool blockdev_install_session_begin(const struct nexus_block_device *device,
+                                    const char *typed_stable_id,
+                                    const char *typed_erase_phrase,
+                                    bool boot_media_known,
+                                    bool is_boot_media,
+                                    bool is_mounted);
+bool blockdev_install_write(const struct nexus_block_device *device,
+                            uint64_t lba, uint32_t block_count,
+                            const void *buffer);
+bool blockdev_install_flush(const struct nexus_block_device *device);
+void blockdev_install_session_end(void);
 /* Installer gate: only a registered, non-placeholder, unique identity is eligible. */
 bool blockdev_identity_is_unique(const struct nexus_block_device *device);
 /* Revalidate the exact identity and geometry captured when the target was chosen. */

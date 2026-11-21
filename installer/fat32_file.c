@@ -91,6 +91,23 @@ static bool directory_child(const struct nexus_fat32_format_target*t,
     __builtin_memcmp(sector,verify,bps)!=0)return false;
  *out=child;return true;
 }
+static uint8_t lfn_checksum(const uint8_t name[11]){
+ uint8_t sum=0;
+ for(unsigned i=0;i<11;i++)sum=(uint8_t)(((sum&1U)?0x80U:0U)+(sum>>1)+name[i]);
+ return sum;
+}
+static bool long_config_name(const char*n,uint8_t alias[11]){
+ static const char alias_text[]="LIMINE~1.CNF";
+ if(!n)return false;
+ static const char wanted[]="limine.conf";
+ size_t i=0;
+ for(;wanted[i]&&n[i];i++){
+  char ch=n[i];if(ch>='A'&&ch<='Z')ch=(char)(ch-'A'+'a');
+  if(ch!=wanted[i])return false;
+ }
+ if(wanted[i]||n[i])return false;
+ return valid_name(alias_text,alias);
+}
 static bool valid_name(const char*n,uint8_t out[11]){
  if(!n||!*n)return false;
  for(unsigned i=0;i<11;i++)out[i]=' ';
@@ -130,7 +147,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
  if(root-2U>=clusters){result=NEXUS_FAT32_FILE_INVALID;goto done;}
  uint64_t fat1=part+reserved,fat2=fat1+fat_size,data_start=part+data_rel;
  /* Partition LBAs are 64-bit: large GPT disks can place the ESP above 2 TiB. */
- uint32_t parent=root;
+ uint32_t parent=root;bool has_lfn=false;
  const char*component=name;
  for(;;){
   const char*slash=component;
@@ -150,15 +167,26 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    parent=child;component=slash+1;
    continue;
   }
-  if(!valid_name(component,shortname)){result=NEXUS_FAT32_FILE_INVALID;goto done;}
+  if(!valid_name(component,shortname)){
+   if(!long_config_name(component,shortname)){result=NEXUS_FAT32_FILE_INVALID;goto done;}
+   has_lfn=true;
+  }
   break;
  }
  uint64_t parent_lba=data_start+(uint64_t)(parent-2U)*spc;
- uint32_t root_slot=UINT32_MAX;
+ uint32_t root_slot=UINT32_MAX,lfn_slot=UINT32_MAX;
  for(uint32_t s=0;s<spc&&root_slot==UINT32_MAX;s++){
   if(!read1(t,parent_lba+s,sector))goto done;
   for(uint32_t off=0;off<bps;off+=32U){
-   if(sector[off]==0U||sector[off]==0xE5U){root_slot=s*bps/32U+off/32U;break;}
+   bool free_entry=sector[off]==0U||sector[off]==0xE5U;
+   if(free_entry){
+    if(!has_lfn){root_slot=s*bps/32U+off/32U;break;}
+    if(off+64U<=bps&&
+       (sector[off+32U]==0U||sector[off+32U]==0xE5U)){
+     lfn_slot=s*bps/32U+off/32U;root_slot=lfn_slot+1U;break;
+    }
+    continue;
+   }
    if(sector[off+11U]!=0x0FU&&sector[off+11U]!=0x08U&&
       __builtin_memcmp(sector+off,shortname,11U)==0){result=NEXUS_FAT32_FILE_EXISTS;goto done;}
   }
@@ -205,6 +233,22 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
  /* Commit one root entry after data and FAT are durable. */
  uint32_t dir_sector=root_slot/(bps/32U),dir_off=(root_slot%(bps/32U))*32U;
  if(!read1(t,parent_lba+dir_sector,sector))goto done;
+ if(has_lfn){
+  static const uint8_t offsets[13]={1U,3U,5U,7U,9U,14U,16U,18U,20U,22U,24U,28U,30U};
+  static const char long_name[]="limine.conf";
+  uint8_t entry[32];for(unsigned i=0;i<32U;i++)entry[i]=0xFFU;
+  entry[0]=0x41U;entry[11]=0x0FU;entry[12]=0U;
+  entry[13]=lfn_checksum(shortname);put16(entry+26U,0U);
+  for(unsigned i=0;i<13U;i++){
+   uint16_t ch=i<sizeof(long_name)-1U?(uint8_t)long_name[i]:
+       (i==sizeof(long_name)-1U?0U:0xFFFFU);
+   put16(entry+offsets[i],ch);
+  }
+  uint32_t lfn_sector=lfn_slot/(bps/32U);
+  uint32_t lfn_off=(lfn_slot%(bps/32U))*32U;
+  if(lfn_sector!=dir_sector){result=NEXUS_FAT32_FILE_INVALID;goto done;}
+  for(unsigned i=0;i<32U;i++)sector[lfn_off+i]=entry[i];
+ }
  for(unsigned i=0;i<11;i++)sector[dir_off+i]=shortname[i];
  sector[dir_off+11U]=0x20U;put16(sector+dir_off+20U,(uint16_t)(first>>16));
  put16(sector+dir_off+26U,(uint16_t)first);put32(sector+dir_off+28U,length);

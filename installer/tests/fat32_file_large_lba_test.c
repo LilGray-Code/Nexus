@@ -45,6 +45,7 @@ static bool write_blocks(void *ctx,uint64_t lba,uint32_t count,const void *buffe
 }
 static bool flush_disk(void *ctx) { return ctx!=NULL; }
 static void put16(uint8_t *p,uint16_t v) { p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8); }
+static uint32_t get32(const uint8_t *p) { return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); }
 static void put32(uint8_t *p,uint32_t v) {
     p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);
     p[2]=(uint8_t)(v>>16);p[3]=(uint8_t)(v>>24);
@@ -83,10 +84,9 @@ int main(void) {
     struct sector_slot *f1=slot_for(&disk,fat1,false);
     struct sector_slot *f2=slot_for(&disk,fat2,false);
     assert(f1!=NULL && f2!=NULL);
-    assert((uint32_t)f1->bytes[12]|((uint32_t)f1->bytes[13]<<8)|
-        ((uint32_t)f1->bytes[14]<<16)|((uint32_t)f1->bytes[15]<<24) == 4U);
-    assert((uint32_t)f2->bytes[12]|((uint32_t)f2->bytes[13]<<8)|
-        ((uint32_t)f2->bytes[14]<<16)|((uint32_t)f2->bytes[15]<<24) == 4U);
+    assert(get32(f1->bytes+12U)==4U && get32(f2->bytes+12U)==4U);
+    assert((get32(f1->bytes+16U)&0x0FFFFFFFU)==0x0FFFFFFFU);
+    assert((get32(f2->bytes+16U)&0x0FFFFFFFU)==0x0FFFFFFFU);
     for(uint32_t i=0;i<sizeof(payload);++i) {
         uint32_t cluster_index=i/(SECTOR_BYTES*8U);
         uint32_t in_cluster=i%(SECTOR_BYTES*8U);

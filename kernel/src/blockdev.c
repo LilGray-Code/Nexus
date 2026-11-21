@@ -110,3 +110,64 @@ bool blockdev_flush(const struct nexus_block_device *device) {
     }
     return false;
 }
+
+
+static bool blockdev_is_registered(const struct nexus_block_device *device) {
+    if (device == NULL) return false;
+    for (size_t i = 0; i < registered_count; ++i) {
+        if (&devices[i] == device) return true;
+    }
+    return false;
+}
+
+static bool blockdev_string_equal(const char *left, size_t left_capacity,
+                                  const char *right, size_t right_capacity) {
+    if (left == NULL || right == NULL) return false;
+    size_t i = 0;
+    while (i < left_capacity && i < right_capacity &&
+           left[i] != '\\0' && right[i] != '\\0') {
+        if (left[i] != right[i]) return false;
+        ++i;
+    }
+    return i < left_capacity && i < right_capacity &&
+           left[i] == '\\0' && right[i] == '\\0';
+}
+
+bool blockdev_identity_is_unique(const struct nexus_block_device *device) {
+    if (!blockdev_is_registered(device) ||
+        device->stable_id[0] == '\\0' ||
+        !blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
+                               device->stable_id, NEXUS_BLOCKDEV_ID_MAX)) {
+        return false;
+    }
+
+    /* A placeholder serial is not safe enough to authorize destructive work. */
+    static const char unknown_id[] = "NVME-UNKNOWN";
+    if (blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
+                              unknown_id, sizeof(unknown_id))) {
+        return false;
+    }
+
+    for (size_t i = 0; i < registered_count; ++i) {
+        if (&devices[i] == device) continue;
+        if (blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
+                                  devices[i].stable_id, NEXUS_BLOCKDEV_ID_MAX)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool blockdev_matches_identity(const struct nexus_block_device *device,
+                               const char *stable_id, const char *model,
+                               uint64_t block_count, uint32_t block_size) {
+    if (!blockdev_identity_is_unique(device) || stable_id == NULL ||
+        model == NULL || block_count == 0U || block_size == 0U ||
+        device->block_count != block_count || device->block_size != block_size) {
+        return false;
+    }
+    return blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
+                                 stable_id, NEXUS_BLOCKDEV_ID_MAX) &&
+           blockdev_string_equal(device->model, NEXUS_BLOCKDEV_MODEL_MAX,
+                                 model, NEXUS_BLOCKDEV_MODEL_MAX);
+}

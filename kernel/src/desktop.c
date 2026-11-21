@@ -13,6 +13,7 @@
 #include "serial.h"
 #include "memory.h"
 #include "timer.h"
+#include "partition_plan.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -22,7 +23,8 @@ enum desktop_view {
     DESKTOP_FILES,
     DESKTOP_BROWSER,
     DESKTOP_SETTINGS,
-    DESKTOP_TERMINAL
+    DESKTOP_TERMINAL,
+    DESKTOP_INSTALLER
 };
 
 static enum desktop_view active_view = DESKTOP_HOME;
@@ -46,6 +48,10 @@ static size_t files_listing_count;
 static size_t files_selected_index;
 static char terminal_input[64];
 static size_t terminal_input_length;
+static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
+static size_t installer_selected_device;
+static struct nexus_partition_plan installer_plan;
+static bool installer_plan_valid;
 static char terminal_output[160];
 
 #define NEXUS_BROWSER_LINE_COUNT 9U
@@ -98,6 +104,22 @@ static void format_ipv4_address(const uint8_t address[4], char output[16]) {
     output[length] = '\0';
 }
 
+static void installer_refresh_plan(void) {
+    installer_plan_valid = false;
+    const size_t count = blockdev_count();
+    if (count == 0U) {
+        installer_selected_device = 0U;
+        return;
+    }
+    if (installer_selected_device >= count) installer_selected_device = 0U;
+    const struct nexus_block_device *device =
+        blockdev_at(installer_selected_device);
+    if (device == NULL) return;
+    installer_plan_valid = nexus_partition_plan_create(
+        device->block_count, device->block_size, installer_firmware,
+        &installer_plan);
+}
+
 static void draw_shell(void) {
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
@@ -143,6 +165,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_BROWSER) window_title = "NEXUS BROWSER";
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
+    if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
     graphics_draw_text(panel_x + 18U, panel_y + 15U, window_title,
                        1, 225, 241, 255);
 
@@ -175,9 +198,98 @@ static void draw_shell(void) {
             graphics_draw_text(tile_x + 12U, tile_y + 47U, labels[i],
                                1, 233, 243, 252);
         }
+        const uint64_t installer_y = tile_y + 90U;
+        graphics_fill_rect(panel_x + 28U, installer_y, tile_width, 74U,
+                           27, 45, 72);
+        graphics_draw_rect(panel_x + 28U, installer_y, tile_width, 74U,
+                           58, 87, 117);
+        graphics_fill_rect(panel_x + 40U, installer_y + 12U, 22U, 22U,
+                           239, 177, 119);
+        graphics_draw_text(panel_x + 40U, installer_y + 47U,
+                           "INSTALL F5", 1, 233, 243, 252);
         graphics_draw_text(text_x, panel_y + panel_height - 42U,
-                           "SELECT AN APP WITH F1 F2 F3 OR F4",
+                           "F1 FILES F2 BROWSER F3 SETTINGS F4 TERMINAL F5 INSTALL",
                            1, 170, 191, 211);
+    } else if (active_view == DESKTOP_INSTALLER) {
+        graphics_draw_text(text_x, text_y, "NEXUS INSTALLER PREVIEW",
+                           2, 239, 249, 255);
+        graphics_draw_text(text_x, text_y + 38U,
+                           "NO DISK WRITES - INSTALLATION IS NOT ENABLED",
+                           1, 239, 177, 119);
+        const size_t device_count = blockdev_count();
+        if (device_count == 0U) {
+            graphics_draw_text(text_x, text_y + 88U,
+                               "NO SUPPORTED STORAGE DEVICES DETECTED",
+                               1, 239, 177, 119);
+        } else {
+            const struct nexus_block_device *device =
+                blockdev_at(installer_selected_device);
+            if (device != NULL) {
+                graphics_draw_text(text_x, text_y + 78U,
+                                   "SELECTED TARGET:", 1, 233, 243, 252);
+                graphics_draw_text(text_x + 140U, text_y + 78U,
+                                   device->name, 1, 119, 229, 211);
+                const uint64_t blocks_per_gib =
+                    (1024ULL * 1024ULL * 1024ULL) / device->block_size;
+                char capacity[21];
+                char sector[21];
+                format_u64(blocks_per_gib == 0U ? 0U :
+                           device->block_count / blocks_per_gib, capacity);
+                format_u64(device->block_size, sector);
+                graphics_draw_text(text_x, text_y + 106U,
+                                   "CAPACITY (GiB):", 1, 233, 243, 252);
+                graphics_draw_text(text_x + 140U, text_y + 106U,
+                                   capacity, 1, 170, 225, 190);
+                graphics_draw_text(text_x, text_y + 134U,
+                                   "LOGICAL SECTOR:", 1, 233, 243, 252);
+                graphics_draw_text(text_x + 140U, text_y + 134U,
+                                   sector, 1, 170, 225, 190);
+                graphics_draw_text(text_x, text_y + 162U,
+                                   installer_firmware == NEXUS_FIRMWARE_UEFI
+                                       ? "FIRMWARE PLAN: UEFI / GPT"
+                                       : "FIRMWARE PLAN: LEGACY BIOS / GPT",
+                                   1, 108, 216, 229);
+                if (installer_plan_valid) {
+                    graphics_draw_text(text_x, text_y + 196U,
+                                       "PROPOSED PARTITIONS (READ ONLY PREVIEW)",
+                                       1, 119, 229, 211);
+                    for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
+                        const struct nexus_planned_partition *part =
+                            &installer_plan.partitions[i];
+                        const char *label =
+                            part->kind == NEXUS_PARTITION_ESP ? "EFI SYSTEM" :
+                            (part->kind == NEXUS_PARTITION_BIOS_BOOT
+                                ? "BIOS BOOT" :
+                            (part->kind == NEXUS_PARTITION_SYSTEM
+                                ? "NEXUS SYSTEM" : "NEXUS DATA"));
+                        const uint64_t sectors_per_mib =
+                            (1024ULL * 1024ULL) / device->block_size;
+                        const uint64_t size_mib =
+                            (part->last_lba - part->first_lba + 1U) /
+                            sectors_per_mib;
+                        char size_text[21];
+                        format_u64(size_mib, size_text);
+                        const uint64_t row_y = text_y + 226U + i * 30U;
+                        graphics_draw_text(text_x, row_y, label,
+                                           1, 233, 243, 252);
+                        graphics_draw_text(text_x + 190U, row_y,
+                                           size_text, 1, 170, 225, 190);
+                        graphics_draw_text(text_x + 230U, row_y,
+                                           "MiB", 1, 170, 191, 211);
+                    }
+                } else {
+                    graphics_draw_text(text_x, text_y + 196U,
+                                       "DISK TOO SMALL OR SECTOR SIZE UNSUPPORTED",
+                                       1, 239, 177, 119);
+                }
+                graphics_draw_text(text_x, text_y + 330U,
+                                   "UP/DOWN SELECT TARGET  F1 UEFI  F2 BIOS",
+                                   1, 170, 191, 211);
+                graphics_draw_text(text_x, text_y + 354U,
+                                   "ESC RETURNS HOME - NO DATA HAS BEEN CHANGED",
+                                   1, 170, 191, 211);
+            }
+        }
     } else if (active_view == DESKTOP_FILES) {
         graphics_draw_text(text_x, text_y, "NEXUS FILES",
                            2, 239, 249, 255);
@@ -393,7 +505,7 @@ static void draw_shell(void) {
     graphics_fill_rect(0, height - bottom_bar, width, 2,
                        38, 75, 105);
     graphics_draw_text(18U, height - bottom_bar / 2U - 4U,
-                       "F1 FILES  F2 BROWSER  F3 SETTINGS  F4 TERMINAL  ESC HOME",
+                       "F1 FILES F2 BROWSER F3 SETTINGS F4 TERMINAL F5 INSTALL ESC HOME",
                        1, 178, 202, 221);
 }
 
@@ -426,6 +538,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     screen_width = graphics_width();
     screen_height = graphics_height();
     active_view = DESKTOP_HOME;
+    installer_firmware = NEXUS_FIRMWARE_UEFI;
+    installer_selected_device = 0U;
+    installer_refresh_plan();
     mouse_left_was_down = false;
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
@@ -1280,6 +1395,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         break;
                     }
                 }
+            } else if ((uint64_t)pointer_y >= ty + 90U &&
+                       (uint64_t)pointer_y < ty + 164U &&
+                       (uint64_t)pointer_x >= px + 28U &&
+                       (uint64_t)pointer_x < px + 28U + tw) {
+                active_view = DESKTOP_INSTALLER;
+                installer_refresh_plan();
+                serial_write("DESKTOP: Nexus installer preview opened by mouse\r\n");
             }
         }
         draw_shell();
@@ -1288,6 +1410,30 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (event->type != NEXUS_INPUT_KEYBOARD) return;
     /* Set-1 make codes only; break codes are ignored. */
+    if (active_view == DESKTOP_INSTALLER) {
+        if ((event->scancode & 0x80U) != 0U) return;
+        if (event->scancode == 0x01U) {
+            active_view = DESKTOP_HOME;
+        } else if (event->scancode == 0x3BU) {
+            installer_firmware = NEXUS_FIRMWARE_UEFI;
+            installer_refresh_plan();
+        } else if (event->scancode == 0x3CU) {
+            installer_firmware = NEXUS_FIRMWARE_LEGACY_BIOS;
+            installer_refresh_plan();
+        } else if (event->scancode == 0x48U && blockdev_count() > 0U) {
+            if (installer_selected_device > 0U) --installer_selected_device;
+            installer_refresh_plan();
+        } else if (event->scancode == 0x50U && blockdev_count() > 0U) {
+            if (installer_selected_device + 1U < blockdev_count())
+                ++installer_selected_device;
+            installer_refresh_plan();
+        } else {
+            return;
+        }
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x01U) {
@@ -1393,6 +1539,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         case 0x3CU: next_view = DESKTOP_BROWSER; break;
         case 0x3DU: next_view = DESKTOP_SETTINGS; break;
         case 0x3EU: next_view = DESKTOP_TERMINAL; break;
+        case 0x3FU: next_view = DESKTOP_INSTALLER; break;
         case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
     }
@@ -1400,6 +1547,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         scan_files_once();
         refresh_files_listing();
     }
+    if (next_view == DESKTOP_INSTALLER) installer_refresh_plan();
     if (next_view == active_view) return;
     active_view = next_view;
     draw_shell();

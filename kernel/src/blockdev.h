@@ -7,6 +7,8 @@
 
 #define NEXUS_BLOCKDEV_MAX_DEVICES 8U
 #define NEXUS_BLOCKDEV_NAME_MAX 16U
+#define NEXUS_BLOCKDEV_ID_MAX 64U
+#define NEXUS_BLOCKDEV_MODEL_MAX 64U
 #define NEXUS_BLOCKDEV_READ_ONLY 0x00000001U
 #define NEXUS_BLOCKDEV_WRITABLE 0x00000002U
 
@@ -22,6 +24,9 @@ typedef bool (*nexus_blockdev_flush_fn)(void *context);
 
 struct nexus_block_device {
     char name[NEXUS_BLOCKDEV_NAME_MAX];
+    /* Stable hardware identity and model are shown during destructive setup. */
+    char stable_id[NEXUS_BLOCKDEV_ID_MAX];
+    char model[NEXUS_BLOCKDEV_MODEL_MAX];
     uint64_t block_count;
     uint32_t block_size;
     uint32_t max_blocks_per_request;

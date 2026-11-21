@@ -771,3 +771,21 @@ temporary file, opens and reads it through VFS, checks the contents, then
 removes it. The regular release NVMe block device remains read-only, so
 persistent writes are not enabled on normal release images. A safe installer
 and explicit user-volume preparation still need to be implemented.
+
+
+### Writable-file removal in the VFS and desktop
+
+The VFS now exposes a guarded file-removal operation for its writable stores.
+It removes a volatile RAM overlay first, then permits a persistent NexusFS
+tombstone only when the explicitly mounted block device is registered writable.
+It never deletes FAT32 files. The RAMFS self-test now verifies that a removed
+file cannot be reopened.
+
+The Files view exposes Delete for the selected file, and the Terminal `rm`
+command uses the same VFS operation. A read-only or unsupported target is
+refused. This does not change the release policy: normal release NVMe devices
+remain read-only, and no user disk is modified automatically at boot.
+
+The latest development commits are being checked by the dedicated BIOS/UEFI
+GitHub Actions workflow. This feature is not considered complete until the
+updated build and both firmware boot tests pass.

@@ -7,6 +7,8 @@
 static uint8_t sector[MAX_SECTOR];
 static uint8_t verify[MAX_SECTOR];
 static bool busy;
+#define MAX_FILE_CLUSTERS (MAX_FILE/512U)
+static uint32_t allocated[MAX_FILE_CLUSTERS];
 static uint16_t le16(const uint8_t*p){return (uint16_t)(p[0]|((uint16_t)p[1]<<8));}
 static uint32_t le32(const uint8_t*p){return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
 static void put16(uint8_t*p,uint16_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);}
@@ -66,47 +68,36 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
  uint32_t cluster_bytes=spc*bps;
  uint32_t needed=length? (length+cluster_bytes-1U)/cluster_bytes:0U;
  if(needed>clusters-1U){result=NEXUS_FAT32_FILE_NO_SPACE;goto done;}
- /* Locate free clusters; this implementation uses sequential free clusters. */
- uint32_t found=0,first=0,previous=0;
+ /* Preflight the complete allocation before changing either FAT copy.
+  * This avoids leaking a partial cluster chain when the volume is full. */
+ if(needed>MAX_FILE_CLUSTERS){result=NEXUS_FAT32_FILE_NO_SPACE;goto done;}
+ uint32_t found=0,first=0;
  for(uint32_t c=3U;c<clusters+2U&&found<needed;c++){
-  uint64_t fat_lba=fat1+((uint64_t)c*4U)/bps;uint32_t off=(uint32_t)(((uint64_t)c*4U)%bps);
-  if(!read1(t,fat_lba,sector))goto done;
-  if((le32(sector+off)&0x0FFFFFFFU)!=0U)continue;
-  if(!first)first=c;
-  if(previous){
-   uint32_t poff=(uint32_t)(((uint64_t)previous*4U)%bps);uint64_t plba=fat1+((uint64_t)previous*4U)/bps;
-   if(!read1(t,plba,sector))goto done;
-   put32(sector+poff,c);
-   if(!write1(t,plba,sector))goto done;
-   uint64_t p2=fat2+((uint64_t)previous*4U)/bps;
-   if(!read1(t,p2,sector))goto done;
-   put32(sector+poff,c);
-   if(!write1(t,p2,sector))goto done;
-  }
-  previous=c;found++;
+  uint64_t lba=fat1+((uint64_t)c*4U)/bps;
+  uint32_t off=(uint32_t)(((uint64_t)c*4U)%bps);
+  if(!read1(t,lba,sector))goto done;
+  if((le32(sector+off)&0x0FFFFFFFU)==0U)allocated[found++]=c;
  }
  if(found!=needed){result=NEXUS_FAT32_FILE_NO_SPACE;goto done;}
- if(needed){
-  uint32_t off=(uint32_t)(((uint64_t)previous*4U)%bps);uint64_t lba=fat1+((uint64_t)previous*4U)/bps;
-  if(!read1(t,lba,sector))goto done;
-  put32(sector+off,0x0FFFFFFFU);
-  if(!write1(t,lba,sector))goto done;
-  lba=fat2+((uint64_t)previous*4U)/bps;
-  if(!read1(t,lba,sector))goto done;
-  put32(sector+off,0x0FFFFFFFU);
-  if(!write1(t,lba,sector))goto done;
- }
- /* Mirror the first-cluster FAT link in both FAT copies. */
- if(needed){uint32_t off=(uint32_t)(((uint64_t)first*4U)%bps);uint64_t lba=fat1+((uint64_t)first*4U)/bps;
-  if(!read1(t,lba,sector))goto done; /* preserve value already set by next-link update */
-  if(!write1(t,lba,sector))goto done;
-  lba=fat2+((uint64_t)first*4U)/bps;
-  if(!read1(t,lba,sector)||!write1(t,lba,sector))goto done;
-  (void)off;
- }
- /* Rewalk the allocation in ascending order and write file data. */
- uint32_t cluster=first,remaining=length;const uint8_t*src=data;
+ if(needed)first=allocated[0];
+ /* Commit the FAT chain to both copies only after the full allocation fits. */
  for(uint32_t k=0;k<needed;k++){
+  uint32_t c=allocated[k],next=(k+1U<needed)?allocated[k+1U]:0x0FFFFFFFU;
+  uint64_t lba=fat1+((uint64_t)c*4U)/bps;
+  uint32_t off=(uint32_t)(((uint64_t)c*4U)%bps);
+  if(!read1(t,lba,sector))goto done;
+  put32(sector+off,next);
+  if(!write1(t,lba,sector))goto done;
+  lba=fat2+((uint64_t)c*4U)/bps;
+  if(!read1(t,lba,sector))goto done;
+  put32(sector+off,next);
+  if(!write1(t,lba,sector))goto done;
+ }
+ if(!t->flush(t->context))goto done;
+ /* Rewalk the allocation in ascending order and write file data. */
+ uint32_t remaining=length;const uint8_t*src=data;
+ for(uint32_t k=0;k<needed;k++){
+  uint32_t cluster=allocated[k];
   uint64_t base=data_start+(uint64_t)(cluster-2U)*spc;
   for(uint32_t sec=0;sec<spc;sec++){
    for(uint32_t j=0;j<bps;j++)sector[j]=0;
@@ -119,11 +110,6 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
    }
    src+=n;remaining-=n;
   }
-  /* Next cluster is found by scanning FAT for the first allocated successor. */
-  uint32_t off=(uint32_t)(((uint64_t)cluster*4U)%bps);uint64_t lba=fat1+((uint64_t)cluster*4U)/bps;
-  if(!read1(t,lba,sector))goto done;
-  uint32_t next=le32(sector+off)&0x0FFFFFFFU;
-  if(k+1U<needed){if(next<2U||next>=clusters+2U){result=NEXUS_FAT32_FILE_IO;goto done;}cluster=next;}
  }
  /* Commit one root entry after data and FAT are durable. */
  uint32_t dir_sector=root_slot/(bps/32U),dir_off=(root_slot%(bps/32U))*32U;

@@ -7,6 +7,7 @@
 #include "blockdev.h"
 #include "desktop.h"
 #include "interrupts.h"
+#include "keyboard.h"
 #include "ioapic.h"
 #include "memory.h"
 #include "pci.h"

@@ -114,7 +114,7 @@ enum nexus_fat32_file_result nexus_installer_write_efi_file(
   .max_blocks_per_request=device->max_blocks_per_request,
   .context=(void*)device,.write=installer_target_write,
   .read=installer_target_read,.flush=installer_target_flush};
- const enum nexus_fat32_file_result result=nexus_fat32_write_root_file(
+ const enum nexus_fat32_file_result result=nexus_fat32_write_file(
   &target,first,blocks,name,data,length);
  blockdev_install_session_end();return result;
 }

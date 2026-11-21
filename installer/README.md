@@ -144,9 +144,15 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   MBR last; every phase is flushed and read back. Mock-disk CI tests verify
   write order, read-back, rejection without confirmation, unsafe-target
   rejection, and injected I/O failures.
+- `installer/installer_core.c` implements the installer authorization state
+  machine: target selection, pure partition planning, exact stable-ID
+  confirmation, a second typed `ERASE` confirmation, immediate target
+  revalidation, apply eligibility, cancellation, and a recovery-required state
+  after a changed target or failed apply. Host CI tests all state transitions.
 - The kernel desktop now has an **Install F5** screen that displays the selected
   block device, capacity, sector size, and a UEFI or BIOS partition preview.
-  It is explicitly read-only and does not invoke the GPT install transaction.
+  It is explicitly read-only and does not invoke the GPT install transaction
+  or the installer state machine.
 - The kernel has GPT primary/backup header and entry-array CRC validation,
   exercised against a disposable QEMU disk image.
 - NXFS has an early on-disk formatter/mounter, two checksummed superblocks,

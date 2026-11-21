@@ -29,6 +29,8 @@ bool blockdev_register(const struct nexus_block_device *device) {
     if (device == NULL || device->name[0] == '\0' ||
         device->block_count == 0 || device->block_size == 0 ||
         device->max_blocks_per_request == 0 ||
+        device->transport < NEXUS_BLOCKDEV_TRANSPORT_NVME ||
+        device->transport > NEXUS_BLOCKDEV_TRANSPORT_NETWORK ||
         (((device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0) ==
          ((device->flags & NEXUS_BLOCKDEV_WRITABLE) == 0)) ||
         device->read == NULL ||
@@ -181,7 +183,48 @@ bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_gui
     return true;
 }
 
-static bool blockdev_set_boot_media_detection_complete(void) {
+static bool blockdev_set_boot_media_from_gpt_disk_guid(const uint8_t disk_guid[16]) {
+    if (disk_guid == NULL || boot_media_detection_complete || boot_media_device != NULL) return false;
+    uint8_t nonzero = 0U; for (size_t i=0U;i<16U;++i) nonzero |= disk_guid[i];
+    if (nonzero == 0U) return false;
+    const struct nexus_block_device *match=NULL; size_t matches=0U;
+    for(size_t d=0U;d<registered_count;++d) {
+        if(!gpt_scan_device(&devices[d])) continue;
+        const uint8_t *found=gpt_scanned_disk_guid(); bool equal=found!=NULL;
+        for(size_t b=0U;b<16U&&equal;++b) if(found[b]!=disk_guid[b]) equal=false;
+        if(equal){match=&devices[d];++matches;} if(matches>1U)return false;
+    }
+    if(matches!=1U||match==NULL||!blockdev_set_boot_media(match))return false;
+    if(!blockdev_set_boot_media_detection_complete()){boot_media_device=NULL;return false;}
+    return true;
+}
+bool blockdev_set_boot_media_from_mbr_disk_id(uint32_t disk_id) {
+    if(disk_id==0U||boot_media_detection_complete||boot_media_device!=NULL)return false;
+    const struct nexus_block_device *match=NULL; size_t matches=0U; uint8_t sector[4096];
+    for(size_t d=0U;d<registered_count;++d){
+        const struct nexus_block_device *candidate=&devices[d];
+        if(candidate->block_size<512U||candidate->block_size>sizeof(sector)||
+           !blockdev_read(candidate,0U,1U,sector))continue;
+        if(sector[510]!=0x55U||sector[511]!=0xAAU)continue;
+        uint32_t found=(uint32_t)sector[440]|((uint32_t)sector[441]<<8)|
+          ((uint32_t)sector[442]<<16)|((uint32_t)sector[443]<<24);
+        if(found==disk_id){match=candidate;++matches;} if(matches>1U)return false;
+    }
+    if(matches!=1U||match==NULL||!blockdev_set_boot_media(match))return false;
+    if(!blockdev_set_boot_media_detection_complete()){boot_media_device=NULL;return false;}
+    return true;
+}
+bool blockdev_set_boot_media_external(uint32_t source_kind) {
+    if(boot_media_detection_complete||boot_media_device!=NULL)return false;
+    uint32_t transport;
+    if(source_kind==NEXUS_BOOT_SOURCE_OPTICAL)transport=NEXUS_BLOCKDEV_TRANSPORT_OPTICAL;
+    else if(source_kind==NEXUS_BOOT_SOURCE_NETWORK)transport=NEXUS_BLOCKDEV_TRANSPORT_NETWORK;
+    else return false;
+    for(size_t i=0U;i<registered_count;++i)if(devices[i].transport==transport)return false;
+    boot_media_detection_complete=true;
+    return true;
+}
+bool blockdev_set_boot_media_detection_complete(void) {
     if (boot_media_device == NULL || boot_media_detection_complete) return false;
     boot_media_detection_complete = true;
     return true;

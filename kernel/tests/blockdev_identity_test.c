@@ -39,6 +39,7 @@ static struct nexus_block_device make_device(const char *name,
     (void)strncpy(device.stable_id, stable_id, sizeof(device.stable_id) - 1U);
     (void)strncpy(device.model, "Nexus test disk", sizeof(device.model) - 1U);
     device.block_count = 1024U * 1024U;
+    device.transport = NEXUS_BLOCKDEV_TRANSPORT_NVME;
     device.block_size = 512U;
     device.max_blocks_per_request = 8U;
     device.flags = NEXUS_BLOCKDEV_READ_ONLY;

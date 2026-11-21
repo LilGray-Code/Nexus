@@ -18,6 +18,7 @@ struct nexus_gpt_partition {
 };
 
 bool gpt_scan_device(const struct nexus_block_device *device);
+const uint8_t *gpt_scanned_disk_guid(void);
 size_t gpt_partition_count(void);
 const struct nexus_gpt_partition *gpt_partition_at(size_t index);
 

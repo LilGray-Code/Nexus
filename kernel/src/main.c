@@ -44,6 +44,10 @@ __attribute__((used, section(".limine_requests")))
 static volatile struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST_ID, .revision = 0
 };
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_executable_file_request executable_file_request = {
+    .id = LIMINE_EXECUTABLE_FILE_REQUEST_ID, .revision = 0
+};
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t requests_end[] = LIMINE_REQUESTS_END_MARKER;
 
@@ -79,6 +83,35 @@ static void scheduler_worker_b(void *argument) {
 __attribute__((noreturn))
 static void halt_forever(void) {
     for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
+}
+
+static bool boot_media_provenance_init(void) {
+    if (executable_file_request.response == NULL ||
+        executable_file_request.response->executable_file == NULL) {
+        serial_write("BOOT MEDIA: executable-file response unavailable\r\n");
+        return false;
+    }
+    const struct limine_file *file = executable_file_request.response->executable_file;
+    uint8_t part_nonzero=0U,disk_nonzero=0U;
+    for(size_t i=0U;i<sizeof(file->gpt_part_uuid);++i)part_nonzero|=((const uint8_t *)&file->gpt_part_uuid)[i];
+    for(size_t i=0U;i<sizeof(file->gpt_disk_uuid);++i)disk_nonzero|=((const uint8_t *)&file->gpt_disk_uuid)[i];
+    if(part_nonzero&&blockdev_set_boot_media_from_gpt_partition_guid((const uint8_t *)&file->gpt_part_uuid)){
+        serial_write("BOOT MEDIA: matched GPT partition GUID\r\n");return true;
+    }
+    if(disk_nonzero&&blockdev_set_boot_media_from_gpt_disk_guid((const uint8_t *)&file->gpt_disk_uuid)){
+        serial_write("BOOT MEDIA: matched GPT disk GUID\r\n");return true;
+    }
+    if(file->mbr_disk_id&&blockdev_set_boot_media_from_mbr_disk_id(file->mbr_disk_id)){
+        serial_write("BOOT MEDIA: matched MBR disk ID\r\n");return true;
+    }
+    if(file->media_type==LIMINE_MEDIA_TYPE_OPTICAL&&blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL)){
+        serial_write("BOOT MEDIA: optical source is not a registered disk\r\n");return true;
+    }
+    if(file->media_type==LIMINE_MEDIA_TYPE_TFTP&&blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_NETWORK)){
+        serial_write("BOOT MEDIA: network source is not a registered disk\r\n");return true;
+    }
+    serial_write("BOOT MEDIA: provenance ambiguous; installer writes disabled\r\n");
+    return false;
 }
 
 void kmain(void) {
@@ -184,6 +217,9 @@ void kmain(void) {
         serial_write("WARNING: no mass-storage PCI controller discovered\r\n");
     }
     serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
+    if (!boot_media_provenance_init()) {
+        serial_write("INSTALLER: destructive writes locked until boot source is identified\r\n");
+    }
 
     timer_init(100);
     if (e1000_ready() && !net_init()) {

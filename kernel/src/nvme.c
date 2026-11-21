@@ -723,6 +723,7 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
 
     struct nexus_block_device block_device = {
         .name = "nvme0n1",
+        .transport = NEXUS_BLOCKDEV_TRANSPORT_NVME,
         .stable_id = "NVME-UNKNOWN",
         .model = "NVMe storage device",
         .block_count = namespace_size,

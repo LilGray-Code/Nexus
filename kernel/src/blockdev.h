@@ -13,6 +13,13 @@
 #define NEXUS_BLOCKDEV_WRITABLE 0x00000002U
 /* Driver can issue writes, but ordinary filesystem writes remain disabled. */
 #define NEXUS_BLOCKDEV_INSTALL_CAPABLE 0x00000004U
+#define NEXUS_BLOCKDEV_TRANSPORT_NVME 1U
+#define NEXUS_BLOCKDEV_TRANSPORT_AHCI 2U
+#define NEXUS_BLOCKDEV_TRANSPORT_USB 3U
+#define NEXUS_BLOCKDEV_TRANSPORT_OPTICAL 4U
+#define NEXUS_BLOCKDEV_TRANSPORT_NETWORK 5U
+#define NEXUS_BOOT_SOURCE_OPTICAL 1U
+#define NEXUS_BOOT_SOURCE_NETWORK 2U
 
 typedef bool (*nexus_blockdev_read_fn)(void *context,
                                        uint64_t lba,
@@ -33,6 +40,7 @@ struct nexus_block_device {
     uint32_t block_size;
     uint32_t max_blocks_per_request;
     uint32_t flags;
+    uint32_t transport;
     void *context;
     nexus_blockdev_read_fn read;
     nexus_blockdev_write_fn write;
@@ -56,6 +64,9 @@ bool blockdev_install_write_supported(const struct nexus_block_device *device);
 /* Resolve boot provenance from a bootloader-reported GPT partition unique
  * GUID (on-disk byte order). Requires exactly one validated disk match. */
 bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_guid[16]);
+bool blockdev_set_boot_media_from_gpt_disk_guid(const uint8_t disk_guid[16]);
+bool blockdev_set_boot_media_from_mbr_disk_id(uint32_t disk_id);
+bool blockdev_set_boot_media_external(uint32_t source_kind);
 bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted);
 /* Opens a destructive-write session only when kernel-owned safety state allows it. */
 bool blockdev_install_session_begin(const struct nexus_block_device *device,

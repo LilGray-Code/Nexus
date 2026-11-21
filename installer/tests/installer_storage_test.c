@@ -59,6 +59,7 @@ static struct nexus_block_device make_device(const char *name,
     (void)snprintf(d.stable_id, sizeof(d.stable_id), "%s", id);
     (void)snprintf(d.model, sizeof(d.model), "Nexus disposable test disk");
     d.block_count = DISK_BLOCKS;
+    d.transport = NEXUS_BLOCKDEV_TRANSPORT_NVME;
     d.block_size = 512U;
     d.max_blocks_per_request = 8U;
     d.flags = NEXUS_BLOCKDEV_READ_ONLY | NEXUS_BLOCKDEV_INSTALL_CAPABLE;

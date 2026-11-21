@@ -12,6 +12,7 @@
 
 static struct nexus_gpt_partition partitions[NEXUS_GPT_MAX_PARTITIONS];
 static size_t partition_count;
+static uint8_t scanned_disk_guid[16];
 static uint8_t io_buffer[GPT_IO_BUFFER_SIZE];
 static uint8_t backup_header[GPT_IO_BUFFER_SIZE];
 
@@ -185,6 +186,7 @@ static bool validate_backup_header(const struct nexus_block_device *device,
 
 bool gpt_scan_device(const struct nexus_block_device *device) {
     partition_count = 0;
+    for (size_t i = 0U; i < 16U; ++i) scanned_disk_guid[i] = 0U;
     for (size_t i = 0; i < NEXUS_GPT_MAX_PARTITIONS; ++i)
         partitions[i] = (struct nexus_gpt_partition){0};
 
@@ -217,6 +219,7 @@ bool gpt_scan_device(const struct nexus_block_device *device) {
                                 entry_size, expected_entries_crc, disk_guid)) {
         return false;
     }
+    for (size_t i = 0U; i < 16U; ++i) scanned_disk_guid[i] = disk_guid[i];
 
     const uint64_t total_bytes = (uint64_t)entry_count * entry_size;
     uint64_t remaining = total_bytes;
@@ -292,3 +295,5 @@ const struct nexus_gpt_partition *gpt_partition_at(size_t index) {
     if (index >= partition_count) return NULL;
     return &partitions[index];
 }
+
+const uint8_t *gpt_scanned_disk_guid(void) { return scanned_disk_guid; }

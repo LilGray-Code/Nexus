@@ -462,3 +462,24 @@ and map segment pages, zero BSS, establish per-process page tables, apply
 relocations, resolve dynamic dependencies, or transfer control to a loaded
 program. The next userland step is a bounded loader built on this parser,
 followed by process lifecycle and IPC.
+
+
+### ELF64 static executable loading (new implementation milestone)
+
+The kernel now has a bounded static ET_EXEC loader layered on the ELF64
+validator. It creates a private lower-half page-table root while retaining the
+kernel's high-half mappings, allocates and zeroes pages for each validated
+PT_LOAD segment, copies file-backed bytes, leaves BSS bytes zeroed, maps a
+separate initial user stack page, and transfers control to the loaded entry
+point in ring 3. The boot-time user-mode self-test is now packaged as a real
+ELF64 executable and launched through this loader rather than being copied
+directly into a hand-built code mapping.
+
+The loader currently handles one bootstrap process, fixed-address static
+ET_EXEC binaries, at most 16 load segments, no dynamic linker/PIE/TLS, and a
+single fixed stack page. The physical allocator is still monotonic, page-table
+and user-page reclamation is absent, executable mappings do not yet use NX
+protection, and the process has no general file-descriptor table or lifecycle
+manager. This proves the image-to-address-space-to-ring-3 path, not a general
+multi-process runtime. CI boot assertions exercise the loaded program's
+rejected kernel-pointer write, valid stdout write, and exit status.

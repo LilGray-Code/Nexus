@@ -83,6 +83,81 @@ bool paging_map_mmio_page(uint64_t physical_address,
 }
 
 /*
+ * Clone the active kernel page-table root and remove the low canonical slot.
+ * Kernel mappings in the high half remain shared, while user mappings are
+ * created beneath a private lower-half tree.
+ */
+bool paging_create_user_address_space(uint64_t *root_physical) {
+    if (root_physical == NULL) return false;
+
+    uint64_t cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    const uint64_t kernel_root_physical = cr3 & PAGE_ADDRESS_MASK;
+    volatile uint64_t *kernel_root =
+        (volatile uint64_t *)memory_phys_to_virt(kernel_root_physical);
+    if (kernel_root == NULL) return false;
+
+    volatile uint64_t *user_root;
+    if (!allocate_table(root_physical, &user_root)) return false;
+
+    for (size_t i = 0; i < 512U; ++i) user_root[i] = kernel_root[i];
+    user_root[0] = 0;
+    return true;
+}
+
+/* Map one previously-unmapped 4 KiB page into a user address space. */
+bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
+                          uint64_t page_physical, bool writable) {
+    if ((virtual_address & 0xFFFULL) != 0U ||
+        (page_physical & 0xFFFULL) != 0U) {
+        return false;
+    }
+
+    uint64_t cr4;
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    const unsigned int user_bits = levels == 5U ? 56U : 47U;
+    if (virtual_address >= (1ULL << user_bits)) return false;
+
+    volatile uint64_t *table =
+        (volatile uint64_t *)memory_phys_to_virt(root_physical);
+    if (table == NULL) return false;
+
+    for (unsigned int level = levels; level > 1U; --level) {
+        const unsigned int shift = 12U + 9U * (level - 1U);
+        const unsigned int index =
+            (unsigned int)((virtual_address >> shift) & 0x1FFU);
+        uint64_t entry = table[index];
+
+        if ((entry & PAGE_PRESENT) == 0U) {
+            uint64_t next_physical;
+            volatile uint64_t *next_table;
+            if (!allocate_table(&next_physical, &next_table)) return false;
+            entry = (next_physical & PAGE_ADDRESS_MASK) |
+                    PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
+            table[index] = entry;
+            table = next_table;
+        } else {
+            if ((entry & PAGE_USER) == 0U || (entry & PAGE_LARGE) != 0U) {
+                return false;
+            }
+            table = (volatile uint64_t *)memory_phys_to_virt(
+                entry & PAGE_ADDRESS_MASK);
+            if (table == NULL) return false;
+        }
+    }
+
+    const unsigned int leaf_index =
+        (unsigned int)((virtual_address >> 12) & 0x1FFU);
+    if ((table[leaf_index] & PAGE_PRESENT) != 0U) return false;
+
+    table[leaf_index] = (page_physical & PAGE_ADDRESS_MASK) |
+                        PAGE_PRESENT | PAGE_USER |
+                        (writable ? PAGE_WRITABLE : 0U);
+    return true;
+}
+
+/*
  * Translate one user virtual address using the active CR3. Every paging level
  * must be present and user-accessible. The helper also understands 1 GiB and
  * 2 MiB leaves, so the copy routine does not assume every mapping is 4 KiB.

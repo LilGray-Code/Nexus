@@ -1,11 +1,16 @@
 #include "elf64.h"
 
+#include "memory.h"
+#include "paging.h"
+
 #define ELF64_HEADER_SIZE 64U
 #define ELF64_PROGRAM_HEADER_SIZE 56U
 #define ELF64_MAX_PROGRAM_HEADERS 64U
 #define ELF64_PAGE_SIZE 4096ULL
 #define ELF64_USER_MIN 0x0000000000010000ULL
 #define ELF64_USER_TOP 0x0000800000000000ULL
+#define ELF64_STACK_PAGE 0x00000000007FF000ULL
+#define ELF64_STACK_TOP 0x0000000000800000ULL
 
 #define ELF64_ET_EXEC 2U
 #define ELF64_EM_X86_64 62U
@@ -174,6 +179,113 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
 
     if (parsed.segment_count == 0U || !entry_is_executable) return false;
     *image = parsed;
+    return true;
+}
+
+static bool allocate_zeroed_user_page(uint64_t root_physical,
+                                      uint64_t virtual_address,
+                                      bool writable,
+                                      uint64_t *page_physical) {
+    if (page_physical == NULL || !memory_alloc_page(page_physical)) {
+        return false;
+    }
+
+    volatile uint8_t *page =
+        (volatile uint8_t *)memory_phys_to_virt(*page_physical);
+    if (page == NULL) return false;
+    for (size_t i = 0; i < (size_t)ELF64_PAGE_SIZE; ++i) page[i] = 0;
+
+    return paging_map_user_page(root_physical, virtual_address,
+                                *page_physical, writable);
+}
+
+bool nexus_elf64_load(const void *file, size_t file_size,
+                      uint64_t *root_physical, uint64_t *entry_point,
+                      uint64_t *stack_pointer) {
+    if (root_physical == NULL || entry_point == NULL ||
+        stack_pointer == NULL) {
+        return false;
+    }
+
+    struct nexus_elf64_image image;
+    if (!nexus_elf64_parse(file, file_size, &image)) return false;
+
+    for (uint16_t i = 0; i < image.segment_count; ++i) {
+        uint64_t segment_start;
+        uint64_t segment_end;
+        if (!page_range(image.segments[i].virtual_address,
+                        image.segments[i].memory_size,
+                        &segment_start, &segment_end) ||
+            (ELF64_STACK_PAGE < segment_end &&
+             segment_start < ELF64_STACK_TOP)) {
+            return false;
+        }
+    }
+
+    uint64_t new_root;
+    if (!paging_create_user_address_space(&new_root)) return false;
+
+    const uint8_t *bytes = (const uint8_t *)file;
+    for (uint16_t i = 0; i < image.segment_count; ++i) {
+        const struct nexus_elf64_segment *segment = &image.segments[i];
+        uint64_t first_page;
+        uint64_t end_page;
+        if (!page_range(segment->virtual_address, segment->memory_size,
+                        &first_page, &end_page)) {
+            return false;
+        }
+
+        const uint64_t file_virtual_end =
+            segment->virtual_address + segment->file_size;
+        for (uint64_t page_address = first_page;
+             page_address < end_page;
+             page_address += ELF64_PAGE_SIZE) {
+            uint64_t page_physical;
+            const bool writable =
+                (segment->flags & NEXUS_ELF64_SEGMENT_WRITE) != 0U;
+            if (!allocate_zeroed_user_page(new_root, page_address,
+                                           writable, &page_physical)) {
+                return false;
+            }
+
+            const uint64_t copy_start =
+                page_address > segment->virtual_address
+                    ? page_address : segment->virtual_address;
+            const uint64_t page_end = page_address + ELF64_PAGE_SIZE;
+            const uint64_t copy_end =
+                page_end < file_virtual_end ? page_end : file_virtual_end;
+            if (copy_start < copy_end) {
+                const uint64_t source_offset =
+                    segment->file_offset +
+                    (copy_start - segment->virtual_address);
+                const uint64_t destination_offset = copy_start - page_address;
+                volatile uint8_t *destination =
+                    (volatile uint8_t *)memory_phys_to_virt(page_physical);
+                if (destination == NULL ||
+                    source_offset > (uint64_t)file_size ||
+                    copy_end - copy_start >
+                        (uint64_t)file_size - source_offset) {
+                    return false;
+                }
+                for (uint64_t byte = 0;
+                     byte < copy_end - copy_start;
+                     ++byte) {
+                    destination[destination_offset + byte] =
+                        bytes[source_offset + byte];
+                }
+            }
+        }
+    }
+
+    uint64_t stack_physical;
+    if (!allocate_zeroed_user_page(new_root, ELF64_STACK_PAGE, true,
+                                   &stack_physical)) {
+        return false;
+    }
+
+    *root_physical = new_root;
+    *entry_point = image.entry_point;
+    *stack_pointer = ELF64_STACK_TOP;
     return true;
 }
 

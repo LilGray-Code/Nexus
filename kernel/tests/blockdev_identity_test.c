@@ -13,6 +13,12 @@ static bool test_read(void *context, uint64_t lba, uint32_t count, void *buffer)
     return true;
 }
 
+static bool test_read_second(void *context, uint64_t lba, uint32_t count,
+                              void *buffer) {
+    (void)context; (void)lba; (void)count; (void)buffer;
+    return true;
+}
+
 static bool test_write(void *context, uint64_t lba, uint32_t count,
                        const void *buffer) {
     (void)context; (void)lba; (void)count; (void)buffer;
@@ -56,6 +62,7 @@ int main(void) {
 
     struct nexus_block_device duplicate =
         make_device("disk1", "NVME-SERIAL-001");
+    duplicate.read = test_read_second;
     assert(blockdev_register(&duplicate));
     assert(!blockdev_identity_is_unique(registered));
     assert(!blockdev_matches_identity(registered, "NVME-SERIAL-001",
@@ -100,6 +107,7 @@ int main(void) {
     assert(blockdev_register(&install_disk));
     install_registered = blockdev_at(0U);
     struct nexus_block_device boot_disk = make_device("boot", "NVME-BOOT-001");
+    boot_disk.read = test_read_second;
     assert(blockdev_register(&boot_disk));
     const struct nexus_block_device *boot_registered = blockdev_at(1U);
     assert(blockdev_set_boot_media(boot_registered));

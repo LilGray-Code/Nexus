@@ -2,6 +2,7 @@
 
 #include "memory.h"
 #include "gdt.h"
+#include "serial.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -16,10 +17,12 @@
 #define USER_STACK_VA 0x00800000ULL
 #define USER_STACK_TOP (USER_STACK_VA + PAGE_SIZE)
 #define USER_EXIT_STATUS 42U
+#define USER_WRITE_MAX 128U
 
 uint64_t usermode_saved_cr3;
 uintptr_t usermode_saved_rsp;
 volatile uint64_t usermode_exit_status = UINT64_MAX;
+static volatile bool usermode_write_seen;
 
 extern void nexus_enter_user(uint64_t root_physical,
                              uint64_t entry_point,
@@ -110,14 +113,20 @@ bool usermode_run_selftest(void) {
                   PAGE_WRITABLE | PAGE_USER;
 
     /*
-     * The user program calls int 0x80 with syscall 1 (exit), status 42.
-     * Its code page is user-readable/executable and not user-writable.
+     * Ring-3 test calls write(stdout, message, 15), then exit(42).
+     * The message is embedded at USER_CODE_VA + 48 in the RX code page.
      */
     static const uint8_t test_program[] = {
+        0x48, 0xC7, 0xC0, 0x02, 0x00, 0x00, 0x00,
+        0x48, 0xC7, 0xC7, 0x20, 0x00, 0x40, 0x00,
+        0x48, 0xC7, 0xC6, 0x0F, 0x00, 0x00, 0x00,
+        0xCD, 0x80,
         0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00,
         0x48, 0xC7, 0xC7, 0x2A, 0x00, 0x00, 0x00,
         0xCD, 0x80,
-        0xEB, 0xFE
+        0xEB, 0xFE,
+        0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+        'N','E','X','U','S',' ','U','S','E','R',' ','M','O','D','E'
     };
     for (size_t i = 0; i < sizeof(test_program); ++i)
         code_page[i] = test_program[i];
@@ -128,7 +137,21 @@ bool usermode_run_selftest(void) {
     if (!gdt_set_kernel_stack(kernel_stack_top)) return false;
 
     usermode_exit_status = UINT64_MAX;
+    usermode_write_seen = false;
     nexus_enter_user(user_root_physical, USER_CODE_VA, USER_STACK_TOP,
                      kernel_stack_top);
-    return usermode_exit_status == USER_EXIT_STATUS;
+    return usermode_exit_status == USER_EXIT_STATUS && usermode_write_seen;
+}
+
+bool usermode_sys_write(uint64_t user_address, uint64_t length) {
+    if (length == 0U) return true;
+    if (length > USER_WRITE_MAX || user_address < USER_CODE_VA ||
+        user_address > USER_CODE_VA + PAGE_SIZE ||
+        length > (USER_CODE_VA + PAGE_SIZE) - user_address) {
+        return false;
+    }
+    /* This initial syscall deliberately accepts only the mapped RX test page. */
+    serial_write_n((const char *)(uintptr_t)user_address, (size_t)length);
+    usermode_write_seen = true;
+    return true;
 }

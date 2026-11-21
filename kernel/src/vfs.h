@@ -39,6 +39,7 @@ bool vfs_mount_root_nxfs(const struct nexus_block_device *device,
 bool vfs_nxfs_mounted(void);
 bool vfs_nxfs_writable(void);
 bool vfs_save_ram_file_to_nxfs(const char *name);
+bool vfs_write_file(const char *name, const void *data, size_t length);
 bool vfs_root_mounted(void);
 bool vfs_has_filesystem(void);
 bool vfs_ramfs_create(const char *name);

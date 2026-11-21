@@ -153,6 +153,7 @@ bool usermode_sys_write(uint64_t user_address, uint64_t length) {
     }
     /* This initial syscall deliberately accepts only the mapped RX test page. */
     serial_write_n((const char *)(uintptr_t)user_address, (size_t)length);
+    serial_write("\\r\\n");
     usermode_write_seen = true;
     return true;
 }

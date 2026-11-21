@@ -60,7 +60,7 @@ static bool validate_header(const struct nexus_block_device *device,
         return false;
     }
 
-    static const uint8_t signature[8] = GPT_SIGNATURE;
+    static const uint8_t signature[8] = {'E', 'F', 'I', ' ', 'P', 'A', 'R', 'T'};
     for (size_t i = 0; i < sizeof(signature); ++i) {
         if (header[i] != signature[i]) return false;
     }

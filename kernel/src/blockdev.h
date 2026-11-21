@@ -11,6 +11,8 @@
 #define NEXUS_BLOCKDEV_MODEL_MAX 64U
 #define NEXUS_BLOCKDEV_READ_ONLY 0x00000001U
 #define NEXUS_BLOCKDEV_WRITABLE 0x00000002U
+/* Driver can issue writes, but ordinary filesystem writes remain disabled. */
+#define NEXUS_BLOCKDEV_INSTALL_CAPABLE 0x00000004U
 
 typedef bool (*nexus_blockdev_read_fn)(void *context,
                                        uint64_t lba,
@@ -46,6 +48,8 @@ bool blockdev_read(const struct nexus_block_device *device,
 bool blockdev_write(const struct nexus_block_device *device,
                     uint64_t lba, uint32_t block_count, const void *buffer);
 bool blockdev_flush(const struct nexus_block_device *device);
+/* Reports hardware support only; this does not authorize or perform writes. */
+bool blockdev_install_write_supported(const struct nexus_block_device *device);
 /* Installer gate: only a registered, non-placeholder, unique identity is eligible. */
 bool blockdev_identity_is_unique(const struct nexus_block_device *device);
 /* Revalidate the exact identity and geometry captured when the target was chosen. */

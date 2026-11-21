@@ -8,7 +8,7 @@
 #define NXFS_SUPERBLOCK_B 1U
 #define NXFS_JOURNAL_LBA 2U
 #define NXFS_METADATA_LBA 3U
-#define NXFS_DATA_LBA 19U
+#define NXFS_DATA_LBA 67U
 #define NXFS_ENTRY_BYTES 64U
 #define NXFS_JOURNAL_PAYLOAD 32U
 #define NXFS_JOURNAL_UPDATE 1U
@@ -246,7 +246,7 @@ static bool verify_entry_data(size_t slot,
 static void encode_superblock(uint8_t *buffer, uint64_t partition_blocks) {
     zero_bytes(buffer, nxfs_block_size);
     copy_bytes(buffer, super_magic, sizeof(super_magic));
-    write_le32(buffer + 8U, 1U);
+    write_le32(buffer + 8U, 2U);
     write_le32(buffer + 12U, nxfs_block_size);
     write_le32(buffer + 16U, NEXUS_NXFS_MAX_FILES);
     write_le32(buffer + 20U, NEXUS_NXFS_MAX_FILE_BYTES);
@@ -260,7 +260,7 @@ static void encode_superblock(uint8_t *buffer, uint64_t partition_blocks) {
 static bool validate_superblock(const uint8_t *buffer,
                                 uint64_t partition_blocks) {
     return equal_bytes(buffer, (const uint8_t *)super_magic, 8U) &&
-        read_le32(buffer + 8U) == 1U &&
+        read_le32(buffer + 8U) == 2U &&
         read_le32(buffer + 12U) == nxfs_block_size &&
         read_le32(buffer + 16U) == NEXUS_NXFS_MAX_FILES &&
         read_le32(buffer + 20U) == NEXUS_NXFS_MAX_FILE_BYTES &&

@@ -8,8 +8,8 @@
 #include "blockdev.h"
 #include "gpt.h"
 
-#define NEXUS_NXFS_MAX_FILES 16U
-#define NEXUS_NXFS_MAX_FILE_BYTES (16U * 1024U)
+#define NEXUS_NXFS_MAX_FILES 64U
+#define NEXUS_NXFS_MAX_FILE_BYTES (1024U * 1024U)
 #define NEXUS_NXFS_NAME_MAX 13U
 
 struct nexus_nxfs_entry {

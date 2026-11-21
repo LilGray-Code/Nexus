@@ -11,13 +11,14 @@
 #define EDGE_BLOCKS 64U
 #define FORMAT_BASE 2048U
 #define FORMAT_BLOCKS 4096U
+#define NXFS_TEST_AREA_BLOCKS 4096U
 
 struct mock_disk {
     uint8_t first[EDGE_BLOCKS * 512U];
     uint8_t last[EDGE_BLOCKS * 512U];
     uint8_t format_area[FORMAT_BLOCKS * 512U];
     uint64_t nxfs_base;
-    uint8_t nxfs_area[128U * 512U];
+    uint8_t nxfs_area[NXFS_TEST_AREA_BLOCKS * 512U];
     unsigned flushes;
 };
 
@@ -34,7 +35,7 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
         return true;
     }
     if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
-        lba + count <= disk->nxfs_base + 128U) {
+        lba + count <= disk->nxfs_base + NXFS_TEST_AREA_BLOCKS) {
         *base = disk->nxfs_area + (lba - disk->nxfs_base) * 512ULL;
         return true;
     }
@@ -84,8 +85,8 @@ static struct nexus_block_device make_device(const char *name,
     return d;
 }
 int main(void) {
-    struct mock_disk boot = {0};
-    struct mock_disk target = {0};
+    static struct mock_disk boot = {0};
+    static struct mock_disk target = {0};
     blockdev_init();
     struct nexus_block_device boot_device =
         make_device("boot", "TEST-BOOT-0001", &boot);
@@ -241,6 +242,44 @@ int main(void) {
     assert(blockdev_register(&target_device));
     assert(blockdev_register(&optical_device));
     assert(!blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
+
+    /* NXFS v2 supports system-sized files and remount verification. */
+    blockdev_init();
+    memset(&target, 0, sizeof(target));
+    target.nxfs_base = 8192U;
+    target_device = make_device("nxfs-large", "TEST-NXFS-LARGE", &target);
+    target_device.flags = NEXUS_BLOCKDEV_WRITABLE;
+    assert(blockdev_register(&target_device));
+    const struct nexus_block_device *rw_handle = blockdev_at(0U);
+    assert(rw_handle != NULL);
+    struct nexus_gpt_partition nxfs_test_partition = {0};
+    const uint8_t nxfs_guid[16] = {
+        0x46U,0x53U,0x58U,0x4EU,0x01U,0x00U,0x58U,0x4EU,
+        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x46U,0x53U
+    };
+    memcpy(nxfs_test_partition.type_guid, nxfs_guid, sizeof(nxfs_guid));
+    nxfs_test_partition.first_lba = target.nxfs_base;
+    nxfs_test_partition.last_lba = target.nxfs_base + 300000U - 1U;
+    assert(nxfs_format(rw_handle, &nxfs_test_partition));
+    static uint8_t large_payload[256U * 1024U];
+    static uint8_t large_readback[4096U];
+    for (size_t i=0U;i<sizeof(large_payload);++i)
+        large_payload[i]=(uint8_t)((i*37U+(i>>8))&0xFFU);
+    assert(nxfs_write_file("KERNEL.BIN",large_payload,sizeof(large_payload)));
+    assert(nxfs_mount(rw_handle,&nxfs_test_partition));
+    const struct nexus_nxfs_entry *large_entry=NULL;
+    for(size_t i=0U;i<nxfs_entry_count();++i){
+        const struct nexus_nxfs_entry *entry=nxfs_entry_at(i);
+        if(entry!=NULL&&strcmp(entry->name,"KERNEL.BIN")==0)large_entry=entry;
+    }
+    assert(large_entry!=NULL&&large_entry->size==sizeof(large_payload));
+    for(uint32_t offset=0U;offset<large_entry->size;offset+=sizeof(large_readback)){
+        const uint32_t amount=large_entry->size-offset<sizeof(large_readback)
+            ?large_entry->size-offset:(uint32_t)sizeof(large_readback);
+        assert(nxfs_read_file(large_entry,offset,amount,large_readback));
+        assert(memcmp(large_readback,large_payload+offset,amount)==0);
+    }
+    assert(nxfs_remove_file("KERNEL.BIN"));
 
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
     return 0;

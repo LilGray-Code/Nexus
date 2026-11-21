@@ -102,6 +102,42 @@ bool memory_alloc_page(uint64_t *physical_address) {
     return false;
 }
 
+/*
+ * Allocate one page below a device's DMA address limit. This is deliberately
+ * page-sized only: callers that need multiple contiguous pages must request
+ * and validate each run through a future contiguous allocator.
+ */
+bool memory_alloc_dma_page(uint64_t max_address_exclusive,
+                           uint64_t *physical_address) {
+    if (!initialized || physical_address == NULL ||
+        max_address_exclusive < NEXUS_PAGE_SIZE) {
+        return false;
+    }
+
+    for (size_t i = 0; i < usable_region_count; ++i) {
+        struct memory_region *region = &usable_regions[i];
+        if (region->next >= region->end) continue;
+
+        uint64_t limit = region->end;
+        if (limit > max_address_exclusive) limit = max_address_exclusive;
+        if (region->next > limit ||
+            limit - region->next < NEXUS_PAGE_SIZE) {
+            continue;
+        }
+
+        *physical_address = region->next;
+        region->next += NEXUS_PAGE_SIZE;
+        if (free_bytes >= NEXUS_PAGE_SIZE) {
+            free_bytes -= NEXUS_PAGE_SIZE;
+        } else {
+            free_bytes = 0;
+        }
+        return true;
+    }
+
+    return false;
+}
+
 void *memory_phys_to_virt(uint64_t physical_address) {
     if (!initialized || physical_address > UINTPTR_MAX - direct_map_offset) {
         return NULL;

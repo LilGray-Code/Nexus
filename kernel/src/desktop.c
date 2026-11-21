@@ -1,5 +1,8 @@
 #include "desktop.h"
 
+#include "blockdev.h"
+#include "gpt.h"
+
 #include "graphics.h"
 #include "input.h"
 #include "serial.h"
@@ -22,6 +25,11 @@ static bool mouse_left_was_down;
 static void draw_pointer(void);
 static int64_t pointer_x;
 static int64_t pointer_y;
+static bool files_scanned;
+static bool files_scan_ok;
+static size_t files_partition_count;
+static uint64_t files_first_lba;
+static uint64_t files_last_lba;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -114,10 +122,29 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 78U,
                            "DISKS ARE CURRENTLY READ ONLY",
                            1, 233, 243, 252);
-        graphics_draw_text(text_x, text_y + 108U,
-                           "GPT PARTITION BROWSER IS NEXT",
-                           1, 170, 191, 211);
-        graphics_draw_text(text_x, text_y + 158U,
+        if (!files_scanned) {
+            graphics_draw_text(text_x, text_y + 108U,
+                               "PRESS F1 TO SCAN A READ ONLY DISK",
+                               1, 170, 191, 211);
+        } else if (!files_scan_ok) {
+            graphics_draw_text(text_x, text_y + 108U,
+                               "NO VALID GPT PARTITION TABLE FOUND",
+                               1, 239, 177, 119);
+        } else {
+            graphics_draw_text(text_x, text_y + 108U,
+                               "GPT PARTITIONS DISCOVERED",
+                               1, 108, 216, 229);
+            graphics_draw_text(text_x, text_y + 138U,
+                               "PARTITION 1 START LBA:",
+                               1, 233, 243, 252);
+            graphics_draw_text(text_x + 190U, text_y + 138U,
+                               "SEE SERIAL LOG FOR EXACT LBA",
+                               1, 170, 191, 211);
+            graphics_draw_text(text_x, text_y + 168U,
+                               "READ ONLY PARTITION METADATA",
+                               1, 170, 191, 211);
+        }
+        graphics_draw_text(text_x, text_y + 208U,
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_BROWSER) {
@@ -263,6 +290,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         case 0x3DU: next_view = DESKTOP_SETTINGS; break;
         case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
+    }
+    if (next_view == DESKTOP_FILES && !files_scanned) {
+        files_scanned = true;
+        files_scan_ok = false;
+        files_partition_count = 0;
+        for (size_t i = 0; i < blockdev_count(); ++i) {
+            const struct nexus_block_device *device = blockdev_at(i);
+            if (device != NULL && gpt_scan_device(device)) {
+                files_scan_ok = true;
+                files_partition_count = gpt_partition_count();
+                if (files_partition_count > 0U) {
+                    const struct nexus_gpt_partition *part = gpt_partition_at(0);
+                    if (part != NULL) {
+                        files_first_lba = part->first_lba;
+                        files_last_lba = part->last_lba;
+                    }
+                }
+                serial_write("FILES: read-only GPT scan found partitions on ");
+                serial_write(device->name);
+                serial_write("\\r\\n");
+                break;
+            }
+        }
+        if (!files_scan_ok)
+            serial_write("FILES: no valid GPT disk discovered during user-requested scan\\r\\n");
     }
     if (next_view == active_view) return;
     active_view = next_view;

@@ -10,6 +10,17 @@ static bool test_read(void *context, uint64_t lba, uint32_t count, void *buffer)
     return true;
 }
 
+static bool test_write(void *context, uint64_t lba, uint32_t count,
+                        const void *buffer) {
+    (void)context; (void)lba; (void)count; (void)buffer;
+    return true;
+}
+
+static bool test_flush(void *context) {
+    (void)context;
+    return true;
+}
+
 static struct nexus_block_device make_device(const char *name,
                                               const char *stable_id) {
     struct nexus_block_device device = {0};
@@ -49,5 +60,21 @@ int main(void) {
     struct nexus_block_device placeholder = make_device("disk0", "NVME-UNKNOWN");
     assert(blockdev_register(&placeholder));
     assert(!blockdev_identity_is_unique(blockdev_at(0U)));
+
+    blockdev_init();
+    struct nexus_block_device install_disk =
+        make_device("disk0", "NVME-SERIAL-003");
+    install_disk.flags = NEXUS_BLOCKDEV_READ_ONLY |
+                         NEXUS_BLOCKDEV_INSTALL_CAPABLE;
+    install_disk.write = test_write;
+    install_disk.flush = test_flush;
+    assert(blockdev_register(&install_disk));
+    const struct nexus_block_device *install_registered = blockdev_at(0U);
+    assert(install_registered != NULL);
+    assert(blockdev_install_write_supported(install_registered));
+    /* Installer-capable is not the same as generally writable. */
+    uint8_t sector[512] = {0};
+    assert(!blockdev_write(install_registered, 0U, 1U, sector));
+    assert(!blockdev_flush(install_registered));
     return 0;
 }

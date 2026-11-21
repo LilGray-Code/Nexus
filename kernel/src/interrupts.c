@@ -1,8 +1,8 @@
 #include "interrupts.h"
 
 #include "serial.h"
+#include "timer.h"
 
-#include <stddef.h>
 #include <stdint.h>
 
 struct idt_gate {
@@ -20,7 +20,7 @@ struct idt_register {
     uint64_t base;
 } __attribute__((packed));
 
-struct exception_frame {
+struct interrupt_frame {
     uint64_t r15;
     uint64_t r14;
     uint64_t r13;
@@ -53,6 +53,12 @@ DECLARE_ISR(20); DECLARE_ISR(21); DECLARE_ISR(22); DECLARE_ISR(23);
 DECLARE_ISR(24); DECLARE_ISR(25); DECLARE_ISR(26); DECLARE_ISR(27);
 DECLARE_ISR(28); DECLARE_ISR(29); DECLARE_ISR(30); DECLARE_ISR(31);
 
+#define DECLARE_IRQ(n) extern void irq##n(void)
+DECLARE_IRQ(32); DECLARE_IRQ(33); DECLARE_IRQ(34); DECLARE_IRQ(35);
+DECLARE_IRQ(36); DECLARE_IRQ(37); DECLARE_IRQ(38); DECLARE_IRQ(39);
+DECLARE_IRQ(40); DECLARE_IRQ(41); DECLARE_IRQ(42); DECLARE_IRQ(43);
+DECLARE_IRQ(44); DECLARE_IRQ(45); DECLARE_IRQ(46); DECLARE_IRQ(47);
+
 static struct idt_gate idt[256] __attribute__((aligned(16)));
 
 static void idt_set_gate(uint8_t vector, void (*handler)(void),
@@ -68,17 +74,24 @@ static void idt_set_gate(uint8_t vector, void (*handler)(void),
 }
 
 void idt_init(void) {
-    static void (*const handlers[32])(void) = {
+    static void (*const exception_handlers[32])(void) = {
         isr0, isr1, isr2, isr3, isr4, isr5, isr6, isr7,
         isr8, isr9, isr10, isr11, isr12, isr13, isr14, isr15,
         isr16, isr17, isr18, isr19, isr20, isr21, isr22, isr23,
         isr24, isr25, isr26, isr27, isr28, isr29, isr30, isr31
     };
+    static void (*const irq_handlers[16])(void) = {
+        irq32, irq33, irq34, irq35, irq36, irq37, irq38, irq39,
+        irq40, irq41, irq42, irq43, irq44, irq45, irq46, irq47
+    };
     uint16_t code_segment;
 
     __asm__ volatile ("mov %%cs, %0" : "=r"(code_segment));
     for (uint8_t vector = 0; vector < 32; ++vector) {
-        idt_set_gate(vector, handlers[vector], code_segment);
+        idt_set_gate(vector, exception_handlers[vector], code_segment);
+    }
+    for (uint8_t irq = 0; irq < 16; ++irq) {
+        idt_set_gate((uint8_t)(32 + irq), irq_handlers[irq], code_segment);
     }
 
     const struct idt_register idtr = {
@@ -89,7 +102,7 @@ void idt_init(void) {
 }
 
 __attribute__((noreturn))
-void exception_dispatch(const struct exception_frame *frame) {
+void exception_dispatch(const struct interrupt_frame *frame) {
     serial_write("\r\nNEXUS CPU EXCEPTION\r\n");
     serial_write("Vector: ");
     serial_write_hex(frame->vector);
@@ -99,6 +112,24 @@ void exception_dispatch(const struct exception_frame *frame) {
     serial_write_hex(frame->instruction_pointer);
     serial_write("\r\nSystem halted.\r\n");
 
+    for (;;) {
+        __asm__ volatile ("cli; hlt" : : : "memory");
+    }
+}
+
+void interrupt_dispatch(const struct interrupt_frame *frame) {
+    if (frame->vector >= 32 && frame->vector <= 47) {
+        const uint8_t irq = (uint8_t)(frame->vector - 32);
+        if (irq == 0) {
+            timer_interrupt_tick();
+        }
+        pic_irq_eoi(irq);
+        return;
+    }
+
+    serial_write("\r\nNEXUS UNEXPECTED INTERRUPT: ");
+    serial_write_hex(frame->vector);
+    serial_write("\r\n");
     for (;;) {
         __asm__ volatile ("cli; hlt" : : : "memory");
     }

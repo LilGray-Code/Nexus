@@ -92,7 +92,7 @@ jobs:
         shell: bash
         run: |
           # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
-          truncate -s 64M nvme-test.img
+          truncate -s 256M nvme-test.img
           python3 build/create-gpt-test-image.py nvme-test.img
           set +e
           timeout -k 2s 12s qemu-system-x86_64 \

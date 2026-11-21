@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a disposable 64 MiB GPT + FAT32 disk image for Nexus CI only."""
+"""Create a disposable 256 MiB GPT + FAT32 disk image for Nexus CI only."""
 import struct
 import sys
 import uuid
@@ -7,7 +7,7 @@ import zlib
 from pathlib import Path
 
 SECTOR = 512
-TOTAL_SECTORS = 64 * 1024 * 1024 // SECTOR
+TOTAL_SECTORS = 256 * 1024 * 1024 // SECTOR
 ENTRY_COUNT = 128
 ENTRY_SIZE = 128
 ENTRY_BYTES = ENTRY_COUNT * ENTRY_SIZE

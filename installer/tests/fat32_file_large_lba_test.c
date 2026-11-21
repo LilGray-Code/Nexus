@@ -9,7 +9,7 @@
 #define RESERVED_SECTORS 32U
 #define FAT_SECTORS 520U
 #define SECTOR_BYTES 512U
-#define MAP_SLOTS 32U
+#define MAP_SLOTS 96U
 
 struct sector_slot { uint64_t lba; uint8_t bytes[SECTOR_BYTES]; int used; };
 struct sparse_disk { struct sector_slot slots[MAP_SLOTS]; };
@@ -95,6 +95,41 @@ int main(void) {
         struct sector_slot *file=slot_for(&disk,lba,false);
         assert(file!=NULL && file->bytes[in_cluster%SECTOR_BYTES]==payload[i]);
     }
+    /* Create EFI/BOOT and deploy a multi-cluster UEFI fallback loader. */
+    assert(nexus_fat32_write_file(&target,PARTITION_LBA,TOTAL_SECTORS,
+        "EFI/BOOT/BOOTX64.EFI",payload,sizeof(payload))==NEXUS_FAT32_FILE_OK);
+    root=slot_for(&disk,root_lba,false);
+    assert(root!=NULL);
+    uint32_t efi_cluster=(uint32_t)root->bytes[58]|
+        ((uint32_t)root->bytes[59]<<8)|((uint32_t)root->bytes[52]<<16)|
+        ((uint32_t)root->bytes[53]<<24);
+    assert(efi_cluster>=3U);
+    uint64_t efi_lba=data_start+(uint64_t)(efi_cluster-2U)*8U;
+    struct sector_slot *efi=slot_for(&disk,efi_lba,false);
+    assert(efi!=NULL && efi->bytes[0]=='.' && efi->bytes[32]=='.' &&
+           efi->bytes[33]=='.');
+    assert(memcmp(efi->bytes+64U,"BOOT       ",11U)==0);
+    uint32_t boot_cluster=get32(efi->bytes+64U+26U)|
+        (get32(efi->bytes+64U+20U)<<16);
+    assert(boot_cluster>=3U);
+    uint64_t boot_lba=data_start+(uint64_t)(boot_cluster-2U)*8U;
+    struct sector_slot *bootdir=slot_for(&disk,boot_lba,false);
+    assert(bootdir!=NULL && bootdir->bytes[0]=='.' &&
+           bootdir->bytes[32]=='.' && bootdir->bytes[33]=='.');
+    assert(memcmp(bootdir->bytes+64U,"BOOTX64 EFI",11U)==0);
+    uint32_t loader_cluster=get32(bootdir->bytes+64U+26U)|
+        (get32(bootdir->bytes+64U+20U)<<16);
+    assert(loader_cluster>=3U);
+    for(uint32_t i=0;i<sizeof(payload);++i) {
+        uint32_t cluster_index=i/(SECTOR_BYTES*8U);
+        uint32_t in_cluster=i%(SECTOR_BYTES*8U);
+        uint64_t lba=data_start+(uint64_t)(loader_cluster+cluster_index-2U)*8U+
+            in_cluster/SECTOR_BYTES;
+        struct sector_slot *loader=slot_for(&disk,lba,false);
+        assert(loader!=NULL && loader->bytes[in_cluster%SECTOR_BYTES]==payload[i]);
+    }
+    assert(get32(f1->bytes+20U)==5U);
+    assert(get32(f2->bytes+20U)==5U);
     puts("NEXUS FAT32 LARGE-LBA FILE WRITER TEST PASSED");
     return 0;
 }

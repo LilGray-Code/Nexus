@@ -384,3 +384,21 @@ range for the first disk with a valid GPT. This is intentionally not a mounted
 filesystem or a general file manager yet. The normal boot path does not
 automatically read user disk sectors; the read occurs only after an explicit
 Files action. CI run 44879132430 passed compilation, UEFI and legacy-BIOS boot tests, the NVMe/GPT self-test, and the final distributable ISO boot check. The distributable ISO is built without CI-only automatic disk reads.
+
+
+### Read-only filesystem and VFS milestone (in development)
+
+The original-kernel branch now contains a bounded FAT32 reader and a small
+virtual filesystem interface. The FAT32 layer validates the BPB geometry,
+supports 512-byte and 4096-byte logical sectors, follows bounded cluster
+chains, lists short-name root entries, and reads file data in bounded chunks.
+The VFS exposes root directory entries, read-only file open/read/close, and
+case-insensitive 8.3 name matching. No create, rename, delete, write, or
+format operation exists.
+
+The desktop Files view is being switched to consume the VFS rather than call
+the FAT32 implementation directly. It displays up to six root names and a
+short text preview. CI uses a disposable GPT/FAT32 NVMe image with a README
+file and a cross-cluster read test. This is not yet a full file manager:
+subdirectories, long file names, FAT consistency recovery, multiple mounts,
+write support, permissions, and user-mode file APIs are not implemented.

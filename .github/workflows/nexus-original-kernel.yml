@@ -68,6 +68,14 @@ jobs:
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test
 
+      - name: Test FAT32 file deployment beyond 2 TiB
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
+            -Iinstaller installer/fat32_file.c \\
+            installer/tests/fat32_file_large_lba_test.c \\
+            -o /tmp/nexus-fat32-large-lba-test
+          /tmp/nexus-fat32-large-lba-test
+
       - name: Test FAT32 partition formatter
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

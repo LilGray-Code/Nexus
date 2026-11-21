@@ -15,6 +15,7 @@ typedef bool (*nexus_gpt_flush_fn)(void *context);
 struct nexus_gpt_install_target {
     uint64_t block_count;
     uint32_t block_size;
+    uint32_t max_blocks_per_request;
     void *context;
     nexus_gpt_read_fn read;
     nexus_gpt_write_fn write;

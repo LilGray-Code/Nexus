@@ -2,6 +2,7 @@
 
 #include "blockdev.h"
 #include "gpt.h"
+#include "fat32.h"
 
 #include "graphics.h"
 #include "input.h"
@@ -30,6 +31,8 @@ static bool files_scan_ok;
 static size_t files_partition_count;
 static uint64_t files_first_lba;
 static uint64_t files_last_lba;
+static bool files_fat32_ok;
+static char files_first_name[13];
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -164,6 +167,16 @@ static void draw_shell(void) {
                                "LAST LBA:", 1, 233, 243, 252);
             graphics_draw_text(text_x + 100U, text_y + 198U,
                                last_text, 1, 170, 191, 211);
+            if (files_fat32_ok) {
+                graphics_draw_text(text_x, text_y + 228U,
+                                   "ROOT FILE:", 1, 233, 243, 252);
+                graphics_draw_text(text_x + 100U, text_y + 228U,
+                                   files_first_name, 1, 119, 229, 211);
+            } else {
+                graphics_draw_text(text_x, text_y + 228U,
+                                   "NO SUPPORTED FAT32 VOLUME",
+                                   1, 239, 177, 119);
+            }
         }
         graphics_draw_text(text_x, text_y + 208U,
                            "PRESS ESC TO RETURN HOME",
@@ -326,6 +339,20 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     if (part != NULL) {
                         files_first_lba = part->first_lba;
                         files_last_lba = part->last_lba;
+                        files_fat32_ok = fat32_mount(device, part);
+                        if (files_fat32_ok && fat32_root_entry_count() > 0U) {
+                            const struct nexus_fat32_entry *entry =
+                                fat32_root_entry_at(0);
+                            if (entry != NULL) {
+                                size_t n = 0;
+                                while (n < sizeof(files_first_name) - 1U &&
+                                       entry->name[n] != '\\0') {
+                                    files_first_name[n] = entry->name[n];
+                                    ++n;
+                                }
+                                files_first_name[n] = '\\0';
+                            }
+                        }
                     }
                 }
                 serial_write("FILES: read-only GPT scan found partitions on ");

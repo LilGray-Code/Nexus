@@ -63,9 +63,10 @@ int main(void) {
     put32(boot+44U,2U);boot[510]=0x55U;boot[511]=0xAAU;
     assert(write_blocks(&disk,PARTITION_LBA,1U,boot));
 
-    static const char payload[]="Nexus EFI payload";
+    static uint8_t payload[5000];
+    for (uint32_t i=0;i<sizeof(payload);++i) payload[i]=(uint8_t)(i*37U+11U);
     assert(nexus_fat32_write_root_file(&target,PARTITION_LBA,TOTAL_SECTORS,
-        "LIMINE.CFG",payload,sizeof(payload)-1U)==NEXUS_FAT32_FILE_OK);
+        "LIMINE.CFG",payload,sizeof(payload))==NEXUS_FAT32_FILE_OK);
 
     const uint64_t data_start=PARTITION_LBA+RESERVED_SECTORS+2ULL*FAT_SECTORS;
     const uint64_t root_lba=data_start;
@@ -76,8 +77,24 @@ int main(void) {
         ((uint32_t)root->bytes[27]<<8)|((uint32_t)root->bytes[20]<<16)|
         ((uint32_t)root->bytes[21]<<24);
     assert(cluster==3U);
-    struct sector_slot *file=slot_for(&disk,data_start+(uint64_t)(cluster-2U)*8U,false);
-    assert(file!=NULL && memcmp(file->bytes,payload,sizeof(payload)-1U)==0);
+    assert(cluster==3U);
+    const uint64_t fat1=PARTITION_LBA+RESERVED_SECTORS;
+    const uint64_t fat2=fat1+FAT_SECTORS;
+    struct sector_slot *f1=slot_for(&disk,fat1,false);
+    struct sector_slot *f2=slot_for(&disk,fat2,false);
+    assert(f1!=NULL && f2!=NULL);
+    assert((uint32_t)f1->bytes[12]|((uint32_t)f1->bytes[13]<<8)|
+        ((uint32_t)f1->bytes[14]<<16)|((uint32_t)f1->bytes[15]<<24) == 4U);
+    assert((uint32_t)f2->bytes[12]|((uint32_t)f2->bytes[13]<<8)|
+        ((uint32_t)f2->bytes[14]<<16)|((uint32_t)f2->bytes[15]<<24) == 4U);
+    for(uint32_t i=0;i<sizeof(payload);++i) {
+        uint32_t cluster_index=i/(SECTOR_BYTES*8U);
+        uint32_t in_cluster=i%(SECTOR_BYTES*8U);
+        uint64_t lba=data_start+(uint64_t)(cluster+cluster_index-2U)*8U+
+            in_cluster/SECTOR_BYTES;
+        struct sector_slot *file=slot_for(&disk,lba,false);
+        assert(file!=NULL && file->bytes[in_cluster%SECTOR_BYTES]==payload[i]);
+    }
     puts("NEXUS FAT32 LARGE-LBA FILE WRITER TEST PASSED");
     return 0;
 }

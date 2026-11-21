@@ -45,8 +45,7 @@ jobs:
         run: |
           # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
           truncate -s 64M nvme-test.img
-          printf 'NEXUS-READ-ONLY-TEST' | dd of=nvme-test.img bs=1 conv=notrunc status=none
-          printf 'NEXUS-SECOND-SECTOR' | dd of=nvme-test.img bs=1 seek=512 conv=notrunc status=none
+          python3 build/create-gpt-test-image.py nvme-test.img
           set +e
           timeout 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
@@ -81,6 +80,8 @@ jobs:
           grep -q "NEXUS NVME BLOCK DEVICE READY" uefi-serial.log
           grep -q "NEXUS NVME READ ONLY READY" uefi-serial.log
           grep -q "NVMe: blockdev_read verified LBAs 0 and 1" uefi-serial.log
+          grep -q "GPT: validated header and entry CRCs; discovered test partition" uefi-serial.log
+          grep -q "NEXUS GPT READ ONLY READY" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log

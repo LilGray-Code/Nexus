@@ -35,6 +35,19 @@ jobs:
           chmod +x build/*.sh
           test -f build/build-iso.sh
           test -f NexusDesktop/ai.html
+          {
+            echo "Nexus OS source inventory"
+            echo "Git commit: $GITHUB_SHA"
+            echo
+            echo "Top-level entries:"
+            find . -mindepth 1 -maxdepth 1 -printf '%y %p\\n' | sort
+            echo
+            echo "Files (depth <= 4):"
+            find . -maxdepth 4 -type f -not -path './.git/*' -printf '%p\\t%s bytes\\n' | sort
+            echo
+            echo "Desktop package metadata:"
+            cat NexusDesktop/package.json
+          } > /tmp/nexus-source-inventory.txt
 
       - name: Set desktop package metadata
         shell: bash

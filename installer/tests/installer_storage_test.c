@@ -343,7 +343,7 @@ int main(int argc,char **argv) {
     assert(limine_dir_cluster>=3U);
     const size_t limine_dir_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (limine_dir_cluster-2U)*spc)*bps;
-    assert(target.format_area[limine_dir_off+32U+26U]==(uint8_t)boot_cluster);
+    assert(target.format_area[limine_dir_off+32U+26U]==(uint8_t)root_boot_cluster);
     assert(target.format_area[limine_dir_off+64U]==0x42U);
     assert(target.format_area[limine_dir_off+96U]==0x01U);
     assert(memcmp(target.format_area+limine_dir_off+128U,"LIMINE~1BIN",11U)==0);

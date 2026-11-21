@@ -15,9 +15,11 @@ interface.
 ## Safety and limitations
 
 The probe only reads the PCI inventory populated by the PCI configuration
-scanner. It does not enable bus mastering, change PCI command bits, size or
-assign BARs, map controller registers, issue ATA/NVMe commands, or access
-sectors. It does not mount filesystems and is not a disk driver.
+scanner. The scanner captures PCI command/status and raw BAR registers; the
+BAR decoder distinguishes I/O versus memory space, 32-bit versus 64-bit memory,
+prefetchability, and whether a non-zero base address is assigned. It does not
+enable bus mastering, change PCI command bits, size or assign BARs, map
+controller registers, issue ATA/NVMe commands, or access sectors. It does not mount filesystems and is not a disk driver.
 
 The next storage milestones are safe BAR decoding/resource reservation,
 controller-specific MMIO mapping, an AHCI read-only identify path, an NVMe

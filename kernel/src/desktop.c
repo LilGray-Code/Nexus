@@ -3,6 +3,7 @@
 #include "blockdev.h"
 #include "gpt.h"
 #include "fat32.h"
+#include "vfs.h"
 
 #include "graphics.h"
 #include "input.h"
@@ -34,6 +35,8 @@ static uint64_t files_last_lba;
 static bool files_fat32_ok;
 static char files_first_name[13];
 static char files_preview[41];
+static char files_listing[6][13];
+static size_t files_listing_count;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -184,7 +187,16 @@ static void draw_shell(void) {
                                    1, 239, 177, 119);
             }
         }
-        graphics_draw_text(text_x, text_y + 208U,
+        if (files_fat32_ok) {
+            graphics_draw_text(text_x, text_y + 288U,
+                               "ROOT DIRECTORY (READ ONLY)",
+                               1, 108, 216, 229);
+            for (size_t n = 0; n < files_listing_count; ++n) {
+                graphics_draw_text(text_x + n * 150U, text_y + 312U,
+                                   files_listing[n], 1, 233, 243, 252);
+            }
+        }
+        graphics_draw_text(text_x, text_y + 342U,
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_BROWSER) {
@@ -288,6 +300,10 @@ static void scan_files_once(void) {
         files_first_name[n] = '\0';
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
+    files_listing_count = 0;
+    for (size_t n = 0; n < 6U; ++n)
+        for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
+            files_listing[n][k] = '\0';
 
     for (size_t i = 0; i < blockdev_count(); ++i) {
         const struct nexus_block_device *device = blockdev_at(i);
@@ -295,39 +311,54 @@ static void scan_files_once(void) {
         const size_t count = gpt_partition_count();
         for (size_t p = 0; p < count; ++p) {
             const struct nexus_gpt_partition *part = gpt_partition_at(p);
-            if (part == NULL || !fat32_mount(device, part)) continue;
+            if (part == NULL || !vfs_mount_root_fat32(device, part)) continue;
             files_scan_ok = true;
             files_fat32_ok = true;
             files_partition_count = count;
             files_first_lba = part->first_lba;
             files_last_lba = part->last_lba;
             for (size_t file_index = 0;
-                 file_index < fat32_root_entry_count(); ++file_index) {
-                const struct nexus_fat32_entry *entry =
-                    fat32_root_entry_at(file_index);
-                if (entry == NULL) continue;
+                 file_index < vfs_root_entry_count(); ++file_index) {
+                struct nexus_vfs_dirent entry;
+                if (!vfs_root_entry(file_index, &entry)) continue;
+                if (files_listing_count < 6U) {
+                    size_t name_length = 0;
+                    while (name_length < sizeof(files_listing[0]) - 1U &&
+                           entry.name[name_length] != '\0') {
+                        files_listing[files_listing_count][name_length] =
+                            entry.name[name_length];
+                        ++name_length;
+                    }
+                    files_listing[files_listing_count][name_length] = '\0';
+                    ++files_listing_count;
+                }
                 if (files_first_name[0] == '\0') {
                     size_t name_length = 0;
                     while (name_length < sizeof(files_first_name) - 1U &&
-                           entry->name[name_length] != '\0') {
-                        files_first_name[name_length] = entry->name[name_length];
+                           entry.name[name_length] != '\0') {
+                        files_first_name[name_length] = entry.name[name_length];
                         ++name_length;
                     }
                     files_first_name[name_length] = '\0';
                 }
-                if ((entry->attributes & 0x10U) != 0U || entry->size == 0U)
+                if (entry.type != NEXUS_VFS_FILE || entry.size == 0U)
                     continue;
+                struct nexus_vfs_file file;
+                if (!vfs_open_readonly(entry.name, &file)) continue;
                 uint8_t preview_data[sizeof(files_preview) - 1U];
-                uint32_t amount = entry->size;
+                size_t amount = entry.size;
                 if (amount > sizeof(preview_data)) amount = sizeof(preview_data);
-                if (!fat32_read_file(entry, 0U, amount, preview_data))
-                    continue;
-                for (uint32_t n = 0; n < amount; ++n) {
+                size_t bytes_read = 0;
+                const bool read_ok =
+                    vfs_read(&file, preview_data, amount, &bytes_read);
+                vfs_close(&file);
+                if (!read_ok) continue;
+                for (size_t n = 0; n < bytes_read; ++n) {
                     const uint8_t ch = preview_data[n];
                     files_preview[n] = (ch >= 0x20U && ch <= 0x7EU)
                         ? (char)ch : ' ';
                 }
-                files_preview[amount] = '\0';
+                files_preview[bytes_read] = '\0';
                 break;
             }
             serial_write("FILES: mounted read-only FAT32 volume on ");

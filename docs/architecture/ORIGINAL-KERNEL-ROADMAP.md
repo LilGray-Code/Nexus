@@ -640,3 +640,30 @@ Terminal adds \`touch NAME\`, \`write NAME TEXT\`, and \`rm NAME\`. The boot
 self-test creates a RAM file, reads it back through the VFS, checks its
 contents, and removes it. These files do not persist across reboot; persistent
 writable storage still requires a safe filesystem journal and block write path.
+
+
+### TCP client and basic HTTP transport (early milestone)
+
+The E1000/IPv4 stack now has a single-connection, polling TCP client with a
+bounded handshake timeout, peer/address/port validation, TCP pseudo-header
+checksum validation, an in-order receive buffer, ACK handling, and orderly
+local close. The terminal command `http HOST` resolves an IPv4 address, opens
+TCP port 80, sends a small HTTP/1.0 GET request, and prints a bounded response.
+DNS and TCP neighbor resolution use the correct on-link router when the target
+is off-subnet, and ARP probes are throttled while waiting.
+
+This is an early transport proof, not a production TCP implementation. It has
+no retransmission, congestion control, out-of-order reassembly, robust FIN
+state machine, TLS, certificate verification, IPv6, sockets API, or browser
+renderer. The first TCP/HTTP change exposed four compiler warnings in the
+terminal response path; these were fixed in commit
+[0829b923](https://github.com/LilGray-Code/Nexus/commit/0829b923234d6f216204a11cc0995133e29e3150).
+That commit's build and ISO structural checks passed, but UEFI runtime boot
+was still in progress when this note was written.
+
+### VFS-backed Files view and RAM overlay
+
+The Files view refreshes from the unified VFS when opened and after terminal
+commands. It can display and preview the RAM filesystem even without a mounted
+disk, and shows disk-backed entries alongside the RAM overlay when FAT32 is
+mounted. RAM files remain volatile; disk media remains read-only.

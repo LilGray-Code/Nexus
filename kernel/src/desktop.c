@@ -37,7 +37,7 @@ static bool files_scan_ok;
 static size_t files_partition_count;
 static uint64_t files_first_lba;
 static uint64_t files_last_lba;
-static bool files_fat32_ok;
+static bool files_vfs_ready;
 static char files_first_name[13];
 static char files_preview[41];
 static char files_listing[6][13];
@@ -156,6 +156,13 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, text_y + 108U,
                                "PRESS F1 TO SCAN A READ ONLY DISK",
                                1, 170, 191, 211);
+        } else if (!files_scan_ok && files_vfs_ready) {
+            graphics_draw_text(text_x, text_y + 108U,
+                               "VOLATILE RAM FILESYSTEM",
+                               1, 108, 216, 229);
+            graphics_draw_text(text_x, text_y + 138U,
+                               "NO DISK VOLUME IS MOUNTED",
+                               1, 170, 191, 211);
         } else if (!files_scan_ok) {
             graphics_draw_text(text_x, text_y + 108U,
                                "NO SUPPORTED FAT32 GPT PARTITION FOUND",
@@ -182,7 +189,7 @@ static void draw_shell(void) {
                                "LAST LBA:", 1, 233, 243, 252);
             graphics_draw_text(text_x + 100U, text_y + 198U,
                                last_text, 1, 170, 191, 211);
-            if (files_fat32_ok) {
+            if (files_vfs_ready) {
                 graphics_draw_text(text_x, text_y + 228U,
                                    "ROOT FILE:", 1, 233, 243, 252);
                 graphics_draw_text(text_x + 100U, text_y + 228U,
@@ -198,9 +205,10 @@ static void draw_shell(void) {
                                    1, 239, 177, 119);
             }
         }
-        if (files_fat32_ok) {
+        if (files_vfs_ready) {
             graphics_draw_text(text_x, text_y + 288U,
-                               "ROOT DIRECTORY (READ ONLY)",
+                               files_scan_ok ? "ROOT DIRECTORY (DISK + RAM OVERLAY)"
+                                             : "ROOT DIRECTORY (VOLATILE RAM)",
                                1, 108, 216, 229);
             for (size_t n = 0; n < files_listing_count; ++n) {
                 const uint64_t column = n % 2U;
@@ -217,6 +225,10 @@ static void draw_shell(void) {
                                    selected ? 229 : 243,
                                    selected ? 211 : 252);
             }
+            if (files_listing_count == 0U) {
+                graphics_draw_text(text_x, text_y + 312U, "NO FILES",
+                                   1, 170, 191, 211);
+            }
             graphics_draw_text(text_x, text_y + 390U,
                                "UP/DOWN SELECT  ENTER PREVIEW",
                                1, 170, 191, 211);
@@ -228,7 +240,7 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y, "NEXUS COMMAND SHELL",
                            2, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 42U,
-                           "READ ONLY SYSTEM COMMANDS",
+                           "RAM FILE WRITES ARE VOLATILE",
                            1, 108, 216, 229);
         graphics_draw_text(text_x, text_y + 82U, terminal_output,
                            1, 170, 225, 190);
@@ -237,7 +249,7 @@ static void draw_shell(void) {
         graphics_draw_text(text_x + 56U, text_y + 128U, terminal_input,
                            1, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 180U,
-                           "HELP  ABOUT  MEM  UPTIME  LS  CAT FILE  CLEAR",
+                           "HELP  ABOUT  MEM  UPTIME  NET  DNS  HTTP  LS  CAT  RAM FILES",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 210U,
                            "PRESS ESC TO RETURN HOME",
@@ -331,11 +343,69 @@ static void draw_pointer(void) {
     graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
 }
 
+static void refresh_files_listing(void) {
+    files_vfs_ready = vfs_has_filesystem();
+    files_listing_count = 0U;
+    files_selected_index = 0U;
+    for (size_t n = 0; n < sizeof(files_first_name); ++n)
+        files_first_name[n] = '\0';
+    for (size_t n = 0; n < sizeof(files_preview); ++n)
+        files_preview[n] = '\0';
+    for (size_t n = 0; n < 6U; ++n) {
+        for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
+            files_listing[n][k] = '\0';
+    }
+    if (!files_vfs_ready) return;
+
+    for (size_t index = 0; index < vfs_root_entry_count(); ++index) {
+        struct nexus_vfs_dirent entry;
+        if (!vfs_root_entry(index, &entry)) continue;
+        if (files_listing_count < 6U) {
+            size_t length = 0U;
+            while (length < sizeof(files_listing[0]) - 1U &&
+                   entry.name[length] != '\0') {
+                files_listing[files_listing_count][length] = entry.name[length];
+                ++length;
+            }
+            files_listing[files_listing_count][length] = '\0';
+            ++files_listing_count;
+        }
+        if (files_first_name[0] == '\0') {
+            size_t length = 0U;
+            while (length < sizeof(files_first_name) - 1U &&
+                   entry.name[length] != '\0') {
+                files_first_name[length] = entry.name[length];
+                ++length;
+            }
+            files_first_name[length] = '\0';
+        }
+        if (entry.type != NEXUS_VFS_FILE || entry.size == 0U ||
+            files_preview[0] != '\0') continue;
+
+        struct nexus_vfs_file file;
+        if (!vfs_open_readonly(entry.name, &file)) continue;
+        uint8_t preview_data[sizeof(files_preview) - 1U];
+        size_t amount = entry.size;
+        if (amount > sizeof(preview_data)) amount = sizeof(preview_data);
+        size_t bytes_read = 0U;
+        const bool read_ok =
+            vfs_read(&file, preview_data, amount, &bytes_read);
+        vfs_close(&file);
+        if (!read_ok) continue;
+        for (size_t n = 0; n < bytes_read; ++n) {
+            const uint8_t ch = preview_data[n];
+            files_preview[n] =
+                (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : ' ';
+        }
+        files_preview[bytes_read] = '\0';
+    }
+}
+
 static void scan_files_once(void) {
     if (files_scanned) return;
     files_scanned = true;
     files_scan_ok = false;
-    files_fat32_ok = false;
+    files_vfs_ready = false;
     files_partition_count = 0;
     files_first_lba = 0;
     files_last_lba = 0;
@@ -357,7 +427,7 @@ static void scan_files_once(void) {
             const struct nexus_gpt_partition *part = gpt_partition_at(p);
             if (part == NULL || !vfs_mount_root_fat32(device, part)) continue;
             files_scan_ok = true;
-            files_fat32_ok = true;
+            files_vfs_ready = true;
             files_partition_count = count;
             files_first_lba = part->first_lba;
             files_last_lba = part->last_lba;
@@ -405,13 +475,19 @@ static void scan_files_once(void) {
                 files_preview[bytes_read] = '\0';
                 break;
             }
+            refresh_files_listing();
             serial_write("FILES: mounted read-only FAT32 volume on ");
             serial_write(device->name);
             serial_write("\r\n");
             return;
         }
     }
-    serial_write("FILES: no supported read-only FAT32 GPT volume found\r\n");
+    refresh_files_listing();
+    if (files_vfs_ready) {
+        serial_write("FILES: using volatile RAM filesystem; no disk volume mounted\r\n");
+    } else {
+        serial_write("FILES: no mounted filesystem or RAM files found\r\n");
+    }
 }
 
 static char terminal_scancode_char(uint8_t code) {
@@ -833,6 +909,7 @@ static void terminal_execute(void) {
         size_t n=0; while(s[n]!='\0' && n<sizeof(terminal_output)-1U){terminal_output[n]=s[n];++n;}
         terminal_output[n]='\0';
     }
+    if (files_scanned) refresh_files_listing();
     terminal_input_length=0;
     terminal_input[0]='\0';
 }
@@ -851,7 +928,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         const bool left_down = (event->mouse_buttons & 1U) != 0;
         const bool clicked = left_down && !mouse_left_was_down;
         mouse_left_was_down = left_down;
-        if (clicked && active_view == DESKTOP_FILES && files_fat32_ok) {
+        if (clicked && active_view == DESKTOP_FILES && files_vfs_ready) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
             uint64_t pw = screen_width * 3U / 4U;
@@ -899,7 +976,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         active_view = i == 0U ? DESKTOP_FILES :
                                       (i == 1U ? DESKTOP_BROWSER :
                                       (i == 2U ? DESKTOP_SETTINGS : DESKTOP_TERMINAL));
-                        if (active_view == DESKTOP_FILES) scan_files_once();
+                        if (active_view == DESKTOP_FILES) {
+                            scan_files_once();
+                            refresh_files_listing();
+                        }
                         serial_write("DESKTOP: app tile opened by mouse\\r\\n");
                         break;
                     }
@@ -928,7 +1008,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         draw_shell(); draw_pointer(); return;
     }
-    if (active_view == DESKTOP_FILES && files_fat32_ok) {
+    if (active_view == DESKTOP_FILES && files_vfs_ready) {
         if (event->scancode == 0x48U && files_listing_count > 0U) {
             if (files_selected_index > 0U) --files_selected_index;
             draw_shell();
@@ -983,7 +1063,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
     }
-    if (next_view == DESKTOP_FILES) scan_files_once();
+    if (next_view == DESKTOP_FILES) {
+        scan_files_once();
+        refresh_files_listing();
+    }
     if (next_view == active_view) return;
     active_view = next_view;
     draw_shell();

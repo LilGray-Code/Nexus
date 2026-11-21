@@ -25,6 +25,15 @@
 #define ETHERTYPE_IPV4 0x0800U
 #define ETHERTYPE_ARP 0x0806U
 #define IP_PROTOCOL_UDP 17U
+#define IP_PROTOCOL_TCP 6U
+#define NET_TCP_HEADER 20U
+#define NET_TCP_MAX_PAYLOAD 1200U
+#define NET_TCP_RX_CAPACITY 4096U
+#define TCP_FLAG_FIN 0x01U
+#define TCP_FLAG_SYN 0x02U
+#define TCP_FLAG_RST 0x04U
+#define TCP_FLAG_PSH 0x08U
+#define TCP_FLAG_ACK 0x10U
 
 struct net_arp_entry {
     bool valid;
@@ -65,6 +74,25 @@ static uint16_t dns_query_id;
 static uint16_t dns_next_id = 0x4E58U;
 static uint8_t dns_query_result[4];
 static uint8_t rx_frame[NET_MAX_FRAME];
+
+struct net_tcp_connection {
+    bool active;
+    bool connecting;
+    bool connected;
+    bool failed;
+    bool peer_closed;
+    uint8_t remote_ipv4[4];
+    uint16_t local_port;
+    uint16_t remote_port;
+    uint32_t local_sequence;
+    uint32_t remote_sequence;
+    uint8_t receive_buffer[NET_TCP_RX_CAPACITY];
+    size_t receive_length;
+};
+static struct net_tcp_connection tcp_connection;
+static uint16_t tcp_next_port = 49152U;
+
+static bool ipv4_next_hop(const uint8_t destination[4], uint8_t next_hop[4]);
 
 static uint16_t read_be16(const uint8_t *p) {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
@@ -216,6 +244,9 @@ static void receive_dhcp(const uint8_t *packet, size_t length,
                         const uint8_t source_ip[4]);
 static void receive_dns(const uint8_t *packet, size_t length,
                         const uint8_t source_ip[4]);
+static void receive_tcp(const uint8_t *segment, size_t length,
+                        const uint8_t source_ip[4],
+                        const uint8_t destination_ip[4]);
 
 static void receive_ipv4(const uint8_t *ip, size_t length) {
     if (length < NET_IPV4_HEADER || (ip[0] >> 4) != 4U) return;
@@ -223,24 +254,25 @@ static void receive_ipv4(const uint8_t *ip, size_t length) {
     const uint16_t total_length = read_be16(ip + 2U);
     if (header_length < NET_IPV4_HEADER || header_length > length ||
         total_length < header_length || total_length > length ||
-        checksum(ip, header_length) != 0U || ip[9] != IP_PROTOCOL_UDP) {
-        return;
-    }
+        checksum(ip, header_length) != 0U) return;
 
-    const uint8_t *udp = ip + header_length;
-    const size_t available = total_length - header_length;
-    if (available < 8U) return;
-    const uint16_t source_port = read_be16(udp);
-    const uint16_t destination_port = read_be16(udp + 2U);
-    const uint16_t udp_length = read_be16(udp + 4U);
-    if (udp_length < 8U || udp_length > available) return;
-    if (source_port == NET_DHCP_SERVER_PORT &&
-        destination_port == NET_DHCP_CLIENT_PORT) {
-        receive_dhcp(udp + 8U, udp_length - 8U, ip + 12U);
-    }
-    else if (source_port == NET_DNS_SERVER_PORT &&
-             destination_port == NET_DNS_CLIENT_PORT) {
-        receive_dns(udp + 8U, udp_length - 8U, ip + 12U);
+    const uint8_t *transport = ip + header_length;
+    const size_t transport_length = total_length - header_length;
+    if (ip[9] == IP_PROTOCOL_UDP) {
+        if (transport_length < 8U) return;
+        const uint16_t source_port = read_be16(transport);
+        const uint16_t destination_port = read_be16(transport + 2U);
+        const uint16_t udp_length = read_be16(transport + 4U);
+        if (udp_length < 8U || udp_length > transport_length) return;
+        if (source_port == NET_DHCP_SERVER_PORT &&
+            destination_port == NET_DHCP_CLIENT_PORT) {
+            receive_dhcp(transport + 8U, udp_length - 8U, ip + 12U);
+        } else if (source_port == NET_DNS_SERVER_PORT &&
+                   destination_port == NET_DNS_CLIENT_PORT) {
+            receive_dns(transport + 8U, udp_length - 8U, ip + 12U);
+        }
+    } else if (ip[9] == IP_PROTOCOL_TCP) {
+        receive_tcp(transport, transport_length, ip + 12U, ip + 16U);
     }
 }
 
@@ -565,13 +597,20 @@ bool net_dns_resolve(const char *hostname, uint8_t result[4],
 
     const uint64_t start = timer_ticks();
     uint8_t neighbor[6];
-    while (!arp_lookup(dns_ipv4, neighbor) &&
-           timer_ticks() - start < timeout_ticks / 2U) {
-        (void)send_arp_request(dns_ipv4);
+    uint8_t next_hop[4];
+    uint64_t arp_budget = timeout_ticks / 2U;
+    if (arp_budget == 0U) arp_budget = 1U;
+    if (!ipv4_next_hop(dns_ipv4, next_hop)) {
+        dns_query_active = false;
+        return false;
+    }
+    while (!arp_lookup(next_hop, neighbor) &&
+           timer_ticks() - start < arp_budget) {
+        (void)send_arp_request(next_hop);
         net_poll();
         __asm__ volatile ("pause");
     }
-    if (!arp_lookup(dns_ipv4, neighbor)) {
+    if (!arp_lookup(next_hop, neighbor)) {
         dns_query_active = false;
         return false;
     }
@@ -674,6 +713,17 @@ static bool ipv4_same_subnet(const uint8_t left[4],
     return mask_known ? same : equal_bytes(left, right, 4U);
 }
 
+static bool ipv4_next_hop(const uint8_t destination[4], uint8_t next_hop[4]) {
+    if (destination == NULL || next_hop == NULL) return false;
+    if (ipv4_same_subnet(network.ipv4, destination)) {
+        copy_bytes(next_hop, destination, 4U);
+        return true;
+    }
+    if (ipv4_zero(gateway_ipv4)) return false;
+    copy_bytes(next_hop, gateway_ipv4, 4U);
+    return true;
+}
+
 static bool ipv4_is_limited_broadcast(const uint8_t address[4]) {
     return address[0] == 255U && address[1] == 255U &&
            address[2] == 255U && address[3] == 255U;
@@ -693,11 +743,8 @@ bool net_udp_send(const uint8_t destination_ipv4[4],
     if (ipv4_is_limited_broadcast(destination_ipv4)) {
         copy_bytes(destination_mac, broadcast_mac, 6U);
     } else {
-        const uint8_t *next_hop = destination_ipv4;
-        if (!ipv4_same_subnet(network.ipv4, destination_ipv4)) {
-            if (ipv4_zero(gateway_ipv4)) return false;
-            next_hop = gateway_ipv4;
-        }
+        uint8_t next_hop[4];
+        if (!ipv4_next_hop(destination_ipv4, next_hop)) return false;
         if (!arp_lookup(next_hop, destination_mac)) {
             (void)send_arp_request(next_hop);
             return false;
@@ -728,4 +775,212 @@ bool net_udp_send(const uint8_t destination_ipv4[4],
         copy_bytes(udp + NET_UDP_HEADER, payload, payload_length);
     }
     return send_ethernet(destination_mac, ETHERTYPE_IPV4, packet, ip_length);
+}
+
+static uint16_t tcp_checksum_value(const uint8_t source_ip[4],
+                                   const uint8_t destination_ip[4],
+                                   const uint8_t *segment, size_t length) {
+    uint8_t pseudo[NET_MAX_FRAME];
+    if (source_ip == NULL || destination_ip == NULL || segment == NULL ||
+        length > sizeof(pseudo) - 12U) return 0U;
+    copy_bytes(pseudo, source_ip, 4U);
+    copy_bytes(pseudo + 4U, destination_ip, 4U);
+    pseudo[8] = 0U;
+    pseudo[9] = IP_PROTOCOL_TCP;
+    write_be16(pseudo + 10U, (uint16_t)length);
+    copy_bytes(pseudo + 12U, segment, length);
+    return checksum(pseudo, length + 12U);
+}
+
+static bool send_tcp_segment(uint8_t flags, const void *payload,
+                             size_t payload_length) {
+    if (!tcp_connection.active || payload_length > NET_TCP_MAX_PAYLOAD ||
+        (payload_length != 0U && payload == NULL)) return false;
+    uint8_t next_hop[4];
+    uint8_t destination_mac[6];
+    if (!ipv4_next_hop(tcp_connection.remote_ipv4, next_hop) ||
+        !arp_lookup(next_hop, destination_mac)) return false;
+
+    uint8_t packet[NET_IPV4_HEADER + NET_TCP_HEADER + NET_TCP_MAX_PAYLOAD];
+    const size_t tcp_length = NET_TCP_HEADER + payload_length;
+    const size_t ip_length = NET_IPV4_HEADER + tcp_length;
+    packet[0] = 0x45U;
+    packet[1] = 0U;
+    write_be16(packet + 2U, (uint16_t)ip_length);
+    write_be16(packet + 4U, network.ipv4_id++);
+    write_be16(packet + 6U, 0U);
+    packet[8] = 64U;
+    packet[9] = IP_PROTOCOL_TCP;
+    write_be16(packet + 10U, 0U);
+    copy_bytes(packet + 12U, network.ipv4, 4U);
+    copy_bytes(packet + 16U, tcp_connection.remote_ipv4, 4U);
+    write_be16(packet + 10U, checksum(packet, NET_IPV4_HEADER));
+
+    uint8_t *tcp = packet + NET_IPV4_HEADER;
+    write_be16(tcp, tcp_connection.local_port);
+    write_be16(tcp + 2U, tcp_connection.remote_port);
+    write_be32(tcp + 4U, tcp_connection.local_sequence);
+    write_be32(tcp + 8U, tcp_connection.remote_sequence);
+    tcp[12] = 0x50U;
+    tcp[13] = flags;
+    write_be16(tcp + 14U, (uint16_t)NET_TCP_RX_CAPACITY);
+    write_be16(tcp + 16U, 0U);
+    write_be16(tcp + 18U, 0U);
+    if (payload_length != 0U)
+        copy_bytes(tcp + NET_TCP_HEADER, payload, payload_length);
+    write_be16(tcp + 16U,
+               tcp_checksum_value(network.ipv4, tcp_connection.remote_ipv4,
+                                  tcp, tcp_length));
+    return send_ethernet(destination_mac, ETHERTYPE_IPV4, packet, ip_length);
+}
+
+static void receive_tcp(const uint8_t *segment, size_t length,
+                        const uint8_t source_ip[4],
+                        const uint8_t destination_ip[4]) {
+    if (!tcp_connection.active || segment == NULL || source_ip == NULL ||
+        destination_ip == NULL || length < NET_TCP_HEADER ||
+        !equal_bytes(source_ip, tcp_connection.remote_ipv4, 4U) ||
+        !equal_bytes(destination_ip, network.ipv4, 4U) ||
+        read_be16(segment) != tcp_connection.remote_port ||
+        read_be16(segment + 2U) != tcp_connection.local_port ||
+        tcp_checksum_value(source_ip, destination_ip, segment, length) != 0U)
+        return;
+
+    const size_t header_length = (size_t)(segment[12] >> 4) * 4U;
+    if (header_length < NET_TCP_HEADER || header_length > length) return;
+    const uint8_t flags = segment[13];
+    const uint32_t sequence = read_be32(segment + 4U);
+    const uint32_t acknowledgement = read_be32(segment + 8U);
+    const uint8_t *payload = segment + header_length;
+    const size_t payload_length = length - header_length;
+
+    if ((flags & TCP_FLAG_RST) != 0U) {
+        tcp_connection.failed = true;
+        tcp_connection.connected = false;
+        return;
+    }
+
+    if (tcp_connection.connecting &&
+        (flags & (TCP_FLAG_SYN | TCP_FLAG_ACK)) ==
+            (TCP_FLAG_SYN | TCP_FLAG_ACK) &&
+        acknowledgement == tcp_connection.local_sequence + 1U) {
+        tcp_connection.remote_sequence = sequence + 1U;
+        tcp_connection.local_sequence = acknowledgement;
+        tcp_connection.connecting = false;
+        tcp_connection.connected = true;
+        (void)send_tcp_segment(TCP_FLAG_ACK, NULL, 0U);
+        return;
+    }
+
+    if (!tcp_connection.connected || (flags & TCP_FLAG_ACK) == 0U) return;
+    if (payload_length != 0U &&
+        sequence == tcp_connection.remote_sequence &&
+        payload_length <= NET_TCP_RX_CAPACITY - tcp_connection.receive_length) {
+        copy_bytes(tcp_connection.receive_buffer + tcp_connection.receive_length,
+                   payload, payload_length);
+        tcp_connection.receive_length += payload_length;
+        tcp_connection.remote_sequence += (uint32_t)payload_length;
+    }
+
+    const uint32_t fin_sequence = sequence + (uint32_t)payload_length;
+    if ((flags & TCP_FLAG_FIN) != 0U &&
+        fin_sequence == tcp_connection.remote_sequence) {
+        ++tcp_connection.remote_sequence;
+        tcp_connection.peer_closed = true;
+    }
+
+    if (payload_length != 0U || (flags & TCP_FLAG_FIN) != 0U)
+        (void)send_tcp_segment(TCP_FLAG_ACK, NULL, 0U);
+}
+
+bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
+                     uint64_t timeout_ticks) {
+    if (!network.ready || dhcp_state != NET_DHCP_BOUND ||
+        remote_ipv4 == NULL || ipv4_zero(remote_ipv4) ||
+        remote_port == 0U || timeout_ticks == 0U ||
+        tcp_connection.active) return false;
+
+    uint8_t next_hop[4];
+    uint8_t neighbor[6];
+    if (!ipv4_next_hop(remote_ipv4, next_hop)) return false;
+
+    tcp_connection = (struct net_tcp_connection){0};
+    tcp_connection.active = true;
+    copy_bytes(tcp_connection.remote_ipv4, remote_ipv4, 4U);
+    tcp_connection.remote_port = remote_port;
+    tcp_connection.local_port = tcp_next_port++;
+    if (tcp_next_port < 49152U) tcp_next_port = 49152U;
+
+    uint64_t arp_budget = timeout_ticks / 2U;
+    if (arp_budget == 0U) arp_budget = 1U;
+    const uint64_t arp_start = timer_ticks();
+    while (!arp_lookup(next_hop, neighbor) &&
+           timer_ticks() - arp_start < arp_budget) {
+        (void)send_arp_request(next_hop);
+        net_poll();
+        __asm__ volatile ("pause");
+    }
+    if (!arp_lookup(next_hop, neighbor)) {
+        tcp_connection.active = false;
+        return false;
+    }
+
+    tcp_connection.local_sequence =
+        (uint32_t)(timer_ticks() ^ ((uint64_t)network.ipv4_id << 16) ^
+                   0x4E585553U);
+    tcp_connection.connecting = true;
+    if (!send_tcp_segment(TCP_FLAG_SYN, NULL, 0U)) {
+        tcp_connection.active = false;
+        return false;
+    }
+
+    uint64_t connect_budget = timeout_ticks / 2U;
+    if (connect_budget == 0U) connect_budget = 1U;
+    const uint64_t connect_start = timer_ticks();
+    while (!tcp_connection.connected && !tcp_connection.failed &&
+           timer_ticks() - connect_start < connect_budget) {
+        net_poll();
+        __asm__ volatile ("pause");
+    }
+    if (!tcp_connection.connected) {
+        tcp_connection.active = false;
+        return false;
+    }
+    return true;
+}
+
+bool net_tcp_send(const void *payload, uint16_t payload_length) {
+    if (!tcp_connection.active || !tcp_connection.connected ||
+        tcp_connection.peer_closed ||
+        (payload_length != 0U && payload == NULL) ||
+        payload_length > NET_TCP_MAX_PAYLOAD) return false;
+    if (payload_length == 0U) return true;
+    if (!send_tcp_segment(TCP_FLAG_ACK | TCP_FLAG_PSH,
+                          payload, payload_length)) return false;
+    tcp_connection.local_sequence += payload_length;
+    return true;
+}
+
+size_t net_tcp_receive(void *buffer, size_t capacity) {
+    if (!tcp_connection.active || buffer == NULL || capacity == 0U ||
+        tcp_connection.receive_length == 0U) return 0U;
+    size_t count = tcp_connection.receive_length;
+    if (count > capacity) count = capacity;
+    copy_bytes(buffer, tcp_connection.receive_buffer, count);
+    tcp_connection.receive_length -= count;
+    for (size_t i = 0; i < tcp_connection.receive_length; ++i)
+        tcp_connection.receive_buffer[i] =
+            tcp_connection.receive_buffer[count + i];
+    return count;
+}
+
+void net_tcp_close(void) {
+    if (!tcp_connection.active) return;
+    if (tcp_connection.connected && !tcp_connection.peer_closed &&
+        send_tcp_segment(TCP_FLAG_FIN | TCP_FLAG_ACK, NULL, 0U)) {
+        ++tcp_connection.local_sequence;
+    }
+    tcp_connection.active = false;
+    tcp_connection.connected = false;
+    tcp_connection.connecting = false;
 }

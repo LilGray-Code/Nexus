@@ -23,5 +23,10 @@ bool net_dns_resolve(const char *hostname, uint8_t result[4],
 bool net_udp_send(const uint8_t destination_ipv4[4],
                   uint16_t source_port, uint16_t destination_port,
                   const void *payload, uint16_t payload_length);
+bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
+                     uint64_t timeout_ticks);
+bool net_tcp_send(const void *payload, uint16_t payload_length);
+size_t net_tcp_receive(void *buffer, size_t capacity);
+void net_tcp_close(void);
 
 #endif

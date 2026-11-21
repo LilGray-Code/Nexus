@@ -437,7 +437,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime net dns HOST ls cat FILE run FILE ps touch NAME write NAME TEXT rm NAME clear";
+        const char *s = "help about mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT rm NAME clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -547,6 +547,95 @@ static void terminal_execute(void) {
                 terminal_output[out] = message[out]; ++out;
             }
             terminal_output[out] = '\0';
+        }
+    } else if (terminal_input[0]=='h' && terminal_input[1]=='t' &&
+               terminal_input[2]=='t' && terminal_input[3]=='p' &&
+               terminal_input[4]==' ') {
+        const char *host = terminal_input + 5;
+        size_t host_length = 0U;
+        while (host[host_length] != '\0') ++host_length;
+        uint8_t address[4];
+        if (host_length == 0U ||
+            !net_dns_resolve(host, address, 600U)) {
+            const char *message = "HTTP: DNS lookup failed";
+            size_t out = 0U;
+            while (message[out] != '\0' &&
+                   out < sizeof(terminal_output) - 1U) {
+                terminal_output[out++] = message[out];
+            }
+            terminal_output[out] = '\0';
+        } else if (!net_tcp_connect(address, 80U, 800U)) {
+            const char *message = "HTTP: TCP connection failed";
+            size_t out = 0U;
+            while (message[out] != '\0' &&
+                   out < sizeof(terminal_output) - 1U) {
+                terminal_output[out++] = message[out];
+            }
+            terminal_output[out] = '\0';
+        } else {
+            char request[160];
+            size_t request_length = 0U;
+            const char *prefix = "GET / HTTP/1.0\r\nHost: ";
+            const char *suffix = "\r\nConnection: close\r\n\r\n";
+            while (prefix[request_length] != '\0') {
+                request[request_length] = prefix[request_length];
+                ++request_length;
+            }
+            for (size_t i = 0; i < host_length &&
+                 request_length < sizeof(request) - 1U; ++i) {
+                request[request_length++] = host[i];
+            }
+            for (size_t i = 0; suffix[i] != '\0' &&
+                 request_length < sizeof(request); ++i) {
+                request[request_length++] = suffix[i];
+            }
+            uint8_t response[sizeof(terminal_output) - 1U];
+            size_t response_length = 0U;
+            if (request_length > sizeof(request) ||
+                !net_tcp_send(request, (uint16_t)request_length)) {
+                const char *message = "HTTP: request send failed";
+                size_t out = 0U;
+                while (message[out] != '\0' &&
+                       out < sizeof(terminal_output) - 1U) {
+                    terminal_output[out++] = message[out];
+                }
+                terminal_output[out] = '\0';
+            } else {
+                const uint64_t wait_start = timer_ticks();
+                uint64_t last_data = wait_start;
+                while (timer_ticks() - wait_start < 400U &&
+                       (response_length == 0U ||
+                        timer_ticks() - last_data < 60U) &&
+                       response_length < sizeof(response)) {
+                    net_poll();
+                    const size_t got =
+                        net_tcp_receive(response + response_length,
+                                        sizeof(response) - response_length);
+                    if (got != 0U) {
+                        response_length += got;
+                        last_data = timer_ticks();
+                    }
+                    __asm__ volatile ("pause");
+                }
+                if (response_length == 0U) {
+                    const char *message = "HTTP: no response";
+                    size_t out = 0U;
+                    while (message[out] != '\0' &&
+                           out < sizeof(terminal_output) - 1U) {
+                        terminal_output[out++] = message[out];
+                    }
+                    terminal_output[out] = '\0';
+                } else {
+                    for (size_t i = 0; i < response_length; ++i) {
+                        const uint8_t ch = response[i];
+                        terminal_output[i] =
+                            (ch >= 0x20U && ch <= 0x7EU) || ch == '\n'
+                                ? (char)ch : ' ';
+                    }
+                    terminal_output[response_length] = '\0';
+                }
+            }
+            net_tcp_close();
         }
     } else if (terminal_input[0]=='t' && terminal_input[1]=='o' &&
                terminal_input[2]=='u' && terminal_input[3]=='c' &&

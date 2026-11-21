@@ -137,6 +137,13 @@ void kmain(void) {
         halt_forever();
     }
 
+    if (nexus_boot_payloads_init((void *)module_request.response,
+                                 (void *)executable_file_request.response)) {
+        serial_write("INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available\\r\\n");
+    } else {
+        serial_write("INSTALLER: boot payload set unavailable or invalid; deployment disabled\\r\\n");
+    }
+
     if (!gdt_init()) {
         serial_write("ERROR: Nexus GDT/TSS initialization failed\r\n");
         halt_forever();

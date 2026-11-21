@@ -1,5 +1,6 @@
 #include "interrupts.h"
 #include "input.h"
+#include "usermode.h"
 
 #include "serial.h"
 #include "timer.h"
@@ -42,6 +43,8 @@ struct interrupt_frame {
     uint64_t instruction_pointer;
     uint64_t code_segment;
     uint64_t flags;
+    uint64_t user_stack_pointer;
+    uint64_t user_stack_segment;
 };
 
 #define DECLARE_ISR(n) extern void isr##n(void)
@@ -52,7 +55,7 @@ DECLARE_ISR(12); DECLARE_ISR(13); DECLARE_ISR(14); DECLARE_ISR(15);
 DECLARE_ISR(16); DECLARE_ISR(17); DECLARE_ISR(18); DECLARE_ISR(19);
 DECLARE_ISR(20); DECLARE_ISR(21); DECLARE_ISR(22); DECLARE_ISR(23);
 DECLARE_ISR(24); DECLARE_ISR(25); DECLARE_ISR(26); DECLARE_ISR(27);
-DECLARE_ISR(28); DECLARE_ISR(29); DECLARE_ISR(30); DECLARE_ISR(31);
+DECLARE_ISR(28); DECLARE_ISR(29); DECLARE_ISR(30); DECLARE_ISR(31); DECLARE_ISR(128);
 
 #define DECLARE_IRQ(n) extern void irq##n(void)
 DECLARE_IRQ(32); DECLARE_IRQ(33); DECLARE_IRQ(34); DECLARE_IRQ(35);
@@ -94,6 +97,8 @@ void idt_init(void) {
     for (uint8_t irq = 0; irq < 16; ++irq) {
         idt_set_gate((uint8_t)(32 + irq), irq_handlers[irq], code_segment);
     }
+    idt_set_gate(128U, isr128, code_segment);
+    idt[128U].type_attributes = 0xEEU; /* Present, DPL3, 64-bit interrupt gate. */
 
     const struct idt_register idtr = {
         .limit = (uint16_t)(sizeof(idt) - 1),
@@ -119,6 +124,21 @@ void exception_dispatch(const struct interrupt_frame *frame) {
 }
 
 void interrupt_dispatch(const struct interrupt_frame *frame) {
+    if (frame->vector == 128U) {
+        if ((frame->code_segment & 3U) == 3U && frame->rax == 1U) {
+            usermode_exit_status = frame->rdi;
+            struct interrupt_frame *mutable_frame =
+                (struct interrupt_frame *)(uintptr_t)frame;
+            mutable_frame->instruction_pointer =
+                (uint64_t)(uintptr_t)nexus_user_return;
+            mutable_frame->code_segment = 0x08U;
+            mutable_frame->flags &= ~0x200ULL;
+            return;
+        }
+        serial_write("USERMODE: invalid syscall or privilege level\\r\\n");
+        for (;;) __asm__ volatile ("cli; hlt" : : : "memory");
+    }
+
     if (frame->vector >= 32 && frame->vector <= 47) {
         const uint8_t irq = (uint8_t)(frame->vector - 32);
         if (irq == 0) {

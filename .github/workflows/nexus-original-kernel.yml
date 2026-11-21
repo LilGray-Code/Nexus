@@ -71,6 +71,8 @@ jobs:
           grep -q "NEXUS STORAGE DISCOVERY READY" uefi-serial.log
           grep -q "STORAGE: controller " uefi-serial.log
           grep -q "STORAGE: controller NVMe" uefi-serial.log
+          grep -q "NEXUS NVME IDENTIFY READY" uefi-serial.log
+          grep -q "NVMe: model:" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log

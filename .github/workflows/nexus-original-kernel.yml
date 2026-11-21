@@ -45,7 +45,7 @@ jobs:
         run: |
           # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
           truncate -s 64M nvme-test.img
-          printf 'NEXUS-READ-ONLY-TEST' | dd of=nvme-test.img bs=1 conv=notrunc status=none
+          printf 'NEXUS-READ-ONLY-TEST' | dd of=nvme-test.img bs=1 conv=notrunc status=none\n          printf 'NEXUS-SECOND-SECTOR' | dd of=nvme-test.img bs=1 seek=512 conv=notrunc status=none
           set +e
           timeout 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
@@ -79,7 +79,7 @@ jobs:
           grep -q "NVMe: namespace logical block bytes:" uefi-serial.log
           grep -q "NEXUS NVME BLOCK DEVICE READY" uefi-serial.log
           grep -q "NEXUS NVME READ ONLY READY" uefi-serial.log
-          grep -q "NVMe: blockdev_read verified LBA 0 test signature" uefi-serial.log
+          grep -q "NVMe: blockdev_read verified LBAs 0 and 1" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log
@@ -115,6 +115,38 @@ jobs:
           grep -q "STORAGE: controller " bios-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
+
+      - name: Build distributable ISO without CI-only disk read
+        run: |
+          ./build/build-iso.sh
+          file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso
+          (cd release && sha256sum --check SHA256SUMS.txt)
+
+      - name: Boot-check distributable ISO without automatic sector reads
+        shell: bash
+        run: |
+          set +e
+          timeout 6s qemu-system-x86_64 \\
+            -machine q35 -cpu qemu64 -m 512M \\
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \\
+            -drive file=nvme-test.img,if=none,id=nvm0,format=raw \\
+            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \\
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \\
+            -boot d -display none -serial file:release-serial.log \\
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 0 ]]; then
+            echo "Release UEFI QEMU exited unexpectedly: $status"
+            exit "$status"
+          fi
+          cat release-serial.log
+          grep -q "NEXUS NVME BLOCK DEVICE READY" release-serial.log
+          grep -q "NEXUS NVME IDENTIFY READY" release-serial.log
+          if grep -q "NEXUS NVME READ ONLY READY" release-serial.log; then
+            echo "Release ISO unexpectedly ran CI sector-read self-test"
+            exit 1
+          fi
 
       - name: Upload original-kernel prototype
         uses: actions/upload-artifact@v4

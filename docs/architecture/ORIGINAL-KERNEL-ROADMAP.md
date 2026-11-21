@@ -254,16 +254,21 @@ workflow remain on `main`.
 - A reusable 32-bit RGB framebuffer drawing library validates Limine
   framebuffer dimensions, pitch, pixel-format masks, and clips rectangle/text
   drawing to the supplied surface.
-- The in-kernel Nexus shell renders a top system panel, welcome window, app
-  tiles, and bottom dock. These tiles remain visual placeholders: they do not
-  launch applications, and there is not yet a window manager or user process
-  model.
-- A PS/2 controller driver now configures keyboard and mouse ports with bounded
+- The in-kernel Nexus shell renders a top system panel, welcome window,
+  application tiles, and bottom dock. It now has separate Files, Browser, and
+  Settings views, navigated with F1/F2/F3 and Escape. These views are early
+  built-in screens, not full applications; Files has no filesystem browser and
+  Browser has no network stack or rendering engine.
+- The shell consumes queued keyboard and mouse events. Keyboard shortcuts
+  change views; the current development commit adds a mouse pointer and
+  clickable home-screen tiles. Mouse interaction is still awaiting the latest
+  CI result and physical-device testing. Redrawing the framebuffer for pointer
+  updates is intentionally simple and will need optimization.
+- The PS/2 controller driver configures keyboard and mouse ports with bounded
   controller waits, enables IRQ1/IRQ12 only for devices that acknowledge setup,
   parses three-byte mouse packets, and queues input events in a fixed-size
-  interrupt-safe ring buffer. The kernel idle loop drains and logs keyboard
-  and mouse events. This is hardware input plumbing, not yet desktop pointer
-  movement, text entry, or clickable window interaction.
+  interrupt-safe ring buffer. USB HID, modern touchpads, and wireless input
+  remain unimplemented.
 - CI checks the framebuffer shell and keyboard initialization in UEFI QEMU,
   and still boots the same kernel under legacy BIOS. The QEMU test proves
   device initialization and boot, not real physical keyboard/mouse coverage.
@@ -345,3 +350,15 @@ until tests are recorded across multiple vendors and generations.
 
 The current implementation has not been merged into `main`. A successful
 QEMU CI run is not proof of physical compatibility.
+
+
+### Interactive desktop shell work (development)
+
+The desktop shell now has keyboard-navigable app views. F1 opens the Files
+screen, F2 opens the Browser placeholder, F3 opens Settings, and Escape
+returns home. A mouse cursor and click-to-open home tiles have been committed
+to the original-kernel branch; the corresponding full BIOS/UEFI CI run is
+still pending. These features are an interactive shell foundation, not a
+complete desktop environment. There is no window manager, compositor,
+user-mode application runtime, editable text widget, filesystem browser,
+browser engine, network stack, or installer yet.

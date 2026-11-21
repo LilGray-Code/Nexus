@@ -40,10 +40,10 @@ jobs:
             echo "Git commit: $GITHUB_SHA"
             echo
             echo "Top-level entries:"
-            find . -mindepth 1 -maxdepth 1 -printf '%y %p\\n' | sort
+            find . -mindepth 1 -maxdepth 1 -printf '%y %p\n' | sort
             echo
             echo "Files (depth <= 4):"
-            find . -maxdepth 4 -type f -not -path './.git/*' -printf '%p\\t%s bytes\\n' | sort
+            find . -maxdepth 4 -type f -not -path './.git/*' -printf '%p\t%s bytes\n' | sort
             echo
             echo "Desktop package metadata:"
             cat NexusDesktop/package.json

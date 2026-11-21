@@ -38,7 +38,11 @@ static bool directory_child(const struct nexus_fat32_format_target*t,
  for(uint32_t s=0;s<spc;s++){
   if(!read1(t,dir_lba+s,sector))return false;
   for(uint32_t off=0;off<bps;off+=32U){
-   if(sector[off]==0U||sector[off]==0xE5U){
+   if(sector[off]==0U){
+    if(free_sector==UINT32_MAX){free_sector=s;free_off=off;}
+    s=spc;break;
+   }
+   if(sector[off]==0xE5U){
     if(free_sector==UINT32_MAX){free_sector=s;free_off=off;}
     continue;
    }
@@ -97,7 +101,7 @@ static bool valid_name(const char*n,uint8_t out[11]){
  if(!dot){if(base>=8)return false;out[base++]=c;}else{if(ext>=3)return false;out[8+ext++]=c;}}
  return base!=0;
 }
-enum nexus_fat32_file_result nexus_fat32_write_root_file(
+enum nexus_fat32_file_result nexus_fat32_write_file(
  const struct nexus_fat32_format_target*t,uint64_t part,uint64_t count,
  const char*name,const void*data,uint32_t length){
  if(busy||!t||!t->read||!t->write||!t->flush||!name||
@@ -105,7 +109,7 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
     t->block_size>MAX_SECTOR||count<100U||part>t->block_count||
     count>t->block_count-part)return NEXUS_FAT32_FILE_INVALID;
  uint8_t shortname[11];
- if(!name||!*name||name[0]=='/'||name[0]=='\\\\')return NEXUS_FAT32_FILE_INVALID;
+ if(!name||!*name||name[0]=='/')return NEXUS_FAT32_FILE_INVALID;
  busy=true;enum nexus_fat32_file_result result=NEXUS_FAT32_FILE_IO;
  if(!read1(t,part,sector))goto done;
  uint32_t bps=le16(sector+11),spc=sector[13],reserved=le16(sector+14);
@@ -178,15 +182,7 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
  /* Commit the FAT chain to both copies only after the full allocation fits. */
  for(uint32_t k=0;k<needed;k++){
   uint32_t c=allocated[k],next=(k+1U<needed)?allocated[k+1U]:0x0FFFFFFFU;
-  uint64_t lba=fat1+((uint64_t)c*4U)/bps;
-  uint32_t off=(uint32_t)(((uint64_t)c*4U)%bps);
-  if(!read1(t,lba,sector))goto done;
-  put32(sector+off,next);
-  if(!write1(t,lba,sector))goto done;
-  lba=fat2+((uint64_t)c*4U)/bps;
-  if(!read1(t,lba,sector))goto done;
-  put32(sector+off,next);
-  if(!write1(t,lba,sector))goto done;
+  if(!fat_set(t,fat1,fat2,bps,c,next))goto done;
  }
  if(!t->flush(t->context))goto done;
  /* Rewalk the allocation in ascending order and write file data. */
@@ -217,4 +213,10 @@ enum nexus_fat32_file_result nexus_fat32_write_root_file(
  if(__builtin_memcmp(sector,verify,bps)!=0){result=NEXUS_FAT32_FILE_VERIFY;goto done;}
  result=NEXUS_FAT32_FILE_OK;
 done:busy=false;return result;
+}
+
+enum nexus_fat32_file_result nexus_fat32_write_root_file(
+ const struct nexus_fat32_format_target*t,uint64_t part,uint64_t count,
+ const char*name,const void*data,uint32_t length){
+ return nexus_fat32_write_file(t,part,count,name,data,length);
 }

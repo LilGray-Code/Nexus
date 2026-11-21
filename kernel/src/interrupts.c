@@ -202,6 +202,12 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                 syscall_frame_trace("return", mutable_frame);
                 return;
 
+            case NEXUS_SYS_FILE_WRITE:
+                mutable_frame->rax = (uint64_t)usermode_sys_file_write(
+                    frame->rdi, frame->rsi, frame->rdx);
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
             case NEXUS_SYS_EXIT:
                 usermode_exit_status = frame->rdi;
                 usermode_exit_seen = true;

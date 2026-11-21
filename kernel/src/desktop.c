@@ -6,6 +6,7 @@
 #include "vfs.h"
 #include "process.h"
 #include "net.h"
+#include "nxfs.h"
 
 #include "graphics.h"
 #include "input.h"

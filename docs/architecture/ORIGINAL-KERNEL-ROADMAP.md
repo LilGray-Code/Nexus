@@ -423,3 +423,21 @@ and writes those bytes to the serial console. The CI boot test asserts the
 user-originated marker. This is a deliberately narrow proof of syscall entry,
 argument validation, and return to user mode; it is not yet a general process
 ABI, safe arbitrary user-memory copy layer, ELF loader, or terminal device.
+
+
+### User-copy and syscall hardening (current milestone)
+
+The syscall write path now copies bytes from the active address space through
+the kernel page tables instead of dereferencing the userspace pointer. The
+copy routine checks lower-canonical user bounds, verifies PRESENT and USER
+permissions at every paging level, handles 4 KiB, 2 MiB, and 1 GiB leaves,
+and copies into a bounded kernel-owned buffer before serial output. Invalid
+pointers return an error to the caller rather than halting the kernel. The
+ring-3 test first submits a high-half kernel pointer and verifies rejection,
+then submits a valid user string and exits with status 42.
+
+This remains a narrow, single-threaded proof: the syscall copies at most 128
+bytes, writes only to the serial console, and has no process-specific address
+space object, file-descriptor table, page-fault recovery, or concurrent
+memory-unmapping support. It is not yet a general user-copy implementation
+for a preemptive multi-process kernel.

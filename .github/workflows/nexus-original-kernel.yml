@@ -92,6 +92,8 @@ jobs:
           grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log
           grep -q "STORAGE: controller " bios-serial.log
+          grep -q "NEXUS AHCI REGISTER PROBE READY" bios-serial.log
+          grep -q "AHCI: ports implemented:" bios-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 

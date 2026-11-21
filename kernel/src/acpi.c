@@ -244,6 +244,7 @@ static bool parse_madt(const struct acpi_sdt_header *header) {
                         (const struct acpi_madt_iso *)entry;
                     struct nexus_acpi_iso *saved =
                         &topology.isos[topology.iso_count++];
+                    saved->bus = iso->bus;
                     saved->source_irq = iso->source_irq;
                     saved->gsi = iso->gsi;
                     saved->flags = iso->flags;

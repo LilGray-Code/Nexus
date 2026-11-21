@@ -22,7 +22,11 @@ bool blockdev_register(const struct nexus_block_device *device) {
         ((device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0 &&
          (device->write == NULL || device->flush == NULL)) ||
         ((device->flags & NEXUS_BLOCKDEV_READ_ONLY) != 0 &&
-         (device->write != NULL || device->flush != NULL)) ||
+         (device->write != NULL || device->flush != NULL) &&
+         (device->flags & NEXUS_BLOCKDEV_INSTALL_CAPABLE) == 0U) ||
+        ((device->flags & NEXUS_BLOCKDEV_INSTALL_CAPABLE) != 0U &&
+         ((device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U ||
+          device->write == NULL || device->flush == NULL)) ||
         registered_count >= NEXUS_BLOCKDEV_MAX_DEVICES) {
         return false;
     }
@@ -170,4 +174,13 @@ bool blockdev_matches_identity(const struct nexus_block_device *device,
                                  stable_id, NEXUS_BLOCKDEV_ID_MAX) &&
            blockdev_string_equal(device->model, NEXUS_BLOCKDEV_MODEL_MAX,
                                  model, NEXUS_BLOCKDEV_MODEL_MAX);
+}
+
+bool blockdev_install_write_supported(const struct nexus_block_device *device) {
+    if (!blockdev_is_registered(device) ||
+        (device->flags & NEXUS_BLOCKDEV_INSTALL_CAPABLE) == 0U ||
+        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U ||
+        (device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U ||
+        device->write == NULL || device->flush == NULL) return false;
+    return true;
 }

@@ -114,7 +114,7 @@ bool usermode_run_selftest(void) {
 
     /*
      * Ring-3 test calls write(stdout, message, 15), then exit(42).
-     * The message is embedded at USER_CODE_VA + 48 in the RX code page.
+     * The message is embedded at USER_CODE_VA + 54 in the RX code page.
      */
     static const uint8_t test_program[] = {
         0x48, 0xC7, 0xC0, 0x02, 0x00, 0x00, 0x00,
@@ -153,7 +153,7 @@ bool usermode_sys_write(uint64_t user_address, uint64_t length) {
     }
     /* This initial syscall deliberately accepts only the mapped RX test page. */
     serial_write_n((const char *)(uintptr_t)user_address, (size_t)length);
-    serial_write("\\r\\n");
+    serial_write("\r\n");
     usermode_write_seen = true;
     return true;
 }

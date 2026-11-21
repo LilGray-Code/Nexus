@@ -241,7 +241,7 @@ static void draw_shell(void) {
         }
         if (files_vfs_ready) {
             graphics_draw_text(text_x, text_y + 288U,
-                               files_scan_ok ? "ROOT DIRECTORY (DISK + RAM OVERLAY)"
+                               files_scan_ok ? "ROOT DIRECTORY (FAT32 + NXFS + RAM)"
                                              : "ROOT DIRECTORY (VOLATILE RAM)",
                                1, 108, 216, 229);
             for (size_t n = 0; n < files_listing_count; ++n) {
@@ -354,9 +354,21 @@ static void draw_shell(void) {
                                1, 239, 177, 119);
         }
 
-        if (vfs_root_mounted()) {
+        if (vfs_root_mounted() && vfs_nxfs_mounted()) {
             graphics_draw_text(text_x, text_y + 234U,
-                               "STORAGE: FAT32 READ-ONLY + RAM OVERLAY",
+                               vfs_nxfs_writable()
+                                   ? "STORAGE: FAT32 + WRITABLE NXFS + RAM"
+                                   : "STORAGE: FAT32 + NXFS READ ONLY + RAM",
+                               1, 108, 216, 229);
+        } else if (vfs_root_mounted()) {
+            graphics_draw_text(text_x, text_y + 234U,
+                               "STORAGE: FAT32 READ-ONLY + RAM",
+                               1, 108, 216, 229);
+        } else if (vfs_nxfs_mounted()) {
+            graphics_draw_text(text_x, text_y + 234U,
+                               vfs_nxfs_writable()
+                                   ? "STORAGE: WRITABLE NEXUSFS"
+                                   : "STORAGE: NEXUSFS READ ONLY",
                                1, 108, 216, 229);
         } else if (vfs_has_filesystem()) {
             graphics_draw_text(text_x, text_y + 234U,
@@ -495,89 +507,65 @@ static void scan_files_once(void) {
     files_scanned = true;
     files_scan_ok = false;
     files_vfs_ready = false;
-    files_partition_count = 0;
-    files_first_lba = 0;
-    files_last_lba = 0;
+    files_partition_count = 0U;
+    files_first_lba = 0U;
+    files_last_lba = 0U;
     for (size_t n = 0; n < sizeof(files_first_name); ++n)
         files_first_name[n] = '\0';
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
-    files_listing_count = 0;
-    files_selected_index = 0;
-    for (size_t n = 0; n < 6U; ++n)
-        for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
+    files_listing_count = 0U;
+    files_selected_index = 0U;
+    for (size_t n = 0U; n < 6U; ++n)
+        for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
 
-    for (size_t i = 0; i < blockdev_count(); ++i) {
+    for (size_t i = 0U; i < blockdev_count(); ++i) {
         const struct nexus_block_device *device = blockdev_at(i);
         if (device == NULL || !gpt_scan_device(device)) continue;
         const size_t count = gpt_partition_count();
-        for (size_t p = 0; p < count; ++p) {
+        bool mounted_on_device = false;
+        for (size_t p = 0U; p < count; ++p) {
             const struct nexus_gpt_partition *part = gpt_partition_at(p);
-            if (part == NULL || !vfs_mount_root_fat32(device, part)) continue;
-            files_scan_ok = true;
-            files_vfs_ready = true;
-            files_partition_count = count;
-            files_first_lba = part->first_lba;
-            files_last_lba = part->last_lba;
-            for (size_t file_index = 0;
-                 file_index < vfs_root_entry_count(); ++file_index) {
-                struct nexus_vfs_dirent entry;
-                if (!vfs_root_entry(file_index, &entry)) continue;
-                if (files_listing_count < 6U) {
-                    size_t name_length = 0;
-                    while (name_length < sizeof(files_listing[0]) - 1U &&
-                           entry.name[name_length] != '\0') {
-                        files_listing[files_listing_count][name_length] =
-                            entry.name[name_length];
-                        ++name_length;
-                    }
-                    files_listing[files_listing_count][name_length] = '\0';
-                    ++files_listing_count;
+            if (part == NULL) continue;
+            bool mounted = false;
+            if (nxfs_partition_type_matches(part)) {
+                mounted = vfs_mount_root_nxfs(device, part);
+                if (mounted) {
+                    serial_write("FILES: mounted NexusFS volume on ");
+                    serial_write(device->name);
+                    serial_write("\r\n");
                 }
-                if (files_first_name[0] == '\0') {
-                    size_t name_length = 0;
-                    while (name_length < sizeof(files_first_name) - 1U &&
-                           entry.name[name_length] != '\0') {
-                        files_first_name[name_length] = entry.name[name_length];
-                        ++name_length;
-                    }
-                    files_first_name[name_length] = '\0';
+            } else if (vfs_mount_root_fat32(device, part)) {
+                mounted = true;
+                if (files_first_lba == 0U) {
+                    files_first_lba = part->first_lba;
+                    files_last_lba = part->last_lba;
                 }
-                if (entry.type != NEXUS_VFS_FILE || entry.size == 0U)
-                    continue;
-                struct nexus_vfs_file file;
-                if (!vfs_open_readonly(entry.name, &file)) continue;
-                uint8_t preview_data[sizeof(files_preview) - 1U];
-                size_t amount = entry.size;
-                if (amount > sizeof(preview_data)) amount = sizeof(preview_data);
-                size_t bytes_read = 0;
-                const bool read_ok =
-                    vfs_read(&file, preview_data, amount, &bytes_read);
-                vfs_close(&file);
-                if (!read_ok) continue;
-                for (size_t n = 0; n < bytes_read; ++n) {
-                    const uint8_t ch = preview_data[n];
-                    files_preview[n] = (ch >= 0x20U && ch <= 0x7EU)
-                        ? (char)ch : ' ';
-                }
-                files_preview[bytes_read] = '\0';
-                break;
+                serial_write("FILES: mounted FAT32 volume on ");
+                serial_write(device->name);
+                serial_write("\r\n");
             }
-            refresh_files_listing();
-            serial_write("FILES: mounted read-only FAT32 volume on ");
-            serial_write(device->name);
-            serial_write("\r\n");
-            return;
+            if (mounted) {
+                files_scan_ok = true;
+                files_vfs_ready = true;
+                files_partition_count = count;
+                mounted_on_device = true;
+            }
         }
+        if (mounted_on_device) break;
     }
+
     refresh_files_listing();
-    if (files_vfs_ready) {
-        serial_write("FILES: using volatile RAM filesystem; no disk volume mounted\r\n");
+    if (files_scan_ok) {
+        serial_write("FILES: unified VFS volumes ready\r\n");
+    } else if (files_vfs_ready) {
+        serial_write("FILES: using volatile RAM filesystem\r\n");
     } else {
         serial_write("FILES: no mounted filesystem or RAM files found\r\n");
     }
 }
+
 
 static char terminal_scancode_char(uint8_t code) {
     static const char map[58] = {
@@ -805,7 +793,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT rm NAME clear";
+        const char *s = "help about mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -1005,6 +993,19 @@ static void terminal_execute(void) {
             }
             net_tcp_close();
         }
+    } else if (terminal_input[0]=='s' && terminal_input[1]=='a' &&
+               terminal_input[2]=='v' && terminal_input[3]=='e' &&
+               terminal_input[4]==' ') {
+        const bool ok = vfs_save_ram_file_to_nxfs(terminal_input + 5);
+        const char *message = ok
+            ? "saved to persistent NexusFS"
+            : "save unavailable: mount writable NexusFS and use a RAM file";
+        size_t out = 0U;
+        while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+            terminal_output[out] = message[out];
+            ++out;
+        }
+        terminal_output[out] = '\0';
     } else if (terminal_input[0]=='t' && terminal_input[1]=='o' &&
                terminal_input[2]=='u' && terminal_input[3]=='c' &&
                terminal_input[4]=='h' && terminal_input[5]==' ') {

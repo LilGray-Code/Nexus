@@ -900,6 +900,32 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         return false;
     }
     serial_write("NXFS: copy-on-write file update and journal recovery verified\r\n");
+    if (!vfs_mount_root_nxfs(registered, nxfs_partition)) {
+        serial_write("NXFS: VFS mount failed\r\n");
+        return false;
+    }
+    static const char vfs_payload[] = "NEXUS VFS NXFS PERSISTENCE";
+    if (!nxfs_write_file("VFS.TXT", vfs_payload, sizeof(vfs_payload) - 1U)) {
+        serial_write("NXFS: unable to create VFS fixture\r\n");
+        return false;
+    }
+    struct nexus_vfs_file nxfs_file;
+    uint8_t nxfs_readback[64];
+    size_t nxfs_readback_length = 0U;
+    if (!vfs_open_readonly("VFS.TXT", &nxfs_file) ||
+        !vfs_read(&nxfs_file, nxfs_readback,
+                  sizeof(nxfs_readback), &nxfs_readback_length)) {
+        serial_write("NXFS: VFS open/read integration failed\r\n");
+        return false;
+    }
+    vfs_close(&nxfs_file);
+    if (nxfs_readback_length != sizeof(vfs_payload) - 1U) return false;
+    for (size_t i = 0U; i < nxfs_readback_length; ++i) {
+        if (nxfs_readback[i] != (uint8_t)vfs_payload[i]) return false;
+    }
+    if (!nxfs_remove_file("VFS.TXT")) return false;
+    serial_write("NXFS: VFS open/read integration verified\r\n");
+    serial_write("NEXUS NXFS VFS READY\r\n");
     serial_write("NEXUS NXFS JOURNAL READY\r\n");
 
 #endif

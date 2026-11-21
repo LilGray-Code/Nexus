@@ -755,3 +755,19 @@ directory tree, free-space allocator, repair utility, encryption, permissions,
 or robust multi-crash journal replay. Release NVMe registration remains
 read-only until a dedicated NXFS partition has been explicitly selected and
 the installer/update/recovery flow is ready.
+
+### NexusFS through the unified VFS and Files application
+
+The VFS now exposes files from a mounted NexusFS data partition in addition
+to volatile RAM and FAT32. Directory enumeration, open, size, and read use the
+same VFS handle abstraction for all three backing stores. The Files screen's
+explicit GPT scan mounts a recognized NXFS partition and the FAT32 volume
+without automatically scanning user disks during boot. Settings distinguishes
+a read-only NexusFS mount from a writable one. Terminal adds `save NAME` to
+copy a volatile RAM file into NXFS when a writable volume is mounted.
+
+The UEFI disposable-disk self-test now mounts NXFS through the VFS, creates a
+temporary file, opens and reads it through VFS, checks the contents, then
+removes it. The regular release NVMe block device remains read-only, so
+persistent writes are not enabled on normal release images. A safe installer
+and explicit user-volume preparation still need to be implemented.

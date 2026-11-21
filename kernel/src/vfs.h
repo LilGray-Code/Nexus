@@ -29,10 +29,16 @@ struct nexus_vfs_file {
     uint32_t offset;
     bool open;
     bool ram_file;
+    bool nxfs_file;
 };
 
 bool vfs_mount_root_fat32(const struct nexus_block_device *device,
                           const struct nexus_gpt_partition *partition);
+bool vfs_mount_root_nxfs(const struct nexus_block_device *device,
+                         const struct nexus_gpt_partition *partition);
+bool vfs_nxfs_mounted(void);
+bool vfs_nxfs_writable(void);
+bool vfs_save_ram_file_to_nxfs(const char *name);
 bool vfs_root_mounted(void);
 bool vfs_has_filesystem(void);
 bool vfs_ramfs_create(const char *name);

@@ -19,6 +19,8 @@ static uint64_t screen_width;
 static uint64_t screen_height;
 static bool desktop_ready;
 static bool mouse_left_was_down;
+static int64_t pointer_x;
+static int64_t pointer_y;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -188,28 +190,82 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     screen_height = graphics_height();
     active_view = DESKTOP_HOME;
     mouse_left_was_down = false;
+    pointer_x = (int64_t)(screen_width / 2U);
+    pointer_y = (int64_t)(screen_height / 2U);
     desktop_ready = true;
     draw_shell();
+    draw_pointer();
     serial_write("DESKTOP: interactive framebuffer shell rendered\r\n");
     serial_write("NEXUS DESKTOP FRAMEBUFFER READY\r\n");
     return true;
 }
 
-void desktop_handle_input(const struct nexus_input_event *event) {
-    if (!desktop_ready || event == NULL ||
-        event->type != NEXUS_INPUT_KEYBOARD) return;
+static void draw_pointer(void) {
+    const uint64_t x = (uint64_t)pointer_x;
+    const uint64_t y = (uint64_t)pointer_y;
+    graphics_fill_rect(x, y, 2U, 15U, 245, 250, 255);
+    graphics_fill_rect(x + 1U, y + 1U, 2U, 11U, 245, 250, 255);
+    graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
+}
 
+void desktop_handle_input(const struct nexus_input_event *event) {
+    if (!desktop_ready || event == NULL) return;
+    if (event->type == NEXUS_INPUT_MOUSE) {
+        pointer_x += event->mouse_dx;
+        pointer_y += event->mouse_dy;
+        if (pointer_x < 0) pointer_x = 0;
+        if (pointer_y < 0) pointer_y = 0;
+        if ((uint64_t)pointer_x >= screen_width)
+            pointer_x = (int64_t)(screen_width - 1U);
+        if ((uint64_t)pointer_y >= screen_height)
+            pointer_y = (int64_t)(screen_height - 1U);
+        const bool left_down = (event->mouse_buttons & 1U) != 0;
+        const bool clicked = left_down && !mouse_left_was_down;
+        mouse_left_was_down = left_down;
+        if (clicked && active_view == DESKTOP_HOME) {
+            const uint64_t top = clamp_min(screen_height / 16U, 34U);
+            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+            uint64_t pw = screen_width * 3U / 4U;
+            uint64_t ph = screen_height * 53U / 100U;
+            if (pw > 920U) pw = 920U;
+            if (ph > 480U) ph = 480U;
+            if (pw > screen_width - 16U) pw = screen_width - 16U;
+            if (ph > screen_height - top - bottom - 16U)
+                ph = screen_height - top - bottom - 16U;
+            const uint64_t px = (screen_width - pw) / 2U;
+            const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
+            const uint64_t ty = py + 82U + 76U;
+            uint64_t tw = (pw - 80U) / 3U;
+            if (tw > 190U) tw = 190U;
+            if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
+                for (uint32_t i = 0; i < 3U; ++i) {
+                    const uint64_t tx = px + 28U + (uint64_t)i * (tw + 10U);
+                    if ((uint64_t)pointer_x >= tx &&
+                        (uint64_t)pointer_x < tx + tw) {
+                        active_view = i == 0U ? DESKTOP_FILES :
+                                      (i == 1U ? DESKTOP_BROWSER : DESKTOP_SETTINGS);
+                        serial_write("DESKTOP: app tile opened by mouse\\r\\n");
+                        break;
+                    }
+                }
+            }
+        }
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (event->type != NEXUS_INPUT_KEYBOARD) return;
     enum desktop_view next_view = active_view;
     switch (event->scancode) {
-        case 0x3BU: next_view = DESKTOP_FILES; break;    /* F1 */
-        case 0x3CU: next_view = DESKTOP_BROWSER; break;  /* F2 */
-        case 0x3DU: next_view = DESKTOP_SETTINGS; break; /* F3 */
-        case 0x01U: next_view = DESKTOP_HOME; break;     /* Escape */
+        case 0x3BU: next_view = DESKTOP_FILES; break;
+        case 0x3CU: next_view = DESKTOP_BROWSER; break;
+        case 0x3DU: next_view = DESKTOP_SETTINGS; break;
+        case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
     }
-
     if (next_view == active_view) return;
     active_view = next_view;
     draw_shell();
-    serial_write("DESKTOP: view changed by keyboard shortcut\r\n");
+    draw_pointer();
+    serial_write("DESKTOP: view changed by keyboard shortcut\\r\\n");
 }

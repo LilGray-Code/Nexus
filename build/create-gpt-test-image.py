@@ -16,7 +16,8 @@ FIRST_USABLE = 2 + ENTRY_SECTORS
 LAST_USABLE = TOTAL_SECTORS - ENTRY_SECTORS - 2
 PARTITION_FIRST = 2048
 PARTITION_LAST = LAST_USABLE
-README = b"Nexus OS read-only FAT32 filesystem test.\r\n"
+README_PREFIX = b"Nexus OS read-only FAT32 filesystem test.\r\n"
+README = README_PREFIX + b" " * (SECTOR - len(README_PREFIX)) + b"FAT32-CROSS-CLUSTER-READ-OK"
 
 def make_header(current, backup, entries_lba, disk_guid, entries_crc):
     fields = struct.pack(
@@ -69,7 +70,8 @@ def make_fat32(image):
     fat_start = PARTITION_FIRST + reserved
     fat = bytearray(sectors_per_fat * SECTOR)
     struct.pack_into("<IIII", fat, 0,
-                     0x0FFFFFF8, 0xFFFFFFFF, 0x0FFFFFFF, 0x0FFFFFFF)
+                     0x0FFFFFF8, 0xFFFFFFFF, 0x0FFFFFFF, 5)
+    struct.pack_into("<I", fat, 5 * 4, 0x0FFFFFFF)
     for copy in range(fats):
         offset = (fat_start + copy * sectors_per_fat) * SECTOR
         image[offset:offset + len(fat)] = fat
@@ -85,7 +87,10 @@ def make_fat32(image):
     offset = data_start * SECTOR
     image[offset:offset + SECTOR] = root
     file_sector = (data_start + 1) * SECTOR
-    image[file_sector:file_sector + len(README)] = README
+    image[file_sector:file_sector + SECTOR] = README[:SECTOR]
+    fragmented_file_sector = (data_start + 3) * SECTOR
+    image[fragmented_file_sector:
+          fragmented_file_sector + len(README) - SECTOR] = README[SECTOR:]
 
 def main():
     if len(sys.argv) != 2:

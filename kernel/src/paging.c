@@ -2,6 +2,8 @@
 
 #include "memory.h"
 
+#include <stddef.h>
+
 #define PAGE_PRESENT 0x001ULL
 #define PAGE_WRITABLE 0x002ULL
 #define PAGE_WRITE_THROUGH 0x008ULL

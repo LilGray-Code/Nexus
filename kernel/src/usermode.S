@@ -5,13 +5,15 @@
 .extern usermode_saved_cr3
 
 /*
- * void nexus_enter_user(uint64_t cr3, uint64_t rip, uint64_t rsp)
+ * void nexus_enter_user(uint64_t cr3, uint64_t rip, uint64_t rsp,
+ *                       uint64_t kernel_stack_top)
  * This test uses selectors 0x23 (user code) and 0x1B (user data).
  */
 nexus_enter_user:
     movq %rsp, usermode_saved_rsp(%rip)
     movq %cr3, %rax
     movq %rax, usermode_saved_cr3(%rip)
+    movq %rcx, %rsp
     movq %rdi, %cr3
 
     pushq $0x1B

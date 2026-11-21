@@ -94,7 +94,7 @@ static const char *partition_name(enum nexus_partition_kind kind) {
 
 static bool validate_plan(const struct nexus_partition_plan *plan,
                           const uint8_t disk_guid[16],
-                          const uint8_t partition_guids[NEXUS_PLAN_MAX_PARTITIONS]) {
+                          const uint8_t partition_guids[NEXUS_PLAN_MAX_PARTITIONS][16]) {
     if (plan == NULL || disk_guid == NULL || partition_guids == NULL ||
         !guid_nonzero(disk_guid) ||
         (plan->logical_block_size != 512U &&
@@ -102,9 +102,12 @@ static bool validate_plan(const struct nexus_partition_plan *plan,
         plan->partition_count == 0U ||
         plan->partition_count > NEXUS_PLAN_MAX_PARTITIONS ||
         plan->disk_block_count < 3U ||
+        plan->first_usable_lba == 0U ||
         plan->first_usable_lba > plan->last_usable_lba ||
         plan->last_usable_lba >= plan->disk_block_count - 1U) return false;
 
+    const uint64_t alignment =
+        NEXUS_PLAN_ALIGNMENT_BYTES / plan->logical_block_size;
     uint64_t previous_last = plan->first_usable_lba - 1U;
     for (size_t i = 0U; i < plan->partition_count; ++i) {
         const struct nexus_planned_partition *part = &plan->partitions[i];
@@ -115,14 +118,18 @@ static bool validate_plan(const struct nexus_partition_plan *plan,
             part->first_lba < plan->first_usable_lba ||
             part->last_lba > plan->last_usable_lba ||
             (i != 0U && part->first_lba <= previous_last) ||
-            (part->first_lba * (uint64_t)plan->logical_block_size) %
-                NEXUS_PLAN_ALIGNMENT_BYTES != 0U) return false;
+            part->first_lba % alignment != 0U) return false;
         if (guid_equal(disk_guid, partition_guids[i])) return false;
         for (size_t prior = 0U; prior < i; ++prior)
             if (guid_equal(partition_guids[prior], partition_guids[i]))
                 return false;
         previous_last = part->last_lba;
     }
+    if (plan->partition_count != 3U ||
+        (plan->partitions[0].kind != NEXUS_PARTITION_ESP &&
+         plan->partitions[0].kind != NEXUS_PARTITION_BIOS_BOOT) ||
+        plan->partitions[1].kind != NEXUS_PARTITION_SYSTEM ||
+        plan->partitions[2].kind != NEXUS_PARTITION_DATA) return false;
     return true;
 }
 

@@ -267,10 +267,11 @@ workflow remain on `main`.
 - **AHCI discovery:** The generic UEFI/Q35 profile reads AHCI CAP, GHC, PI, VS,
   and implemented-port link/signature registers. The legacy BIOS/PC profile
   currently exposes IDE.
-- **NVMe namespace and read probe:** The generic UEFI/Q35 profile identifies
-  the controller and NSID 1, reports namespace capacity/LBA size, creates one
-  I/O queue pair, and reads LBA 0 from a disposable QEMU image seeded with a
-  known signature. The returned bytes must match; no write command is issued.
+- **NVMe namespace and read-only block API:** The generic UEFI/Q35 profile
+  identifies the controller and NSID 1, reports namespace capacity/LBA size,
+  and registers `nvme0n1` through a bounded read-only block-device API. A
+  CI-only build reads LBA 0 from a disposable QEMU image seeded with a known
+  signature; normal builds do not automatically read sectors.
 
 ### Latest verified storage build
 
@@ -291,20 +292,20 @@ sizes, chipsets, and controller combinations remain planned.
 These are still bring-up prototypes, not a daily-use operating system. The
 allocator is monotonic and has no page-free operation or general heap.
 Exception handling is fatal-only. The NVMe work is an admin Identify prototype,
-not a block driver: the NVMe read path is a one-block QEMU prototype, not a general block driver;
-there is no multi-request queueing, write support, IOMMU/VT-d
-isolation, general DMA allocator, or recovery path. AHCI does not yet issue
+the block-device API is read-only and the NVMe driver currently supports one
+in-flight request at a time with a one-page transfer limit; there is no write
+support, IOMMU/VT-d isolation, general DMA allocator, or recovery path. AHCI does not yet issue
 ATA IDENTIFY or data commands. No physical hardware compatibility is claimed
 until tests are recorded across multiple vendors and generations.
 
 ### Next implementation sequence
 
-1. Introduce a common read-only block-device interface around the NVMe read
-   prototype, including bounds checking and queue ownership.
-2. Expand NVMe read support to multiple blocks and requests with timeouts,
-   recovery, and DMA lifetime management.
-3. Implement AHCI command-list/FIS/PRDT setup and ATA IDENTIFY, then bounded
-   reads from explicitly selected disposable test media.
+1. Expand the read-only block interface to support robust multi-request queueing,
+   queue ownership, timeouts, and controller recovery.
+2. Add AHCI command-list/FIS/PRDT setup and ATA IDENTIFY, followed by explicitly
+   requested read-only access to test media.
+3. Add IOMMU/VT-d awareness, DMA ownership/lifetime rules, and general-purpose
+   DMA allocation before broader device driver support.
 4. Add IOMMU/VT-d awareness, DMA ownership/lifetime rules, controller recovery,
    and more general DMA allocation before broader device driver support.
 5. Expand QEMU coverage across memory sizes, CPU models, chipsets, and USB,

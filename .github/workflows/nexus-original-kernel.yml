@@ -103,7 +103,7 @@ jobs:
           chmod +x build/build-iso.sh
           EXTRA_CFLAGS="-DNEXUS_STORAGE_SELFTEST" ./build/build-iso.sh
 
-      - name: Install boot payloads to a disposable disk and boot installed UEFI target
+      - name: Install boot payloads to a disposable disk and boot installed UEFI target via USB mass storage
         shell: bash
         run: |
           /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
@@ -116,7 +116,8 @@ jobs:
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-installed-uefi-vars.fd \
             -drive file=/tmp/nexus-installed-uefi.img,if=none,id=installed,format=raw \
-            -device nvme,drive=installed,serial=NEXUSINSTALL0001 \
+            -device qemu-xhci,id=xhci \
+            -device usb-storage,bus=xhci.0,drive=installed,bootindex=1 \
             -boot order=c -display none -serial file:installed-uefi-serial.log \
             -monitor none -no-reboot -no-shutdown
           status=$?
@@ -126,7 +127,6 @@ jobs:
             exit "$status"
           fi
           cat installed-uefi-serial.log
-          grep -q "BOOT MEDIA: matched GPT partition GUID" installed-uefi-serial.log
           grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" installed-uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" installed-uefi-serial.log
 

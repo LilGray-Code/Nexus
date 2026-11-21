@@ -3,6 +3,7 @@
 #include "blockdev.h"
 #include "gpt.h"
 #include "fat32.h"
+#include "vfs.h"
 
 #include "memory.h"
 #include "paging.h"
@@ -664,11 +665,37 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         return false;
     }
     serial_write("GPT: validated header and entry CRCs; discovered test partition\r\n");
-    if (!fat32_mount(registered, test_partition) ||
-        fat32_root_entry_count() != 1U) {
+    if (!vfs_mount_root_fat32(registered, test_partition) ||
+        !vfs_root_mounted() || vfs_root_entry_count() != 1U) {
         serial_write("FAT32: CI root directory self-test failed\\r\\n");
         return false;
     }
+    struct nexus_vfs_dirent vfs_entry;
+    if (!vfs_root_entry(0, &vfs_entry) ||
+        vfs_entry.type != NEXUS_VFS_FILE ||
+        vfs_entry.name[0] != 'R' || vfs_entry.name[6] != '.' ||
+        vfs_entry.size == 0U) {
+        serial_write("VFS: CI root directory listing failed\\r\\n");
+        return false;
+    }
+    struct nexus_vfs_file vfs_file;
+    uint8_t vfs_preview[32];
+    size_t vfs_bytes_read = 0;
+    if (!vfs_open_readonly("README.TXT", &vfs_file) ||
+        !vfs_read(&vfs_file, vfs_preview, sizeof(vfs_preview),
+                  &vfs_bytes_read) || vfs_bytes_read == 0U) {
+        serial_write("VFS: CI read-only open/read failed\\r\\n");
+        return false;
+    }
+    vfs_close(&vfs_file);
+    static const char vfs_expected[] = "Nexus OS read-only FAT32";
+    for (size_t i = 0; i < sizeof(vfs_expected) - 1U; ++i) {
+        if (vfs_preview[i] != (uint8_t)vfs_expected[i]) {
+            serial_write("VFS: CI file content mismatch\\r\\n");
+            return false;
+        }
+    }
+    serial_write("VFS: listed README.TXT and read file contents\\r\\n");
     const struct nexus_fat32_entry *test_file = fat32_root_entry_at(0);
     if (test_file == NULL || test_file->size == 0U ||
         test_file->name[0] != 'R' || test_file->name[1] != 'E' ||

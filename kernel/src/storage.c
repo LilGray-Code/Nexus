@@ -66,7 +66,53 @@ static bool ahci_register_probe(const struct nexus_pci_device *device) {
     serial_write("\r\nAHCI: ports implemented: ");
     serial_write_hex(implemented_ports);
     serial_write("\r\n");
+    uint32_t connected_ports = 0;
+    for (uint8_t port = 0; port < 32; ++port) {
+        if ((pi & (1U << port)) == 0) continue;
+
+        const uint32_t port_offset = 0x100U + (uint32_t)port * 0x80U;
+        /* The current MMIO mapper maps one 4 KiB page at a time. */
+        if (page_offset + port_offset + 0x2CU >= 0x1000U) {
+            serial_write("AHCI: port registers outside mapped page; skipped\r\n");
+            continue;
+        }
+
+        const uint32_t ssts = registers[(port_offset + 0x28U) / 4U];
+        const uint32_t signature = registers[(port_offset + 0x24U) / 4U];
+        if (ssts == UINT32_MAX) continue;
+
+        const uint32_t det = ssts & 0x0FU;
+        serial_write("AHCI: port ");
+        serial_write_hex(port);
+        serial_write(det == 3U ? " link=up" :
+                     det == 1U ? " link=device-detected" : " link=down");
+        serial_write(" SSTS=");
+        serial_write_hex(ssts);
+        serial_write(" SIG=");
+        serial_write_hex(signature);
+
+        if (det == 3U) {
+            ++connected_ports;
+            if (signature == 0x00000101U) {
+                serial_write(" type=ATA");
+            } else if (signature == 0xEB140101U) {
+                serial_write(" type=ATAPI");
+            } else if (signature == 0x96690101U) {
+                serial_write(" type=port-multiplier");
+            } else if (signature == 0xC33C0101U) {
+                serial_write(" type=enclosure");
+            } else {
+                serial_write(" type=unknown");
+            }
+        }
+        serial_write("\r\n");
+    }
+
+    serial_write("AHCI: connected ports: ");
+    serial_write_hex(connected_ports);
+    serial_write("\r\n");
     serial_write("AHCI: register probe was read-only; no commands issued\r\n");
+    serial_write("NEXUS AHCI PORT DISCOVERY READY\r\n");
     serial_write("NEXUS AHCI REGISTER PROBE READY\r\n");
     return true;
 }

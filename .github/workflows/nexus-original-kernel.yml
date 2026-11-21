@@ -31,7 +31,7 @@ jobs:
       - name: Build dual-mode ISO
         run: |
           chmod +x build/build-iso.sh
-          ./build/build-iso.sh
+          EXTRA_CFLAGS="-DNEXUS_STORAGE_SELFTEST" ./build/build-iso.sh
 
       - name: Verify kernel ELF and ISO
         run: |
@@ -77,8 +77,9 @@ jobs:
           grep -q "NEXUS NVME NAMESPACE READY" uefi-serial.log
           grep -q "NVMe: namespace count:" uefi-serial.log
           grep -q "NVMe: namespace logical block bytes:" uefi-serial.log
+          grep -q "NEXUS NVME BLOCK DEVICE READY" uefi-serial.log
           grep -q "NEXUS NVME READ ONLY READY" uefi-serial.log
-          grep -q "NVMe: read-only LBA 0 verified against test image signature" uefi-serial.log
+          grep -q "NVMe: blockdev_read verified LBA 0 test signature" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log

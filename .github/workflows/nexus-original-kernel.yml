@@ -45,7 +45,7 @@ jobs:
         run: |
           set +e
           timeout 12s qemu-system-x86_64 \
-            -machine q35 -m 512M \
+            -machine q35 -cpu max -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:uefi-serial.log \
@@ -57,6 +57,8 @@ jobs:
             exit "$status"
           fi
           cat uefi-serial.log
+          grep -q "K2: hardware timer ticks received:" uefi-serial.log
+          grep -q "NEXUS K2 TIMER INTERRUPT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 
       - name: Boot test - legacy BIOS (SeaBIOS)
@@ -64,7 +66,7 @@ jobs:
         run: |
           set +e
           timeout 12s qemu-system-x86_64 \
-            -machine pc -m 512M \
+            -machine pc -cpu max -m 512M \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:bios-serial.log \
             -monitor none -no-reboot -no-shutdown
@@ -75,6 +77,8 @@ jobs:
             exit "$status"
           fi
           cat bios-serial.log
+          grep -q "K2: hardware timer ticks received:" bios-serial.log
+          grep -q "NEXUS K2 TIMER INTERRUPT READY" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 
       - name: Upload original-kernel prototype

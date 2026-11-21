@@ -1,8 +1,8 @@
 # Nexus OS: Original Kernel Architecture and Migration Roadmap
 
 **Status:** K0–K2 boot, memory, exceptions, PIC/PIT timer, cooperative scheduler, ACPI and read-only I/O APIC probe passed BIOS/UEFI QEMU CI; K3 PCI discovery being added; direct I/O APIC timer routing remains disabled  
-**Target:** x86-64 PCs, with UEFI and legacy BIOS boot in the first public release  
-**Reference hardware:** Dell Latitude 5410  
+**Target:** Broad x86-64 PC compatibility across vendors and generations, with UEFI and legacy BIOS boot in the first public release  
+**Physical test strategy:** A rotating multi-vendor hardware matrix; no single laptop model defines compatibility  
 **Long-term requirement:** Nexus-owned kernel and userland; no FreeBSD or Linux kernel at runtime.
 
 ## 1. Product decision
@@ -135,11 +135,11 @@ Do not move or delete the current archive, installer, or workflow during the ini
 
 - Enumerate PCI/PCIe devices safely.
 - Parse ACPI tables and expose power/firmware information.
-- Add AHCI and NVMe block-device support, initially read-only.
+- Add AHCI and NVMe controller support, beginning with read-only identification and then read-only block I/O.
 - Add GPT parsing and a simple initramfs.
 - Add USB host-controller support only after PCI, DMA, and interrupt foundations are stable.
 
-**Exit:** Detect the Latitude 5410 SSD controller and identify its storage device without writing to it. No installer may format disks at this stage.
+**Exit:** Discover and identify supported storage controllers across representative x86-64 systems and virtual hardware, then read explicitly selected test media without writes. No installer may format disks at this stage.
 
 ### K4 — Userland and system ABI
 
@@ -193,11 +193,11 @@ Use one x86-64 kernel ELF and a bootloader configuration that supports both firm
 
 Legacy BIOS support here means legacy firmware boot on an x86-64 processor; it does not mean support for 32-bit-only CPUs.
 
-## 6. Dell Latitude 5410 hardware validation
+## 6. Multi-vendor physical hardware validation
 
-The Latitude 5410 is the reference laptop, not a promise of full compatibility. Record exact PCI IDs and firmware versions from the actual machine before driver work.
+No single laptop or desktop is the compatibility baseline. Build a rotating matrix that includes systems from multiple manufacturers and generations, Intel and AMD platforms, different UEFI implementations, and representative storage, graphics, network, USB, and audio controllers. The Dell Latitude 5410 may be one optional sample in that matrix, but it is not a required-only target or a compatibility definition. Record exact PCI IDs and firmware versions from each system before driver work.
 
-Required hardware checklist:
+Record these categories on each physical system as applicable:
 
 - CPU model, CPUID features, and core topology.
 - Intel integrated GPU PCI ID; framebuffer first, accelerated graphics later.
@@ -249,62 +249,65 @@ The original-kernel implementation lives on the separate
 `nexus-original-kernel-roadmap` branch. The Debian-based prototype and its
 workflow remain on `main`.
 
-### Validated prototypes
+### Validated kernel foundation
 
 - **K0 — Boot contract:** A freestanding x86-64 ELF kernel builds into a
-  hybrid BIOS/UEFI ISO. CI run
-  [44870153869](https://github.com/LilGray-Code/Nexus/actions/runs/44870153869)
-  passed OVMF and SeaBIOS boot checks.
+  hybrid BIOS/UEFI ISO. The same kernel boots under OVMF and SeaBIOS.
 - **K1 — Early CPU and memory:** The kernel installs exception IDT gates,
-  consumes the Limine memory map and HHDM response, and allocates a 4 KiB
-  physical page. CI run
-  [44870391280](https://github.com/LilGray-Code/Nexus/actions/runs/44870391280)
-  passed both firmware tests.
-- **K2 — Timer interrupt:** The 8259 PIC is remapped, PIT channel 0 is set to
-  100 Hz, and Local APIC LINT0 routes PIC ExtINT to the CPU. x2APIC-capable
-  CPUs use the MSR interface; xAPIC uses an explicit uncached MMIO mapping.
-  CI run
-  [44871433999](https://github.com/LilGray-Code/Nexus/actions/runs/44871433999)
-  passed OVMF and SeaBIOS, with five PIT ticks observed in each serial log.
+  consumes the Limine memory map and HHDM response, and allocates physical
+  pages. The bootstrap allocator now has a bounded one-page DMA allocator;
+  CI confirms an entire 4 KiB page can be allocated below 4 GiB.
+- **K2 — Timer and cooperative scheduling:** The 8259 PIC/PIT path receives
+  timer interrupts. A cooperative A-B-A-B-A-B scheduler test passes. Direct
+  I/O APIC timer routing remains disabled after an earlier #GP; the proven
+  PIC/PIT virtual-wire path remains active.
+- **ACPI and PCI discovery:** RSDP/XSDT/RSDT/MADT parsing, read-only I/O APIC
+  register probing, and PCI Configuration Mechanism #1 enumeration pass
+  QEMU firmware tests. PCI BARs are decoded without BAR sizing or reassignment.
+- **AHCI discovery:** The generic UEFI/Q35 profile reads AHCI CAP, GHC, PI, VS,
+  and implemented-port link/signature registers. The legacy BIOS/PC profile
+  currently exposes IDE.
+- **NVMe Identify Controller:** The generic UEFI/Q35 profile configures an
+  NVMe admin queue using three separate DMA32 pages and completes the
+  read-only Identify Controller command.
 
-These are bring-up prototypes, not a daily-use operating system. The physical
-Latitude 5410 has not yet been tested. The current allocator is monotonic and
-has no page-free operation or heap. Exception handling is fatal-only. K2's
-timer path is a single-core legacy PIC/PIT compatibility path; ACPI MADT,
-IOAPIC routing, APIC timer calibration, SMP, and preemption remain unfinished.
+### Latest verified storage build
 
-### Current development increment
+CI run
+[44874813799](https://github.com/LilGray-Code/Nexus/actions/runs/44874813799)
+passed build, ELF/ISO verification, UEFI boot, legacy BIOS boot, and artifact
+upload. In UEFI QEMU, the kernel identified the emulated controller as vendor
+`1B36`, model `QEMU NVMe Ctrl`, serial `NEXUSNVME0001`, firmware `8.2.2`.
+The test uses a disposable 64 MiB QEMU disk image but does not issue namespace
+or sector commands and does not modify the image.
 
-The cooperative scheduler prototype uses statically allocated stacks and an
-x86-64 assembly context switch. CI run
-[44871736233](https://github.com/LilGray-Code/Nexus/actions/runs/44871736233)
-passed OVMF and SeaBIOS; both logs show the A-B-A-B-A-B trace.
+The current CI profiles are deliberately generic rather than laptop-specific:
+UEFI/Q35 with a qemu64 CPU and AHCI plus NVMe, and legacy BIOS/PC with the max
+CPU model and IDE. Both profiles verify DMA32 page allocation. More QEMU memory
+sizes, chipsets, and controller combinations remain planned.
 
-ACPI RSDP/XSDT/RSDT/MADT parsing and the read-only I/O APIC register probe
-also passed both firmware modes in CI run
-[44872080452](https://github.com/LilGray-Code/Nexus/actions/runs/44872080452).
-A direct I/O APIC timer route was then attempted, but caused a #GP during the
-first timer interrupt. The active boot path has been returned to the proven
-PIC/PIT virtual-wire timer path. Direct I/O APIC routing is experimental and
-disabled pending interrupt-frame and EOI validation.
-
-K3 now adds read-only PCI Configuration Mechanism #1 enumeration. It scans
-the conventional bus/device/function address space and records vendor/device
-IDs and class information; it does not write device configuration, BARs,
-command registers, or bus-master settings.
+These are still bring-up prototypes, not a daily-use operating system. The
+allocator is monotonic and has no page-free operation or general heap.
+Exception handling is fatal-only. The NVMe work is an admin Identify prototype,
+not a block driver: there is no namespace discovery, sector I/O, IOMMU/VT-d
+isolation, general DMA allocator, or recovery path. AHCI does not yet issue
+ATA IDENTIFY or data commands. No physical hardware compatibility is claimed
+until tests are recorded across multiple vendors and generations.
 
 ### Next implementation sequence
 
-1. Finish and validate the cooperative scheduler and stack-switching test.
-2. Add ACPI RSDP/RSDT/XSDT parsing and MADT processor/APIC topology discovery.
-3. Implement IOAPIC routing and a calibrated Local APIC timer, while retaining
-   a validated single-core fallback.
-4. Add interrupt-safe preemption, sleep/wakeup queues, and scheduler tests.
-5. Bring up additional CPU cores and add per-CPU state only after single-core
-   context-switching and interrupt invariants are stable.
-6. Continue into PCI discovery and read-only storage identification before
-   attempting userland or destructive installation.
+1. Add NVMe Identify Namespace and validate namespace capacity and LBA format.
+2. Introduce a common block-device interface, retaining read-only behavior.
+3. Implement AHCI command-list/FIS/PRDT setup and ATA IDENTIFY, then bounded
+   reads from explicitly selected disposable test media.
+4. Add IOMMU/VT-d awareness, DMA ownership/lifetime rules, controller recovery,
+   and more general DMA allocation before broader device driver support.
+5. Expand QEMU coverage across memory sizes, CPU models, chipsets, and USB,
+   graphics, and network controller families.
+6. Begin multi-vendor physical boot and read-only discovery testing; record
+   exact hardware IDs, firmware, boot mode, and results for each system.
+7. Only after reliable block reads, add GPT parsing, a read-only filesystem
+   path, initramfs, userland, and eventually the Nexus installer.
 
-A successful CI ISO build is not proof of hardware compatibility. Physical
-hardware testing must be recorded separately, starting with non-destructive
-USB boot and read-only device discovery.
+The current implementation has not been merged into `main`. A successful
+QEMU CI run is not proof of physical compatibility.

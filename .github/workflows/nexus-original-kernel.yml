@@ -73,6 +73,9 @@ jobs:
           grep -q "STORAGE: controller NVMe" uefi-serial.log
           grep -q "NEXUS NVME IDENTIFY READY" uefi-serial.log
           grep -q "NVMe: model:" uefi-serial.log
+          grep -q "NEXUS NVME NAMESPACE READY" uefi-serial.log
+          grep -q "NVMe: namespace count:" uefi-serial.log
+          grep -q "NVMe: namespace logical block bytes:" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log

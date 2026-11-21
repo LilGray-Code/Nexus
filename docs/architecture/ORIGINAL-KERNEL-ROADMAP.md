@@ -366,3 +366,20 @@ did not synthesize pointer movement or clicks. These features are an
 interactive shell foundation, not a complete desktop environment. There is
 no window manager, compositor, user-mode application runtime, editable text
 widget, filesystem browser, browser engine, network stack, or installer yet.
+
+
+### Read-only GPT and Files-view progress
+
+The bounded GPT parser now checks the protective MBR signature/type, primary
+header CRC, backup header CRC and reciprocal LBA references, disk GUID and
+partition-array metadata agreement, and both primary and backup partition-array
+CRCs. It rejects invalid usable-LBA ranges, duplicate unique partition GUIDs,
+overlapping partitions, and more than 16 non-empty partitions. It stores
+metadata only and issues no write requests.
+
+The desktop Files view now initiates a GPT scan only when the user opens Files
+with F1. It displays the discovered partition count and first partition LBA
+range for the first disk with a valid GPT. This is intentionally not a mounted
+filesystem or a general file manager yet. The normal boot path does not
+automatically read user disk sectors; the read occurs only after an explicit
+Files action. The latest CI run for this UI/storage integration is in progress.

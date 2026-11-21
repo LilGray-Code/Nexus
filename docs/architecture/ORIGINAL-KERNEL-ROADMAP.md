@@ -249,18 +249,24 @@ The original-kernel implementation lives on the separate
 `nexus-original-kernel-roadmap` branch. The Debian-based prototype and its
 workflow remain on `main`.
 
-### Desktop foundation (in progress)
+### Desktop and input foundation (in progress)
 
-- A reusable 32-bit RGB framebuffer drawing library now validates Limine
-  framebuffer dimensions, pitch, pixel format masks, and clips rectangle/text
+- A reusable 32-bit RGB framebuffer drawing library validates Limine
+  framebuffer dimensions, pitch, pixel-format masks, and clips rectangle/text
   drawing to the supplied surface.
-- The first in-kernel Nexus desktop shell renders a top system panel, welcome
-  window, app tiles, and bottom dock. It is explicitly a visual shell preview:
-  the tiles are not yet launchable and there is no keyboard/mouse event loop,
-  user-process model, or window manager.
-- UEFI QEMU CI requires the desktop framebuffer-ready marker when booting the
-  original-kernel test image. BIOS boot still has its existing boot marker
-  verification.
+- The in-kernel Nexus shell renders a top system panel, welcome window, app
+  tiles, and bottom dock. These tiles remain visual placeholders: they do not
+  launch applications, and there is not yet a window manager or user process
+  model.
+- A PS/2 controller driver now configures keyboard and mouse ports with bounded
+  controller waits, enables IRQ1/IRQ12 only for devices that acknowledge setup,
+  parses three-byte mouse packets, and queues input events in a fixed-size
+  interrupt-safe ring buffer. The kernel idle loop drains and logs keyboard
+  and mouse events. This is hardware input plumbing, not yet desktop pointer
+  movement, text entry, or clickable window interaction.
+- CI checks the framebuffer shell and keyboard initialization in UEFI QEMU,
+  and still boots the same kernel under legacy BIOS. The QEMU test proves
+  device initialization and boot, not real physical keyboard/mouse coverage.
 
 ### Validated kernel foundation
 
@@ -289,10 +295,11 @@ workflow remain on `main`.
 ### Latest verified storage build
 
 CI run
-[44875961523](https://github.com/LilGray-Code/Nexus/actions/runs/44875961523)
+[44877677450](https://github.com/LilGray-Code/Nexus/actions/runs/44877677450)
 passed the full workflow: compilation, ELF/ISO verification, UEFI boot,
-legacy BIOS boot, two sequential NVMe block-device reads, a clean distributable
-build, and a final UEFI boot of that distributable image.
+legacy BIOS boot, PS/2 keyboard initialization, two sequential NVMe
+block-device reads, a clean distributable build, and a final UEFI boot of that
+distributable image.
 
 The CI self-test build uses a disposable 64 MiB QEMU disk image with distinct
 signatures in LBA 0 and LBA 1. The common blockdev_read API read both sectors

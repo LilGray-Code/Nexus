@@ -249,6 +249,19 @@ The original-kernel implementation lives on the separate
 `nexus-original-kernel-roadmap` branch. The Debian-based prototype and its
 workflow remain on `main`.
 
+### Desktop foundation (in progress)
+
+- A reusable 32-bit RGB framebuffer drawing library now validates Limine
+  framebuffer dimensions, pitch, pixel format masks, and clips rectangle/text
+  drawing to the supplied surface.
+- The first in-kernel Nexus desktop shell renders a top system panel, welcome
+  window, app tiles, and bottom dock. It is explicitly a visual shell preview:
+  the tiles are not yet launchable and there is no keyboard/mouse event loop,
+  user-process model, or window manager.
+- UEFI QEMU CI requires the desktop framebuffer-ready marker when booting the
+  original-kernel test image. BIOS boot still has its existing boot marker
+  verification.
+
 ### Validated kernel foundation
 
 - **K0 — Boot contract:** A freestanding x86-64 ELF kernel builds into a

@@ -59,6 +59,7 @@ jobs:
           cat uefi-serial.log
           grep -q "K2: hardware timer ticks received:" uefi-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" uefi-serial.log
+          grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 
       - name: Boot test - legacy BIOS (SeaBIOS)
@@ -79,6 +80,7 @@ jobs:
           cat bios-serial.log
           grep -q "K2: hardware timer ticks received:" bios-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" bios-serial.log
+          grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 
       - name: Upload original-kernel prototype

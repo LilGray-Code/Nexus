@@ -231,11 +231,16 @@ void kmain(void) {
         halt_forever();
     }
 #ifdef NEXUS_STORAGE_SELFTEST
-    if (!desktop_run_process_selftest()) {
+    const enum nexus_desktop_process_test_result file_test =
+        desktop_run_process_selftest();
+    if (file_test == NEXUS_DESKTOP_PROCESS_TEST_FAILED) {
         serial_write("ERROR: FAT32 ELF file execution self-test failed\\r\\n");
         halt_forever();
+    } else if (file_test == NEXUS_DESKTOP_PROCESS_TEST_PASSED) {
+        serial_write("NEXUS FILE PROCESS SELFTEST READY\\r\\n");
+    } else {
+        serial_write("NEXUS FILE PROCESS SELFTEST SKIPPED\\r\\n");
     }
-    serial_write("NEXUS FILE PROCESS SELFTEST READY\\r\\n");
 #endif
     serial_write("NEXUS PROCESS MANAGER READY\r\n");
     serial_write("NEXUS ELF64 USER LOADER READY\r\n");

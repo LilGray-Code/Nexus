@@ -777,9 +777,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
 }
 
 
-bool desktop_run_process_selftest(void) {
+enum nexus_desktop_process_test_result
+desktop_run_process_selftest(void) {
     if (!vfs_root_mounted()) scan_files_once();
-    if (!vfs_root_mounted()) return false;
+    if (!vfs_root_mounted()) {
+        serial_write("DESKTOP: HELLO.ELF self-test skipped; no mounted volume\r\n");
+        return NEXUS_DESKTOP_PROCESS_TEST_SKIPPED;
+    }
 
     struct nexus_process_result result;
     enum nexus_process_error error = NEXUS_PROCESS_ERROR_NONE;
@@ -787,11 +791,13 @@ bool desktop_run_process_selftest(void) {
         serial_write("DESKTOP: HELLO.ELF execution failed; error=");
         serial_write_hex((uint64_t)error);
         serial_write("\r\n");
-        return false;
+        return NEXUS_DESKTOP_PROCESS_TEST_FAILED;
     }
 
     serial_write("DESKTOP: HELLO.ELF exit status=");
     serial_write_hex(result.exit_status);
     serial_write("\r\n");
-    return result.exit_status == 7U;
+    return result.exit_status == 7U
+        ? NEXUS_DESKTOP_PROCESS_TEST_PASSED
+        : NEXUS_DESKTOP_PROCESS_TEST_FAILED;
 }

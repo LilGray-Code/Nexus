@@ -568,3 +568,10 @@ CPL3, checks its stdout marker and exit status 7, closes process descriptors,
 and reclaims the process pages. This verifies the complete read-only disk to
 user-process launch path without writing to the test image or touching a
 user's real disk. The release build does not auto-scan or execute files.
+
+
+The BIOS QEMU profile has no attached storage disk, so its storage-enabled
+build reports the on-disk ELF execution test as skipped rather than failing
+the boot. The UEFI profile attaches the disposable NVMe image and must emit
+the HELLO.ELF stdout and exit-status assertions; a mounted volume with a bad
+or unlaunchable test file remains a hard test failure.

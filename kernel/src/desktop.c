@@ -117,13 +117,14 @@ static void draw_shell(void) {
                            1, 108, 216, 229);
 
         const uint64_t tile_y = text_y + 76U;
-        uint64_t tile_width = (panel_width - 80U) / 3U;
+        uint64_t tile_width = (panel_width - 100U) / 4U;
         if (tile_width > 190U) tile_width = 190U;
-        const char *labels[3] = {"FILES F1", "BROWSER F2", "SETTINGS F3"};
-        const uint8_t accent[3][3] = {
-            {45, 177, 202}, {117, 136, 244}, {82, 198, 155}
+        const char *labels[4] = {"FILES F1", "BROWSER F2", "SETTINGS F3", "TERMINAL F4"};
+        const uint8_t accent[4][3] = {
+            {45, 177, 202}, {117, 136, 244},
+            {82, 198, 155}, {217, 164, 83}
         };
-        for (uint32_t i = 0; i < 3U; ++i) {
+        for (uint32_t i = 0; i < 4U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
             graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
@@ -136,7 +137,7 @@ static void draw_shell(void) {
                                1, 233, 243, 252);
         }
         graphics_draw_text(text_x, panel_y + panel_height - 42U,
-                           "SELECT AN APP WITH F1 F2 OR F3",
+                           "SELECT AN APP WITH F1 F2 F3 OR F4",
                            1, 170, 191, 211);
     } else if (active_view == DESKTOP_FILES) {
         graphics_draw_text(text_x, text_y, "NEXUS FILES",
@@ -541,15 +542,16 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t px = (screen_width - pw) / 2U;
             const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
             const uint64_t ty = py + 82U + 76U;
-            uint64_t tw = (pw - 80U) / 3U;
+            uint64_t tw = (pw - 100U) / 4U;
             if (tw > 190U) tw = 190U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (uint32_t i = 0; i < 3U; ++i) {
+                for (uint32_t i = 0; i < 4U; ++i) {
                     const uint64_t tx = px + 28U + (uint64_t)i * (tw + 10U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {
                         active_view = i == 0U ? DESKTOP_FILES :
-                                      (i == 1U ? DESKTOP_BROWSER : DESKTOP_SETTINGS);
+                                      (i == 1U ? DESKTOP_BROWSER :
+                                      (i == 2U ? DESKTOP_SETTINGS : DESKTOP_TERMINAL));
                         if (active_view == DESKTOP_FILES) scan_files_once();
                         serial_write("DESKTOP: app tile opened by mouse\\r\\n");
                         break;

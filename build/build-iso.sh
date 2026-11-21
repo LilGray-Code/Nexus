@@ -32,7 +32,7 @@ values = re.findall(r"0x([0-9a-fA-F]{2})", header.read_text())
 if not values:
     raise SystemExit("Limine BIOS HDD image header contains no byte array")
 image = bytes(int(value, 16) for value in values)
-if len(image) < 512 or image[510:512] != b"\\x55\\xaa":
+if len(image) < 512 or image[510:512] != b"\x55\xaa":
     raise SystemExit("Extracted Limine BIOS HDD image has no valid MBR signature")
 Path("build/limine-binary/limine-bios-hdd.bin").write_bytes(image)
 print(f"Extracted Limine BIOS HDD image: {len(image)} bytes")

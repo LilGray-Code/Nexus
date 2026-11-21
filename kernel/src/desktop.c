@@ -400,6 +400,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         const bool left_down = (event->mouse_buttons & 1U) != 0;
         const bool clicked = left_down && !mouse_left_was_down;
         mouse_left_was_down = left_down;
+        if (clicked && active_view == DESKTOP_FILES && files_fat32_ok) {
+            const uint64_t top = clamp_min(screen_height / 16U, 34U);
+            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+            uint64_t pw = screen_width * 3U / 4U;
+            uint64_t ph = screen_height * 53U / 100U;
+            if (pw > 920U) pw = 920U;
+            if (ph > 480U) ph = 480U;
+            if (pw > screen_width - 16U) pw = screen_width - 16U;
+            if (ph > screen_height - top - bottom - 16U)
+                ph = screen_height - top - bottom - 16U;
+            const uint64_t px = (screen_width - pw) / 2U;
+            const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
+            const uint64_t tx = px + 32U;
+            const uint64_t ty = py + 82U;
+            const int64_t relative_y = pointer_y - (int64_t)(ty + 307U);
+            const int64_t relative_x = pointer_x - (int64_t)tx;
+            if (relative_y >= 0 && relative_y < 60 &&
+                relative_x >= 0 && relative_x < 500) {
+                const size_t row = (size_t)relative_y / 24U;
+                const size_t column = (size_t)relative_x / 260U;
+                const size_t index = row * 2U + column;
+                if (column < 2U && index < files_listing_count)
+                    files_selected_index = index;
+            }
+        }
         if (clicked && active_view == DESKTOP_HOME) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);

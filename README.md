@@ -23,10 +23,10 @@ and an early single-connection TCP/plain-HTTP client.
 
 The desktop now includes an **Install F5** graphical preview with target-device
 capacity, logical sector size, and UEFI/legacy-BIOS partition planning. It is
-read-only and cannot install or modify a disk. A host-tested GPT metadata
-serializer and guarded mock-disk transaction exist, but they are not connected
-to the kernel's release block-device path. The release NVMe device remains
-read-only.
+read-only and cannot install or modify a disk. A host-tested GPT metadata serializer, guarded mock-disk transaction, and
+two-stage installer authorization state machine exist, but they are not
+connected to the kernel's release block-device path. The release NVMe device
+remains read-only.
 
 This is still an early prototype, not a complete desktop OS. Durable installable
 filesystem hardening, a full installer wizard, system-image deployment,

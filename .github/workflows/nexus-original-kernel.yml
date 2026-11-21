@@ -70,6 +70,7 @@ jobs:
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
+          grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log
           grep -q "NEXUS PAGE RECLAIM READY" uefi-serial.log
           grep -q "NEXUS NX PAGE PROTECTION READY" uefi-serial.log
           grep -q "NEXUS USER MODE" uefi-serial.log
@@ -126,6 +127,7 @@ jobs:
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" bios-serial.log
+          grep -q "NEXUS SYSCALL ABI READY" bios-serial.log
           grep -q "NEXUS PAGE RECLAIM READY" bios-serial.log
           grep -q "NEXUS NX PAGE PROTECTION READY" bios-serial.log
           grep -q "NEXUS USER MODE" bios-serial.log
@@ -169,6 +171,7 @@ jobs:
           grep -q "NEXUS NVME BLOCK DEVICE READY" release-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" release-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" release-serial.log
+          grep -q "NEXUS SYSCALL ABI READY" release-serial.log
           grep -q "NEXUS PAGE RECLAIM READY" release-serial.log
           grep -q "NEXUS NX PAGE PROTECTION READY" release-serial.log
           grep -q "NEXUS NVME IDENTIFY READY" release-serial.log

@@ -515,3 +515,17 @@ This is an early single-core reclamation path with a fixed 8,192-page free-list
 capacity. It is not yet SMP-safe, does not provide per-page reference counts,
 and cannot safely reclaim shared pages. The loader still supports a single
 bootstrap process; preemptive multi-process scheduling remains future work.
+
+
+### Stable initial syscall error handling
+
+The first int 0x80 ABI now has named syscall numbers for exit and stdout write.
+Unknown syscall numbers return -ENOSYS, an invalid output descriptor returns
+-EBADF, and a rejected userspace buffer returns -EFAULT. A non-user invocation
+is rejected without transferring control into an idle loop. The ring-3 test
+program checks both -ENOSYS and -EFAULT before continuing to a valid write and
+process exit; BIOS, UEFI, and final-image CI logs require the syscall ABI marker.
+
+Only exit and serial-backed stdout write exist at this stage. File descriptors,
+stdin, filesystem reads, process creation, signal/fault delivery, and a
+userspace C runtime remain future work.

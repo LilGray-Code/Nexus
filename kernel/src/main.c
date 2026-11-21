@@ -230,6 +230,7 @@ void kmain(void) {
     }
     serial_write("NEXUS ELF64 USER LOADER READY\r\n");
     serial_write("NEXUS USER MODE SELFTEST READY\\r\\n");
+    serial_write("NEXUS SYSCALL ABI READY\\r\\n");
     serial_write("NEXUS K0 BOOT COMPLETE\\r\\n");
 
     /* Timer and input IRQs wake the kernel while the event queue is drained. */

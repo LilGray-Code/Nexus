@@ -91,6 +91,7 @@ static bool directory_child(const struct nexus_fat32_format_target*t,
     __builtin_memcmp(sector,verify,bps)!=0)return false;
  *out=child;return true;
 }
+static bool valid_name(const char*n,uint8_t out[11]);
 static uint8_t lfn_checksum(const uint8_t name[11]){
  uint8_t sum=0;
  for(unsigned i=0;i<11;i++)sum=(uint8_t)(((sum&1U)?0x80U:0U)+(sum>>1)+name[i]);
@@ -181,8 +182,7 @@ enum nexus_fat32_file_result nexus_fat32_write_file(
    bool free_entry=sector[off]==0U||sector[off]==0xE5U;
    if(free_entry){
     if(!has_lfn){root_slot=s*bps/32U+off/32U;break;}
-    if(off+64U<=bps&&
-       (sector[off+32U]==0U||sector[off+32U]==0xE5U)){
+    if(sector[off]==0U&&off+64U<=bps&&sector[off+32U]==0U){
      lfn_slot=s*bps/32U+off/32U;root_slot=lfn_slot+1U;break;
     }
     continue;

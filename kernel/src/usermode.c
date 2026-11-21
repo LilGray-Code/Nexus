@@ -319,6 +319,30 @@ int64_t usermode_sys_read(uint64_t descriptor, uint64_t user_buffer,
     return (int64_t)bytes_read;
 }
 
+int64_t usermode_sys_file_write(uint64_t user_path,
+                                uint64_t user_buffer, uint64_t length) {
+    char path[NEXUS_VFS_NAME_MAX];
+    static uint8_t write_buffer[NEXUS_VFS_RAM_MAX_FILE_SIZE];
+
+    if (!paging_copy_from_user(path, user_path, sizeof(path)))
+        return -NEXUS_EFAULT;
+    size_t path_length = 0U;
+    while (path_length < sizeof(path) && path[path_length] != '\\0') {
+        if (path[path_length] == '/' || path[path_length] == '\\\\')
+            return -NEXUS_EINVAL;
+        ++path_length;
+    }
+    if (path_length == 0U) return -NEXUS_EINVAL;
+    if (path_length == sizeof(path)) return -NEXUS_ENAMETOOLONG;
+    if (length > sizeof(write_buffer)) return -NEXUS_EFBIG;
+    if (length != 0U &&
+        !paging_copy_from_user(write_buffer, user_buffer, (size_t)length))
+        return -NEXUS_EFAULT;
+    if (!vfs_write_file(path, write_buffer, (size_t)length))
+        return -NEXUS_EIO;
+    return (int64_t)length;
+}
+
 int64_t usermode_sys_close(uint64_t descriptor) {
     if (descriptor < USERMODE_FD_BASE ||
         descriptor >= USERMODE_FD_BASE + USERMODE_FILE_SLOTS) {

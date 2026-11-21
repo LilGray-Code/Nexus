@@ -278,10 +278,10 @@ int main(int argc,char **argv) {
     assert(memcmp(target.format_area+config_off,"timeout: 3\\n",11U)==0);
 
     /* The BIOS stage-2 filename requires a two-entry VFAT long name. */
-    const uint32_t root_boot_cluster=(uint32_t)target.format_area[root_off+64U+26U] |
-        ((uint32_t)target.format_area[root_off+64U+27U]<<8) |
-        ((uint32_t)target.format_area[root_off+64U+20U]<<16) |
-        ((uint32_t)target.format_area[root_off+64U+21U]<<24);
+    const uint32_t root_boot_cluster=(uint32_t)target.format_area[root_off+128U+26U] |
+        ((uint32_t)target.format_area[root_off+128U+27U]<<8) |
+        ((uint32_t)target.format_area[root_off+128U+20U]<<16) |
+        ((uint32_t)target.format_area[root_off+128U+21U]<<24);
     assert(root_boot_cluster>=3U);
     const size_t root_boot_off=esp_offset+(size_t)(reserved+2U*fatsz+
         (root_boot_cluster-2U)*spc)*bps;

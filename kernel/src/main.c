@@ -6,7 +6,7 @@
 #include "acpi.h"
 #include "interrupts.h"
 #include "ioapic.h"
-#include "memory.h"
+#include "memory.h"\n#include "pci.h"
 #include "serial.h"
 #include "scheduler.h"
 #include "timer.h"
@@ -183,7 +183,7 @@ void kmain(void) {
         serial_write("ERROR: I/O APIC read-only probe failed\\r\\n");
         halt_forever();
     }
-    serial_write("NEXUS IOAPIC PROBE READY\\r\\n");
+    serial_write("NEXUS IOAPIC PROBE READY\\r\\n");\n\n    if (!pci_init()) {\n        serial_write("WARNING: no PCI devices discovered\\\\r\\\\n");\n    }\n    serial_write("NEXUS PCI ENUMERATION READY\\\\r\\\\n");
 
     timer_init(100);
     serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\\r\\n");

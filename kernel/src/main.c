@@ -230,6 +230,13 @@ void kmain(void) {
         serial_write("ERROR: CPL3 user-mode self-test failed\\r\\n");
         halt_forever();
     }
+#ifdef NEXUS_STORAGE_SELFTEST
+    if (!desktop_run_process_selftest()) {
+        serial_write("ERROR: FAT32 ELF file execution self-test failed\\r\\n");
+        halt_forever();
+    }
+    serial_write("NEXUS FILE PROCESS SELFTEST READY\\r\\n");
+#endif
     serial_write("NEXUS PROCESS MANAGER READY\r\n");
     serial_write("NEXUS ELF64 USER LOADER READY\r\n");
     serial_write("NEXUS USER MODE SELFTEST READY\\r\\n");

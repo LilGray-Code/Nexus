@@ -775,3 +775,23 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     draw_pointer();
     serial_write("DESKTOP: view changed by keyboard shortcut\\r\\n");
 }
+
+
+bool desktop_run_process_selftest(void) {
+    if (!vfs_root_mounted()) scan_files_once();
+    if (!vfs_root_mounted()) return false;
+
+    struct nexus_process_result result;
+    enum nexus_process_error error = NEXUS_PROCESS_ERROR_NONE;
+    if (!process_execute_file("HELLO.ELF", &result, &error)) {
+        serial_write("DESKTOP: HELLO.ELF execution failed; error=");
+        serial_write_hex((uint64_t)error);
+        serial_write("\r\n");
+        return false;
+    }
+
+    serial_write("DESKTOP: HELLO.ELF exit status=");
+    serial_write_hex(result.exit_status);
+    serial_write("\r\n");
+    return result.exit_status == 7U;
+}

@@ -70,6 +70,8 @@ jobs:
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
+          grep -q "NEXUS FILE EXEC OK" uefi-serial.log
+          grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
           grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log
           grep -q "NEXUS PAGE RECLAIM READY" uefi-serial.log

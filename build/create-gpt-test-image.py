@@ -29,6 +29,44 @@ def make_header(current, backup, entries_lba, disk_guid, entries_crc):
     crc = zlib.crc32(fields) & 0xFFFFFFFF
     return fields[:16] + struct.pack("<I", crc) + fields[20:] + bytes(SECTOR - 92)
 
+
+def make_hello_elf():
+    """Build a tiny static x86-64 ELF64 program for the disposable CI volume."""
+    message = b"NEXUS FILE EXEC OK"
+    code = bytearray([
+        0x48, 0xC7, 0xC0, 0x02, 0x00, 0x00, 0x00,  # write syscall
+        0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00,  # fd 1
+        0x48, 0xBE, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x48, 0xC7, 0xC2, len(message), 0x00, 0x00, 0x00,
+        0xCD, 0x80,
+        0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00,  # exit syscall
+        0x48, 0xC7, 0xC7, 0x07, 0x00, 0x00, 0x00,  # status 7
+        0xCD, 0x80,
+        0xEB, 0xFE,
+    ])
+    message_address = 0x00400000 + len(code)
+    struct.pack_into("<Q", code, 16, message_address)
+    segment = bytes(code) + message
+    segment_offset = 0x100
+    file_size = segment_offset + len(segment)
+
+    ident = b"\x7fELF" + bytes([2, 1, 1]) + bytes(9)
+    header = struct.pack(
+        "<16sHHIQQQIHHHHHH",
+        ident, 2, 62, 1, 0x00400000, 64, 0, 0,
+        64, 56, 1, 0, 0, 0
+    )
+    program_header = struct.pack(
+        "<IIQQQQQQ",
+        1, 5, segment_offset, 0x00400000, 0,
+        len(segment), 4096, 0x100
+    )
+    image = bytearray(file_size)
+    image[:64] = header
+    image[64:120] = program_header
+    image[segment_offset:] = segment
+    return bytes(image)
+
 def make_fat32(image):
     volume_sectors = PARTITION_LAST - PARTITION_FIRST + 1
     reserved = 32
@@ -71,6 +109,7 @@ def make_fat32(image):
     fat = bytearray(sectors_per_fat * SECTOR)
     struct.pack_into("<IIII", fat, 0,
                      0x0FFFFFF8, 0xFFFFFFFF, 0x0FFFFFFF, 5)
+    struct.pack_into("<I", fat, 4 * 4, 0x0FFFFFFF)
     struct.pack_into("<I", fat, 5 * 4, 0x0FFFFFFF)
     for copy in range(fats):
         offset = (fat_start + copy * sectors_per_fat) * SECTOR
@@ -81,11 +120,28 @@ def make_fat32(image):
     root_entry = bytearray(32)
     root_entry[0:11] = b"README  TXT"
     root_entry[11] = 0x20
-    struct.pack_into("<HHI", root_entry, 20, 0, 3, len(README))
+    struct.pack_into("<H", root_entry, 20, 0)
+    struct.pack_into("<H", root_entry, 26, 3)
+    struct.pack_into("<I", root_entry, 28, len(README))
     root[0:32] = root_entry
-    root[32] = 0
+
+    hello_elf = make_hello_elf()
+    if len(hello_elf) > SECTOR:
+        raise ValueError("HELLO.ELF test image must fit in one FAT32 cluster")
+    hello_entry = bytearray(32)
+    hello_entry[0:11] = b"HELLO   ELF"
+    hello_entry[11] = 0x20
+    struct.pack_into("<H", hello_entry, 20, 0)
+    struct.pack_into("<H", hello_entry, 26, 4)
+    struct.pack_into("<I", hello_entry, 28, len(hello_elf))
+    root[32:64] = hello_entry
+    root[64] = 0
+
     offset = data_start * SECTOR
     image[offset:offset + SECTOR] = root
+    hello_sector = (data_start + 2) * SECTOR
+    image[hello_sector:hello_sector + len(hello_elf)] = hello_elf
+
     file_sector = (data_start + 1) * SECTOR
     image[file_sector:file_sector + SECTOR] = README[:SECTOR]
     fragmented_file_sector = (data_start + 3) * SECTOR

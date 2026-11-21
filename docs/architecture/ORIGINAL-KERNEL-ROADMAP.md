@@ -556,3 +556,15 @@ first. It still does not auto-scan disks on boot.
 The ELF validator also caps aggregate PT_LOAD memory at 16 MiB. This bound is
 checked before allocating any process pages and is covered by the parser
 self-test, independently of the 128 KiB executable-file limit used by Terminal.
+
+
+### On-disk ELF execution test
+
+The disposable GPT/FAT32 CI image now contains a small static \`HELLO.ELF\`
+program in its root directory. During the UEFI storage-selftest build, Nexus
+mounts that image through the read-only GPT/FAT32/VFS path, opens the ELF by
+its 8.3 filename, loads it into a private user address space, executes it at
+CPL3, checks its stdout marker and exit status 7, closes process descriptors,
+and reclaims the process pages. This verifies the complete read-only disk to
+user-process launch path without writing to the test image or touching a
+user's real disk. The release build does not auto-scan or execute files.

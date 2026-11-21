@@ -42,6 +42,8 @@ interrupts.
 
 ## Verification and disk safety
 
+CI run [44875961523](https://github.com/LilGray-Code/Nexus/actions/runs/44875961523) passed the common API integration, sequential reads, BIOS/UEFI boot paths, and non-self-test distributable image check. The UEFI serial log confirms that LBA 0 and LBA 1 were read through blockdev_read and matched their separate test signatures.
+
 The QEMU CI self-test build is compiled with
 `NEXUS_STORAGE_SELFTEST`. Its disposable 64 MiB NVMe image has distinct
 signatures in LBA 0 and LBA 1; CI calls the common `blockdev_read` API twice

@@ -9,8 +9,9 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 	-fno-unwind-tables -fno-common -m64 -march=x86-64 \
 	-mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only \
 	-mcmodel=kernel -I$(DEPS) -Isrc
+CFLAGS += $(EXTRA_CFLAGS)
 LDFLAGS := -nostdlib -static -z max-page-size=0x1000 -T linker/x86_64.ld
-C_OBJECTS := $(OUT)/main.o $(OUT)/serial.o $(OUT)/memory.o $(OUT)/acpi.o $(OUT)/pci.o $(OUT)/nvme.o $(OUT)/storage.o $(OUT)/ioapic.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o $(OUT)/scheduler.o
+C_OBJECTS := $(OUT)/main.o $(OUT)/serial.o $(OUT)/memory.o $(OUT)/acpi.o $(OUT)/pci.o $(OUT)/blockdev.o $(OUT)/nvme.o $(OUT)/storage.o $(OUT)/ioapic.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o $(OUT)/scheduler.o
 OBJECTS := $(C_OBJECTS) $(OUT)/isr.o $(OUT)/context.o
 
 .PHONY: all clean

@@ -86,7 +86,7 @@ static void test_4kn_image(void) {
     assert(nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
                                        4096ULL, 4096U,
                                        NEXUS_FIRMWARE_UEFI, &plan));
-    assert(nexus_gpt_image_build(&plan, disk_guid, partition_guids, &image));
+    assert(nexus_gpt_image_build(&plan, disk_guid, &partition_guids[0][0], &image));
     check_header(image.primary_header, 4096U, 1U,
                  plan.disk_block_count - 1U, 2U);
     check_header(image.backup_header, 4096U, plan.disk_block_count - 1U,
@@ -103,10 +103,10 @@ static void test_rejects_duplicate_guids_and_invalid_plan(void) {
                                        NEXUS_FIRMWARE_UEFI, &plan));
     for (size_t i = 0U; i < 16U; ++i)
         partition_guids[1][i] = partition_guids[0][i];
-    assert(!nexus_gpt_image_build(&plan, disk_guid, partition_guids, &image));
+    assert(!nexus_gpt_image_build(&plan, disk_guid, &partition_guids[0][0], &image));
     fill_guids(disk_guid, partition_guids);
     plan.partitions[1].first_lba = plan.partitions[0].first_lba;
-    assert(!nexus_gpt_image_build(&plan, disk_guid, partition_guids, &image));
+    assert(!nexus_gpt_image_build(&plan, disk_guid, &partition_guids[0][0], &image));
 }
 
 int main(void) {

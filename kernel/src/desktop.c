@@ -37,6 +37,7 @@ static char files_first_name[13];
 static char files_preview[41];
 static char files_listing[6][13];
 static size_t files_listing_count;
+static size_t files_selected_index;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -192,9 +193,23 @@ static void draw_shell(void) {
                                "ROOT DIRECTORY (READ ONLY)",
                                1, 108, 216, 229);
             for (size_t n = 0; n < files_listing_count; ++n) {
-                graphics_draw_text(text_x + n * 150U, text_y + 312U,
-                                   files_listing[n], 1, 233, 243, 252);
+                const uint64_t column = n % 2U;
+                const uint64_t line = n / 2U;
+                const bool selected = n == files_selected_index;
+                if (selected)
+                    graphics_fill_rect(text_x + column * 260U - 6U,
+                                       text_y + 307U + line * 24U,
+                                       240U, 20U, 34, 78, 105);
+                graphics_draw_text(text_x + column * 260U,
+                                   text_y + 312U + line * 24U,
+                                   files_listing[n], 1,
+                                   selected ? 119 : 233,
+                                   selected ? 229 : 243,
+                                   selected ? 211 : 252);
             }
+            graphics_draw_text(text_x, text_y + 390U,
+                               "UP/DOWN SELECT  ENTER PREVIEW",
+                               1, 170, 191, 211);
         }
         graphics_draw_text(text_x, text_y + 342U,
                            "PRESS ESC TO RETURN HOME",
@@ -301,6 +316,7 @@ static void scan_files_once(void) {
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
     files_listing_count = 0;
+    files_selected_index = 0;
     for (size_t n = 0; n < 6U; ++n)
         for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
@@ -418,6 +434,53 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (event->type != NEXUS_INPUT_KEYBOARD) return;
+    /* Set-1 make codes only; break codes are ignored. */
+    if (active_view == DESKTOP_FILES && files_fat32_ok) {
+        if (event->scancode == 0x48U && files_listing_count > 0U) {
+            if (files_selected_index > 0U) --files_selected_index;
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x50U && files_listing_count > 0U) {
+            if (files_selected_index + 1U < files_listing_count)
+                ++files_selected_index;
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x1CU && files_selected_index < files_listing_count) {
+            struct nexus_vfs_dirent selected;
+            if (vfs_root_entry(files_selected_index, &selected) &&
+                selected.type == NEXUS_VFS_FILE) {
+                struct nexus_vfs_file file;
+                if (vfs_open_readonly(selected.name, &file)) {
+                    uint8_t preview_data[sizeof(files_preview) - 1U];
+                    size_t bytes_read = 0;
+                    if (vfs_read(&file, preview_data, sizeof(preview_data),
+                                 &bytes_read)) {
+                        for (size_t n = 0; n < bytes_read; ++n) {
+                            const uint8_t ch = preview_data[n];
+                            files_preview[n] =
+                                (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : ' ';
+                        }
+                        files_preview[bytes_read] = '\0';
+                        size_t name_length = 0;
+                        while (name_length < sizeof(files_first_name) - 1U &&
+                               selected.name[name_length] != '\0') {
+                            files_first_name[name_length] = selected.name[name_length];
+                            ++name_length;
+                        }
+                        files_first_name[name_length] = '\0';
+                    }
+                    vfs_close(&file);
+                }
+            }
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+    }
     enum desktop_view next_view = active_view;
     switch (event->scancode) {
         case 0x3BU: next_view = DESKTOP_FILES; break;

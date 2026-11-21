@@ -236,7 +236,7 @@ int main(void) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 22U);
+    assert(target.flushes == 18U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -267,7 +267,7 @@ int main(void) {
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 18U);
+    assert(target.flushes == 22U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

@@ -31,7 +31,7 @@ and UI integration are still missing, so release writes remain disabled.
 
 This is still an early prototype, not a complete desktop OS. Durable installable
 filesystem hardening, a full installer wizard, system-image deployment,
-target-disk bootloader installation, first boot, recovery/update flows, modern
+target-disk BIOS stage-1 installation, first boot, recovery/update flows, modern
 browser/TLS, broad USB/Wi-Fi/audio/GPU drivers, power management, and release
 hardening remain incomplete.
 

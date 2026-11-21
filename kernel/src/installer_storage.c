@@ -5,6 +5,7 @@
 #include "fat32_file.h"
 #include "gpt.h"
 #include "nxfs.h"
+#include "boot_payload.h"
 
 static bool installer_target_read(void *context, uint64_t lba,
                                   uint32_t blocks, void *buffer) {
@@ -117,6 +118,43 @@ enum nexus_fat32_file_result nexus_installer_write_efi_file(
  const enum nexus_fat32_file_result result=nexus_fat32_write_file(
   &target,first,blocks,name,data,length);
  blockdev_install_session_end();return result;
+}
+
+
+bool nexus_installer_deploy_boot_payloads(
+ const struct nexus_block_device *device,
+ const struct nexus_installer_disk_identity *identity,
+ const char *typed_id,const char *typed_erase,
+ uint64_t esp_first,uint64_t esp_blocks) {
+ const struct nexus_boot_payloads *p=nexus_boot_payloads_get();
+ if(!p||!device||!identity)return false;
+ /* The ESP is revalidated against GPT and the captured disk identity for
+  * every file write. BIOS stage-2 is staged as a file only; raw BIOS stage-1
+  * installation is deliberately a separate, not-yet-enabled operation. */
+ if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
+    esp_first,esp_blocks,"EFI/BOOT/BOOTX64.EFI",
+    p->uefi_loader.data,p->uefi_loader.size)!=NEXUS_FAT32_FILE_OK)return false;
+ if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
+    esp_first,esp_blocks,"NEXUS/KERNEL.ELF",
+    p->kernel_elf.data,p->kernel_elf.size)!=NEXUS_FAT32_FILE_OK)return false;
+ if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
+    esp_first,esp_blocks,"boot/limine/limine-bios.sys",
+    p->bios_stage2.data,p->bios_stage2.size)!=NEXUS_FAT32_FILE_OK)return false;
+ static const char config[]=
+  "timeout: 3\n"
+  "default_entry: 1\n"
+  "interface_branding: NEXUS OS\n"
+  "interface_branding_colour: 18D2EB\n"
+  "\n/Nexus OS\n"
+  "    protocol: limine\n"
+  "    path: boot():/NEXUS/KERNEL.ELF\n";
+ if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
+    esp_first,esp_blocks,"EFI/BOOT/limine.conf",
+    config,(uint32_t)(sizeof(config)-1U))!=NEXUS_FAT32_FILE_OK)return false;
+ if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
+    esp_first,esp_blocks,"boot/limine/limine.conf",
+    config,(uint32_t)(sizeof(config)-1U))!=NEXUS_FAT32_FILE_OK)return false;
+ return true;
 }
 
 enum nexus_fat32_format_result nexus_installer_format_fat32(

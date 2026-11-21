@@ -6,6 +6,7 @@
 #include "fat32_format.h"
 #include "fat32_file.h"
 #include "nxfs.h"
+#include "boot_payload.h"
 
 struct nexus_installer_disk_identity {
     char stable_id[NEXUS_BLOCKDEV_ID_MAX];
@@ -31,7 +32,7 @@ bool nexus_installer_format_nxfs(
     const char *typed_erase_phrase,
     const struct nexus_gpt_partition *partition);
 
-enum nexus_fat32_file_result nexus_installer_write_efi_file(
+bool nexus_installer_deploy_boot_payloads(\n const struct nexus_block_device*,const struct nexus_installer_disk_identity*,\n const char*,const char*,uint64_t,uint64_t);\n\nenum nexus_fat32_file_result nexus_installer_write_efi_file(
  const struct nexus_block_device*,const struct nexus_installer_disk_identity*,
  const char*,const char*,uint64_t,uint64_t,const char*,const void*,uint32_t);
 enum nexus_fat32_format_result nexus_installer_format_fat32(

@@ -5,6 +5,7 @@
 
 #include "acpi.h"
 #include "blockdev.h"
+#include "boot_payload.h"
 #include "desktop.h"
 #include "elf64.h"
 #include "e1000.h"
@@ -47,6 +48,10 @@ static volatile struct limine_rsdp_request rsdp_request = {
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_executable_file_request executable_file_request = {
     .id = LIMINE_EXECUTABLE_FILE_REQUEST_ID, .revision = 0
+};
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_module_request module_request = {
+    .id = LIMINE_MODULE_REQUEST_ID, .revision = 0
 };
 __attribute__((used, section(".limine_requests_end")))
 static volatile uint64_t requests_end[] = LIMINE_REQUESTS_END_MARKER;

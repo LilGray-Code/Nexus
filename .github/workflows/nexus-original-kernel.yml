@@ -61,9 +61,8 @@ jobs:
           grep -q "NEXUS K2 TIMER INTERRUPT READY" uefi-serial.log
           grep -q "NEXUS ACPI MADT READY" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log
+          grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" uefi-serial.log
-          grep -q "NEXUS PCI ENUMERATION READY" uefi-serial.log
-          grep -q "PCI: device " uefi-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" uefi-serial.log
           grep -q "STORAGE: controller " uefi-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" uefi-serial.log
@@ -89,9 +88,8 @@ jobs:
           grep -q "NEXUS K2 TIMER INTERRUPT READY" bios-serial.log
           grep -q "NEXUS ACPI MADT READY" bios-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" bios-serial.log
+          grep -q "PCI: functions discovered:" bios-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log
-          grep -q "NEXUS PCI ENUMERATION READY" bios-serial.log
-          grep -q "PCI: device " bios-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log
           grep -q "STORAGE: controller " bios-serial.log
           grep -q "NEXUS K2 COOPERATIVE SCHEDULER READY" bios-serial.log

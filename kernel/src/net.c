@@ -61,6 +61,11 @@ static uint16_t read_be16(const uint8_t *p) {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
 }
 
+static uint32_t read_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+           ((uint32_t)p[2] << 8) | (uint32_t)p[3];
+}
+
 static void write_be16(uint8_t *p, uint16_t value) {
     p[0] = (uint8_t)(value >> 8);
     p[1] = (uint8_t)value;

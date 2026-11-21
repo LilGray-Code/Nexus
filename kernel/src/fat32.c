@@ -10,6 +10,8 @@
 #define FAT32_ATTR_DIRECTORY 0x10U
 #define FAT32_ATTR_VOLUME_ID 0x08U
 #define FAT32_ATTR_LONG_NAME 0x0FU
+#define FAT32_MAX_ROOT_CLUSTERS 128U
+#define FAT32_MAX_CHAIN_SKIP 65536U
 
 static struct nexus_fat32_entry root_entries[NEXUS_FAT32_MAX_ROOT_ENTRIES];
 static size_t root_entry_count;
@@ -80,7 +82,7 @@ static bool add_directory_entry(const uint8_t *raw) {
     if (raw[0] == 0xE5U || raw[0] == '.' ||
         raw[11] == FAT32_ATTR_LONG_NAME ||
         (raw[11] & FAT32_ATTR_VOLUME_ID) != 0U) return true;
-    if (root_entry_count >= NEXUS_FAT32_MAX_ROOT_ENTRIES) return false;
+    if (root_entry_count >= NEXUS_FAT32_MAX_ROOT_ENTRIES) return true;
 
     struct nexus_fat32_entry *entry = &root_entries[root_entry_count++];
     decode_short_name(raw, entry->name);
@@ -142,7 +144,7 @@ bool fat32_mount(const struct nexus_block_device *device,
     root_cluster = root;
 
     uint32_t cluster = root_cluster;
-    for (uint32_t chain = 0; chain < cluster_count; ++chain) {
+    for (uint32_t chain = 0; chain < FAT32_MAX_ROOT_CLUSTERS; ++chain) {
         if (!valid_cluster(cluster)) goto fail;
         const uint64_t first_sector = (uint64_t)data_start +
             (uint64_t)(cluster - 2U) * sectors_per_cluster;
@@ -205,20 +207,27 @@ bool fat32_read_file(const struct nexus_fat32_entry *entry,
         (uint64_t)sectors_per_cluster * bytes_per_sector;
     uint64_t cluster_index = offset / cluster_bytes;
     uint32_t in_cluster_offset = (uint32_t)(offset % cluster_bytes);
+    if (cluster_index > FAT32_MAX_CHAIN_SKIP) return false;
     uint32_t cluster = entry->first_cluster;
 
-    while (cluster_index-- > 0U) {
+    for (uint64_t skipped = 0; skipped < cluster_index; ++skipped) {
         uint32_t next = 0;
         if (!fat_next_cluster(cluster, &next) ||
             next >= FAT32_EOC_MIN || !valid_cluster(next) ||
-            next == FAT32_BAD_CLUSTER) return false;
+            next == FAT32_BAD_CLUSTER || next == cluster) return false;
         cluster = next;
     }
 
     uint8_t *out = (uint8_t *)buffer;
     uint32_t copied = 0;
-    for (uint32_t chain = 0; copied < length && chain < cluster_count; ++chain) {
+    uint32_t visited[9];
+    size_t visited_count = 0;
+    for (uint32_t chain = 0; copied < length && chain < 9U; ++chain) {
         if (!valid_cluster(cluster)) return false;
+        for (size_t prior = 0; prior < visited_count; ++prior) {
+            if (visited[prior] == cluster) return false;
+        }
+        visited[visited_count++] = cluster;
         const uint64_t first_sector = (uint64_t)data_start +
             (uint64_t)(cluster - 2U) * sectors_per_cluster;
         uint32_t first_sector_index =
@@ -243,7 +252,7 @@ bool fat32_read_file(const struct nexus_fat32_entry *entry,
             uint32_t next = 0;
             if (!fat_next_cluster(cluster, &next) ||
                 next >= FAT32_EOC_MIN || !valid_cluster(next) ||
-                next == FAT32_BAD_CLUSTER) return false;
+                next == FAT32_BAD_CLUSTER || next == cluster) return false;
             cluster = next;
         }
     }

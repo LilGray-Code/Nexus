@@ -163,6 +163,7 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
 
             case NEXUS_SYS_EXIT:
                 usermode_exit_status = frame->rdi;
+                usermode_exit_seen = true;
                 mutable_frame->instruction_pointer =
                     (uint64_t)(uintptr_t)nexus_user_return;
                 mutable_frame->code_segment = 0x08U;

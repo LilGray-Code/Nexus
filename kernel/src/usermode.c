@@ -3,6 +3,7 @@
 #include "elf64.h"
 #include "gdt.h"
 #include "paging.h"
+#include "process.h"
 #include "serial.h"
 #include "syscall.h"
 #include "vfs.h"
@@ -47,6 +48,7 @@ struct test_elf_program_header {
 uint64_t usermode_saved_cr3;
 uintptr_t usermode_saved_rsp;
 volatile uint64_t usermode_exit_status = UINT64_MAX;
+volatile bool usermode_exit_seen;
 volatile bool usermode_write_rejected;
 
 extern void nexus_enter_user(uint64_t root_physical,
@@ -54,7 +56,6 @@ extern void nexus_enter_user(uint64_t root_physical,
                              uint64_t stack_pointer,
                              uint64_t kernel_stack_top);
 
-static uint8_t usermode_kernel_stack[16384U] __attribute__((aligned(16)));
 static struct nexus_vfs_file usermode_files[USERMODE_FILE_SLOTS];
 static bool usermode_file_used[USERMODE_FILE_SLOTS];
 static uint8_t usermode_test_elf[TEST_ELF_FILE_CAPACITY]
@@ -193,35 +194,58 @@ static bool build_test_elf(size_t *file_size) {
     return true;
 }
 
-bool usermode_run_selftest(void) {
-    size_t elf_file_size;
-    if (!build_test_elf(&elf_file_size)) return false;
-
-    uint64_t user_root_physical;
-    uint64_t entry_point;
-    uint64_t stack_pointer;
-    if (!nexus_elf64_load(usermode_test_elf, elf_file_size,
-                          &user_root_physical, &entry_point,
-                          &stack_pointer)) {
-        return false;
-    }
-
-    const uint64_t kernel_stack_top = (uint64_t)(uintptr_t)
-        (usermode_kernel_stack + sizeof(usermode_kernel_stack));
-    if (!gdt_set_kernel_stack(kernel_stack_top)) return false;
-
+static void usermode_close_all_files(void) {
     for (size_t i = 0; i < USERMODE_FILE_SLOTS; ++i) {
         if (usermode_file_used[i]) vfs_close(&usermode_files[i]);
         usermode_file_used[i] = false;
     }
+}
+
+bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
+                      uint64_t stack_pointer, uint64_t kernel_stack_top,
+                      uint64_t *exit_status) {
+    if (root_physical == 0U || entry_point == 0U ||
+        stack_pointer == 0U || kernel_stack_top == 0U ||
+        (kernel_stack_top & 0x0FU) != 0U || exit_status == NULL) {
+        return false;
+    }
+
+    const uint64_t previous_kernel_stack = gdt_get_kernel_stack();
+    if (previous_kernel_stack == 0U ||
+        !gdt_set_kernel_stack(kernel_stack_top)) {
+        return false;
+    }
+
+    usermode_close_all_files();
     usermode_exit_status = UINT64_MAX;
+    usermode_exit_seen = false;
     usermode_write_rejected = false;
-    nexus_enter_user(user_root_physical, entry_point, stack_pointer,
+
+    nexus_enter_user(root_physical, entry_point, stack_pointer,
                      kernel_stack_top);
-    const bool selftest_ok =
-        usermode_exit_status == USER_EXIT_STATUS && usermode_write_rejected;
-    if (!paging_destroy_user_address_space(user_root_physical)) return false;
-    return selftest_ok;
+
+    const bool exited = usermode_exit_seen;
+    const uint64_t status = usermode_exit_status;
+    usermode_close_all_files();
+    const bool stack_restored = gdt_set_kernel_stack(previous_kernel_stack);
+    *exit_status = status;
+    return exited && stack_restored;
+}
+
+bool usermode_run_selftest(void) {
+    size_t elf_file_size;
+    if (!build_test_elf(&elf_file_size)) return false;
+
+    uint32_t pid = 0U;
+    if (!process_spawn_elf("BOOTTEST", usermode_test_elf, elf_file_size, &pid)) {
+        return false;
+    }
+
+    uint64_t exit_status = UINT64_MAX;
+    const bool executed = process_run(pid, &exit_status);
+    const bool result_ok = executed && exit_status == USER_EXIT_STATUS &&
+                           usermode_write_rejected;
+    return process_reap(pid) && result_ok;
 }
 
 bool usermode_sys_write(uint64_t user_address, uint64_t length) {

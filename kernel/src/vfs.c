@@ -72,6 +72,17 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
     return false;
 }
 
+bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
+    if (!root_mounted || file == NULL || !file->open ||
+        file->filesystem_entry == NULL || size == NULL) {
+        return false;
+    }
+    const struct nexus_fat32_entry *entry =
+        (const struct nexus_fat32_entry *)file->filesystem_entry;
+    *size = entry->size;
+    return true;
+}
+
 bool vfs_read(struct nexus_vfs_file *file, void *buffer,
               size_t requested, size_t *bytes_read) {
     if (bytes_read != NULL) *bytes_read = 0;

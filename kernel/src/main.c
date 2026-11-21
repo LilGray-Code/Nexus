@@ -19,6 +19,7 @@
 #include "scheduler.h"
 #include "timer.h"
 #include "usermode.h"
+#include "process.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
@@ -224,10 +225,12 @@ void kmain(void) {
     if (!input_ready) {
         serial_write("INPUT: no PS/2 devices detected; desktop remains keyboard/mouse inactive\\r\\n");
     }
+    process_init();
     if (!usermode_run_selftest()) {
         serial_write("ERROR: CPL3 user-mode self-test failed\\r\\n");
         halt_forever();
     }
+    serial_write("NEXUS PROCESS MANAGER READY\r\n");
     serial_write("NEXUS ELF64 USER LOADER READY\r\n");
     serial_write("NEXUS USER MODE SELFTEST READY\\r\\n");
     serial_write("NEXUS SYSCALL ABI READY\\r\\n");

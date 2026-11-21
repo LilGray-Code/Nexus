@@ -551,3 +551,8 @@ per-process tables beyond the single bootstrap process, stdin, or device files.
 The terminal now performs read-only volume discovery when the user explicitly
 runs `ls` or `cat`, instead of requiring the Files view to have been opened
 first. It still does not auto-scan disks on boot.
+
+
+The ELF validator also caps aggregate PT_LOAD memory at 16 MiB. This bound is
+checked before allocating any process pages and is covered by the parser
+self-test, independently of the 128 KiB executable-file limit used by Terminal.

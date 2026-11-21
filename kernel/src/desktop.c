@@ -4,6 +4,7 @@
 #include "gpt.h"
 #include "fat32.h"
 #include "vfs.h"
+#include "process.h"
 
 #include "graphics.h"
 #include "input.h"
@@ -435,7 +436,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime ls cat FILE clear";
+        const char *s = "help about mem uptime ls cat FILE run FILE ps clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -488,6 +489,106 @@ static void terminal_execute(void) {
             if(out==0U) { terminal_output[out++]='('; terminal_output[out++]='e'; terminal_output[out++]=')'; }
         }
         terminal_output[out]='\0';
+    } else if (terminal_input[0]=='p' && terminal_input[1]=='s' &&
+               terminal_input[2]=='\0') {
+        size_t out = 0U;
+        for (size_t slot = 0; slot < NEXUS_PROCESS_MAX; ++slot) {
+            struct nexus_process_info info;
+            if (!process_get_info(slot, &info)) continue;
+            char number[21];
+            format_u64(info.pid, number);
+            const char *prefix = "pid ";
+            for (size_t i = 0; prefix[i] != '\0' &&
+                 out < sizeof(terminal_output) - 2U; ++i) {
+                terminal_output[out++] = prefix[i];
+            }
+            for (size_t i = 0; number[i] != '\0' &&
+                 out < sizeof(terminal_output) - 2U; ++i) {
+                terminal_output[out++] = number[i];
+            }
+            if (out < sizeof(terminal_output) - 1U)
+                terminal_output[out++] = ' ';
+            for (size_t i = 0; info.name[i] != '\0' &&
+                 out < sizeof(terminal_output) - 2U; ++i) {
+                terminal_output[out++] = info.name[i];
+            }
+            const char *state = process_state_name(info.state);
+            if (out < sizeof(terminal_output) - 1U)
+                terminal_output[out++] = ' ';
+            for (size_t i = 0; state[i] != '\0' &&
+                 out < sizeof(terminal_output) - 2U; ++i) {
+                terminal_output[out++] = state[i];
+            }
+            if (info.state == NEXUS_PROCESS_EXITED) {
+                if (out < sizeof(terminal_output) - 1U)
+                    terminal_output[out++] = ' ';
+                format_u64(info.exit_status, number);
+                for (size_t i = 0; number[i] != '\0' &&
+                     out < sizeof(terminal_output) - 2U; ++i) {
+                    terminal_output[out++] = number[i];
+                }
+            }
+            if (out < sizeof(terminal_output) - 1U)
+                terminal_output[out++] = ';';
+            if (out < sizeof(terminal_output) - 1U)
+                terminal_output[out++] = ' ';
+        }
+        if (out == 0U) {
+            const char *message = "no process records";
+            for (size_t i = 0; message[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i) {
+                terminal_output[out++] = message[i];
+            }
+        }
+        terminal_output[out] = '\0';
+    } else if (terminal_input[0]=='r' && terminal_input[1]=='u' &&
+               terminal_input[2]=='n' && terminal_input[3]==' ') {
+        if (!vfs_root_mounted()) scan_files_once();
+        struct nexus_process_result result;
+        enum nexus_process_error error = NEXUS_PROCESS_ERROR_NONE;
+        if (process_execute_file(terminal_input + 4, &result, &error)) {
+            size_t out = 0U;
+            const char *prefix = "pid ";
+            for (size_t i = 0; prefix[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i) {
+                terminal_output[out++] = prefix[i];
+            }
+            char number[21];
+            format_u64(result.pid, number);
+            for (size_t i = 0; number[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i) {
+                terminal_output[out++] = number[i];
+            }
+            const char *middle = " exited ";
+            for (size_t i = 0; middle[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i) {
+                terminal_output[out++] = middle[i];
+            }
+            format_u64(result.exit_status, number);
+            for (size_t i = 0; number[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i) {
+                terminal_output[out++] = number[i];
+            }
+            terminal_output[out] = '\0';
+        } else {
+            const char *message = "program could not run";
+            switch (error) {
+                case NEXUS_PROCESS_ERROR_NO_VOLUME: message = "no mounted volume"; break;
+                case NEXUS_PROCESS_ERROR_NOT_FOUND: message = "program not found"; break;
+                case NEXUS_PROCESS_ERROR_IO: message = "program read error"; break;
+                case NEXUS_PROCESS_ERROR_TOO_LARGE: message = "program exceeds 128 KiB limit"; break;
+                case NEXUS_PROCESS_ERROR_TABLE_FULL: message = "process table full"; break;
+                case NEXUS_PROCESS_ERROR_BAD_ELF: message = "invalid or unsupported ELF64 program"; break;
+                case NEXUS_PROCESS_ERROR_EXECUTION: message = "program execution failed"; break;
+                default: break;
+            }
+            size_t out = 0U;
+            while (message[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = message[out];
+                ++out;
+            }
+            terminal_output[out] = '\0';
+        }
     } else if (terminal_input[0]=='c' && terminal_input[1]=='a' &&
                terminal_input[2]=='t' && terminal_input[3]==' ') {
         if (!vfs_root_mounted()) scan_files_once();

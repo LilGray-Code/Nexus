@@ -81,6 +81,12 @@ bool gdt_init(void) {
     return true;
 }
 
+uint64_t gdt_get_kernel_stack(void) {
+    if (!initialized) return 0U;
+    __asm__ volatile ("" : : : "memory");
+    return tss.rsp0;
+}
+
 bool gdt_set_kernel_stack(uint64_t stack_top) {
     if (!initialized || stack_top == 0U || (stack_top & 0x0FU) != 0U)
         return false;

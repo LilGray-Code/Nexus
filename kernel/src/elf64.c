@@ -6,6 +6,7 @@
 #define ELF64_HEADER_SIZE 64U
 #define ELF64_PROGRAM_HEADER_SIZE 56U
 #define ELF64_MAX_PROGRAM_HEADERS 64U
+#define ELF64_MAX_TOTAL_MEMORY (16ULL * 1024ULL * 1024ULL)
 #define ELF64_PAGE_SIZE 4096ULL
 #define ELF64_USER_MIN 0x0000000000010000ULL
 #define ELF64_USER_TOP 0x0000800000000000ULL
@@ -105,6 +106,7 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
     struct nexus_elf64_image parsed = {0};
     parsed.entry_point = header->entry;
     bool entry_is_executable = false;
+    uint64_t total_memory_size = 0U;
 
     for (uint64_t i = 0; i < phnum; ++i) {
         const uint64_t offset = phoff + i * ELF64_PROGRAM_HEADER_SIZE;
@@ -118,7 +120,8 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
         }
         if (program->type != ELF64_PT_LOAD) continue;
 
-        if (parsed.segment_count >= NEXUS_ELF64_MAX_LOAD_SEGMENTS ||
+        if (program->memory_size > ELF64_MAX_TOTAL_MEMORY - total_memory_size ||
+            parsed.segment_count >= NEXUS_ELF64_MAX_LOAD_SEGMENTS ||
             program->memory_size == 0U ||
             program->file_size > program->memory_size ||
             program->offset > (uint64_t)file_size ||
@@ -159,6 +162,7 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
             }
         }
 
+        total_memory_size += program->memory_size;
         struct nexus_elf64_segment *segment =
             &parsed.segments[parsed.segment_count++];
         segment->file_offset = program->offset;
@@ -397,6 +401,13 @@ bool nexus_elf64_selftest(void) {
     if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
         return false;
     }
+
+    /* Reject tiny files that request excessive zero-filled process memory. */
+    program->memory_size = ELF64_MAX_TOTAL_MEMORY + 1U;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image)) {
+        return false;
+    }
+    program->memory_size = 16U;
 
     /* Static executables must not request a dynamic linker or TLS runtime. */
     header->program_header_count = 2U;

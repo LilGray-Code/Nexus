@@ -34,6 +34,7 @@ bool vfs_root_mounted(void);
 size_t vfs_root_entry_count(void);
 bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry);
 bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file);
+bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size);
 bool vfs_read(struct nexus_vfs_file *file, void *buffer,
               size_t requested, size_t *bytes_read);
 void vfs_close(struct nexus_vfs_file *file);

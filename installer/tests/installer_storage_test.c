@@ -15,6 +15,7 @@
 #define FORMAT_BASE 2048U
 #define FORMAT_BLOCKS 4096U
 #define NXFS_TEST_AREA_BLOCKS 4096U
+#define BIOS_TEST_AREA_BLOCKS 4096U
 
 struct mock_disk {
     uint8_t first[EDGE_BLOCKS * 512U];
@@ -22,6 +23,8 @@ struct mock_disk {
     uint8_t format_area[FORMAT_BLOCKS * 512U];
     uint64_t nxfs_base;
     uint8_t nxfs_area[NXFS_TEST_AREA_BLOCKS * 512U];
+    uint64_t bios_base;
+    uint8_t bios_area[BIOS_TEST_AREA_BLOCKS * 512U];
     unsigned flushes;
 };
 
@@ -35,6 +38,11 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
     }
     if (lba >= FORMAT_BASE && lba + count <= FORMAT_BASE + FORMAT_BLOCKS) {
         *base = disk->format_area + (lba - FORMAT_BASE) * 512ULL;
+        return true;
+    }
+    if (disk->bios_base != 0U && lba >= disk->bios_base &&
+        lba + count <= disk->bios_base + BIOS_TEST_AREA_BLOCKS) {
+        *base = disk->bios_area + (lba - disk->bios_base) * 512ULL;
         return true;
     }
     if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
@@ -141,7 +149,7 @@ int main(int argc,char **argv) {
 
     struct nexus_partition_plan plan;
     assert(nexus_partition_plan_create(DISK_BLOCKS, 512U,
-                                       NEXUS_FIRMWARE_UEFI, &plan));
+                                       NEXUS_FIRMWARE_DUAL, &plan));
     uint8_t disk_guid[16] = {0};
     uint8_t partition_guids[NEXUS_PLAN_MAX_PARTITIONS][16] = {{0}};
     for (size_t i = 0U; i < 16U; ++i) {
@@ -217,7 +225,8 @@ int main(int argc,char **argv) {
      * the selected ESP using only the kernel-owned guarded write adapter. */
     static uint8_t fake_kernel[64] = {0x7fU,'E','L','F',2U,1U};
     static uint8_t fake_uefi[512] = {'M','Z'};
-    static uint8_t fake_bios[512] = {0};
+    static uint8_t fake_bios[1024] = {0};
+    fake_bios[510]=0x55U;fake_bios[511]=0xAAU;
     fake_uefi[0x3c]=0x40U;fake_uefi[0x40]='P';fake_uefi[0x41]='E';
     uint8_t *kernel_payload=argc==5?external_kernel:fake_kernel;
     uint8_t *uefi_payload=argc==5?external_uefi:fake_uefi;
@@ -237,6 +246,22 @@ int main(int argc,char **argv) {
     assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks));
     assert(target.flushes == 27U);
+
+    /* Install BIOS stage-1 into LBA 0 and stage-2 into the authenticated
+     * GPT BIOS Boot partition, using the same kernel-owned write gate. */
+    target.bios_base=plan.partitions[1].first_lba;
+    assert(plan.partitions[1].kind==NEXUS_PARTITION_BIOS_BOOT);
+    assert(gpt_scan_device(target_handle));
+    const struct nexus_gpt_partition *bios_part=gpt_partition_at(1U);
+    assert(bios_part!=NULL);
+    struct nexus_gpt_partition bios_copy=*bios_part;
+    assert(nexus_installer_install_bios_bootloader(target_handle,&identity,
+        identity.stable_id,"ERASE",&bios_copy));
+    assert(target.flushes==29U);
+    assert(memcmp(target.bios_area,bios_payload+512U,
+        bios_payload_size-512U)==0);
+    assert(target.first[510U]==0x55U&&target.first[511U]==0xAAU);
+    assert(memcmp(target.first+440U,boot_image.protective_mbr+440U,70U)==0);
 
     const uint32_t bps=512U;
     const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
@@ -298,14 +323,14 @@ int main(int argc,char **argv) {
     assert(memcmp(target.format_area+limine_dir_off+128U,"LIMINE~1SYS",11U)==0);
 
     /* Format the planned Nexus System partition through the guarded NXFS path. */
-    target.nxfs_base = plan.partitions[1].first_lba;
+    target.nxfs_base = plan.partitions[2].first_lba;
     assert(gpt_scan_device(target_handle));
-    const struct nexus_gpt_partition *system_part = gpt_partition_at(1U);
+    const struct nexus_gpt_partition *system_part = gpt_partition_at(2U);
     assert(system_part != NULL);
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 32U);
+    assert(target.flushes == 34U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -316,7 +341,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 36U);
+    assert(target.flushes == 38U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

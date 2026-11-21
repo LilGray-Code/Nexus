@@ -6,6 +6,7 @@ static struct nexus_block_device devices[NEXUS_BLOCKDEV_MAX_DEVICES];
 static size_t registered_count;
 
 void blockdev_init(void) {
+    blockdev_install_session_end();
     registered_count = 0;
     for (size_t i = 0; i < NEXUS_BLOCKDEV_MAX_DEVICES; ++i) {
         devices[i] = (struct nexus_block_device){0};

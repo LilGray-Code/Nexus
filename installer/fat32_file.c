@@ -14,7 +14,8 @@ static void put32(uint8_t*p,uint32_t v){p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2
 static bool read1(const struct nexus_fat32_format_target*t,uint64_t l,void*b){return t->read(t->context,l,1U,b);}
 static bool write1(const struct nexus_fat32_format_target*t,uint64_t l,const void*b){return t->write(t->context,l,1U,b);}
 static bool valid_name(const char*n,uint8_t out[11]){
- if(!n||!*n)return false;\n for(unsigned i=0;i<11;i++)out[i]=' ';
+ if(!n||!*n)return false;
+ for(unsigned i=0;i<11;i++)out[i]=' ';
  unsigned base=0,ext=0;bool dot=false;
  for(unsigned i=0;n[i];i++){unsigned char c=(unsigned char)n[i];if(c=='.'){if(dot||base==0)return false;dot=true;continue;}
  if(c<33||c>126||c=='/'||c=='\\'||c==' ')return false;

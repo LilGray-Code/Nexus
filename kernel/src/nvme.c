@@ -287,7 +287,101 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
     nvme_log_identify_field("NVMe: serial: ", identify_bytes + 4U, 20U);
     nvme_log_identify_field("NVMe: model: ", identify_bytes + 24U, 40U);
     nvme_log_identify_field("NVMe: firmware: ", identify_bytes + 64U, 8U);
-    serial_write("NVMe: Identify Controller completed; no namespace or sector I/O issued\r\n");
+    serial_write("NVMe: Identify Controller completed\r\n");
+
+    /* Identify Namespace 1: metadata only; no namespace data I/O. */
+    const uint32_t namespace_count =
+        (uint32_t)identify_bytes[516] |
+        ((uint32_t)identify_bytes[517] << 8) |
+        ((uint32_t)identify_bytes[518] << 16) |
+        ((uint32_t)identify_bytes[519] << 24);
+    serial_write("NVMe: namespace count: ");
+    serial_write_hex(namespace_count);
+    serial_write("\r\n");
+
+    if (namespace_count == 0) {
+        serial_write("NVMe: controller reports no namespaces\r\n");
+        return false;
+    }
+
+    uint64_t namespace_physical = 0;
+    volatile uint8_t *namespace_bytes = NULL;
+    if (!nvme_allocate_dma_page(&namespace_physical, &namespace_bytes)) {
+        serial_write("NVMe: unable to allocate namespace Identify DMA page\r\n");
+        return false;
+    }
+
+    submission_queue[1].opcode = 0x06U;
+    submission_queue[1].command_id = 2U;
+    submission_queue[1].namespace_id = 1U;
+    submission_queue[1].prp1 = namespace_physical;
+    submission_queue[1].cdw10 = 0U; /* CNS=0: Identify Namespace */
+
+    __asm__ volatile ("sfence" : : : "memory");
+    doorbell_page[0] = 2U;
+
+    completed = false;
+    completion_status = 0;
+    for (uint32_t spin = 0; spin < NVME_POLL_LIMIT; ++spin) {
+        completion_status = completion_queue[1].status;
+        if ((completion_status & 1U) != 0) {
+            completed = true;
+            break;
+        }
+        controller_status = registers[NVME_REG_CSTS / 4U];
+        if (controller_status == UINT32_MAX ||
+            (controller_status & NVME_CSTS_FATAL) != 0) {
+            break;
+        }
+        __asm__ volatile ("pause");
+    }
+
+    if (!completed || completion_queue[1].command_id != 2U ||
+        ((completion_status >> 1) & 0xFFU) != 0 ||
+        ((completion_status >> 9) & 0x07U) != 0) {
+        serial_write("NVMe: Identify Namespace command failed, status=");
+        serial_write_hex(completion_status);
+        serial_write("\r\n");
+        return false;
+    }
+
+    __asm__ volatile ("sfence" : : : "memory");
+    doorbell_page[doorbell_stride_bytes / 4U] = 2U;
+
+    const uint64_t namespace_size =
+        (uint64_t)namespace_bytes[0] |
+        ((uint64_t)namespace_bytes[1] << 8) |
+        ((uint64_t)namespace_bytes[2] << 16) |
+        ((uint64_t)namespace_bytes[3] << 24) |
+        ((uint64_t)namespace_bytes[4] << 32) |
+        ((uint64_t)namespace_bytes[5] << 40) |
+        ((uint64_t)namespace_bytes[6] << 48) |
+        ((uint64_t)namespace_bytes[7] << 56);
+    const uint8_t formatted_lba = namespace_bytes[26] & 0x0FU;
+    const uint8_t lba_format_count = namespace_bytes[25] + 1U;
+    if (namespace_size == 0 || formatted_lba >= lba_format_count) {
+        serial_write("NVMe: namespace Identify returned invalid capacity or LBA format\r\n");
+        return false;
+    }
+
+    const uint32_t lba_format_offset = 128U + (uint32_t)formatted_lba * 4U;
+    const uint8_t lba_data_size_exponent =
+        namespace_bytes[lba_format_offset + 2U];
+    if (lba_data_size_exponent < 9U || lba_data_size_exponent > 16U) {
+        serial_write("NVMe: namespace logical block size is outside current support\r\n");
+        return false;
+    }
+    const uint32_t logical_block_size = 1U << lba_data_size_exponent;
+
+    serial_write("NVMe: namespace 1 capacity blocks low/high: ");
+    serial_write_hex((uint32_t)namespace_size);
+    serial_write("/");
+    serial_write_hex((uint32_t)(namespace_size >> 32));
+    serial_write("\r\nNVMe: namespace logical block bytes: ");
+    serial_write_hex(logical_block_size);
+    serial_write("\r\n");
+    serial_write("NVMe: Identify Namespace completed; no sector I/O issued\r\n");
+    serial_write("NEXUS NVME NAMESPACE READY\r\n");
     serial_write("NEXUS NVME IDENTIFY READY\r\n");
     return true;
 }

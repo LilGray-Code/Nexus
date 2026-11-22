@@ -220,6 +220,21 @@ const struct nexus_pci_device *pci_device_at(uint32_t index) {
 }
 
 
+const struct nexus_pci_device *pci_find_matching_device(
+    uint16_t vendor_id, uint16_t device_id, uint8_t class_code,
+    uint8_t subclass, uint8_t programming_interface) {
+    for (uint32_t i = 0U; i < stored_device_count; ++i) {
+        if (pci_device_matches(&stored_devices[i], vendor_id, device_id,
+                               class_code, subclass,
+                               programming_interface)) {
+            return &stored_devices[i];
+        }
+    }
+    return NULL;
+}
+
+
+
 bool pci_find_capability(const struct nexus_pci_device *device,
                          uint8_t capability_id, uint8_t *offset) {
     if (device == NULL || offset == NULL ||

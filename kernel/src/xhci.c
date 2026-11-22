@@ -302,7 +302,34 @@ static bool xhci_command(struct xhci_controller *xhci, uint64_t parameter,
         }
         return true;
     }
-    serial_write("xHCI: command timed out\r\n");
+    serial_write("xHCI: command timed out; last command TRB control=");
+    serial_write_hex(xhci->command_ring.trbs[
+        xhci->command_ring.enqueue == 0U
+            ? XHCI_RING_USABLE - 1U : xhci->command_ring.enqueue - 1U].control);
+    uint32_t value = 0U;
+    if (xhci_read32(xhci, (uint64_t)xhci->cap_length + 4U, &value)) {
+        serial_write(" USBSTS=");
+        serial_write_hex(value);
+    }
+    if (xhci_read32(xhci, (uint64_t)xhci->cap_length + 0x18U, &value)) {
+        serial_write(" CRCR_LO=");
+        serial_write_hex(value);
+    }
+    if (xhci_read32(xhci, (uint64_t)xhci->runtime_offset + 0x28U, &value)) {
+        serial_write(" ERSTSZ=");
+        serial_write_hex(value);
+    }
+    if (xhci_read32(xhci, (uint64_t)xhci->runtime_offset + 0x38U, &value)) {
+        serial_write(" ERDP_LO=");
+        serial_write_hex(value);
+    }
+    if (xhci->event_ring != NULL) {
+        serial_write(" EVENT_CTRL=");
+        serial_write_hex(xhci->event_ring[xhci->event_dequeue].control);
+        serial_write(" EVENT_STATUS=");
+        serial_write_hex(xhci->event_ring[xhci->event_dequeue].status);
+    }
+    serial_write("\r\n");
     return false;
 }
 

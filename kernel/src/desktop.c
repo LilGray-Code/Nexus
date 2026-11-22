@@ -46,6 +46,9 @@ static bool keyboard_right_shift;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
+static void erase_pointer(void);
+static uint32_t pointer_under[15U][7U];
+static bool pointer_under_valid;
 static void desktop_reboot_after_install(void);
 static char terminal_scancode_char(uint8_t code);
 static void scan_files_once(void);
@@ -461,6 +464,8 @@ static void desktop_draw_startup_animation(void) {
 }
 
 static void draw_shell(void) {
+    /* A full repaint replaces the cursor's saved background. */
+    pointer_under_valid = false;
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
@@ -1268,9 +1273,27 @@ static void desktop_reboot_after_install(void) {
     for (;;) __asm__ volatile ("hlt" ::: "memory");
 }
 
+static void erase_pointer(void) {
+    if (!pointer_under_valid) return;
+    const uint64_t x = (uint64_t)pointer_x;
+    const uint64_t y = (uint64_t)pointer_y;
+    for (uint64_t row = 0U; row < 15U; ++row)
+        for (uint64_t column = 0U; column < 7U; ++column)
+            (void)graphics_write_pixel(x + column, y + row,
+                                       pointer_under[row][column]);
+    pointer_under_valid = false;
+}
+
 static void draw_pointer(void) {
     const uint64_t x = (uint64_t)pointer_x;
     const uint64_t y = (uint64_t)pointer_y;
+    for (uint64_t row = 0U; row < 15U; ++row)
+        for (uint64_t column = 0U; column < 7U; ++column) {
+            pointer_under[row][column] = 0U;
+            (void)graphics_read_pixel(x + column, y + row,
+                                      &pointer_under[row][column]);
+        }
+    pointer_under_valid = true;
     graphics_fill_rect(x, y, 2U, 15U, 245, 250, 255);
     graphics_fill_rect(x + 1U, y + 1U, 2U, 11U, 245, 250, 255);
     graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
@@ -2537,6 +2560,8 @@ static const char *installer_result_message(
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
     if (event->type == NEXUS_INPUT_MOUSE) {
+        /* Mouse motion updates only the cursor damage region. */
+        erase_pointer();
         pointer_x += event->mouse_dx;
         pointer_y += event->mouse_dy;
         if (pointer_x < 0) pointer_x = 0;
@@ -2712,6 +2737,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     }
                 }
             }
+        }
+        if (!clicked) {
+            draw_pointer();
+            return;
         }
         draw_shell();
         draw_pointer();

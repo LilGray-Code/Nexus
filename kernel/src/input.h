@@ -22,5 +22,7 @@ void input_keyboard_interrupt(void);
 void input_mouse_interrupt(void);
 /* Called by the boot CPU with interrupts disabled. */
 bool input_pop_event(struct nexus_input_event *event);
+/* Submit an eight-byte USB HID boot-keyboard report to the desktop queue. */
+void input_usb_keyboard_report(const uint8_t report[8]);
 
 #endif

@@ -762,6 +762,10 @@ static void refresh_files_listing(void) {
         if (!vfs_root_entry(index, &entry)) continue;
         serial_write("FILES: entry ");
         serial_write(entry.name);
+        char entry_size_text[21];
+        format_u64(entry.size, entry_size_text);
+        serial_write(" size=");
+        serial_write(entry_size_text);
         serial_write("\r\n");
         if (files_listing_count < 6U) {
             size_t length = 0U;

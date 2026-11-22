@@ -175,3 +175,96 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
     *info = parsed;
     return true;
 }
+
+struct elf_rela_entry {
+    uint64_t offset;
+    uint64_t info;
+    int64_t addend;
+} __attribute__((packed));
+
+bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
+                                        uint64_t virtual_base,
+                                        uint8_t *image, size_t image_size,
+                                        uint64_t load_bias) {
+    if (file == NULL || image == NULL || image_size < sizeof(uint64_t) ||
+        virtual_base > UINT64_MAX - (uint64_t)image_size) return false;
+
+    struct nexus_elf64_dynamic_info info = {0};
+    if (!nexus_elf64_dynamic_parse(file, file_size, &info) ||
+        !info.has_rela) return false;
+
+    const uint8_t *bytes = file;
+    const struct elf_header *header = (const void *)bytes;
+    const struct elf_program_header *loads[ELF_MAX_PROGRAM_HEADERS];
+    uint16_t load_count = 0U;
+    const struct elf_program_header *dynamic = NULL;
+
+    for (uint16_t i = 0U; i < header->phnum; ++i) {
+        const struct elf_program_header *program = (const void *)(
+            bytes + header->phoff + (uint64_t)i * header->phentsize);
+        if (program->type == ELF_PT_LOAD) loads[load_count++] = program;
+        if (program->type == ELF_PT_DYNAMIC) dynamic = program;
+    }
+    if (dynamic == NULL) return false;
+
+    uint64_t rela_offset = 0U;
+    bool rela_found = false;
+    for (uint64_t offset = 0U; offset < dynamic->filesz;
+         offset += ELF_DYNAMIC_ENTRY_SIZE) {
+        const struct elf_dynamic_entry *entry =
+            (const void *)(bytes + dynamic->offset + offset);
+        if (entry->tag == DT_NULL) break;
+        if (entry->tag == DT_RELA) {
+            rela_offset = entry->value;
+            rela_found = true;
+        }
+    }
+    if (!rela_found) return false;
+
+    uint64_t rela_file_offset = 0U;
+    if (!vaddr_to_file((const struct elf_program_header *)loads, load_count,
+                       rela_offset, info.rela_size, &rela_file_offset) ||
+        !range_valid(rela_file_offset, info.rela_size, file_size)) return false;
+
+    const uint64_t relocation_count = info.rela_size / ELF_RELA_SIZE;
+    for (uint64_t i = 0U; i < relocation_count; ++i) {
+        const struct elf_rela_entry *relocation = (const void *)(
+            bytes + rela_file_offset + i * ELF_RELA_SIZE);
+        const uint32_t relocation_type = (uint32_t)relocation->info;
+        const uint32_t symbol_index = (uint32_t)(relocation->info >> 32);
+        if (relocation_type != 8U || symbol_index != 0U) return false;
+
+        bool writable_target = false;
+        for (uint16_t j = 0U; j < load_count; ++j) {
+            const struct elf_program_header *load = loads[j];
+            if ((load->flags & 2U) == 0U ||
+                relocation->offset < load->vaddr ||
+                relocation->offset > UINT64_MAX - sizeof(uint64_t) ||
+                relocation->offset + sizeof(uint64_t) >
+                    load->vaddr + load->memsz) continue;
+            writable_target = true;
+            break;
+        }
+        if (!writable_target || relocation->offset < virtual_base) return false;
+        const uint64_t target_offset = relocation->offset - virtual_base;
+        if (target_offset > (uint64_t)image_size - sizeof(uint64_t))
+            return false;
+
+        uint64_t relocated_value;
+        if (relocation->addend >= 0) {
+            const uint64_t addend = (uint64_t)relocation->addend;
+            if (load_bias > UINT64_MAX - addend) return false;
+            relocated_value = load_bias + addend;
+        } else {
+            const uint64_t magnitude =
+                (uint64_t)(-(relocation->addend + 1)) + 1U;
+            if (load_bias < magnitude) return false;
+            relocated_value = load_bias - magnitude;
+        }
+
+        for (uint8_t byte = 0U; byte < 8U; ++byte)
+            image[target_offset + byte] =
+                (uint8_t)(relocated_value >> (byte * 8U));
+    }
+    return true;
+}

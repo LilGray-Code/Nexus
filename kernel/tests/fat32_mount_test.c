@@ -212,6 +212,10 @@ int main(void) {
     assert(fat32_read_directory(directory->first_cluster));
     assert(fat32_root_entry_count() == 1U);
     assert(strcmp(fat32_root_entry_at(0U)->name, "INNER.TXT") == 0);
+    /* Invalid navigation must leave the current directory listing intact. */
+    assert(!fat32_read_directory(0U));
+    assert(fat32_root_entry_count() == 1U);
+    assert(strcmp(fat32_root_entry_at(0U)->name, "INNER.TXT") == 0);
     assert(fat32_read_directory(2U));
     assert(fat32_root_entry_count() == 41U);
 

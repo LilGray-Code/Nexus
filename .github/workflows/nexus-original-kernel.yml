@@ -255,6 +255,7 @@ jobs:
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
           grep -q "NEXUS AHCI BLOCK DEVICE READY" uefi-serial.log
           grep -q "NEXUS AHCI READ SELFTEST READY" uefi-serial.log
+          grep -q "NEXUS AHCI WRITE LOCK TEST READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log
           grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log

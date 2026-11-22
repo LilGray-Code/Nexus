@@ -17,5 +17,13 @@ jobs:
     steps:
       - name: Check out Nexus source
         uses: actions/checkout@v4
+      - name: Compile and run guarded installer transaction tests
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/src -Ikernel/include -Iinstaller \
+            installer/tests/installer_runtime_test.c \
+            kernel/src/installer_runtime.c installer/partition_plan.c \
+            -o /tmp/nexus-installer-runtime-test
+          /tmp/nexus-installer-runtime-test
       - name: Build the freestanding kernel with warnings as errors
         run: make -C kernel clean all

@@ -176,7 +176,7 @@ static void installer_refresh_plan(void) {
 static void installer_log_selected_target(void) {
     const struct nexus_block_device *device =
         blockdev_at(installer_selected_device);
-    serial_write("NEXUS INSTALLER TARGET SELECTED: ");
+    serial_write("NEXUS INSTALLER TARGET: ");
     if (device != NULL) serial_write(device->stable_id);
     else serial_write("NONE");
     serial_write("\r\n");

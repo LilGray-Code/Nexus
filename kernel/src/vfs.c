@@ -401,6 +401,8 @@ void vfs_close(struct nexus_vfs_file *file) {
 
 bool vfs_ramfs_selftest(void) {
     static const char payload[] = "NEXUS RAMFS READY";
+    static const char long_name[] = "NEXUS-LONG-FILE-NAME-ROUNDTRIP";
+    static const char long_payload[] = "long filenames remain readable";
     if (!vfs_write_file("NXRAM.TST", payload, sizeof(payload) - 1U))
         return false;
 
@@ -408,7 +410,7 @@ bool vfs_ramfs_selftest(void) {
     if (!vfs_open_readonly("nxram.tst", &file) ||
         (vfs_nxfs_writable() ? !file.nxfs_file : !file.ram_file))
         return false;
-    uint8_t buffer[32];
+    uint8_t buffer[64];
     size_t bytes_read = 0U;
     const bool read_ok = vfs_read(&file, buffer, sizeof(buffer), &bytes_read);
     vfs_close(&file);
@@ -421,5 +423,25 @@ bool vfs_ramfs_selftest(void) {
         vfs_close(&file);
         return false;
     }
-    return true;
+
+    /* Exercise names longer than the legacy 8.3 limit on both NXFS and RAMFS. */
+    if (!vfs_write_file(long_name, long_payload, sizeof(long_payload) - 1U) ||
+        !vfs_open_readonly("nexus-long-file-name-roundtrip", &file)) {
+        (void)vfs_remove_file(long_name);
+        return false;
+    }
+    bytes_read = 0U;
+    const bool long_read_ok = vfs_read(&file, buffer, sizeof(buffer), &bytes_read);
+    vfs_close(&file);
+    if (!long_read_ok || bytes_read != sizeof(long_payload) - 1U) {
+        (void)vfs_remove_file(long_name);
+        return false;
+    }
+    for (size_t i = 0U; i < bytes_read; ++i) {
+        if (buffer[i] != (uint8_t)long_payload[i]) {
+            (void)vfs_remove_file(long_name);
+            return false;
+        }
+    }
+    return vfs_remove_file(long_name);
 }

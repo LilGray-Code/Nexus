@@ -526,7 +526,7 @@ jobs:
           json.loads(stream.readline())
 
           def command(payload):
-              stream.write(json.dumps(payload).encode() + b"\\r\\n")
+              stream.write(json.dumps(payload).encode() + b"\r\n")
               while True:
                   result = json.loads(stream.readline())
                   if "return" in result or "error" in result:
@@ -600,7 +600,7 @@ jobs:
           json.loads(stream.readline())
 
           def command(payload):
-              stream.write(json.dumps(payload).encode() + b"\\r\\n")
+              stream.write(json.dumps(payload).encode() + b"\r\n")
               while True:
                   result = json.loads(stream.readline())
                   if "return" in result or "error" in result:

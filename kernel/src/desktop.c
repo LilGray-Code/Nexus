@@ -1220,9 +1220,9 @@ static void draw_shell(void) {
                            panel_width - 36U, panel_height > 250U
                                ? panel_height - 160U : 90U,
                            244U, 247U, 251U);
-        graphics_draw_text(panel_x + 42U, content_y + 28U,
-                           "Welcome to Nexus Browser", 2U,
-                           29U, 48U, 67U);
+        desktop_draw_logo(panel_x + 42U, content_y + 12U, 32U);
+        graphics_draw_text(panel_x + 84U, content_y + 28U,
+                           "Nexus Browser", 2U, 29U, 48U, 67U);
         graphics_draw_text(panel_x + 42U, content_y + 58U,
                            "A faster, more private web experience is being built.",
                            1U, 83U, 103U, 122U);

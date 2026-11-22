@@ -258,8 +258,10 @@ static bool xhci_event_next(struct xhci_controller *xhci,
         xhci->event_cycle ^= 1U;
     }
 
-    const uint64_t dequeue_address = xhci->event_ring_physical +
-        (uint64_t)xhci->event_dequeue * sizeof(struct xhci_trb) | (1ULL << 3);
+    const uint64_t dequeue_address =
+        (xhci->event_ring_physical +
+         (uint64_t)xhci->event_dequeue * sizeof(struct xhci_trb)) |
+        (1ULL << 3);
     (void)xhci_write64(xhci, (uint64_t)xhci->runtime_offset + 0x38U,
                        dequeue_address);
     return true;
@@ -277,7 +279,7 @@ static bool xhci_command(struct xhci_controller *xhci, uint64_t parameter,
                          uint32_t control, struct xhci_trb *completion) {
     if (xhci == NULL || !xhci->initialized) return false;
     if (xhci_ring_push(&xhci->command_ring, parameter, 0U,
-                       control | XHCI_TRB_TYPE(0U)) == NULL) return false;
+                       control) == NULL) return false;
     volatile uint32_t *doorbell = xhci_map_register(
         xhci, (uint64_t)xhci->doorbell_offset);
     if (doorbell == NULL) return false;
@@ -365,6 +367,9 @@ static bool xhci_control_transfer(struct xhci_controller *xhci,
                            data_control) == NULL) return false;
     }
 
+    for (uint16_t i = 0U; i < length; ++i)
+        device->report_buffer[i] = 0U;
+
     const bool status_in = length == 0U ||
                            (request_type & 0x80U) == 0U;
     const uint32_t status_control = XHCI_TRB_TYPE(4U) | XHCI_TRB_IOC |
@@ -387,10 +392,10 @@ static bool xhci_control_transfer(struct xhci_controller *xhci,
         const size_t transferred = (size_t)length - residual;
         if (transferred == 0U) return false;
         (void)transferred;
-        if (buffer != device->report_buffer) {
+        if (buffer != (void *)(uintptr_t)device->report_buffer) {
             volatile uint8_t *source = device->report_buffer;
             uint8_t *destination = (uint8_t *)buffer;
-            for (size_t i = 0U; i < (size_t)length; ++i)
+            for (size_t i = 0U; i < transferred; ++i)
                 destination[i] = source[i];
         }
     }
@@ -484,7 +489,6 @@ static bool xhci_start_controller(struct xhci_controller *xhci,
                                   uint32_t hcsparams2,
                                   uint32_t hccparams) {
     uint32_t command;
-    uint32_t status;
     if (!xhci_claim_firmware(xhci, hccparams)) return false;
 
     const uint64_t operational = xhci->cap_length;
@@ -494,7 +498,6 @@ static bool xhci_start_controller(struct xhci_controller *xhci,
     if (!xhci_wait_register(xhci, operational + 4U,
                             XHCI_USBSTS_HALTED, true)) return false;
 
-    if (!xhci_read32(xhci, operational + 4U, &status)) return false;
     if (!xhci_write32(xhci, operational, XHCI_USBCMD_RESET)) return false;
     if (!xhci_wait_register(xhci, operational, XHCI_USBCMD_RESET, false) ||
         !xhci_wait_register(xhci, operational + 4U, XHCI_USBSTS_CNR, false)) {
@@ -745,7 +748,7 @@ static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
     }
     uint8_t logarithm = 0U;
     uint8_t value = 1U;
-    while (value < interval && logarithm < 13U) {
+    while ((uint16_t)value * 2U <= interval && logarithm < 13U) {
         value = (uint8_t)(value << 1);
         ++logarithm;
     }
@@ -833,8 +836,8 @@ static bool xhci_enumerate_keyboard_port(struct xhci_controller *xhci,
     uint8_t descriptor[18] = {0U};
     if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U, 8U, descriptor))
         goto failed;
-    const uint16_t descriptor_packet = descriptor[7] == 0U
-        ? default_packet : (speed == 4U ? 512U : descriptor[7]);
+    const uint16_t descriptor_packet = speed == 4U ? 512U :
+        (descriptor[7] == 0U ? default_packet : descriptor[7]);
     if (descriptor_packet != default_packet &&
         !xhci_update_ep0_packet(xhci, device, descriptor_packet)) goto failed;
     if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U,
@@ -877,9 +880,8 @@ static bool xhci_enumerate_keyboard_port(struct xhci_controller *xhci,
     if (!xhci_configure_keyboard_endpoint(xhci, device, endpoint_address,
                                           max_packet, interval, speed))
         goto failed;
-    if (!xhci_schedule_keyboard_read(xhci, device)) goto failed;
-
     device->active = true;
+    if (!xhci_schedule_keyboard_read(xhci, device)) goto failed;
     serial_write("USB: HID boot keyboard attached to xHCI port ");
     serial_write_hex(port_number);
     serial_write("\r\n");

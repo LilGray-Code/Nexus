@@ -254,6 +254,37 @@ bool pci_find_capability(const struct nexus_pci_device *device,
     return false;
 }
 
+
+bool pci_get_msi_info(const struct nexus_pci_device *device,
+                      struct nexus_pci_msi_info *info) {
+    if (device == NULL || info == NULL) return false;
+
+    *info = (struct nexus_pci_msi_info){0};
+
+    uint8_t capability_offset = 0U;
+    /* PCI_CAP_ID_MSI is 0x05 in the conventional capability list. */
+    if (!pci_find_capability(device, 0x05U, &capability_offset)) {
+        return false;
+    }
+
+    const uint32_t control_register = pci_config_read(
+        device->bus, device->slot, device->function,
+        (uint8_t)(capability_offset + 0x00U));
+    if (control_register == UINT32_MAX) return false;
+
+    const uint16_t message_control = (uint16_t)(control_register >> 16);
+    const uint8_t message_exponent =
+        (uint8_t)((message_control >> 1) & 0x07U);
+
+    info->present = true;
+    info->enabled = (message_control & 0x0001U) != 0U;
+    info->maximum_message_exponent = message_exponent;
+    info->maximum_message_count = (uint16_t)(1U << message_exponent);
+    info->supports_64bit_address = (message_control & 0x0080U) != 0U;
+    info->per_vector_masking = (message_control & 0x0100U) != 0U;
+    return true;
+}
+
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,
                     struct nexus_pci_bar *bar) {
     if (device == NULL || bar == NULL || index >= NEXUS_PCI_BAR_COUNT)

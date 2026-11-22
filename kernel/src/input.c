@@ -2,6 +2,7 @@
 
 #include "serial.h"
 #include "timer.h"
+#include "usb_hid.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -181,6 +182,25 @@ void input_mouse_interrupt(void) {
         .mouse_dy = (int16_t)-(int16_t)(int8_t)mouse_packet[2]
     };
     queue_event(&event);
+}
+
+void input_usb_keyboard_report(const uint8_t report[8]) {
+    uint8_t scancodes[8];
+    const size_t count = usb_hid_keyboard_decode(report, scancodes,
+                                                 sizeof(scancodes));
+    for (size_t i = 0U; i < count; ++i) {
+        struct nexus_input_event event = {
+            .type = NEXUS_INPUT_KEYBOARD,
+            .scancode = scancodes[i],
+            .mouse_buttons = 0U,
+            .mouse_dx = 0,
+            .mouse_dy = 0
+        };
+        queue_event(&event);
+        serial_write("INPUT: USB HID keyboard scancode=");
+        serial_write_hex(scancodes[i]);
+        serial_write("\r\n");
+    }
 }
 
 bool input_pop_event(struct nexus_input_event *event) {

@@ -189,8 +189,9 @@ jobs:
         shell: bash
         run: |
           # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
-          truncate -s 256M nvme-test.img
+          truncate -s 256M nvme-test.img ahci-test.img
           python3 build/create-gpt-test-image.py nvme-test.img
+          python3 build/create-gpt-test-image.py ahci-test.img
           set +e
           timeout -k 2s 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
@@ -198,6 +199,7 @@ jobs:
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
             -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=ahci-test.img,if=ide,index=0,format=raw \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:uefi-serial.log \
             -monitor none -no-reboot -no-shutdown
@@ -251,6 +253,8 @@ jobs:
           grep -q "VFS: listed README.TXT and read file contents" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS AHCI REGISTER PROBE READY" uefi-serial.log
+          grep -q "NEXUS AHCI BLOCK DEVICE READY" uefi-serial.log
+          grep -q "NEXUS AHCI READ SELFTEST READY" uefi-serial.log
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log
           grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log

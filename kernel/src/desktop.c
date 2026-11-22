@@ -1714,7 +1714,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME clear";
+        const char *s = "help about mem uptime storage net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -1749,6 +1749,50 @@ static void terminal_execute(void) {
         for (size_t k = 0; number[k] != '\0' &&
              n < sizeof(terminal_output)-1U; ++k) terminal_output[n++] = number[k];
         terminal_output[n] = '\0';
+    } else if (terminal_input[0]=='s' && terminal_input[1]=='t' &&
+               terminal_input[2]=='o' && terminal_input[3]=='r' &&
+               terminal_input[4]=='a' && terminal_input[5]=='g' &&
+               terminal_input[6]=='e' && terminal_input[7]=='\0') {
+        /* Read-only storage inventory: expose detected device identity,
+         * capacity, and safety state without performing any disk writes. */
+        size_t out = 0U;
+        const size_t count = blockdev_count();
+        if (count == 0U) {
+            const char *message = "no block devices detected";
+            while (message[out] != '\0' &&
+                   out < sizeof(terminal_output) - 1U)
+                terminal_output[out++] = message[out];
+        } else {
+            for (size_t slot = 0U; slot < count &&
+                 out < sizeof(terminal_output) - 32U; ++slot) {
+                const struct nexus_block_device *device = blockdev_at(slot);
+                if (device == NULL) continue;
+                if (slot != 0U) terminal_output[out++] = ';';
+                const char *name = device->name;
+                for (size_t i = 0U; name[i] != '\0' &&
+                     out < sizeof(terminal_output) - 24U; ++i)
+                    terminal_output[out++] = name[i];
+                terminal_output[out++] = ' ';
+                char gib[21];
+                const uint64_t bytes =
+                    device->block_count * (uint64_t)device->block_size;
+                format_u64(bytes / (1024ULL * 1024ULL * 1024ULL), gib);
+                for (size_t i = 0U; gib[i] != '\0' &&
+                     out < sizeof(terminal_output) - 16U; ++i)
+                    terminal_output[out++] = gib[i];
+                const char *suffix = " GiB";
+                for (size_t i = 0U; suffix[i] != '\0' &&
+                     out < sizeof(terminal_output) - 1U; ++i)
+                    terminal_output[out++] = suffix[i];
+                if (blockdev_is_boot_media(device)) {
+                    const char *boot = " [BOOT]";
+                    for (size_t i = 0U; boot[i] != '\0' &&
+                         out < sizeof(terminal_output) - 1U; ++i)
+                        terminal_output[out++] = boot[i];
+                }
+            }
+        }
+        terminal_output[out] = '\0';
     } else if (terminal_input[0]=='n' && terminal_input[1]=='e' &&
                terminal_input[2]=='t' && terminal_input[3]=='\0') {
         struct nexus_net_info info;

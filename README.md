@@ -12,16 +12,20 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 ## What is implemented
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
-- A framebuffer desktop with Home, Files, Browser, Settings, Terminal, and
-  Installer views, plus keyboard and mouse input.
+- A framebuffer desktop with Home, Files, Browser, Settings, and Terminal,
+  plus keyboard and mouse input. The installed desktop does not expose the
+  installer as an application or launcher item.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.
 - GPT, FAT32, NXFS, and a virtual filesystem layer.
-- A Nexus graphical installer. The installer builds a GPT layout with an EFI
-  System Partition, Nexus System volume, Recovery journal partition, and
-  separate Nexus Data volume; BIOS installs also include a BIOS Boot
-  partition.
+- A separate full-screen live-media installer. Booting the USB opens the
+  installer directly; booting the installed disk opens the normal desktop.
+  The installer builds a GPT layout with an EFI System Partition, Nexus
+  System volume, Recovery journal partition, and separate Nexus Data volume;
+  BIOS installs also include a BIOS Boot partition. After successful
+  deployment, Enter requests a reboot so the firmware can start the installed
+  OS after the USB is removed.
 - A Files view with a flat root listing (up to 128 indexed entries, six
   visible at once), keyboard/mouse selection, create/open/edit/delete, names
   up to 31 characters, and a scrollable 4 KiB ASCII text editor. The desktop
@@ -78,8 +82,8 @@ the latest run attached to the current branch.
 - Secure Boot is not supported.
 - The browser is an early plain-HTTP text viewer; HTTPS/TLS and modern web
   rendering are not implemented.
-- The Files view is currently a flat-file interface with 8.3-style filenames
-  and a 4 KiB ASCII editor; it is not a full hierarchical file manager.
+- The Files view is currently a flat root listing with bounded filename and
+  editor sizes; it is not yet a full hierarchical file manager.
 - Desktop applications and much of the system runtime remain kernel-integrated.
   A separate userland, a full application/process model, robust preemptive
   multitasking, updates, and production recovery/upgrade tooling remain work

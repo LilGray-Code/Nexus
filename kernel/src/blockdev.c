@@ -383,6 +383,10 @@ bool blockdev_boot_media_detection_complete(void) {
     return boot_media_detection_complete;
 }
 
+bool blockdev_boot_source_is_external(void) {
+    return boot_media_detection_complete && boot_media_device == NULL;
+}
+
 bool blockdev_is_boot_media(const struct nexus_block_device *device) {
     return blockdev_is_registered(device) && device == boot_media_device;
 }

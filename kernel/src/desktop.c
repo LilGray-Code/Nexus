@@ -1048,6 +1048,17 @@ static char terminal_scancode_char(uint8_t code) {
     }
     return value;
 }
+
+static void browser_set_status(const char *message) {
+    size_t i = 0U;
+    if (message == NULL) message = "";
+    while (message[i] != '\0' && i < sizeof(browser_status) - 1U) {
+        browser_status[i] = message[i];
+        ++i;
+    }
+    browser_status[i] = '\0';
+}
+
 static void browser_clear_page(void) {
     browser_line_count = 1U;
     for (size_t row = 0; row < NEXUS_BROWSER_LINE_COUNT; ++row) {

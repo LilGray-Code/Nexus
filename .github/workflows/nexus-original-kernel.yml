@@ -101,6 +101,14 @@ jobs:
             -o /tmp/nexus-usb-hid-mouse-test
           /tmp/nexus-usb-hid-mouse-test
 
+      - name: Test USB mouse desktop input queue
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/input.c kernel/src/usb_hid.c \
+            kernel/tests/usb_mouse_input_test.c \
+            -o /tmp/nexus-usb-mouse-input-test
+          /tmp/nexus-usb-mouse-input-test
+
       - name: Test Limine BIOS boot-sector and stage-2 installation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

@@ -342,6 +342,12 @@ static bool ahci_read_selftest(const struct nexus_block_device *device) {
     static const char mbr_signature[] = "NEXUS-READ-ONLY-TEST";
     static const char gpt_signature[] = "EFI PART";
     if (device == NULL || device->block_size != 512U ||
+        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U ||
+        (device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U ||
+        device->write != NULL || device->flush != NULL ||
+        blockdev_install_write_supported(device) ||
+        blockdev_write(device, 100U, 1U, sector) ||
+        blockdev_flush(device) ||
         !blockdev_read(device, 0U, 1U, sector)) return false;
     for (size_t i = 0U; i < sizeof(mbr_signature) - 1U; ++i)
         if (sector[i] != (uint8_t)mbr_signature[i]) return false;

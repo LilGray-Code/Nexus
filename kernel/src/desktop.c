@@ -187,8 +187,8 @@ static void desktop_draw_logo(uint64_t x, uint64_t y, uint64_t size) {
             const int64_t sx = (int64_t)x + center + px;
             const int64_t sy = (int64_t)y + center + py;
             if (sx >= 0 && sy >= 0)
-                (void)graphics_write_pixel((uint64_t)sx, (uint64_t)sy,
-                    ((uint32_t)red << 16) | ((uint32_t)green << 8) | blue);
+                (void)graphics_write_rgb_pixel((uint64_t)sx, (uint64_t)sy,
+                                               red, green, blue);
         }
     }
     const uint64_t eye_width = size / 8U > 2U ? size / 8U : 2U;

@@ -270,3 +270,6 @@ with the installer write gate enabled only after that test succeeds.
 
 The QEMU keyboard script selects the dual UEFI+BIOS layout before confirming
 the disk, so the resulting single installation is boot-tested in both modes.
+
+The QEMU input test reads the exact stable disk ID from the live installer log
+instead of assuming a controller-generated serial string.

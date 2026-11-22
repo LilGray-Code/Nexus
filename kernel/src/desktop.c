@@ -1101,6 +1101,13 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
     installer_refresh_plan();
+    if (installer_environment) {
+        /* The live-media installer is already the active view on boot.
+         * Emit the initially selected disk identity immediately so serial
+         * diagnostics and automated install validation observe the same
+         * target shown by the graphical selector before any user input. */
+        installer_log_selected_target();
+    }
     mouse_left_was_down = false;
     start_menu_open = false;
     window_maximized = false;

@@ -207,6 +207,10 @@ bool pci_init(void) {
 }
 
 uint32_t pci_device_count(void) {
+    return stored_device_count;
+}
+
+uint32_t pci_discovered_device_count(void) {
     return discovered_device_count;
 }
 

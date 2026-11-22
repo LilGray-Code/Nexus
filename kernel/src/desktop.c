@@ -680,7 +680,7 @@ static void draw_shell(void) {
                            "PERSONALIZATION AND DESKTOP BEHAVIOR", 1U, 111U, 207U, 231U);
         const uint64_t row_x = panel_x + 24U;
         const uint64_t row_w = panel_width - 48U;
-        const uint64_t row_y = text_y + 62U;
+        const uint64_t row_y = text_y + 54U;
         const char *theme_name = settings_theme == 0U ? "MIDNIGHT" :
                                  (settings_theme == 1U ? "OCEAN" : "EMBER");
         const char *wallpaper_name = settings_wallpaper == 0U ? "GEOMETRIC" :
@@ -700,16 +700,16 @@ static void draw_shell(void) {
                                 "3  SHOW OR HIDE UPTIME", "4  TOGGLE WINDOW SIZE",
                                 "5  SELECT NEXT INSTALLED ADAPTER"};
         for (size_t i = 0U; i < 5U; ++i) {
-            const uint64_t y = row_y + (uint64_t)i * 59U;
-            graphics_fill_rect(row_x, y, row_w, 48U, 23U, 39U, 60U);
-            graphics_draw_rect(row_x, y, row_w, 48U, 55U, 88U, 116U);
-            graphics_fill_rect(row_x, y, 4U, 48U,
+            const uint64_t y = row_y + (uint64_t)i * 44U;
+            graphics_fill_rect(row_x, y, row_w, 38U, 23U, 39U, 60U);
+            graphics_draw_rect(row_x, y, row_w, 38U, 55U, 88U, 116U);
+            graphics_fill_rect(row_x, y, 4U, 38U,
                                i == 0U ? 45U : (i == 1U ? 117U : (i == 2U ? 82U : 217U)),
                                i == 0U ? 177U : (i == 1U ? 136U : (i == 2U ? 198U : 164U)),
                                i == 0U ? 202U : (i == 1U ? 244U : (i == 2U ? 155U : 83U)));
-            graphics_draw_text(row_x + 15U, y + 12U, labels[i], 1U, 145U, 177U, 198U);
-            graphics_draw_text(row_x + row_w / 2U, y + 12U, values[i], 1U, 235U, 245U, 252U);
-            graphics_draw_text(row_x + 15U, y + 31U, hints[i], 1U, 119U, 157U, 184U);
+            graphics_draw_text(row_x + 15U, y + 8U, labels[i], 1U, 145U, 177U, 198U);
+            graphics_draw_text(row_x + row_w / 2U, y + 8U, values[i], 1U, 235U, 245U, 252U);
+            graphics_draw_text(row_x + 15U, y + 25U, hints[i], 1U, 119U, 157U, 184U);
         }
         graphics_draw_text(text_x, panel_y + panel_height - 34U,
                            settings_persisted ? "PREFERENCES SAVED ON THIS DEVICE" : "SESSION ONLY - PERSISTENT NXFS NOT AVAILABLE",

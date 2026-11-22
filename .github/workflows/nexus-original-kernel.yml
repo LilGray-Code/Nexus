@@ -72,7 +72,7 @@ jobs:
             -o /tmp/nexus-blockdev-identity-test
           /tmp/nexus-blockdev-identity-test
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/blockdev.c kernel/src/gpt.c \
+            -Ikernel/src kernel/src/blockdev.c \
             kernel/tests/blockdev_data_write_test.c \
             -o /tmp/nexus-blockdev-data-write-test
           /tmp/nexus-blockdev-data-write-test

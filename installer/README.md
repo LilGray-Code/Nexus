@@ -229,9 +229,13 @@ The installer now has a kernel-side transaction orchestrator in
 `kernel/src/installer_runtime.c`. It sequences GPT creation and verification,
 EFI FAT32 formatting, NXFS system formatting, kernel/manifest deployment,
 UEFI boot-file deployment, optional BIOS boot-stage installation, and durable
-journal phase updates. Legacy-BIOS installs use the dual partition layout so
-Limine's configuration remains available on FAT32. The graphical wizard now
-collects the exact selected disk ID and a separate typed `ERASE` confirmation.
+journal phase updates. If power or a device error interrupts an installation,
+the next confirmed attempt validates the disk identity, GPT layout, and journal
+then resumes from the last committed phase without rewriting GPT. Corrupt or
+inconsistent recovery records fail closed. Legacy-BIOS installs use the dual
+partition layout so Limine's configuration remains available on FAT32. The
+graphical wizard collects the exact selected disk ID and a separate typed
+`ERASE` confirmation.
 
 The runtime call is deliberately compile-time locked in the normal kernel
 build. `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES` is not defined by the

@@ -1881,11 +1881,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t ty = py + 82U;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 307U);
             const int64_t relative_x = pointer_x - (int64_t)tx;
-            if (relative_y >= 0 && relative_y < 60 &&
+            if (relative_y >= 0 &&
+                relative_y < (int64_t)(NEXUS_FILES_VISIBLE_COUNT / 2U * 18U) &&
                 relative_x >= 0 && relative_x < 500) {
-                const size_t row = (size_t)relative_y / 24U;
+                const size_t row = (size_t)relative_y / 18U;
                 const size_t column = (size_t)relative_x / 260U;
-                const size_t index = row * 2U + column;
+                const size_t index = files_scroll_offset + row * 2U + column;
                 if (column < 2U && index < files_listing_count)
                     files_selected_index = index;
             }

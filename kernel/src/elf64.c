@@ -196,11 +196,18 @@ static bool allocate_zeroed_user_page(uint64_t root_physical,
 
     volatile uint8_t *page =
         (volatile uint8_t *)memory_phys_to_virt(*page_physical);
-    if (page == NULL) return false;
+    if (page == NULL) {
+        (void)memory_free_page(*page_physical);
+        return false;
+    }
     for (size_t i = 0; i < (size_t)ELF64_PAGE_SIZE; ++i) page[i] = 0;
 
-    return paging_map_user_page(root_physical, virtual_address,
-                                *page_physical, writable, executable);
+    if (!paging_map_user_page(root_physical, virtual_address,
+                              *page_physical, writable, executable)) {
+        (void)memory_free_page(*page_physical);
+        return false;
+    }
+    return true;
 }
 
 bool nexus_elf64_load(const void *file, size_t file_size,
@@ -210,6 +217,9 @@ bool nexus_elf64_load(const void *file, size_t file_size,
         stack_pointer == NULL) {
         return false;
     }
+    *root_physical = 0U;
+    *entry_point = 0U;
+    *stack_pointer = 0U;
 
     struct nexus_elf64_image image;
     if (!nexus_elf64_parse(file, file_size, &image)) return false;
@@ -226,7 +236,7 @@ bool nexus_elf64_load(const void *file, size_t file_size,
         }
     }
 
-    uint64_t new_root;
+    uint64_t new_root = 0U;
     if (!paging_create_user_address_space(&new_root)) return false;
 
     const uint8_t *bytes = (const uint8_t *)file;
@@ -236,7 +246,7 @@ bool nexus_elf64_load(const void *file, size_t file_size,
         uint64_t end_page;
         if (!page_range(segment->virtual_address, segment->memory_size,
                         &first_page, &end_page)) {
-            return false;
+            goto load_failed;
         }
 
         const uint64_t file_virtual_end =
@@ -252,7 +262,7 @@ bool nexus_elf64_load(const void *file, size_t file_size,
             if (!allocate_zeroed_user_page(new_root, page_address,
                                            writable, executable,
                                            &page_physical)) {
-                return false;
+                goto load_failed;
             }
 
             const uint64_t copy_start =
@@ -272,7 +282,7 @@ bool nexus_elf64_load(const void *file, size_t file_size,
                     source_offset > (uint64_t)file_size ||
                     copy_end - copy_start >
                         (uint64_t)file_size - source_offset) {
-                    return false;
+                    goto load_failed;
                 }
                 for (uint64_t byte = 0;
                      byte < copy_end - copy_start;
@@ -287,13 +297,18 @@ bool nexus_elf64_load(const void *file, size_t file_size,
     uint64_t stack_physical;
     if (!allocate_zeroed_user_page(new_root, ELF64_STACK_PAGE, true, false,
                                    &stack_physical)) {
-        return false;
+        goto load_failed;
     }
 
     *root_physical = new_root;
     *entry_point = image.entry_point;
     *stack_pointer = ELF64_STACK_TOP;
     return true;
+
+load_failed:
+    /* Reclaim every user page and intermediate table allocated so far. */
+    (void)paging_destroy_user_address_space(new_root);
+    return false;
 }
 
 bool nexus_elf64_selftest(void) {

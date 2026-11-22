@@ -47,6 +47,17 @@ static char files_preview[41];
 static char files_listing[6][13];
 static size_t files_listing_count;
 static size_t files_selected_index;
+enum files_editor_state {
+    FILES_EDITOR_CLOSED = 0,
+    FILES_EDITOR_NAME,
+    FILES_EDITOR_CONTENT
+};
+static enum files_editor_state files_editor_state;
+static char files_edit_name[NEXUS_VFS_NAME_MAX];
+static char files_edit_content[256];
+static size_t files_edit_name_length;
+static size_t files_edit_content_length;
+static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
 static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
@@ -396,6 +407,49 @@ static void draw_shell(void) {
     } else if (active_view == DESKTOP_FILES) {
         graphics_draw_text(text_x, text_y, "NEXUS FILES",
                            2, 239, 249, 255);
+        if (files_editor_state != FILES_EDITOR_CLOSED) {
+            graphics_draw_text(text_x, text_y + 48U,
+                files_editor_state == FILES_EDITOR_NAME
+                    ? "NEW FILE - ENTER AN 8.3 NAME"
+                    : "TEXT EDITOR - ASCII TEXT",
+                1, 108, 216, 229);
+            graphics_draw_text(text_x, text_y + 82U, "NAME:",
+                               1, 233, 243, 252);
+            graphics_draw_text(text_x + 48U, text_y + 82U, files_edit_name,
+                               1, 119, 229, 211);
+            if (files_editor_state == FILES_EDITOR_CONTENT) {
+                for (size_t line = 0U; line < 4U; ++line) {
+                    char display[65];
+                    const size_t offset = line * 64U;
+                    size_t amount = 0U;
+                    while (amount < 64U &&
+                           offset + amount < files_edit_content_length) {
+                        display[amount] = files_edit_content[offset + amount];
+                        ++amount;
+                    }
+                    display[amount] = '\0';
+                    graphics_draw_text(text_x, text_y + 124U + line * 28U,
+                                       display, 1, 239, 249, 255);
+                }
+                graphics_draw_text(text_x, text_y + 260U,
+                    vfs_nxfs_writable()
+                        ? "SAVE TARGET: PERSISTENT NXFS"
+                        : "SAVE TARGET: VOLATILE RAM ONLY",
+                    1, 170, 191, 211);
+                graphics_draw_text(text_x, text_y + 292U,
+                    "F10 SAVE  ENTER NEW LINE  BACKSPACE DELETE",
+                    1, 170, 191, 211);
+            } else {
+                graphics_draw_text(text_x, text_y + 124U,
+                    "VALID NAME: 1-8 CHARACTERS, OPTIONAL .EXT",
+                    1, 170, 191, 211);
+                graphics_draw_text(text_x, text_y + 156U,
+                    "ENTER CONTINUE  ESC CANCEL",
+                    1, 170, 191, 211);
+            }
+            graphics_draw_text(text_x, text_y + 340U, files_edit_status,
+                               1, 239, 177, 119);
+        } else {
         graphics_draw_text(text_x, text_y + 48U,
                            "STORAGE DEVICE DISCOVERY IS ACTIVE",
                            1, 108, 216, 229);
@@ -484,8 +538,9 @@ static void draw_shell(void) {
                                1, 170, 191, 211);
         }
         graphics_draw_text(text_x, text_y + 342U,
-                           "PRESS ESC TO RETURN HOME",
+                           "N NEW  E EDIT  F10 SAVE  ESC HOME",
                            1, 119, 229, 211);
+        }
     } else if (active_view == DESKTOP_TERMINAL) {
         graphics_draw_text(text_x, text_y, "NEXUS COMMAND SHELL",
                            2, 239, 249, 255);
@@ -723,6 +778,116 @@ static void refresh_files_listing(void) {
                 (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : ' ';
         }
         files_preview[bytes_read] = '\0';
+    }
+}
+
+static void files_editor_begin_new(void) {
+    files_edit_name[0] = '\0';
+    files_edit_content[0] = '\0';
+    files_edit_name_length = 0U;
+    files_edit_content_length = 0U;
+    files_edit_status[0] = '\0';
+    files_editor_state = FILES_EDITOR_NAME;
+}
+
+static void files_editor_begin_selected(void) {
+    struct nexus_vfs_dirent selected;
+    if (files_selected_index >= files_listing_count ||
+        !vfs_root_entry(files_selected_index, &selected) ||
+        selected.type != NEXUS_VFS_FILE ||
+        selected.size >= sizeof(files_edit_content)) {
+        files_edit_status[0] = '\0';
+        const char *message = "SELECT A FILE SMALLER THAN 256 BYTES";
+        size_t i = 0U;
+        while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+            files_edit_status[i] = message[i];
+            ++i;
+        }
+        files_edit_status[i] = '\0';
+        return;
+    }
+    struct nexus_vfs_file file;
+    if (!vfs_open_readonly(selected.name, &file)) return;
+    size_t bytes_read = 0U;
+    const bool read_ok = vfs_read(&file, files_edit_content,
+                                  selected.size, &bytes_read);
+    vfs_close(&file);
+    if (!read_ok || bytes_read != selected.size) return;
+    for (size_t i = 0U; i < sizeof(files_edit_name); ++i)
+        files_edit_name[i] = selected.name[i];
+    files_edit_name_length = 0U;
+    while (files_edit_name_length < sizeof(files_edit_name) - 1U &&
+           files_edit_name[files_edit_name_length] != '\0')
+        ++files_edit_name_length;
+    files_edit_content_length = bytes_read;
+    files_edit_content[files_edit_content_length] = '\0';
+    files_edit_status[0] = '\0';
+    files_editor_state = FILES_EDITOR_CONTENT;
+}
+
+static void files_editor_handle_key(const struct nexus_input_event *event) {
+    if ((event->scancode & 0x80U) != 0U) return;
+    if (event->scancode == 0x01U) {
+        files_editor_state = FILES_EDITOR_CLOSED;
+        return;
+    }
+    if (files_editor_state == FILES_EDITOR_NAME) {
+        if (event->scancode == 0x0EU) {
+            if (files_edit_name_length != 0U)
+                files_edit_name[--files_edit_name_length] = '\0';
+        } else if (event->scancode == 0x1CU) {
+            if (files_edit_name_length == 0U) {
+                const char *message = "ENTER A FILE NAME";
+                for (size_t i = 0U; i < sizeof(files_edit_status); ++i) {
+                    files_edit_status[i] = message[i];
+                    if (message[i] == '\0') break;
+                }
+            } else {
+                files_editor_state = FILES_EDITOR_CONTENT;
+                files_edit_status[0] = '\0';
+            }
+        } else {
+            const char ch = terminal_scancode_char(event->scancode);
+            if (ch != '\0' &&
+                files_edit_name_length < sizeof(files_edit_name) - 1U) {
+                files_edit_name[files_edit_name_length++] = ch;
+                files_edit_name[files_edit_name_length] = '\0';
+            }
+        }
+        return;
+    }
+    if (event->scancode == 0x44U) {
+        const bool saved = vfs_write_file(files_edit_name, files_edit_content,
+                                          files_edit_content_length);
+        const char *message = saved
+            ? (vfs_nxfs_writable() ? "SAVED TO PERSISTENT NXFS"
+                                   : "SAVED TO VOLATILE RAM")
+            : "SAVE FAILED - CHECK NAME, SPACE OR STORAGE";
+        size_t i = 0U;
+        while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+            files_edit_status[i] = message[i];
+            ++i;
+        }
+        files_edit_status[i] = '\0';
+        if (saved) {
+            files_editor_state = FILES_EDITOR_CLOSED;
+            refresh_files_listing();
+        }
+    } else if (event->scancode == 0x0EU) {
+        if (files_edit_content_length != 0U)
+            files_edit_content[--files_edit_content_length] = '\0';
+    } else if (event->scancode == 0x1CU) {
+        if (files_edit_content_length + 1U < sizeof(files_edit_content)) {
+            files_edit_content[files_edit_content_length++] = '\n';
+            files_edit_content[files_edit_content_length] = '\0';
+        }
+    } else {
+        const char ch = terminal_scancode_char(event->scancode);
+        if (ch >= 0x20 && ch <= 0x7E &&
+            files_edit_content_length + 1U < sizeof(files_edit_content)) {
+            files_edit_content[files_edit_content_length++] = ch;
+            files_edit_content[files_edit_content_length] = '\0';
+        }
     }
 }
 
@@ -1749,7 +1914,22 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         draw_shell(); draw_pointer(); return;
     }
+    if (active_view == DESKTOP_FILES && files_editor_state != FILES_EDITOR_CLOSED) {
+        files_editor_handle_key(event);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
+        if ((event->scancode & 0x80U) != 0U) return;
+        if (event->scancode == 0x31U) {
+            files_editor_begin_new();
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x12U) {
+            files_editor_begin_selected();
+            draw_shell(); draw_pointer(); return;
+        }
         if (event->scancode == 0x48U && files_listing_count > 0U) {
             if (files_selected_index > 0U) --files_selected_index;
             draw_shell();

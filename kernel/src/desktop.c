@@ -741,6 +741,9 @@ static void refresh_files_listing(void) {
     for (size_t index = 0; index < vfs_root_entry_count(); ++index) {
         struct nexus_vfs_dirent entry;
         if (!vfs_root_entry(index, &entry)) continue;
+        serial_write("FILES: entry ");
+        serial_write(entry.name);
+        serial_write("\r\n");
         if (files_listing_count < 6U) {
             size_t length = 0U;
             while (length < sizeof(files_listing[0]) - 1U &&
@@ -871,8 +874,17 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         }
         files_edit_status[i] = '\0';
         if (saved) {
+            serial_write(vfs_nxfs_writable()
+                ? "FILES: SAVED PERSISTENT NXFS "
+                : "FILES: SAVED VOLATILE RAM ");
+            serial_write(files_edit_name);
+            serial_write("\r\n");
             files_editor_state = FILES_EDITOR_CLOSED;
             refresh_files_listing();
+        } else {
+            serial_write("FILES: SAVE FAILED ");
+            serial_write(files_edit_name);
+            serial_write("\r\n");
         }
     } else if (event->scancode == 0x0EU) {
         if (files_edit_content_length != 0U)

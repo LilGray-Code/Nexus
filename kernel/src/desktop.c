@@ -25,6 +25,7 @@ enum desktop_view {
     DESKTOP_BROWSER,
     DESKTOP_SETTINGS,
     DESKTOP_TERMINAL,
+    DESKTOP_MONITOR,
     DESKTOP_INSTALLER
 };
 
@@ -215,6 +216,7 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
         case 1U: return DESKTOP_BROWSER;
         case 2U: return DESKTOP_SETTINGS;
         case 3U: return DESKTOP_TERMINAL;
+        case 4U: return DESKTOP_MONITOR;
         default: return DESKTOP_INSTALLER;
     }
 }
@@ -233,7 +235,7 @@ static void desktop_open_view(enum desktop_view view) {
 }
 
 static void desktop_open_app(size_t app_index) {
-    if (app_index >= 4U) return;
+    if (app_index >= 5U) return;
     desktop_open_view(desktop_view_for_app(app_index));
 }
 
@@ -252,16 +254,16 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     graphics_draw_text(51U, button_y + button_h / 2U - 4U,
                        "START", 1U, 239U, 247U, 255U);
 
-    static const char *const labels[4] = {
-        "FILES", "WEB", "SETTINGS", "TERMINAL"
+    static const char *const labels[5] = {
+        "FILES", "WEB", "SETTINGS", "TERMINAL", "MONITOR"
     };
-    static const uint8_t accents[4][3] = {
+    static const uint8_t accents[5][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}
+        {217U, 164U, 83U}, {103U, 164U, 229U}
     };
     const uint64_t tab_width = 72U;
     const uint64_t tab_step = 78U;
-    for (size_t i = 0U; i < 4U; ++i) {
+    for (size_t i = 0U; i < 5U; ++i) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
@@ -298,7 +300,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
     if (!start_menu_open) return;
     const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-    const uint64_t menu_height = 238U;
+    const uint64_t menu_height = 272U;
     uint64_t menu_x = 12U;
     uint64_t menu_y = screen_height - bottom_bar - menu_height + 4U;
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
@@ -320,17 +322,18 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                        "NEXUS APP LAUNCHER", 1U,
                        239U, 247U, 255U);
 
-    static const char *const names[4] = {
+    static const char *const names[5] = {
         "FILES - MANAGE YOUR DATA",
         "WEB - NETWORK TEXT BROWSER",
-        "SETTINGS - SYSTEM OVERVIEW",
-        "TERMINAL - COMMAND LINE"
+        "SETTINGS - PERSONALIZE NEXUS",
+        "TERMINAL - COMMAND LINE",
+        "MONITOR - SYSTEM RESOURCES"
     };
-    static const uint8_t accents[4][3] = {
+    static const uint8_t accents[5][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}
+        {217U, 164U, 83U}, {103U, 164U, 229U}
     };
-    for (size_t i = 0U; i < 4U; ++i) {
+    for (size_t i = 0U; i < 5U; ++i) {
         const uint64_t row_y = menu_y + 49U + (uint64_t)i * 34U;
         graphics_fill_rect(menu_x + 8U, row_y,
                            menu_width - 16U, 29U, 25U, 41U, 64U);
@@ -340,7 +343,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                            names[i], 1U, 225U, 238U, 249U);
     }
     graphics_draw_text(menu_x + 14U, menu_y + menu_height - 12U,
-                       "1-4 OPEN APPS   F6 CLOSE MENU", 1U,
+                       "1-5 OPEN APPS   F6 CLOSE MENU", 1U,
                        140U, 170U, 195U);
 }
 
@@ -432,6 +435,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_BROWSER) window_title = "NEXUS BROWSER";
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
+    if (active_view == DESKTOP_MONITOR) window_title = "SYSTEM MONITOR";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
     graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
                        1U, 234U, 244U, 252U);
@@ -588,6 +592,38 @@ static void draw_shell(void) {
         }
         graphics_draw_text(text_x, panel_y + panel_height - 18U,
                            "1-4 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
+                           1U, 151U, 178U, 201U);
+    } else if (active_view == DESKTOP_MONITOR) {
+        graphics_draw_text(text_x, text_y, "SYSTEM MONITOR", 2U, 241U, 248U, 255U);
+        graphics_draw_text(text_x, text_y + 30U,
+                           "LIVE RESOURCE AND DEVICE OVERVIEW", 1U, 111U, 207U, 231U);
+        char memory_total[21], memory_free[21], uptime[21], device_count[21];
+        format_u64(memory_total_bytes() / (1024U * 1024U), memory_total);
+        format_u64(memory_free_bytes() / (1024U * 1024U), memory_free);
+        format_u64(timer_ticks() / 100U, uptime);
+        format_u64(blockdev_count(), device_count);
+        const char *labels[4] = {"PHYSICAL MEMORY (MiB)", "FREE MEMORY (MiB)",
+                                 "UPTIME (SECONDS)", "BLOCK DEVICES"};
+        const char *values[4] = {memory_total, memory_free, uptime, device_count};
+        for (size_t i = 0U; i < 4U; ++i) {
+            const uint64_t y = text_y + 66U + (uint64_t)i * 55U;
+            graphics_fill_rect(panel_x + 24U, y, panel_width - 48U, 43U,
+                               23U, 39U, 60U);
+            graphics_draw_rect(panel_x + 24U, y, panel_width - 48U, 43U,
+                               55U, 88U, 116U);
+            graphics_draw_text(panel_x + 40U, y + 16U, labels[i],
+                               1U, 145U, 177U, 198U);
+            graphics_draw_text(panel_x + panel_width - 130U, y + 16U, values[i],
+                               1U, 235U, 245U, 252U);
+        }
+        graphics_draw_text(text_x, text_y + 296U,
+                           vfs_nxfs_mounted() && vfs_nxfs_writable()
+                               ? "DATA VOLUME: NXFS MOUNTED / WRITABLE"
+                               : (vfs_root_mounted() ? "DATA VOLUME: MOUNTED" :
+                                  "DATA VOLUME: VOLATILE RAM"),
+                           1U, 119U, 229U, 211U);
+        graphics_draw_text(text_x, panel_y + panel_height - 18U,
+                           "ESC RETURN HOME   VALUES REFRESH WHEN THE DESKTOP REDRAWS",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
@@ -2335,7 +2371,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     start_menu_open = !start_menu_open;
                     shell_click_handled = true;
                 } else {
-                    for (size_t app = 0U; app < 4U; ++app) {
+                    for (size_t app = 0U; app < 5U; ++app) {
                         const uint64_t tab_x = 110U + (uint64_t)app * 78U;
                         if ((uint64_t)pointer_x >= tab_x &&
                             (uint64_t)pointer_x < tab_x + 72U) {
@@ -2464,7 +2500,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             uint64_t tw = (pw - 100U) / 5U;
             if (tw > 190U) tw = 190U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (size_t app = 0U; app < 4U; ++app) {
+                for (size_t app = 0U; app < 5U; ++app) {
                     const uint64_t tx = px + 28U + (uint64_t)app * (tw + 10U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {
@@ -2664,6 +2700,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view != DESKTOP_INSTALLER &&
         event->scancode >= 0x3BU && event->scancode <= 0x3EU) {
         desktop_open_app((size_t)(event->scancode - 0x3BU));
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (active_view == DESKTOP_MONITOR) {
+        if (event->scancode == 0x01U) active_view = DESKTOP_HOME;
         draw_shell();
         draw_pointer();
         return;

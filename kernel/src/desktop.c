@@ -49,9 +49,13 @@ static uint64_t files_last_lba;
 static bool files_vfs_ready;
 static char files_first_name[13];
 static char files_preview[41];
-static char files_listing[6][13];
+#define NEXUS_FILES_LIST_CAPACITY 64U
+#define NEXUS_FILES_VISIBLE_COUNT 8U
+#define NEXUS_FILES_EDITOR_MAX_BYTES 4096U
+static char files_listing[NEXUS_FILES_LIST_CAPACITY][NEXUS_VFS_NAME_MAX];
 static size_t files_listing_count;
 static size_t files_selected_index;
+static size_t files_scroll_offset;
 enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
@@ -59,7 +63,7 @@ enum files_editor_state {
 };
 static enum files_editor_state files_editor_state;
 static char files_edit_name[NEXUS_VFS_NAME_MAX];
-static char files_edit_content[256];
+static char files_edit_content[NEXUS_FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
 static char files_edit_status[64];
@@ -436,9 +440,13 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 48U, text_y + 82U, files_edit_name,
                                1, 119, 229, 211);
             if (files_editor_state == FILES_EDITOR_CONTENT) {
+                const size_t last_line = files_edit_content_length == 0U
+                    ? 0U : (files_edit_content_length - 1U) / 64U;
+                const size_t first_line = last_line >= 3U ? last_line - 3U : 0U;
+                const size_t view_start = first_line * 64U;
                 for (size_t line = 0U; line < 4U; ++line) {
                     char display[65];
-                    const size_t offset = line * 64U;
+                    const size_t offset = view_start + line * 64U;
                     size_t amount = 0U;
                     while (amount < 64U &&
                            offset + amount < files_edit_content_length) {
@@ -455,7 +463,7 @@ static void draw_shell(void) {
                         : "SAVE TARGET: VOLATILE RAM ONLY",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 292U,
-                    "F10 SAVE  ENTER NEW LINE  BACKSPACE DELETE",
+                    "F10 SAVE  ENTER NEW LINE  BACKSPACE DELETE (APPEND AT END)",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
@@ -532,17 +540,22 @@ static void draw_shell(void) {
                                files_scan_ok ? "ROOT DIRECTORY (FAT32 + NXFS + RAM)"
                                              : "ROOT DIRECTORY (VOLATILE RAM)",
                                1, 108, 216, 229);
-            for (size_t n = 0; n < files_listing_count; ++n) {
+            size_t visible_count = files_listing_count > files_scroll_offset
+                ? files_listing_count - files_scroll_offset : 0U;
+            if (visible_count > NEXUS_FILES_VISIBLE_COUNT)
+                visible_count = NEXUS_FILES_VISIBLE_COUNT;
+            for (size_t n = 0U; n < visible_count; ++n) {
+                const size_t list_index = files_scroll_offset + n;
                 const uint64_t column = n % 2U;
                 const uint64_t line = n / 2U;
-                const bool selected = n == files_selected_index;
+                const bool selected = list_index == files_selected_index;
                 if (selected)
                     graphics_fill_rect(text_x + column * 260U - 6U,
                                        text_y + 307U + line * 24U,
                                        240U, 20U, 34, 78, 105);
                 graphics_draw_text(text_x + column * 260U,
                                    text_y + 312U + line * 24U,
-                                   files_listing[n], 1,
+                                   files_listing[list_index], 1,
                                    selected ? 119 : 233,
                                    selected ? 229 : 243,
                                    selected ? 211 : 252);
@@ -552,11 +565,13 @@ static void draw_shell(void) {
                                    1, 170, 191, 211);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  ENTER PREVIEW  DEL REMOVE",
+                               "UP/DOWN SELECT  N NEW  E EDIT  ENTER OPEN  DEL DELETE",
                                1, 170, 191, 211);
         }
-        graphics_draw_text(text_x, text_y + 342U,
-                           "N NEW  E EDIT  F10 SAVE  ESC HOME",
+        graphics_draw_text(text_x, text_y + 366U,
+                           files_listing_count > NEXUS_FILES_LIST_CAPACITY - 1U
+                               ? "FIRST 64 ENTRIES SHOWN - ARROW KEYS SCROLL"
+                               : "F10 SAVE IN EDITOR  ESC HOME",
                            1, 119, 229, 211);
         }
     } else if (active_view == DESKTOP_TERMINAL) {
@@ -749,7 +764,8 @@ static void refresh_files_listing(void) {
         files_first_name[n] = '\0';
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
-    for (size_t n = 0; n < 6U; ++n) {
+    files_scroll_offset = 0U;
+    for (size_t n = 0; n < NEXUS_FILES_LIST_CAPACITY; ++n) {
         for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
     }
@@ -761,7 +777,7 @@ static void refresh_files_listing(void) {
         serial_write("FILES: entry ");
         serial_write(entry.name);
         serial_write("\r\n");
-        if (files_listing_count < 6U) {
+        if (files_listing_count < NEXUS_FILES_LIST_CAPACITY) {
             size_t length = 0U;
             while (length < sizeof(files_listing[0]) - 1U &&
                    entry.name[length] != '\0') {
@@ -816,9 +832,9 @@ static void files_editor_begin_selected(void) {
     if (files_selected_index >= files_listing_count ||
         !vfs_root_entry(files_selected_index, &selected) ||
         selected.type != NEXUS_VFS_FILE ||
-        selected.size >= sizeof(files_edit_content)) {
+        selected.size > NEXUS_FILES_EDITOR_MAX_BYTES) {
         files_edit_status[0] = '\0';
-        const char *message = "SELECT A FILE SMALLER THAN 256 BYTES";
+        const char *message = "SELECT A FILE OF 4 KiB OR LESS";
         size_t i = 0U;
         while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
             files_edit_status[i] = message[i];
@@ -965,7 +981,8 @@ static void scan_files_once(void) {
         files_preview[n] = '\0';
     files_listing_count = 0U;
     files_selected_index = 0U;
-    for (size_t n = 0U; n < 6U; ++n)
+    files_scroll_offset = 0U;
+    for (size_t n = 0U; n < NEXUS_FILES_LIST_CAPACITY; ++n)
         for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
 
@@ -2038,6 +2055,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x48U && files_listing_count > 0U) {
             if (files_selected_index > 0U) --files_selected_index;
+            if (files_selected_index < files_scroll_offset)
+                files_scroll_offset = files_selected_index;
             draw_shell();
             draw_pointer();
             return;
@@ -2045,6 +2064,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if (event->scancode == 0x50U && files_listing_count > 0U) {
             if (files_selected_index + 1U < files_listing_count)
                 ++files_selected_index;
+            if (files_selected_index >= files_scroll_offset + NEXUS_FILES_VISIBLE_COUNT)
+                files_scroll_offset = files_selected_index - NEXUS_FILES_VISIBLE_COUNT + 1U;
             draw_shell();
             draw_pointer();
             return;

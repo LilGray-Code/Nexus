@@ -194,7 +194,7 @@ int main(void) {
     format_minimal_fat32();
     highest_read_lba = 0U;
     assert(fat32_mount(&device, &partition));
-    assert(fat32_root_entry_count() == 41U);
+    assert(fat32_root_entry_count() == 40U);
     assert(strcmp(fat32_root_entry_at(1U)->name, "Long Filename.txt") == 0);
     const struct nexus_fat32_entry *entry = fat32_root_entry_at(0U);
     assert(entry != NULL);
@@ -205,7 +205,7 @@ int main(void) {
     assert(highest_read_lba <=
            TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U);
 
-    const struct nexus_fat32_entry *directory = fat32_root_entry_at(40U);
+    const struct nexus_fat32_entry *directory = fat32_root_entry_at(38U);
     assert(directory != NULL);
     assert((directory->attributes & 0x10U) != 0U);
     assert(directory->first_cluster == 5U);

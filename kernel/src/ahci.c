@@ -29,6 +29,9 @@
 #define AHCI_SIG_ATA               0x00000101U
 #define ATA_CMD_IDENTIFY           0xECU
 #define ATA_CMD_READ_DMA_EXT       0x25U
+#define ATA_CMD_WRITE_DMA_EXT      0x35U
+#define ATA_CMD_FLUSH_CACHE        0xE7U
+#define ATA_CMD_FLUSH_CACHE_EXT    0xEAU
 
 struct ahci_command_header {
     uint16_t flags;
@@ -70,6 +73,7 @@ struct ahci_port_state {
     uint64_t dma_buffer_physical;
     uint64_t block_count;
     uint32_t block_size;
+    uint8_t flush_command;
     uint32_t port_number;
     uint32_t pci_bus;
     uint32_t pci_slot;
@@ -163,8 +167,7 @@ static bool ahci_issue_command(struct ahci_port_state *state,
                                const uint8_t fis[20], bool write,
                                uint32_t transfer_bytes) {
     if (state == NULL || !state->initialized || state->failed ||
-        fis == NULL || transfer_bytes == 0U ||
-        transfer_bytes > AHCI_PAGE_SIZE) return false;
+        fis == NULL || transfer_bytes > AHCI_PAGE_SIZE) return false;
 
     volatile uint32_t *port = state->registers;
     if (!ahci_wait_taskfile_ready(state)) return false;
@@ -175,14 +178,19 @@ static bool ahci_issue_command(struct ahci_port_state *state,
 
     for (size_t i = 0U; i < 64U; ++i) table->command_fis[i] = 0U;
     for (size_t i = 0U; i < 20U; ++i) table->command_fis[i] = fis[i];
-    table->prdt[0].data_base_low = (uint32_t)state->dma_buffer_physical;
+    table->prdt[0].data_base_low = 0U;
     table->prdt[0].data_base_high = 0U;
     table->prdt[0].reserved = 0U;
-    table->prdt[0].byte_count_and_interrupt =
-        (transfer_bytes - 1U) | (1U << 31);
+    table->prdt[0].byte_count_and_interrupt = 0U;
+    if (transfer_bytes != 0U) {
+        table->prdt[0].data_base_low = (uint32_t)state->dma_buffer_physical;
+        table->prdt[0].byte_count_and_interrupt =
+            (transfer_bytes - 1U) | (1U << 31);
+    }
 
-    header->flags = (uint16_t)(5U | (write ? (1U << 6) : 0U));
-    header->prdt_length = 1U;
+    header->flags = (uint16_t)(5U |
+        ((write && transfer_bytes != 0U) ? (1U << 6) : 0U));
+    header->prdt_length = transfer_bytes != 0U ? 1U : 0U;
     header->transferred_bytes = 0U;
     header->command_table_low = (uint32_t)state->command_table_physical;
     header->command_table_high = 0U;
@@ -269,9 +277,19 @@ static bool ahci_identify(struct ahci_port_state *state) {
 
     const volatile uint8_t *identify = state->dma_buffer;
     const uint16_t command_sets = ahci_identify_word(identify, 83U);
-    if ((command_sets & (1U << 10)) == 0U) {
-        serial_write("AHCI: ATA device lacks LBA48; not registered\r\n");
+    const bool command_word_valid =
+        (command_sets & (1U << 14)) != 0U &&
+        (command_sets & (1U << 15)) == 0U;
+    if ((command_sets & (1U << 10)) == 0U || !command_word_valid) {
+        serial_write("AHCI: ATA device lacks valid LBA48 command data; not registered\r\n");
         return false;
+    }
+    if ((command_sets & (1U << 13)) != 0U) {
+        state->flush_command = ATA_CMD_FLUSH_CACHE_EXT;
+    } else if ((command_sets & (1U << 12)) != 0U) {
+        state->flush_command = ATA_CMD_FLUSH_CACHE;
+    } else {
+        state->flush_command = 0U;
     }
 
     const uint64_t blocks = ahci_identify_u64(identify, 100U);
@@ -336,16 +354,68 @@ static bool ahci_read_blocks(void *context, uint64_t lba,
     return true;
 }
 
+
+static void ahci_build_lba48_fis(uint8_t fis[20], uint8_t command,
+                                 uint64_t lba, uint32_t block_count) {
+    for (size_t i = 0U; i < 20U; ++i) fis[i] = 0U;
+    fis[0] = 0x27U;
+    fis[1] = 0x80U;
+    fis[2] = command;
+    fis[4] = (uint8_t)lba;
+    fis[5] = (uint8_t)(lba >> 8);
+    fis[6] = (uint8_t)(lba >> 16);
+    fis[7] = 0x40U;
+    fis[8] = (uint8_t)(lba >> 24);
+    fis[9] = (uint8_t)(lba >> 32);
+    fis[10] = (uint8_t)(lba >> 40);
+    fis[12] = (uint8_t)block_count;
+    fis[13] = (uint8_t)(block_count >> 8);
+}
+
+static bool ahci_write_blocks(void *context, uint64_t lba,
+                              uint32_t block_count, const void *buffer) {
+    struct ahci_port_state *state = (struct ahci_port_state *)context;
+    if (state == NULL || !state->initialized || state->failed ||
+        state->flush_command == 0U || buffer == NULL || block_count == 0U ||
+        state->block_size == 0U || lba >= state->block_count ||
+        (uint64_t)block_count > state->block_count - lba ||
+        block_count > AHCI_PAGE_SIZE / state->block_size) return false;
+
+    const uint32_t byte_count = block_count * state->block_size;
+    const uint8_t *input = (const uint8_t *)buffer;
+    for (uint32_t i = 0U; i < byte_count; ++i)
+        state->dma_buffer[i] = input[i];
+
+    uint8_t fis[20];
+    ahci_build_lba48_fis(fis, ATA_CMD_WRITE_DMA_EXT, lba, block_count);
+    return ahci_issue_command(state, fis, true, byte_count);
+}
+
+static bool ahci_flush(void *context) {
+    struct ahci_port_state *state = (struct ahci_port_state *)context;
+    if (state == NULL || !state->initialized || state->failed ||
+        state->flush_command == 0U) return false;
+    uint8_t fis[20] = {0};
+    fis[0] = 0x27U;
+    fis[1] = 0x80U;
+    fis[2] = state->flush_command;
+    fis[7] = 0x40U;
+    return ahci_issue_command(state, fis, false, 0U);
+}
 #ifdef NEXUS_STORAGE_SELFTEST
 static bool ahci_read_selftest(const struct nexus_block_device *device) {
     uint8_t sector[4096];
+    uint8_t saved_sector[4096];
+    uint8_t pattern_sector[4096];
+    uint8_t readback[4096];
     static const char mbr_signature[] = "NEXUS-READ-ONLY-TEST";
     static const char gpt_signature[] = "EFI PART";
     if (device == NULL || device->block_size != 512U ||
         (device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U ||
         (device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U ||
-        device->write != NULL || device->flush != NULL ||
-        blockdev_install_write_supported(device) ||
+        (device->flags & NEXUS_BLOCKDEV_INSTALL_CAPABLE) == 0U ||
+        device->write == NULL || device->flush == NULL ||
+        !blockdev_install_write_supported(device) ||
         blockdev_write(device, 100U, 1U, sector) ||
         blockdev_flush(device) ||
         !blockdev_read(device, 0U, 1U, sector)) return false;
@@ -354,9 +424,35 @@ static bool ahci_read_selftest(const struct nexus_block_device *device) {
     if (!blockdev_read(device, 1U, 1U, sector)) return false;
     for (size_t i = 0U; i < sizeof(gpt_signature) - 1U; ++i)
         if (sector[i] != (uint8_t)gpt_signature[i]) return false;
-    serial_write("AHCI: disposable SATA sectors 0 and 1 read and verified\r\n");
-    serial_write("NEXUS AHCI READ SELFTEST READY\r\n");
-    serial_write("NEXUS AHCI WRITE LOCK TEST READY\r\n");
+
+    /* LBA 100 is deliberately unused in the disposable CI image. */
+    if (!blockdev_read(device, 100U, 1U, saved_sector) ||
+        !blockdev_install_session_begin(device, device->stable_id, "ERASE"))
+        return false;
+    for (uint32_t i = 0U; i < device->block_size; ++i)
+        pattern_sector[i] = (uint8_t)(0x5AU ^ (uint8_t)(i * 29U));
+    const bool wrote = blockdev_install_write(device, 100U, 1U,
+                                               pattern_sector) &&
+                       blockdev_install_flush(device) &&
+                       blockdev_read(device, 100U, 1U, readback);
+    bool pattern_ok = wrote;
+    for (uint32_t i = 0U; i < device->block_size && pattern_ok; ++i)
+        if (readback[i] != pattern_sector[i]) pattern_ok = false;
+
+    const bool restored = blockdev_install_write(device, 100U, 1U,
+                                                  saved_sector) &&
+                          blockdev_install_flush(device) &&
+                          blockdev_read(device, 100U, 1U, readback);
+    bool restore_ok = restored;
+    for (uint32_t i = 0U; i < device->block_size && restore_ok; ++i)
+        if (readback[i] != saved_sector[i]) restore_ok = false;
+    blockdev_install_session_end();
+    if (!pattern_ok || !restore_ok) return false;
+
+    serial_write("AHCI: disposable SATA sectors 0 and 1 read and verified\\r\\n");
+    serial_write("AHCI: scoped write/flush/readback/restore verified\\r\\n");
+    serial_write("NEXUS AHCI READ SELFTEST READY\\r\\n");
+    serial_write("NEXUS AHCI WRITE LOCK TEST READY\\r\\n");
     return true;
 }
 #endif
@@ -450,11 +546,13 @@ static bool ahci_prepare_port(const struct nexus_pci_device *pci_device,
         .block_count = state->block_count,
         .block_size = state->block_size,
         .max_blocks_per_request = AHCI_PAGE_SIZE / state->block_size,
-        .flags = NEXUS_BLOCKDEV_READ_ONLY,
+        .flags = state->flush_command != 0U
+            ? (NEXUS_BLOCKDEV_READ_ONLY | NEXUS_BLOCKDEV_INSTALL_CAPABLE)
+            : NEXUS_BLOCKDEV_READ_ONLY,
         .context = state,
         .read = ahci_read_blocks,
-        .write = NULL,
-        .flush = NULL
+        .write = state->flush_command != 0U ? ahci_write_blocks : NULL,
+        .flush = state->flush_command != 0U ? ahci_flush : NULL
     };
     const char name_prefix[] = "sata";
     for (size_t i = 0U; i < sizeof(name_prefix) - 1U; ++i)

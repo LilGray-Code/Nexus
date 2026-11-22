@@ -790,6 +790,8 @@ static void refresh_files_listing(void) {
         if (!vfs_root_entry(index, &entry)) continue;
         serial_write("FILES: entry ");
         serial_write(entry.name);
+        serial_write(" bytes=");
+        serial_write_hex(entry.size);
         serial_write("\r\n");
         if (files_listing_count < NEXUS_FILES_LIST_CAPACITY) {
             size_t length = 0U;
@@ -969,6 +971,8 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                 ? "FILES: SAVED PERSISTENT NXFS "
                 : "FILES: SAVED VOLATILE RAM ");
             serial_write(files_edit_name);
+            serial_write(" bytes=");
+            serial_write_hex(files_edit_content_length);
             serial_write("\r\n");
             files_editor_state = FILES_EDITOR_CLOSED;
             refresh_files_listing();

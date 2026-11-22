@@ -49,9 +49,13 @@ static uint64_t files_last_lba;
 static bool files_vfs_ready;
 static char files_first_name[13];
 static char files_preview[41];
-static char files_listing[6][13];
+#define NEXUS_FILES_LIST_CAPACITY 64U
+#define NEXUS_FILES_VISIBLE_COUNT 8U
+#define NEXUS_FILES_EDITOR_MAX_BYTES 4096U
+static char files_listing[NEXUS_FILES_LIST_CAPACITY][NEXUS_VFS_NAME_MAX];
 static size_t files_listing_count;
 static size_t files_selected_index;
+static size_t files_scroll_offset;
 enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
@@ -59,9 +63,10 @@ enum files_editor_state {
 };
 static enum files_editor_state files_editor_state;
 static char files_edit_name[NEXUS_VFS_NAME_MAX];
-static char files_edit_content[256];
+static char files_edit_content[NEXUS_FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
+static size_t files_edit_cursor;
 static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
@@ -206,8 +211,9 @@ static void draw_shell(void) {
                        119, 229, 211);
 
     uint64_t panel_width = width * 3U / 4U;
-    uint64_t panel_height = active_view == DESKTOP_INSTALLER
-        ? 480U : height * 53U / 100U;
+    uint64_t panel_height =
+        (active_view == DESKTOP_INSTALLER || active_view == DESKTOP_FILES)
+            ? 480U : height * 53U / 100U;
     if (panel_width > 920U) panel_width = 920U;
     if (panel_height > 480U) panel_height = 480U;
     if (panel_width > width - 16U) panel_width = width - 16U;
@@ -436,16 +442,33 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 48U, text_y + 82U, files_edit_name,
                                1, 119, 229, 211);
             if (files_editor_state == FILES_EDITOR_CONTENT) {
+                const size_t cursor_line = files_edit_cursor / 64U;
+                const size_t first_line = cursor_line >= 3U
+                    ? cursor_line - 3U : 0U;
+                const size_t view_start = first_line * 64U;
                 for (size_t line = 0U; line < 4U; ++line) {
-                    char display[65];
-                    const size_t offset = line * 64U;
+                    char display[66];
+                    const size_t offset = view_start + line * 64U;
                     size_t amount = 0U;
                     while (amount < 64U &&
                            offset + amount < files_edit_content_length) {
-                        display[amount] = files_edit_content[offset + amount];
+                        const char ch = files_edit_content[offset + amount];
+                        display[amount] = ch == '\n' ? ' ' : ch;
                         ++amount;
                     }
-                    display[amount] = '\0';
+                    size_t display_length = amount;
+                    const bool caret_here =
+                        first_line + line == cursor_line &&
+                        files_edit_cursor >= offset &&
+                        files_edit_cursor <= offset + amount;
+                    if (caret_here) {
+                        const size_t caret = files_edit_cursor - offset;
+                        for (size_t i = display_length; i > caret; --i)
+                            display[i] = display[i - 1U];
+                        display[caret] = '|';
+                        ++display_length;
+                    }
+                    display[display_length] = '\0';
                     graphics_draw_text(text_x, text_y + 124U + line * 28U,
                                        display, 1, 239, 249, 255);
                 }
@@ -455,7 +478,7 @@ static void draw_shell(void) {
                         : "SAVE TARGET: VOLATILE RAM ONLY",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 292U,
-                    "F10 SAVE  ENTER NEW LINE  BACKSPACE DELETE",
+                    "F10 SAVE  ARROWS MOVE  HOME/END LINE  BKSP/DEL ERASE",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
@@ -472,7 +495,9 @@ static void draw_shell(void) {
                            "STORAGE DEVICE DISCOVERY IS ACTIVE",
                            1, 108, 216, 229);
         graphics_draw_text(text_x, text_y + 78U,
-                           "DISKS ARE CURRENTLY READ ONLY",
+                           vfs_nxfs_writable()
+                               ? "NEXUS DATA VOLUME IS PERSISTENT AND WRITABLE"
+                               : "READ-ONLY VOLUME - RAM SAVES ARE VOLATILE",
                            1, 233, 243, 252);
         if (!files_scanned) {
             graphics_draw_text(text_x, text_y + 108U,
@@ -529,20 +554,25 @@ static void draw_shell(void) {
         }
         if (files_vfs_ready) {
             graphics_draw_text(text_x, text_y + 288U,
-                               files_scan_ok ? "ROOT DIRECTORY (FAT32 + NXFS + RAM)"
+                               files_scan_ok ? "ROOT DIRECTORY (NEXUS DATA + FAT32 + RAM)"
                                              : "ROOT DIRECTORY (VOLATILE RAM)",
                                1, 108, 216, 229);
-            for (size_t n = 0; n < files_listing_count; ++n) {
+            size_t visible_count = files_listing_count > files_scroll_offset
+                ? files_listing_count - files_scroll_offset : 0U;
+            if (visible_count > NEXUS_FILES_VISIBLE_COUNT)
+                visible_count = NEXUS_FILES_VISIBLE_COUNT;
+            for (size_t n = 0U; n < visible_count; ++n) {
+                const size_t list_index = files_scroll_offset + n;
                 const uint64_t column = n % 2U;
                 const uint64_t line = n / 2U;
-                const bool selected = n == files_selected_index;
+                const bool selected = list_index == files_selected_index;
                 if (selected)
                     graphics_fill_rect(text_x + column * 260U - 6U,
-                                       text_y + 307U + line * 24U,
-                                       240U, 20U, 34, 78, 105);
+                                       text_y + 307U + line * 18U,
+                                       240U, 16U, 34, 78, 105);
                 graphics_draw_text(text_x + column * 260U,
-                                   text_y + 312U + line * 24U,
-                                   files_listing[n], 1,
+                                   text_y + 312U + line * 18U,
+                                   files_listing[list_index], 1,
                                    selected ? 119 : 233,
                                    selected ? 229 : 243,
                                    selected ? 211 : 252);
@@ -552,12 +582,11 @@ static void draw_shell(void) {
                                    1, 170, 191, 211);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  ENTER PREVIEW  DEL REMOVE",
+                               "ARROWS/CLICK SELECT  N NEW  E EDIT  ENTER OPEN  DEL DELETE",
                                1, 170, 191, 211);
         }
-        graphics_draw_text(text_x, text_y + 342U,
-                           "N NEW  E EDIT  F10 SAVE  ESC HOME",
-                           1, 119, 229, 211);
+        /* The list is paged by keeping the selected entry in the eight-row
+         * viewport.  The controls below the last row remain visible. */
         }
     } else if (active_view == DESKTOP_TERMINAL) {
         graphics_draw_text(text_x, text_y, "NEXUS COMMAND SHELL",
@@ -749,7 +778,8 @@ static void refresh_files_listing(void) {
         files_first_name[n] = '\0';
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
-    for (size_t n = 0; n < 6U; ++n) {
+    files_scroll_offset = 0U;
+    for (size_t n = 0; n < NEXUS_FILES_LIST_CAPACITY; ++n) {
         for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
     }
@@ -760,8 +790,10 @@ static void refresh_files_listing(void) {
         if (!vfs_root_entry(index, &entry)) continue;
         serial_write("FILES: entry ");
         serial_write(entry.name);
+        serial_write(" bytes=");
+        serial_write_hex(entry.size);
         serial_write("\r\n");
-        if (files_listing_count < 6U) {
+        if (files_listing_count < NEXUS_FILES_LIST_CAPACITY) {
             size_t length = 0U;
             while (length < sizeof(files_listing[0]) - 1U &&
                    entry.name[length] != '\0') {
@@ -807,6 +839,7 @@ static void files_editor_begin_new(void) {
     files_edit_content[0] = '\0';
     files_edit_name_length = 0U;
     files_edit_content_length = 0U;
+    files_edit_cursor = 0U;
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_NAME;
 }
@@ -816,9 +849,9 @@ static void files_editor_begin_selected(void) {
     if (files_selected_index >= files_listing_count ||
         !vfs_root_entry(files_selected_index, &selected) ||
         selected.type != NEXUS_VFS_FILE ||
-        selected.size >= sizeof(files_edit_content)) {
+        selected.size > NEXUS_FILES_EDITOR_MAX_BYTES) {
         files_edit_status[0] = '\0';
-        const char *message = "SELECT A FILE SMALLER THAN 256 BYTES";
+        const char *message = "SELECT A FILE OF 4 KiB OR LESS";
         size_t i = 0U;
         while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
             files_edit_status[i] = message[i];
@@ -841,9 +874,22 @@ static void files_editor_begin_selected(void) {
            files_edit_name[files_edit_name_length] != '\0')
         ++files_edit_name_length;
     files_edit_content_length = bytes_read;
+    files_edit_cursor = files_edit_content_length;
     files_edit_content[files_edit_content_length] = '\0';
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
+}
+
+static void files_keep_selection_visible(void) {
+    const size_t visible_rows = NEXUS_FILES_VISIBLE_COUNT / 2U;
+    const size_t selected_row = files_selected_index / 2U;
+    const size_t first_visible_row = files_scroll_offset / 2U;
+    if (selected_row < first_visible_row) {
+        files_scroll_offset = selected_row * 2U;
+    } else if (selected_row >= first_visible_row + visible_rows) {
+        files_scroll_offset =
+            (selected_row - visible_rows + 1U) * 2U;
+    }
 }
 
 static bool files_editor_name_exists(void) {
@@ -925,6 +971,8 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                 ? "FILES: SAVED PERSISTENT NXFS "
                 : "FILES: SAVED VOLATILE RAM ");
             serial_write(files_edit_name);
+            serial_write(" bytes=");
+            serial_write_hex(files_edit_content_length);
             serial_write("\r\n");
             files_editor_state = FILES_EDITOR_CLOSED;
             refresh_files_listing();
@@ -933,22 +981,95 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
             serial_write(files_edit_name);
             serial_write("\r\n");
         }
+    } else if (event->scancode == 0x4BU) {
+        if (files_edit_cursor > 0U) --files_edit_cursor;
+    } else if (event->scancode == 0x4DU) {
+        if (files_edit_cursor < files_edit_content_length)
+            ++files_edit_cursor;
+    } else if (event->scancode == 0x47U) {
+        while (files_edit_cursor > 0U &&
+               files_edit_content[files_edit_cursor - 1U] != '\n')
+            --files_edit_cursor;
+    } else if (event->scancode == 0x4FU) {
+        while (files_edit_cursor < files_edit_content_length &&
+               files_edit_content[files_edit_cursor] != '\n')
+            ++files_edit_cursor;
     } else if (event->scancode == 0x0EU) {
-        if (files_edit_content_length != 0U)
-            files_edit_content[--files_edit_content_length] = '\0';
+        if (files_edit_cursor > 0U) {
+            for (size_t i = files_edit_cursor - 1U;
+                 i < files_edit_content_length; ++i)
+                files_edit_content[i] = files_edit_content[i + 1U];
+            --files_edit_content_length;
+            --files_edit_cursor;
+        }
+    } else if (event->scancode == 0x53U) {
+        if (files_edit_cursor < files_edit_content_length) {
+            for (size_t i = files_edit_cursor;
+                 i < files_edit_content_length; ++i)
+                files_edit_content[i] = files_edit_content[i + 1U];
+            --files_edit_content_length;
+        }
     } else if (event->scancode == 0x1CU) {
-        if (files_edit_content_length + 1U < sizeof(files_edit_content)) {
-            files_edit_content[files_edit_content_length++] = '\n';
+        if (files_edit_content_length < NEXUS_FILES_EDITOR_MAX_BYTES) {
+            for (size_t i = files_edit_content_length;
+                 i > files_edit_cursor; --i)
+                files_edit_content[i] = files_edit_content[i - 1U];
+            files_edit_content[files_edit_cursor++] = '\n';
+            ++files_edit_content_length;
             files_edit_content[files_edit_content_length] = '\0';
         }
     } else {
         const char ch = terminal_scancode_char(event->scancode);
         if (ch >= 0x20 && ch <= 0x7E &&
-            files_edit_content_length + 1U < sizeof(files_edit_content)) {
-            files_edit_content[files_edit_content_length++] = ch;
+            files_edit_content_length < NEXUS_FILES_EDITOR_MAX_BYTES) {
+            for (size_t i = files_edit_content_length;
+                 i > files_edit_cursor; --i)
+                files_edit_content[i] = files_edit_content[i - 1U];
+            files_edit_content[files_edit_cursor++] = ch;
+            ++files_edit_content_length;
             files_edit_content[files_edit_content_length] = '\0';
         }
     }
+}
+
+static bool files_partition_guid_matches(
+    const struct nexus_gpt_partition *partition, const uint8_t guid[16]) {
+    if (partition == NULL || guid == NULL) return false;
+    for (size_t i = 0U; i < 16U; ++i)
+        if (partition->type_guid[i] != guid[i]) return false;
+    return true;
+}
+
+static bool files_is_efi_system_partition(
+    const struct nexus_gpt_partition *partition) {
+    static const uint8_t efi_system_guid[16] = {
+        0x28U, 0x73U, 0x2AU, 0xC1U, 0x1FU, 0xF8U, 0xD2U, 0x11U,
+        0xBAU, 0x4BU, 0x00U, 0xA0U, 0xC9U, 0x3EU, 0xC9U, 0x3BU
+    };
+    return files_partition_guid_matches(partition, efi_system_guid);
+}
+
+/* Nexus System and Data volumes share the NXFS type GUID.  The recovery
+ * partition is their stable boundary: System precedes it and user Data
+ * follows it.  Never expose the installed kernel's System volume as the
+ * user's file store. */
+static bool files_is_user_data_partition(
+    const struct nexus_gpt_partition *partition) {
+    static const uint8_t recovery_guid[16] = {
+        0x4EU, 0x58U, 0x52U, 0x43U, 0x01U, 0x00U, 0x58U, 0x4EU,
+        0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x52U, 0x43U
+    };
+    if (!nxfs_partition_type_matches(partition)) return false;
+    for (size_t i = 0U; i < gpt_partition_count(); ++i) {
+        const struct nexus_gpt_partition *recovery = gpt_partition_at(i);
+        if (!files_partition_guid_matches(recovery, recovery_guid)) continue;
+        const struct nexus_gpt_partition *data = gpt_partition_at(i + 1U);
+        return data != NULL &&
+               data->first_lba == partition->first_lba &&
+               data->last_lba == partition->last_lba &&
+               nxfs_partition_type_matches(data);
+    }
+    return false;
 }
 
 static void scan_files_once(void) {
@@ -965,7 +1086,8 @@ static void scan_files_once(void) {
         files_preview[n] = '\0';
     files_listing_count = 0U;
     files_selected_index = 0U;
-    for (size_t n = 0U; n < 6U; ++n)
+    files_scroll_offset = 0U;
+    for (size_t n = 0U; n < NEXUS_FILES_LIST_CAPACITY; ++n)
         for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
 
@@ -978,14 +1100,16 @@ static void scan_files_once(void) {
             const struct nexus_gpt_partition *part = gpt_partition_at(p);
             if (part == NULL) continue;
             bool mounted = false;
-            if (nxfs_partition_type_matches(part)) {
+            if (files_is_user_data_partition(part)) {
                 mounted = vfs_mount_root_nxfs(device, part);
                 if (mounted) {
-                    serial_write("FILES: mounted NexusFS volume on ");
+                    serial_write("FILES: mounted persistent Nexus user Data volume on ");
                     serial_write(device->name);
                     serial_write("\r\n");
                 }
-            } else if (vfs_mount_root_fat32(device, part)) {
+            } else if (!nxfs_partition_type_matches(part) &&
+                       !files_is_efi_system_partition(part) &&
+                       vfs_mount_root_fat32(device, part)) {
                 mounted = true;
                 if (files_first_lba == 0U) {
                     files_first_lba = part->first_lba;
@@ -1774,11 +1898,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t ty = py + 82U;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 307U);
             const int64_t relative_x = pointer_x - (int64_t)tx;
-            if (relative_y >= 0 && relative_y < 60 &&
+            if (relative_y >= 0 &&
+                relative_y < (int64_t)(NEXUS_FILES_VISIBLE_COUNT / 2U * 18U) &&
                 relative_x >= 0 && relative_x < 500) {
-                const size_t row = (size_t)relative_y / 24U;
+                const size_t row = (size_t)relative_y / 18U;
                 const size_t column = (size_t)relative_x / 260U;
-                const size_t index = row * 2U + column;
+                const size_t index = files_scroll_offset + row * 2U + column;
                 if (column < 2U && index < files_listing_count)
                     files_selected_index = index;
             }
@@ -2037,14 +2162,34 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x48U && files_listing_count > 0U) {
-            if (files_selected_index > 0U) --files_selected_index;
+            if (files_selected_index >= 2U)
+                files_selected_index -= 2U;
+            files_keep_selection_visible();
             draw_shell();
             draw_pointer();
             return;
         }
         if (event->scancode == 0x50U && files_listing_count > 0U) {
-            if (files_selected_index + 1U < files_listing_count)
+            if (files_selected_index + 2U < files_listing_count)
+                files_selected_index += 2U;
+            files_keep_selection_visible();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x4BU && files_listing_count > 0U) {
+            if ((files_selected_index % 2U) == 1U)
+                --files_selected_index;
+            files_keep_selection_visible();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x4DU && files_listing_count > 0U) {
+            if ((files_selected_index % 2U) == 0U &&
+                files_selected_index + 1U < files_listing_count)
                 ++files_selected_index;
+            files_keep_selection_visible();
             draw_shell();
             draw_pointer();
             return;

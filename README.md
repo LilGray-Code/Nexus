@@ -21,13 +21,15 @@ cooperative scheduler foundation, ring-3 ELF execution, read-only GPT/FAT32
 storage and VFS, volatile RAM filesystem, Intel E1000 networking, DHCP, DNS,
 and an early single-connection TCP/plain-HTTP client.
 
-The desktop now includes an **Install F5** graphical preview with target-device
-capacity, logical sector size, and UEFI/legacy-BIOS partition planning. It is
-read-only and cannot install or modify a disk. The GPT transaction is linked
-through a kernel block-device adapter and has host-side adapter tests for boot
-media rejection, unknown boot provenance, mounted targets, confirmation, and
-successful disposable-disk metadata writes. Firmware boot-source identification
-and UI integration are still missing, so release writes remain disabled.
+The desktop now includes an **Install F5** graphical wizard with target
+selection, firmware-aware partition preview, exact disk-ID confirmation, and a
+separate typed `ERASE` confirmation. A kernel-side runtime sequences GPT
+creation, EFI/NXFS formatting, system and boot payload deployment, optional
+BIOS boot-stage installation, and recovery-journal updates. Destructive calls
+remain compile-time locked in the normal kernel build until the new runtime
+tests, full kernel build, and QEMU install/reboot/recovery checks pass. The
+current target write backend is NVMe; AHCI/SATA and USB mass-storage writes are
+not implemented.
 
 This is still an early prototype, not a complete desktop OS. Durable installable
 filesystem hardening, a full installer wizard, system-image deployment,
@@ -44,13 +46,14 @@ installer engine specification, GPT planner, metadata serializer, guarded
 transaction, safety invariants, and implementation gates are in
 [installer/README.md](installer/README.md).
 
-The GPT transaction and its kernel storage adapter are host-tested against a
-disposable in-memory block device in CI. Tests exercise unknown boot provenance,
-boot-medium rejection, mounted-target rejection, bad confirmation, identity
-change, and a successful GPT write/read-back. The adapter cannot open a session
-until the boot chain positively identifies the live boot medium; that firmware
-provenance integration is not implemented. The UI is not connected, and no
-completed installation or release-ISO disk-writing capability is claimed.
+The GPT transaction and kernel storage adapters have host-side tests
+against disposable in-memory block devices. Boot-medium provenance is resolved
+from Limine's executable-file handoff by matching validated GPT partition GUID,
+GPT disk GUID, or MBR disk ID; ambiguous or unknown identity fails closed.
+The new installer runtime has a separate host test suite and build workflow,
+but those new checks must be observed passing before the compile-time write
+lock can be removed. The installed NXFS payload is still a minimal kernel,
+manifest, and README rather than a complete general-purpose userland.
 
 ## Build and test
 

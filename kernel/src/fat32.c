@@ -27,6 +27,65 @@ static uint64_t partition_start;
 static uint64_t partition_sectors;
 static uint32_t volume_sectors;
 static const struct nexus_block_device *mounted_device;
+static uint16_t lfn_chars[32];
+static uint8_t lfn_checksum;
+static uint8_t lfn_expected;
+static bool lfn_active;
+
+static void reset_lfn(void) {
+    for (size_t i = 0; i < 32U; ++i) lfn_chars[i] = 0xFFFFU;
+    lfn_checksum = 0U;
+    lfn_expected = 0U;
+    lfn_active = false;
+}
+
+static uint8_t short_name_checksum(const uint8_t *name) {
+    uint8_t sum = 0U;
+    for (size_t i = 0; i < 11U; ++i)
+        sum = (uint8_t)(((sum & 1U) ? 0x80U : 0U) + (sum >> 1) + name[i]);
+    return sum;
+}
+
+static void decode_lfn_part(const uint8_t *raw) {
+    static const uint8_t offsets[13] = {
+        1U,3U,5U,7U,9U,14U,16U,18U,20U,22U,24U,28U,30U
+    };
+    const uint8_t ordinal = raw[0] & 0x1FU;
+    if ((raw[0] & 0x40U) != 0U) {
+        reset_lfn();
+        if (ordinal == 0U || ordinal > 2U) return;
+        lfn_active = true;
+        lfn_expected = ordinal;
+        lfn_checksum = raw[13U];
+    }
+    if (!lfn_active || ordinal == 0U || ordinal != lfn_expected ||
+        raw[11U] != FAT32_ATTR_LONG_NAME || raw[12U] != 0U ||
+        le16(raw + 26U) != 0U || raw[13U] != lfn_checksum) {
+        reset_lfn();
+        return;
+    }
+    const size_t base = (size_t)(ordinal - 1U) * 13U;
+    for (size_t i = 0; i < 13U; ++i) {
+        const uint16_t ch = le16(raw + offsets[i]);
+        if (base + i < 32U) lfn_chars[base + i] = ch;
+    }
+    --lfn_expected;
+}
+
+static bool copy_lfn_name(char output[32], const uint8_t *short_name) {
+    if (!lfn_active || lfn_expected != 0U ||
+        short_name_checksum(short_name) != lfn_checksum) return false;
+    size_t out = 0U;
+    for (size_t i = 0U; i < 32U; ++i) {
+        const uint16_t ch = lfn_chars[i];
+        if (ch == 0U || ch == 0xFFFFU) break;
+        if (ch < 0x20U || ch > 0x7EU || out >= 31U) return false;
+        output[out++] = (char)ch;
+    }
+    if (out == 0U) return false;
+    output[out] = '\0';
+    return true;
+}
 
 static uint16_t le16(const uint8_t *p) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
@@ -66,11 +125,11 @@ static bool fat_next_cluster(uint32_t cluster, uint32_t *next) {
     return true;
 }
 
-static void decode_short_name(const uint8_t *raw, char name[13]) {
+static void decode_short_name(const uint8_t *raw, char name[32]) {
     size_t out = 0;
     size_t base_end = 8U;
     while (base_end > 0U && raw[base_end - 1U] == ' ') --base_end;
-    for (size_t i = 0; i < base_end && out < 12U; ++i)
+    for (size_t i = 0; i < base_end && out < 31U; ++i)
         name[out++] = (char)raw[i];
     size_t ext_end = 3U;
     while (ext_end > 0U && raw[8U + ext_end - 1U] == ' ') --ext_end;
@@ -81,14 +140,21 @@ static void decode_short_name(const uint8_t *raw, char name[13]) {
 }
 
 static bool add_directory_entry(const uint8_t *raw) {
-    if (raw[0] == 0x00U) return false;
-    if (raw[0] == 0xE5U || raw[0] == '.' ||
-        raw[11] == FAT32_ATTR_LONG_NAME ||
-        (raw[11] & FAT32_ATTR_VOLUME_ID) != 0U) return true;
+    if (raw[0] == 0x00U) { reset_lfn(); return false; }
+    if (raw[0] == 0xE5U) { reset_lfn(); return true; }
+    if (raw[11] == FAT32_ATTR_LONG_NAME) {
+        decode_lfn_part(raw);
+        return true;
+    }
+    if (raw[0] == '.' || (raw[11] & FAT32_ATTR_VOLUME_ID) != 0U) {
+        reset_lfn();
+        return true;
+    }
     if (root_entry_count >= NEXUS_FAT32_MAX_ROOT_ENTRIES) return true;
 
     struct nexus_fat32_entry *entry = &root_entries[root_entry_count++];
-    decode_short_name(raw, entry->name);
+    if (!copy_lfn_name(entry->name, raw)) decode_short_name(raw, entry->name);
+    reset_lfn();
     entry->attributes = raw[11];
     entry->first_cluster =
         ((uint32_t)le16(raw + 20U) << 16) | le16(raw + 26U);
@@ -100,6 +166,7 @@ bool fat32_mount(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition) {
     mounted_device = NULL;
     root_entry_count = 0;
+    reset_lfn();
     uint32_t mount_stage = 0U;
     if (device == NULL || partition == NULL ||
         (device->block_size != 512U && device->block_size != 4096U) ||

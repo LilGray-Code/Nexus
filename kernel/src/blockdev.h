@@ -74,6 +74,8 @@ bool blockdev_set_boot_media_external_if_unmatched(
     uint32_t mbr_disk_id);
 bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted);
 bool blockdev_boot_media_detection_complete(void);
+/* True only when the boot chain positively identified an external source. */
+bool blockdev_boot_source_is_external(void);
 bool blockdev_is_boot_media(const struct nexus_block_device *device);
 bool blockdev_is_mounted(const struct nexus_block_device *device);
 /* Ordinary filesystem writes are authorized only for the validated Nexus data

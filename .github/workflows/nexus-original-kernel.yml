@@ -409,13 +409,22 @@ jobs:
           # exact stable identifier followed by the separate ERASE phrase.
           key("f5")
           time.sleep(0.4)
+          import re
+          deadline = time.time() + 10
+          stable_id = None
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              match = re.search(r"NEXUS INSTALLER TARGET: ([A-Za-z0-9_-]+)", log)
+              if match:
+                  stable_id = match.group(1).lower()
+                  break
+              time.sleep(0.2)
+          if stable_id is None:
+              raise SystemExit("Installer did not expose the selected disk's stable ID")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
           key("ret")
-          for name in [
-              "n","v","m","e","minus","n","e","x","u","s","n","v","m","e",
-              "0","0","0","1","minus","n","s","1"
-          ]:
-              key(name)
+          for char in stable_id:
+              key("minus" if char == "-" else char)
           key("ret")
           time.sleep(0.4)
           for name in ["e","r","a","s","e"]:

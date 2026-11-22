@@ -142,6 +142,14 @@ jobs:
             -o /tmp/nexus-usb-desc-test
           /tmp/nexus-usb-desc-test
 
+      - name: Test xHCI bulk endpoint context and transfer TRB builders
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_xhci.c \
+            kernel/tests/usb_xhci_bulk_test.c \
+            -o /tmp/nexus-usb-xhci-bulk-test
+          /tmp/nexus-usb-xhci-bulk-test
+
       - name: Test USB HID boot-keyboard decoder
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

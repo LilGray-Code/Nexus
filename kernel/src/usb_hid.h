@@ -6,9 +6,9 @@
 #include <stdint.h>
 
 /*
- * Translate a USB HID boot-keyboard report into the legacy Set-1 make codes
- * consumed by the existing desktop input layer. Only newly pressed keys are
- * returned. Rollover/error reports are ignored without changing key state.
+ * Translate a USB HID boot-keyboard report into Set-1 make/break codes
+ * consumed by the desktop input layer, including left/right Shift changes.
+ * Rollover/error reports are ignored without changing key state.
  */
 struct nexus_usb_mouse_event {
     uint8_t buttons;

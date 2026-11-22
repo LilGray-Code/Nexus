@@ -65,12 +65,23 @@ static bool installer_is_exact_nxfs_partition(
                 part->unique_guid[b] != requested->unique_guid[b])
                 equal=false;
         }
+        if (!equal) return false;
+
+        /* The system NXFS volume is immediately before the recovery
+         * partition; the data NXFS volume is immediately after it. */
+        const struct nexus_gpt_partition *previous =
+            i > 0U ? gpt_partition_at(i-1U) : NULL;
         const struct nexus_gpt_partition *next =
-            i+1U<gpt_partition_count()?gpt_partition_at(i+1U):NULL;
-        if(!equal||next==NULL)return false;
-        for(size_t b=0U;b<16U;++b)
-            if(next->type_guid[b]!=recovery_guid[b])return false;
-        return true;
+            i+1U < gpt_partition_count() ? gpt_partition_at(i+1U) : NULL;
+        bool previous_is_recovery = previous != NULL;
+        bool next_is_recovery = next != NULL;
+        for (size_t b=0U;b<16U;++b) {
+            if (previous == NULL || previous->type_guid[b] != recovery_guid[b])
+                previous_is_recovery = false;
+            if (next == NULL || next->type_guid[b] != recovery_guid[b])
+                next_is_recovery = false;
+        }
+        return previous_is_recovery || next_is_recovery;
     }
     return false;
 }

@@ -251,7 +251,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     static const char *const labels[4] = {
         "FILES", "WEB", "SETTINGS", "TERMINAL"
     };
-    static const uint8_t accents[5][3] = {
+    static const uint8_t accents[4][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
         {217U, 164U, 83U}, {239U, 177U, 119U}
     };
@@ -320,11 +320,11 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         "SETTINGS - SYSTEM OVERVIEW",
         "TERMINAL - COMMAND LINE"
     };
-    static const uint8_t accents[5][3] = {
+    static const uint8_t accents[4][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
         {217U, 164U, 83U}, {239U, 177U, 119U}
     };
-    for (size_t i = 0U; i < 5U; ++i) {
+    for (size_t i = 0U; i < 4U; ++i) {
         const uint64_t row_y = menu_y + 49U + (uint64_t)i * 34U;
         graphics_fill_rect(menu_x + 8U, row_y,
                            menu_width - 16U, 29U, 25U, 41U, 64U);
@@ -334,7 +334,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                            names[i], 1U, 225U, 238U, 249U);
     }
     graphics_draw_text(menu_x + 14U, menu_y + menu_height - 12U,
-                       "1-5 OPEN APPS   F6 CLOSE MENU", 1U,
+                       "1-4 OPEN APPS   F6 CLOSE MENU", 1U,
                        140U, 170U, 195U);
 }
 
@@ -2232,7 +2232,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     start_menu_open = !start_menu_open;
                     shell_click_handled = true;
                 } else {
-                    for (size_t app = 0U; app < 5U; ++app) {
+                    for (size_t app = 0U; app < 4U; ++app) {
                         const uint64_t tab_x = 110U + (uint64_t)app * 78U;
                         if ((uint64_t)pointer_x >= tab_x &&
                             (uint64_t)pointer_x < tab_x + 72U) {
@@ -2361,7 +2361,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             uint64_t tw = (pw - 100U) / 5U;
             if (tw > 190U) tw = 190U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (size_t app = 0U; app < 5U; ++app) {
+                for (size_t app = 0U; app < 4U; ++app) {
                     const uint64_t tx = px + 28U + (uint64_t)app * (tw + 10U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {

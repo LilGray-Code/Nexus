@@ -421,6 +421,7 @@ int main(int argc,char **argv) {
     assert(gpt_scan_device(target_handle));
     const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
     assert(data_part!=NULL);
+    struct nexus_gpt_partition data_copy = *data_part;
     /* Deploy a large system file through a one-operation installer session. */
     static uint8_t system_payload[256U * 1024U];
     static uint8_t system_readback[4096U];
@@ -465,13 +466,13 @@ int main(int argc,char **argv) {
      * system volume remains a separate, independently mounted NXFS volume. */
     target.nxfs_base = data_part->first_lba;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
-        identity.stable_id, "ERASE", data_part));
+        identity.stable_id, "ERASE", &data_copy));
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
     static const char user_data[] = "NEXUS USER DATA VOLUME";
     assert(nexus_installer_write_nxfs_file(target_handle, &identity,
-        identity.stable_id, "ERASE", data_part, "USER.TXT",
+        identity.stable_id, "ERASE", &data_copy, "USER.TXT",
         user_data, (uint32_t)(sizeof(user_data) - 1U)));
-    assert(nxfs_mount(target_handle, data_part));
+    assert(nxfs_mount(target_handle, &data_copy));
     const struct nexus_nxfs_entry *user_entry = NULL;
     for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
         const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);

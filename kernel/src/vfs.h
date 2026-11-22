@@ -7,6 +7,7 @@
 
 #include "blockdev.h"
 #include "gpt.h"
+#include "fat32.h"
 
 #define NEXUS_VFS_NAME_MAX 32U /* 31 printable characters plus NUL */
 #define NEXUS_VFS_READ_CHUNK 4096U
@@ -31,6 +32,8 @@ struct nexus_vfs_file {
     bool open;
     bool ram_file;
     bool nxfs_file;
+    bool fat32_file;
+    struct nexus_fat32_entry fat32_snapshot;
 };
 
 bool vfs_mount_root_fat32(const struct nexus_block_device *device,

@@ -15,6 +15,7 @@
 #define FAT32_MAX_CHAIN_SKIP 65536U
 
 static struct nexus_fat32_entry root_entries[NEXUS_FAT32_MAX_ROOT_ENTRIES];
+static struct nexus_fat32_entry directory_backup[NEXUS_FAT32_MAX_ROOT_ENTRIES];
 static size_t root_entry_count;
 static uint8_t sector_buffer[FAT32_MAX_SECTOR_SIZE];
 static uint32_t fat_start;
@@ -254,7 +255,7 @@ uint32_t fat32_root_cluster(void) {
     return mounted_device == NULL ? 0U : root_cluster;
 }
 
-bool fat32_read_directory(uint32_t first_cluster) {
+static bool fat32_read_directory_impl(uint32_t first_cluster) {
     if (mounted_device == NULL || !valid_cluster(first_cluster)) return false;
     root_entry_count = 0U;
     reset_lfn();
@@ -288,6 +289,21 @@ bool fat32_read_directory(uint32_t first_cluster) {
             next == cluster) return false;
         cluster = next;
     }
+    return false;
+}
+
+bool fat32_read_directory(uint32_t first_cluster) {
+    const size_t previous_count = root_entry_count;
+    for (size_t i = 0U; i < previous_count; ++i)
+        directory_backup[i] = root_entries[i];
+
+    if (fat32_read_directory_impl(first_cluster)) return true;
+
+    /* A failed child-directory read must not destroy the visible parent. */
+    root_entry_count = previous_count;
+    for (size_t i = 0U; i < previous_count; ++i)
+        root_entries[i] = directory_backup[i];
+    reset_lfn();
     return false;
 }
 

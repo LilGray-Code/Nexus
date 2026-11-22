@@ -79,21 +79,37 @@ static void format_minimal_fat32(void) {
     boot[510U] = 0x55U;
     boot[511U] = 0xAAU;
 
-    /* One root file points at the final valid data cluster. */
-    uint8_t *root = disk[TEST_PARTITION_START + TEST_DATA_START];
-    memcpy(root, "BOUNDARY BIN", 12U);
-    root[11U] = 0x20U;
-    put16(root + 20U, (uint16_t)(TEST_LAST_CLUSTER >> 16));
-    put16(root + 26U, (uint16_t)TEST_LAST_CLUSTER);
-    put32(root + 28U, 512U);
-    root[32U] = 0U;
+    /* Forty root entries span three clusters, beyond the old 32-entry cap.
+     * The first file points at the final valid data cluster. */
+    for (uint32_t cluster = 2U; cluster <= 4U; ++cluster) {
+        const uint64_t fat_byte = (uint64_t)cluster * 4U;
+        const uint32_t fat_sector = TEST_RESERVED_SECTORS +
+            (uint32_t)(fat_byte / 512U);
+        const uint32_t fat_offset = (uint32_t)(fat_byte % 512U);
+        const uint32_t next = cluster == 4U ? 0x0FFFFFFFU : cluster + 1U;
+        put32(disk[TEST_PARTITION_START + fat_sector] + fat_offset, next);
+    }
 
-    const uint64_t fat_byte = (uint64_t)TEST_LAST_CLUSTER * 4U;
-    const uint32_t fat_sector = TEST_RESERVED_SECTORS +
-        (uint32_t)(fat_byte / 512U);
-    const uint32_t fat_offset = (uint32_t)(fat_byte % 512U);
-    put32(disk[TEST_PARTITION_START + fat_sector] + fat_offset,
-          0x0FFFFFFFU);
+    for (uint32_t index = 0U; index < 40U; ++index) {
+        const uint32_t cluster = 2U + index / 16U;
+        const uint32_t slot = index % 16U;
+        uint8_t *root = disk[TEST_PARTITION_START + TEST_DATA_START +
+                             (cluster - 2U)] + slot * 32U;
+        if (index == 0U) {
+            memcpy(root, "BOUNDARY BIN", 12U);
+            root[11U] = 0x20U;
+            put16(root + 20U, (uint16_t)(TEST_LAST_CLUSTER >> 16));
+            put16(root + 26U, (uint16_t)TEST_LAST_CLUSTER);
+            put32(root + 28U, 512U);
+        } else {
+            memcpy(root, "FILE0001TXT", 11U);
+            root[7U] = (uint8_t)('0' + (index / 10U));
+            root[8U] = (uint8_t)('0' + (index % 10U));
+            root[11U] = 0x20U;
+        }
+    }
+    /* Mark the first unused slot so enumeration terminates normally. */
+    disk[TEST_PARTITION_START + TEST_DATA_START + 2U][8U * 32U] = 0U;
 
     uint8_t *file_data =
         disk[TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U];
@@ -109,7 +125,7 @@ int main(void) {
     format_minimal_fat32();
     highest_read_lba = 0U;
     assert(fat32_mount(&device, &partition));
-    assert(fat32_root_entry_count() == 1U);
+    assert(fat32_root_entry_count() == 40U);
     const struct nexus_fat32_entry *entry = fat32_root_entry_at(0U);
     assert(entry != NULL);
     assert(entry->first_cluster == TEST_LAST_CLUSTER);

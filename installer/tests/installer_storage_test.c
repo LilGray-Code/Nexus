@@ -1,5 +1,7 @@
 #include "installer_storage.h"
+#include "installer_runtime.h"
 #include "blockdev.h"
+#include "timer.h"
 #include "gpt_image.h"
 #include <limine.h>
 #include "boot_payload.h"
@@ -22,6 +24,8 @@ struct mock_disk {
     uint8_t last[EDGE_BLOCKS * 512U];
     uint8_t format_area[FORMAT_BLOCKS * 512U];
     uint64_t nxfs_base;
+    uint64_t data_base;
+    uint8_t data_area[NXFS_TEST_AREA_BLOCKS * 512U];
     uint64_t recovery_base;
     uint8_t recovery_area[2U * 512U];
     uint8_t nxfs_area[NXFS_TEST_AREA_BLOCKS * 512U];
@@ -45,6 +49,11 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
     if (disk->bios_base != 0U && lba >= disk->bios_base &&
         lba + count <= disk->bios_base + BIOS_TEST_AREA_BLOCKS) {
         *base = disk->bios_area + (lba - disk->bios_base) * 512ULL;
+        return true;
+    }
+    if (disk->data_base != 0U && lba >= disk->data_base &&
+        lba + count <= disk->data_base + NXFS_TEST_AREA_BLOCKS) {
+        *base = disk->data_area + (lba - disk->data_base) * 512ULL;
         return true;
     }
     if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
@@ -120,12 +129,15 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
     if(ok)ok=fseek(f,0,SEEK_SET)==0&&fwrite(disk->first,1U,sizeof(disk->first),f)==sizeof(disk->first);
     if(ok)ok=fseek(f,(long)(FORMAT_BASE*512ULL),SEEK_SET)==0&&fwrite(disk->format_area,1U,sizeof(disk->format_area),f)==sizeof(disk->format_area);
     if(ok&&disk->nxfs_base!=0U)ok=fseek(f,(long)(disk->nxfs_base*512ULL),SEEK_SET)==0&&fwrite(disk->nxfs_area,1U,sizeof(disk->nxfs_area),f)==sizeof(disk->nxfs_area);
+    if(ok&&disk->data_base!=0U)ok=fseek(f,(long)(disk->data_base*512ULL),SEEK_SET)==0&&fwrite(disk->data_area,1U,sizeof(disk->data_area),f)==sizeof(disk->data_area);
     if(ok&&disk->bios_base!=0U)ok=fseek(f,(long)(disk->bios_base*512ULL),SEEK_SET)==0&&fwrite(disk->bios_area,1U,sizeof(disk->bios_area),f)==sizeof(disk->bios_area);
     if(ok&&disk->recovery_base!=0U)ok=fseek(f,(long)(disk->recovery_base*512ULL),SEEK_SET)==0&&fwrite(disk->recovery_area,1U,sizeof(disk->recovery_area),f)==sizeof(disk->recovery_area);
     if(ok)ok=fseek(f,(long)((DISK_BLOCKS-EDGE_BLOCKS)*512ULL),SEEK_SET)==0&&fwrite(disk->last,1U,sizeof(disk->last),f)==sizeof(disk->last);
     if(fclose(f)!=0)ok=false;
     return ok;
 }
+
+uint64_t timer_ticks(void) { return 123456U; }
 
 int main(int argc,char **argv) {
     uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios_hdd=NULL,*external_bios_sys=NULL;
@@ -500,6 +512,37 @@ int main(int argc,char **argv) {
         target_handle->stable_id, "ERASE", &plan, disk_guid,
         &partition_guids[0][0]) == NEXUS_GPT_INSTALL_UNSAFE_TARGET);
 
+    /* Run the complete kernel installer runtime against a fresh disposable
+     * NVMe image. The image dumped below is the runtime-produced installation
+     * that the CI job boots under both UEFI and legacy BIOS. */
+    identity.block_count = target_handle->block_count;
+    memset(&target, 0, sizeof(target));
+    struct nexus_partition_plan runtime_plan;
+    assert(nexus_partition_plan_create(DISK_BLOCKS, 512U,
+        NEXUS_FIRMWARE_DUAL, &runtime_plan));
+    for (size_t i = 0U; i < runtime_plan.partition_count; ++i) {
+        const struct nexus_planned_partition *part = &runtime_plan.partitions[i];
+        if (part->kind == NEXUS_PARTITION_SYSTEM)
+            target.nxfs_base = part->first_lba;
+        else if (part->kind == NEXUS_PARTITION_DATA)
+            target.data_base = part->first_lba;
+        else if (part->kind == NEXUS_PARTITION_RECOVERY)
+            target.recovery_base = part->first_lba;
+        else if (part->kind == NEXUS_PARTITION_BIOS_BOOT)
+            target.bios_base = part->first_lba;
+    }
+    assert(nexus_installer_runtime_apply(target_handle, NEXUS_FIRMWARE_DUAL,
+        target_handle->stable_id, "ERASE", NULL, NULL) ==
+        NEXUS_INSTALL_RESULT_OK);
+    assert(gpt_scan_device(target_handle));
+    assert(gpt_partition_count() == runtime_plan.partition_count);
+    struct nexus_gpt_partition runtime_recovery =
+        *gpt_partition_at(3U);
+    struct nexus_installer_journal_record runtime_journal;
+    assert(nexus_installer_load_recovery_record(target_handle, &identity,
+        &runtime_recovery, &runtime_journal) == NEXUS_JOURNAL_OK);
+    assert(runtime_journal.phase == NEXUS_JOURNAL_COMPLETE);
+    assert(runtime_journal.completed_steps == 5U);
     if(argc==6)assert(dump_installed_disk(argv[5],&target));
 
     /* MBR provenance must also be unique across all registered disks. */

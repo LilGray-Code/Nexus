@@ -109,6 +109,14 @@ static bool boot_media_provenance_init(void) {
     if(file->mbr_disk_id&&blockdev_set_boot_media_from_mbr_disk_id(file->mbr_disk_id)){
         serial_write("BOOT MEDIA: matched MBR disk ID\r\n");return true;
     }
+    if(file->media_type==LIMINE_MEDIA_TYPE_GENERIC&&
+       blockdev_set_boot_media_external_if_unmatched(
+           (const uint8_t *)&file->gpt_part_uuid,
+           (const uint8_t *)&file->gpt_disk_uuid,
+           file->mbr_disk_id)){
+        serial_write("BOOT MEDIA: generic source identity does not match any registered disk\\r\\n");
+        return true;
+    }
     if(file->media_type==LIMINE_MEDIA_TYPE_OPTICAL&&blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL)){
         serial_write("BOOT MEDIA: optical source is not a registered disk\r\n");return true;
     }

@@ -113,6 +113,25 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
     }
     if (load_count == 0U || dynamic == NULL) return false;
 
+    /* PT_DYNAMIC must describe the same bytes through its containing PT_LOAD
+     * mapping. Accepting an unrelated file range would let metadata be parsed
+     * from bytes that are not part of the image's mapped address space.
+     */
+    bool dynamic_is_mapped = false;
+    if (dynamic->filesz > dynamic->memsz) return false;
+    for (uint16_t i = 0U; i < load_count; ++i) {
+        const struct elf_program_header *load = &loads[i];
+        if (dynamic->vaddr < load->vaddr ||
+            dynamic->offset < load->offset) continue;
+        const uint64_t vdelta = dynamic->vaddr - load->vaddr;
+        const uint64_t fdelta = dynamic->offset - load->offset;
+        if (vdelta != fdelta || vdelta > load->filesz ||
+            dynamic->filesz > load->filesz - vdelta) continue;
+        dynamic_is_mapped = true;
+        break;
+    }
+    if (!dynamic_is_mapped) return false;
+
     bool terminated = false;
     bool have_strtab = false, have_strsz = false;
     bool have_rela = false, have_relasz = false, have_relaent = false;

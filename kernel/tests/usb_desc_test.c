@@ -115,6 +115,44 @@ static void test_rejects_invalid_bulk_endpoint_addresses(void) {
         sizeof(unsupported_packet), 0xFF, 1, 1, &found));
 }
 
+
+static void test_rejects_interface_endpoint_count_mismatch(void) {
+    const uint8_t too_many[] = {
+        9,2,32,0,1,1,0,0x80,50,
+        9,4,0,0,1,0xFF,1,1,0,
+        7,5,0x81,2,64,0,0,
+        7,5,0x02,2,64,0,0
+    };
+    const uint8_t too_few[] = {
+        9,2,32,0,1,1,0,0x80,50,
+        9,4,0,0,3,0xFF,1,1,0,
+        7,5,0x81,2,64,0,0,
+        7,5,0x02,2,64,0,0
+    };
+    struct nexus_usb_bulk_interface found;
+    assert(!nexus_usb_find_bulk_interface(too_many, sizeof(too_many),
+        0xFF, 1, 1, &found));
+    assert(!nexus_usb_find_bulk_interface(too_few, sizeof(too_few),
+        0xFF, 1, 1, &found));
+}
+
+static void test_rejects_invalid_configuration_header(void) {
+    const uint8_t zero_configuration_value[] = {
+        9,2,32,0,1,0,0,0x80,50,
+        9,4,0,0,2,0xFF,1,1,0,
+        7,5,0x81,2,64,0,0,
+        7,5,0x02,2,64,0,0
+    };
+    const uint8_t header_longer_than_total[] = {
+        10,2,9,0,1,1,0,0x80,50,0
+    };
+    struct nexus_usb_bulk_interface found;
+    assert(!nexus_usb_find_bulk_interface(zero_configuration_value,
+        sizeof(zero_configuration_value), 0xFF, 1, 1, &found));
+    assert(!nexus_usb_find_bulk_interface(header_longer_than_total,
+        sizeof(header_longer_than_total), 0xFF, 1, 1, &found));
+}
+
 int main(void) {
     test_bulk_pair_on_matching_interface();
     test_does_not_pair_endpoints_across_interfaces();
@@ -123,6 +161,8 @@ int main(void) {
     test_does_not_accept_zero_packet_endpoint();
     test_rejects_invalid_bulk_endpoint_addresses();
     test_rejects_reserved_bulk_packet_bits();
+    test_rejects_interface_endpoint_count_mismatch();
+    test_rejects_invalid_configuration_header();
     puts("NEXUS USB BULK INTERFACE DESCRIPTOR TESTS PASSED");
     return 0;
 }

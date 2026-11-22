@@ -763,8 +763,8 @@ static void refresh_files_listing(void) {
         files_first_name[n] = '\0';
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
-    for (size_t n = 0; n < 6U; ++n) {
-        for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
+    for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n) {
+        for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
     }
     if (!files_vfs_ready) return;
@@ -790,6 +790,7 @@ static void refresh_files_listing(void) {
             ++files_listing_count;
         } else {
             files_listing_truncated = true;
+            break;
         }
         if (files_first_name[0] == '\0') {
             size_t length = 0U;

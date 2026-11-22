@@ -833,7 +833,12 @@ static bool xhci_configure_keyboard_endpoint(struct xhci_controller *xhci,
     volatile uint32_t *in_ep = (volatile uint32_t *)(uintptr_t)(
         (uintptr_t)input_page + (size_t)(dci + 1U) * xhci->context_size);
 
-    input[1] = 1U | (1U << 1) | (1U << dci);
+    /*
+     * The slot context and the new interrupt endpoint are added here.
+     * EP0 is already present in the addressed device context, so do not
+     * set Add Context Flag 1 a second time.
+     */
+    input[1] = 1U | (1U << dci);
     for (size_t i = 0U; i < xhci->context_size / sizeof(uint32_t); ++i) {
         in_slot[i] = out_slot[i];
         in_ep0[i] = out_ep0[i];

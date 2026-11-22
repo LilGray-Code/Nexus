@@ -87,6 +87,13 @@ int main(void) {
     assert(!blockdev_identity_is_unique(blockdev_at(0U)));
 
     blockdev_init();
+    struct nexus_block_device placeholder_sata =
+        make_device("sata0", "SATA-UNKNOWN");
+    placeholder_sata.transport = NEXUS_BLOCKDEV_TRANSPORT_AHCI;
+    assert(blockdev_register(&placeholder_sata));
+    assert(!blockdev_identity_is_unique(blockdev_at(0U)));
+
+    blockdev_init();
     struct nexus_block_device install_disk =
         make_device("disk0", "NVME-SERIAL-003");
     install_disk.flags = NEXUS_BLOCKDEV_READ_ONLY |

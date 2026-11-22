@@ -182,8 +182,15 @@ static bool xhci_write32(struct xhci_controller *xhci, uint64_t offset,
 
 static bool xhci_write64(struct xhci_controller *xhci, uint64_t offset,
                          uint64_t value) {
-    if (!xhci_write32(xhci, offset + 4U, (uint32_t)(value >> 32))) return false;
-    return xhci_write32(xhci, offset, (uint32_t)value);
+    /*
+     * Program the low dword before the high dword. xHCI controllers latch
+     * paired 64-bit registers when the high dword is written: CRCR starts
+     * the command ring, ERSTBA loads the event-ring segment table, and ERDP
+     * refreshes the event dequeue state. Writing high first latches stale
+     * low-dword values and can make the controller raise HCE.
+     */
+    if (!xhci_write32(xhci, offset, (uint32_t)value)) return false;
+    return xhci_write32(xhci, offset + 4U, (uint32_t)(value >> 32));
 }
 
 static bool xhci_wait_register(struct xhci_controller *xhci, uint64_t offset,
@@ -969,7 +976,8 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         xhci->max_ports = XHCI_MAX_PORTS;
     xhci->doorbell_offset = db_offset & ~0x03U;
     xhci->runtime_offset = rt_offset & ~0x1FU;
-    xhci->context_size = (hccparams & 1U) != 0U ? 64U : 32U;
+    /* HCCPARAMS1.CSZ is bit 2; bit 0 is AC64. */
+    xhci->context_size = (hccparams & (1U << 2)) != 0U ? 64U : 32U;
 
     if (!xhci_start_controller(xhci, hcsparams1, hcsparams2, hccparams))
         return false;

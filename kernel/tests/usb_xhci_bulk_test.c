@@ -66,7 +66,7 @@ static void test_bulk_out_transfer_trb(void) {
 
 static void test_rejects_invalid_transfer(void) {
     struct nexus_xhci_bulk_trb trb;
-    assert(!nexus_xhci_bulk_transfer_trb(0x01, 0x200000, 64, &trb));
+    assert(!nexus_xhci_bulk_transfer_trb(0x00, 0x200000, 64, &trb));
     assert(!nexus_xhci_bulk_transfer_trb(0x81, 0, 64, &trb));
     assert(!nexus_xhci_bulk_transfer_trb(0x81, 0x200000, 0, &trb));
     assert(!nexus_xhci_bulk_transfer_trb(0x81, 0x200000, 0x20000, &trb));

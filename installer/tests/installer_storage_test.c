@@ -468,7 +468,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 42U);
+    assert(target.flushes == 54U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

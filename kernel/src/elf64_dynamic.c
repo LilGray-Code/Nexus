@@ -116,6 +116,7 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
     bool terminated = false;
     bool have_strtab = false, have_strsz = false;
     uint64_t strtab = 0U, strsz = 0U;
+    uint64_t needed_offsets[NEXUS_ELF64_DYNAMIC_MAX_NEEDED] = {0U};
     for (uint64_t off = 0U; off < dynamic->filesz;
          off += ELF_DYNAMIC_ENTRY_SIZE) {
         const struct elf_dynamic_entry *entry =
@@ -125,7 +126,7 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
             case DT_NEEDED:
                 if (parsed.needed_count >= NEXUS_ELF64_DYNAMIC_MAX_NEEDED)
                     return false;
-                ++parsed.needed_count;
+                needed_offsets[parsed.needed_count++] = entry->value;
                 break;
             case DT_STRTAB: strtab = entry->value; have_strtab = true; break;
             case DT_STRSZ: strsz = entry->value; have_strsz = true; break;
@@ -150,7 +151,18 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
             !vaddr_to_file(loads, load_count, strtab, strsz,
                            &strtab_offset) ||
             !range_valid(strtab_offset, strsz, file_size)) return false;
-        (void)strtab_offset;
+        for (uint32_t i = 0U; i < parsed.needed_count; ++i) {
+            const uint64_t name_offset = needed_offsets[i];
+            if (name_offset >= strsz) return false;
+            bool name_terminated = false;
+            for (uint64_t j = name_offset; j < strsz; ++j) {
+                if (bytes[strtab_offset + j] == 0U) {
+                    name_terminated = true;
+                    break;
+                }
+            }
+            if (!name_terminated) return false;
+        }
     }
     if (parsed.has_rela) {
         uint64_t rela_offset;

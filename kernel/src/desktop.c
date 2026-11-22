@@ -409,7 +409,7 @@ static void desktop_draw_startup_animation(void) {
      * and wrap drawing calls to the far edge of the display. Skip the optional
      * splash rather than risk corrupt geometry; the regular shell still draws. */
     if (screen_width < 176U || screen_height < 188U) {
-        serial_write("DESKTOP: startup splash skipped for small framebuffer\\r\\n");
+        serial_write("DESKTOP: startup splash skipped for small framebuffer\r\n");
         return;
     }
     const uint64_t center_x = screen_width / 2U;

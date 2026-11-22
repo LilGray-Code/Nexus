@@ -25,6 +25,7 @@ static uint32_t cluster_count;
 static uint32_t root_cluster;
 static uint64_t partition_start;
 static uint64_t partition_sectors;
+static uint32_t volume_sectors;
 static const struct nexus_block_device *mounted_device;
 
 static uint16_t le16(const uint8_t *p) {
@@ -107,6 +108,7 @@ bool fat32_mount(const struct nexus_block_device *device,
     mounted_device = device;
     partition_start = partition->first_lba;
     partition_sectors = partition->last_lba - partition->first_lba + 1U;
+    volume_sectors = 0U;
     if (!read_volume_sector(0U, sector_buffer)) goto fail;
     mount_stage = 1U;
 
@@ -130,6 +132,7 @@ bool fat32_mount(const struct nexus_block_device *device,
         total32 == 0U || fat32 == 0U || fs_version != 0U ||
         root < 2U || total32 > partition_sectors) goto fail;
     mount_stage = 2U;
+    volume_sectors = total32;
     serial_write("FAT32: BPB sectors=");
     serial_write_hex(total32);
     serial_write(" partition sectors=");
@@ -167,7 +170,7 @@ bool fat32_mount(const struct nexus_block_device *device,
         const uint64_t first_sector = (uint64_t)data_start +
             (uint64_t)(cluster - 2U) * sectors_per_cluster;
         for (uint32_t s = 0; s < sectors_per_cluster; ++s) {
-            if (first_sector + s >= total32 ||
+            if (first_sector + s >= volume_sectors ||
                 !read_volume_sector((uint32_t)(first_sector + s),
                                     sector_buffer)) goto fail;
             for (uint32_t offset = 0; offset + 32U <= device->block_size;
@@ -196,6 +199,7 @@ fail:
     serial_write("\r\n");
     mounted_device = NULL;
     root_entry_count = 0;
+    volume_sectors = 0U;
     return false;
 }
 
@@ -262,7 +266,7 @@ bool fat32_read_file(const struct nexus_fat32_entry *entry,
 
         for (uint32_t sector = first_sector_index;
              sector < sectors_per_cluster && copied < length; ++sector) {
-            if (first_sector + sector >= partition_sectors ||
+            if (first_sector + sector >= volume_sectors ||
                 !read_volume_sector((uint32_t)(first_sector + sector),
                                     sector_buffer)) return false;
             uint32_t available = bytes_per_sector - sector_offset;

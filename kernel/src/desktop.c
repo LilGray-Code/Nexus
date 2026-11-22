@@ -6,6 +6,7 @@
 #include "vfs.h"
 #include "process.h"
 #include "net.h"
+#include "netdev.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -686,11 +687,19 @@ static void draw_shell(void) {
                                      (settings_wallpaper == 1U ? "PLAIN GRADIENT" : "SOLID");
         const char *status_name = settings_show_status ? "ON" : "OFF";
         const char *window_name = window_maximized ? "MAXIMIZED" : "WINDOWED";
-        const char *labels[4] = {"COLOR THEME", "WALLPAPER", "TASKBAR STATUS", "WINDOW SIZE"};
-        const char *values[4] = {theme_name, wallpaper_name, status_name, window_name};
-        const char *hints[4] = {"1  CYCLE COLOR PALETTE", "2  CHANGE BACKGROUND STYLE",
-                                "3  SHOW OR HIDE UPTIME", "4  TOGGLE WINDOW SIZE"};
-        for (size_t i = 0U; i < 4U; ++i) {
+        const uint32_t network_count = netdev_device_count();
+        const uint32_t network_index = netdev_default_index();
+        const char *network_name = network_count == 0U ? "NO ADAPTER" :
+            netdev_device_name_at(network_index);
+        if (network_name == NULL) network_name = "UNKNOWN";
+        const char *labels[5] = {"COLOR THEME", "WALLPAPER", "TASKBAR STATUS",
+                                 "WINDOW SIZE", "NETWORK ADAPTER"};
+        const char *values[5] = {theme_name, wallpaper_name, status_name,
+                                 window_name, network_name};
+        const char *hints[5] = {"1  CYCLE COLOR PALETTE", "2  CHANGE BACKGROUND STYLE",
+                                "3  SHOW OR HIDE UPTIME", "4  TOGGLE WINDOW SIZE",
+                                "5  SELECT NEXT INSTALLED ADAPTER"};
+        for (size_t i = 0U; i < 5U; ++i) {
             const uint64_t y = row_y + (uint64_t)i * 59U;
             graphics_fill_rect(row_x, y, row_w, 48U, 23U, 39U, 60U);
             graphics_draw_rect(row_x, y, row_w, 48U, 55U, 88U, 116U);
@@ -707,7 +716,7 @@ static void draw_shell(void) {
                            1U, settings_persisted ? 112U : 226U,
                            settings_persisted ? 222U : 177U, settings_persisted ? 190U : 112U);
         graphics_draw_text(text_x, panel_y + panel_height - 18U,
-                           "1-4 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
+                           "1-5 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_MONITOR) {
         graphics_draw_text(text_x, text_y, "SYSTEM MONITOR", 2U, 241U, 248U, 255U);
@@ -2883,6 +2892,17 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             settings_show_status = !settings_show_status;
         } else if (event->scancode == 0x05U) {
             window_maximized = !window_maximized;
+        } else if (event->scancode == 0x06U) {
+            const uint32_t count = netdev_device_count();
+            if (count > 1U) {
+                const uint32_t next = (netdev_default_index() + 1U) % count;
+                if (!net_select_device(next))
+                    serial_write("NETWORK: adapter switch failed; previous interface restored\\r\\n");
+            } else if (count == 1U) {
+                (void)net_select_device(0U);
+            } else {
+                serial_write("NETWORK: no supported adapter driver is installed\\r\\n");
+            }
         } else {
             return;
         }

@@ -236,6 +236,29 @@ static void reset_test(void) {
     memset(progress_seen, 0, sizeof(progress_seen));
 }
 
+/* Simulate a kernel restart: all in-memory execution state and failure
+ * injection controls are reset, while the mock disk's GPT and journal remain
+ * durable. The next apply call must discover and resume that on-disk state. */
+static void simulate_power_cycle(void) {
+    boot_known = true;
+    live_media = false;
+    mounted = false;
+    unique_id = true;
+    write_capable = true;
+    gpt_ready = true;
+    fail_gpt = false;
+    fail_journal = false;
+    fail_esp = false;
+    fail_system = false;
+    fail_payload = false;
+    fail_boot_payload = false;
+    fail_bios = false;
+    journal_phase_count = 0U;
+    progress_count = 0U;
+    memset(journal_phases, 0, sizeof(journal_phases));
+    memset(progress_seen, 0, sizeof(progress_seen));
+}
+
 static enum nexus_installer_runtime_result run_install(
     enum nexus_firmware_mode mode, const char *id, const char *erase) {
     return nexus_installer_runtime_apply(&disk, mode, id, erase,
@@ -354,23 +377,44 @@ static void test_recovery_and_failures(void) {
     reset_test(); fail_system = true;
     assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
            NEXUS_INSTALL_RESULT_SYSTEM_FORMAT);
+    assert(gpt_writes == 1U);
     assert(journal_phase_count == 2U);
     assert(journal_phases[1] == NEXUS_JOURNAL_RECOVERY_REQUIRED);
-    /* The next explicit install attempt resumes from the durable journal
-     * without rewriting the already-committed GPT. */
-    fail_system = false;
-    journal_phase_count = 0U;
-    esp_formats = system_formats = payload_writes = boot_payload_writes = 0U;
+    assert(old_journal_steps == 1U);
+
+    /* Power cycle 1: the GPT and recovery record survive, while volatile
+     * kernel state is discarded. A second failure happens during payload
+     * deployment after the filesystems have committed. */
+    simulate_power_cycle();
+    fail_payload = true;
+    assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
+           NEXUS_INSTALL_RESULT_SYSTEM_PAYLOAD);
+    assert(gpt_writes == 1U);
+    assert(old_journal_phase == NEXUS_JOURNAL_RECOVERY_REQUIRED);
+    assert(old_journal_steps == 2U);
+
+    /* Power cycle 2: resume after the filesystem commit, then inject a
+     * boot-payload deployment failure. No GPT rewrite is permitted. */
+    simulate_power_cycle();
+    fail_boot_payload = true;
+    assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
+           NEXUS_INSTALL_RESULT_BOOT_PAYLOAD);
+    assert(gpt_writes == 1U);
+    assert(old_journal_phase == NEXUS_JOURNAL_RECOVERY_REQUIRED);
+    assert(old_journal_steps == 2U);
+
+    /* Power cycle 3: retry without injected failure and require a complete
+     * journal with all five committed phases on the original GPT. */
+    simulate_power_cycle();
     assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
            NEXUS_INSTALL_RESULT_OK);
     assert(gpt_writes == 1U);
-    assert(esp_formats == 1U && system_formats == 2U);
-
-    reset_test(); fail_payload = true;
-    assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
-           NEXUS_INSTALL_RESULT_SYSTEM_PAYLOAD);
-    assert(journal_phases[journal_phase_count - 1U] ==
-           NEXUS_JOURNAL_RECOVERY_REQUIRED);
+    assert(old_journal_phase == NEXUS_JOURNAL_COMPLETE);
+    assert(old_journal_steps == 5U);
+    assert(journal_phase_count == 3U);
+    assert(journal_phases[0] == NEXUS_JOURNAL_PAYLOAD_DEPLOYED);
+    assert(journal_phases[1] == NEXUS_JOURNAL_BOOTLOADER_INSTALLED);
+    assert(journal_phases[2] == NEXUS_JOURNAL_COMPLETE);
 
     reset_test(); fail_bios = true;
     assert(run_install(NEXUS_FIRMWARE_DUAL, disk.stable_id, "ERASE") ==

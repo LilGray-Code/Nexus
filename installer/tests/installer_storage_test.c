@@ -494,10 +494,66 @@ int main(int argc,char **argv) {
     }
     assert(user_entry != NULL &&
            user_entry->size == sizeof(user_data) - 1U);
-    char user_readback[sizeof(user_data)] = {0};
+    char user_readback[128] = {0};
     assert(nxfs_read_file(user_entry, 0U, (uint32_t)sizeof(user_data) - 1U,
                           user_readback));
     assert(memcmp(user_readback, user_data, sizeof(user_data) - 1U) == 0);
+    nxfs_unmount();
+
+    /* Simulate a cold restart by discarding all NXFS in-memory mount state.
+     * Re-read the user's file from the unchanged mock target sectors. */
+    assert(nxfs_mount(target_handle, &data_copy));
+    user_entry = NULL;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && strcmp(entry->name, "USER.TXT") == 0)
+            user_entry = entry;
+    }
+    memset(user_readback, 0, sizeof(user_readback));
+    assert(user_entry != NULL &&
+           user_entry->size == sizeof(user_data) - 1U);
+    assert(nxfs_read_file(user_entry, 0U,
+        (uint32_t)sizeof(user_data) - 1U, user_readback));
+    assert(memcmp(user_readback, user_data, sizeof(user_data) - 1U) == 0);
+    nxfs_unmount();
+
+    /* Replace the same file using the guarded installer data adapter, then
+     * cold-remount once more and verify that the newer generation is durable. */
+    static const char edited_user_data[] =
+        "NEXUS USER DATA VOLUME - EDITED AFTER REBOOT";
+    assert(nexus_installer_write_nxfs_file(target_handle, &identity,
+        identity.stable_id, "ERASE", &data_copy, "USER.TXT",
+        edited_user_data, (uint32_t)(sizeof(edited_user_data) - 1U)));
+    assert(nxfs_mount(target_handle, &data_copy));
+    user_entry = NULL;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && strcmp(entry->name, "USER.TXT") == 0)
+            user_entry = entry;
+    }
+    memset(user_readback, 0, sizeof(user_readback));
+    assert(user_entry != NULL &&
+           user_entry->size == sizeof(edited_user_data) - 1U);
+    assert(nxfs_read_file(user_entry, 0U,
+        (uint32_t)sizeof(edited_user_data) - 1U, user_readback));
+    assert(memcmp(user_readback, edited_user_data,
+                  sizeof(edited_user_data) - 1U) == 0);
+    nxfs_unmount();
+
+    assert(nxfs_mount(target_handle, &data_copy));
+    user_entry = NULL;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && strcmp(entry->name, "USER.TXT") == 0)
+            user_entry = entry;
+    }
+    memset(user_readback, 0, sizeof(user_readback));
+    assert(user_entry != NULL &&
+           user_entry->size == sizeof(edited_user_data) - 1U);
+    assert(nxfs_read_file(user_entry, 0U,
+        (uint32_t)sizeof(edited_user_data) - 1U, user_readback));
+    assert(memcmp(user_readback, edited_user_data,
+                  sizeof(edited_user_data) - 1U) == 0);
     nxfs_unmount();
 
     /* FAT32 formatting rejects arbitrary LBAs and non-ESP GPT partitions

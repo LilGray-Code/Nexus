@@ -185,6 +185,9 @@ bool vfs_enter_directory(const char *name) {
             (entry->attributes & 0x10U) == 0U ||
             entry->first_cluster < 2U) continue;
         const uint32_t child_cluster = entry->first_cluster;
+        for (size_t depth = 0U; depth <= directory_depth; ++depth) {
+            if (directory_stack[depth] == child_cluster) return false;
+        }
         if (!fat32_read_directory(child_cluster)) return false;
         directory_stack[++directory_depth] = child_cluster;
         return true;

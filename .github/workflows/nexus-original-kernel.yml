@@ -499,6 +499,146 @@ jobs:
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-bios.log
 
+      - name: Test the graphical installer on a disposable SATA target
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" ./build/build-iso.sh
+          truncate -s 16G /tmp/nexus-sata-target.img
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-sata-vars.fd
+          rm -f /tmp/nexus-sata-installer-qmp.sock installer-sata-serial.log
+          qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-sata-vars.fd \
+            -drive file=/tmp/nexus-sata-target.img,if=ide,index=0,format=raw \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso -boot order=d \
+            -display none -serial file:installer-sata-serial.log \
+            -qmp unix:/tmp/nexus-sata-installer-qmp.sock,server,nowait \
+            -monitor none -no-reboot -no-shutdown >/tmp/nexus-sata-qemu.log 2>&1 &
+          QEMU_PID=$!
+          trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import json, os, socket, time
+
+          log_path = "installer-sata-serial.log"
+          deadline = time.time() + 90
+          while time.time() < deadline:
+              if os.path.exists(log_path):
+                  log = open(log_path, encoding="utf-8", errors="replace").read()
+                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS DESKTOP FRAMEBUFFER READY" in log:
+                      break
+              time.sleep(1)
+          else:
+              raise SystemExit("Live Nexus desktop did not become ready for keyboard-driven install")
+
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.settimeout(10)
+          sock.connect("/tmp/nexus-sata-installer-qmp.sock")
+          stream = sock.makefile("rwb", buffering=0)
+          greeting = json.loads(stream.readline())
+
+          def command(payload):
+              stream.write(json.dumps(payload).encode() + b"\r\n")
+              while True:
+                  line = stream.readline()
+                  if not line:
+                      raise RuntimeError("QMP disconnected")
+                  result = json.loads(line)
+                  if "return" in result or "error" in result:
+                      if "error" in result:
+                          raise RuntimeError(result["error"])
+                      return result["return"]
+
+          command({"execute": "qmp_capabilities"})
+
+          def key(name):
+              command({"execute": "human-monitor-command",
+                       "arguments": {"command-line": f"sendkey {name} 90"}})
+              time.sleep(0.16)
+
+          # Open Install (F5), select the single NVMe target, and confirm its
+          # exact stable identifier followed by the separate ERASE phrase.
+          key("f5")
+          time.sleep(0.4)
+          import re
+          deadline = time.time() + 10
+          stable_id = None
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              match = re.search(r"NEXUS INSTALLER TARGET: ([A-Za-z0-9_-]+)", log)
+              if match:
+                  stable_id = match.group(1).lower()
+                  break
+              time.sleep(0.2)
+          if stable_id is None:
+              raise SystemExit("Installer did not expose the selected disk's stable ID")
+          key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
+          key("ret")
+          for char in stable_id:
+              key("minus" if char == "-" else char)
+          key("ret")
+          time.sleep(0.4)
+          for name in ["e","r","a","s","e"]:
+              key(name)
+          key("ret")
+
+          deadline = time.time() + 120
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              if "NEXUS INSTALLER RESULT: SUCCESS" in log:
+                  break
+              if "NEXUS INSTALLER RESULT: FAILURE" in log or "NEXUS INSTALLER RESULT: LOCKED" in log:
+                  print(log)
+                  raise SystemExit("Graphical installer reported failure")
+              time.sleep(1)
+          else:
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit("Graphical installer did not finish within 120 seconds")
+          sock.close()
+          PY
+          cat installer-sata-serial.log
+          grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installer-sata-serial.log
+          grep -q "NEXUS INSTALLER RESULT: SUCCESS" installer-sata-serial.log
+          kill "$QEMU_PID" 2>/dev/null || true
+          wait "$QEMU_PID" 2>/dev/null || true
+          trap - EXIT
+          sfdisk --dump /tmp/nexus-sata-target.img
+          dd if=/tmp/nexus-sata-target.img of=/tmp/nexus-sata-esp.img \
+            bs=512 skip=2048 count=1048576 status=none
+          fsck.fat -n /tmp/nexus-sata-esp.img
+          mdir -i /tmp/nexus-sata-esp.img ::/EFI/BOOT
+          mdir -i /tmp/nexus-sata-esp.img ::/boot/limine
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-sata-installed-vars.fd
+          set +e
+          timeout -k 2s 18s qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-sata-installed-vars.fd \
+            -drive file=/tmp/nexus-sata-target.img,if=ide,index=0,format=raw \
+            -boot order=c -display none -serial file:installer-sata-installed-uefi.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
+            echo "UI-installed UEFI target exited unexpectedly: $status"
+            exit "$status"
+          fi
+          grep -q "NEXUS K0 BOOT COMPLETE" installer-sata-installed-uefi.log
+          set +e
+          timeout -k 2s 18s qemu-system-x86_64 \
+            -machine pc -cpu qemu64 -m 512M \
+            -drive file=/tmp/nexus-sata-target.img,if=ide,index=0,format=raw \
+            -boot c -display none -serial file:installer-sata-installed-bios.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
+            echo "UI-installed BIOS target exited unexpectedly: $status"
+            exit "$status"
+          fi
+          grep -q "NEXUS K0 BOOT COMPLETE" installer-sata-installed-bios.log
+
       - name: Verify persistent file creation, editing and reboot retention
         shell: bash
         run: |

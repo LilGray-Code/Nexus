@@ -553,7 +553,7 @@ static void draw_shell(void) {
         }
         if (files_vfs_ready) {
             graphics_draw_text(text_x, text_y + 288U,
-                               files_scan_ok ? "ROOT DIRECTORY (FAT32 + NXFS + RAM)"
+                               files_scan_ok ? "ROOT DIRECTORY (NEXUS DATA + FAT32 + RAM)"
                                              : "ROOT DIRECTORY (VOLATILE RAM)",
                                1, 108, 216, 229);
             size_t visible_count = files_listing_count > files_scroll_offset
@@ -1015,6 +1015,46 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
     }
 }
 
+static bool files_partition_guid_matches(
+    const struct nexus_gpt_partition *partition, const uint8_t guid[16]) {
+    if (partition == NULL || guid == NULL) return false;
+    for (size_t i = 0U; i < 16U; ++i)
+        if (partition->type_guid[i] != guid[i]) return false;
+    return true;
+}
+
+static bool files_is_efi_system_partition(
+    const struct nexus_gpt_partition *partition) {
+    static const uint8_t efi_system_guid[16] = {
+        0x28U, 0x73U, 0x2AU, 0xC1U, 0x1FU, 0xF8U, 0xD2U, 0x11U,
+        0xBAU, 0x4BU, 0x00U, 0xA0U, 0xC9U, 0x3EU, 0xC9U, 0x3BU
+    };
+    return files_partition_guid_matches(partition, efi_system_guid);
+}
+
+/* Nexus System and Data volumes share the NXFS type GUID.  The recovery
+ * partition is their stable boundary: System precedes it and user Data
+ * follows it.  Never expose the installed kernel's System volume as the
+ * user's file store. */
+static bool files_is_user_data_partition(
+    const struct nexus_gpt_partition *partition) {
+    static const uint8_t recovery_guid[16] = {
+        0x4EU, 0x58U, 0x52U, 0x43U, 0x01U, 0x00U, 0x58U, 0x4EU,
+        0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x52U, 0x43U
+    };
+    if (!nxfs_partition_type_matches(partition)) return false;
+    for (size_t i = 0U; i < gpt_partition_count(); ++i) {
+        const struct nexus_gpt_partition *recovery = gpt_partition_at(i);
+        if (!files_partition_guid_matches(recovery, recovery_guid)) continue;
+        const struct nexus_gpt_partition *data = gpt_partition_at(i + 1U);
+        return data != NULL &&
+               data->first_lba == partition->first_lba &&
+               data->last_lba == partition->last_lba &&
+               nxfs_partition_type_matches(data);
+    }
+    return false;
+}
+
 static void scan_files_once(void) {
     if (files_scanned) return;
     files_scanned = true;
@@ -1043,14 +1083,16 @@ static void scan_files_once(void) {
             const struct nexus_gpt_partition *part = gpt_partition_at(p);
             if (part == NULL) continue;
             bool mounted = false;
-            if (nxfs_partition_type_matches(part)) {
+            if (files_is_user_data_partition(part)) {
                 mounted = vfs_mount_root_nxfs(device, part);
                 if (mounted) {
-                    serial_write("FILES: mounted NexusFS volume on ");
+                    serial_write("FILES: mounted persistent Nexus user Data volume on ");
                     serial_write(device->name);
                     serial_write("\r\n");
                 }
-            } else if (vfs_mount_root_fat32(device, part)) {
+            } else if (!nxfs_partition_type_matches(part) &&
+                       !files_is_efi_system_partition(part) &&
+                       vfs_mount_root_fat32(device, part)) {
                 mounted = true;
                 if (files_first_lba == 0U) {
                     files_first_lba = part->first_lba;

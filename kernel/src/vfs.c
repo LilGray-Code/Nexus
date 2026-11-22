@@ -184,8 +184,9 @@ bool vfs_enter_directory(const char *name) {
         if (entry == NULL || !name_equal(entry->name, name) ||
             (entry->attributes & 0x10U) == 0U ||
             entry->first_cluster < 2U) continue;
-        if (!fat32_read_directory(entry->first_cluster)) return false;
-        directory_stack[++directory_depth] = entry->first_cluster;
+        const uint32_t child_cluster = entry->first_cluster;
+        if (!fat32_read_directory(child_cluster)) return false;
+        directory_stack[++directory_depth] = child_cluster;
         return true;
     }
     return false;
@@ -268,8 +269,10 @@ size_t vfs_root_entry_count(void) {
     if (root_mounted) {
         for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
             const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
-            if (entry == NULL || ramfs_shadows_name(entry->name) ||
-                nxfs_shadows_name(entry->name)) continue;
+            if (entry == NULL ||
+                (directory_depth == 0U &&
+                 (ramfs_shadows_name(entry->name) ||
+                  nxfs_shadows_name(entry->name)))) continue;
             ++count;
         }
     }
@@ -320,8 +323,10 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
     if (root_mounted) {
         for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
             const struct nexus_fat32_entry *fat_entry = fat32_root_entry_at(i);
-            if (fat_entry == NULL || ramfs_shadows_name(fat_entry->name) ||
-                nxfs_shadows_name(fat_entry->name)) continue;
+            if (fat_entry == NULL ||
+                (directory_depth == 0U &&
+                 (ramfs_shadows_name(fat_entry->name) ||
+                  nxfs_shadows_name(fat_entry->name)))) continue;
             if (index != 0U) {
                 --index;
                 continue;

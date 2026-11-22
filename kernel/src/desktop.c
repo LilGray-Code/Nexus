@@ -176,9 +176,13 @@ static void installer_refresh_plan(void) {
 static void installer_log_selected_target(void) {
     const struct nexus_block_device *device =
         blockdev_at(installer_selected_device);
+    const char *stable_id = device != NULL ? device->stable_id : "NONE";
+    /* Keep both diagnostic prefixes for NVMe and SATA CI consumers. */
     serial_write("NEXUS INSTALLER TARGET: ");
-    if (device != NULL) serial_write(device->stable_id);
-    else serial_write("NONE");
+    serial_write(stable_id);
+    serial_write("\r\n");
+    serial_write("NEXUS INSTALLER TARGET SELECTED: ");
+    serial_write(stable_id);
     serial_write("\r\n");
 }
 

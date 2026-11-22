@@ -66,6 +66,35 @@ static struct nexus_gpt_partition test_partition(void) {
     return partition;
 }
 
+static uint8_t test_short_checksum(const uint8_t *name) {
+    uint8_t sum = 0U;
+    for (size_t i = 0U; i < 11U; ++i)
+        sum = (uint8_t)(((sum & 1U) ? 0x80U : 0U) + (sum >> 1) + name[i]);
+    return sum;
+}
+
+static void make_lfn_entry(uint8_t *raw, const char *name,
+                           const uint8_t *short_name) {
+    static const uint8_t offsets[13] = {
+        1U,3U,5U,7U,9U,14U,16U,18U,20U,22U,24U,28U,30U
+    };
+    memset(raw, 0xFF, 32U);
+    raw[0] = 0x41U;
+    raw[11] = 0x0FU;
+    raw[12] = 0U;
+    raw[13] = test_short_checksum(short_name);
+    put16(raw + 26U, 0U);
+    for (size_t i = 0U; i < 13U; ++i) {
+        const unsigned char ch = (unsigned char)name[i];
+        put16(raw + offsets[i], ch == 0U ? 0U : ch);
+        if (ch == 0U) {
+            for (size_t j = i + 1U; j < 13U; ++j)
+                put16(raw + offsets[j], 0xFFFFU);
+            break;
+        }
+    }
+}
+
 static void format_minimal_fat32(void) {
     memset(disk, 0, sizeof(disk));
     uint8_t *boot = disk[TEST_PARTITION_START];
@@ -96,11 +125,24 @@ static void format_minimal_fat32(void) {
     put32(disk[TEST_PARTITION_START + final_fat_sector] + final_fat_offset,
           0x0FFFFFFFU);
 
-    for (uint32_t index = 0U; index < 40U; ++index) {
+    for (uint32_t index = 0U; index < 41U; ++index) {
         const uint32_t cluster = 2U + index / 16U;
         const uint32_t slot = index % 16U;
         uint8_t *root = disk[TEST_PARTITION_START + TEST_DATA_START +
                              (cluster - 2U)] + slot * 32U;
+        if (index == 1U) {
+            uint8_t short_name[11];
+            memcpy(short_name, "LONGFI~1TXT", 11U);
+            uint8_t *short_entry = disk[TEST_PARTITION_START + TEST_DATA_START +
+                (cluster - 2U)] + (slot + 1U) * 32U;
+            memcpy(short_entry, short_name, 11U);
+            short_entry[11U] = 0x20U;
+            uint8_t *lfn = disk[TEST_PARTITION_START + TEST_DATA_START +
+                (cluster - 2U)] + slot * 32U;
+            make_lfn_entry(lfn, "Long Filename.txt", short_name);
+            ++index;
+            continue;
+        }
         if (index == 0U) {
             memcpy(root, "BOUNDARY BIN", 12U);
             root[11U] = 0x20U;
@@ -115,7 +157,7 @@ static void format_minimal_fat32(void) {
         }
     }
     /* Mark the first unused slot so enumeration terminates normally. */
-    disk[TEST_PARTITION_START + TEST_DATA_START + 2U][8U * 32U] = 0U;
+    disk[TEST_PARTITION_START + TEST_DATA_START + 2U][9U * 32U] = 0U;
 
     uint8_t *file_data =
         disk[TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U];
@@ -132,6 +174,7 @@ int main(void) {
     highest_read_lba = 0U;
     assert(fat32_mount(&device, &partition));
     assert(fat32_root_entry_count() == 40U);
+    assert(strcmp(fat32_root_entry_at(1U)->name, "Long Filename.txt") == 0);
     const struct nexus_fat32_entry *entry = fat32_root_entry_at(0U);
     assert(entry != NULL);
     assert(entry->first_cluster == TEST_LAST_CLUSTER);

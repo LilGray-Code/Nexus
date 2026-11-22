@@ -581,7 +581,7 @@ static void draw_shell(void) {
                                    1, 170, 191, 211);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  N NEW  E EDIT  ENTER OPEN  DEL DELETE",
+                               "ARROWS/CLICK SELECT  N NEW  E EDIT  ENTER OPEN  DEL DELETE",
                                1, 170, 191, 211);
         }
         /* The list is paged by keeping the selected entry in the eight-row
@@ -875,6 +875,18 @@ static void files_editor_begin_selected(void) {
     files_edit_content[files_edit_content_length] = '\0';
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
+}
+
+static void files_keep_selection_visible(void) {
+    const size_t visible_rows = NEXUS_FILES_VISIBLE_COUNT / 2U;
+    const size_t selected_row = files_selected_index / 2U;
+    const size_t first_visible_row = files_scroll_offset / 2U;
+    if (selected_row < first_visible_row) {
+        files_scroll_offset = selected_row * 2U;
+    } else if (selected_row >= first_visible_row + visible_rows) {
+        files_scroll_offset =
+            (selected_row - visible_rows + 1U) * 2U;
+    }
 }
 
 static bool files_editor_name_exists(void) {
@@ -2145,18 +2157,34 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x48U && files_listing_count > 0U) {
-            if (files_selected_index > 0U) --files_selected_index;
-            if (files_selected_index < files_scroll_offset)
-                files_scroll_offset = files_selected_index;
+            if (files_selected_index >= 2U)
+                files_selected_index -= 2U;
+            files_keep_selection_visible();
             draw_shell();
             draw_pointer();
             return;
         }
         if (event->scancode == 0x50U && files_listing_count > 0U) {
-            if (files_selected_index + 1U < files_listing_count)
+            if (files_selected_index + 2U < files_listing_count)
+                files_selected_index += 2U;
+            files_keep_selection_visible();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x4BU && files_listing_count > 0U) {
+            if ((files_selected_index % 2U) == 1U)
+                --files_selected_index;
+            files_keep_selection_visible();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x4DU && files_listing_count > 0U) {
+            if ((files_selected_index % 2U) == 0U &&
+                files_selected_index + 1U < files_listing_count)
                 ++files_selected_index;
-            if (files_selected_index >= files_scroll_offset + NEXUS_FILES_VISIBLE_COUNT)
-                files_scroll_offset = files_selected_index - NEXUS_FILES_VISIBLE_COUNT + 1U;
+            files_keep_selection_visible();
             draw_shell();
             draw_pointer();
             return;

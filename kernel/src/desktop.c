@@ -37,6 +37,7 @@ static bool desktop_ready;
 static bool installer_environment;
 static bool start_menu_open;
 static bool window_maximized;
+static uint64_t window_animation_offset;
 static uint8_t settings_theme;
 static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
@@ -46,6 +47,8 @@ static bool keyboard_right_shift;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
+static void draw_shell(void);
+static void desktop_animate_view(void);
 static void erase_pointer(void);
 static uint32_t pointer_under[15U][7U];
 static bool pointer_under_valid;
@@ -281,6 +284,7 @@ static void desktop_load_settings(void) {
 }
 static void desktop_open_view(enum desktop_view view) {
     if (view == DESKTOP_INSTALLER && !installer_environment) return;
+    if (active_view == view) return;
     active_view = view;
     start_menu_open = false;
     if (view == DESKTOP_FILES) {
@@ -290,6 +294,7 @@ static void desktop_open_view(enum desktop_view view) {
         installer_refresh_plan();
         installer_log_selected_target();
     }
+    desktop_animate_view();
 }
 
 static void desktop_open_app(size_t app_index) {
@@ -441,21 +446,21 @@ static void desktop_draw_startup_animation(void) {
                        "Starting your workspace", 1U,
                        165U, 190U, 211U);
 
-    for (uint64_t frame = 0U; frame < 12U; ++frame) {
+    for (uint64_t frame = 0U; frame < 20U; ++frame) {
         for (uint64_t dot = 0U; dot < 5U; ++dot) {
             const uint64_t x = center_x - 30U + dot * 15U;
-            const bool active = dot == frame % 5U;
+            const bool active = dot == frame % 5U || dot == (frame + 4U) % 5U;
             const uint8_t level = active ? 225U : 75U;
             graphics_fill_rect(x, center_y + 20U, 8U, 8U,
                                45U, level, active ? 220U : 135U);
         }
         graphics_fill_rect(panel_x + 32U, bar_y, bar_width, 5U,
                            34U, 52U, 72U);
-        const uint64_t progress = (bar_width * (frame + 1U)) / 12U;
+        const uint64_t progress = (bar_width * (frame + 1U)) / 20U;
         graphics_fill_rect(panel_x + 32U, bar_y, progress, 5U,
                            47U, 177U, 202U);
 
-        const uint64_t deadline = timer_ticks() + 4U;
+        const uint64_t deadline = timer_ticks() + 3U;
         __asm__ volatile ("sti" : : : "memory");
         while (timer_ticks() < deadline)
             __asm__ volatile ("hlt" : : : "memory");
@@ -541,9 +546,10 @@ static void draw_shell(void) {
     }
 
     const uint64_t panel_x = (width - panel_width) / 2U;
-    const uint64_t panel_y = window_maximized && active_view != DESKTOP_HOME
+    const uint64_t panel_base_y = window_maximized && active_view != DESKTOP_HOME
         ? top_bar + 8U
         : top_bar + (height - top_bar - bottom_bar - panel_height) / 2U;
+    const uint64_t panel_y = panel_base_y + window_animation_offset;
 
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
                        panel_height, 1U, 4U, 13U);
@@ -1347,6 +1353,29 @@ static void erase_pointer(void) {
             (void)graphics_write_pixel(x + column, y + row,
                                        pointer_under[row][column]);
     pointer_under_valid = false;
+}
+
+static void desktop_animate_view(void) {
+    /* A short upward settle animates the app window without blocking input
+     * for long or depending on a compositor that Nexus does not yet have. */
+    if (screen_width < 240U || screen_height < 220U) {
+        window_animation_offset = 0U;
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    for (uint64_t frame = 0U; frame < 5U; ++frame) {
+        window_animation_offset = (4U - frame) * 6U;
+        draw_shell();
+        const uint64_t deadline = timer_ticks() + 1U;
+        __asm__ volatile ("sti" : : : "memory");
+        while (timer_ticks() < deadline)
+            __asm__ volatile ("hlt" : : : "memory");
+        __asm__ volatile ("cli" : : : "memory");
+    }
+    window_animation_offset = 0U;
+    draw_shell();
+    draw_pointer();
 }
 
 static void draw_pointer(void) {
@@ -3212,8 +3241,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (next_view == active_view) return;
     active_view = next_view;
-    draw_shell();
-    draw_pointer();
+    desktop_animate_view();
     serial_write("DESKTOP: view changed by keyboard shortcut\r\n");
 }
 

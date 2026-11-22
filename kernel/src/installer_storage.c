@@ -48,6 +48,10 @@ static bool installer_is_exact_esp_partition(
 static bool installer_is_exact_nxfs_partition(
     const struct nexus_block_device *device,
     const struct nexus_gpt_partition *requested) {
+    static const uint8_t recovery_guid[16]={
+        0x4EU,0x58U,0x52U,0x43U,0x01U,0x00U,0x58U,0x4EU,
+        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x52U,0x43U
+    };
     if (device == NULL || requested == NULL ||
         !nxfs_partition_type_matches(requested) ||
         !gpt_scan_device(device)) return false;
@@ -61,7 +65,12 @@ static bool installer_is_exact_nxfs_partition(
                 part->unique_guid[b] != requested->unique_guid[b])
                 equal=false;
         }
-        return equal;
+        const struct nexus_gpt_partition *next =
+            i+1U<gpt_partition_count()?gpt_partition_at(i+1U):NULL;
+        if(!equal||next==NULL)return false;
+        for(size_t b=0U;b<16U;++b)
+            if(next->type_guid[b]!=recovery_guid[b])return false;
+        return true;
     }
     return false;
 }
@@ -247,6 +256,43 @@ static bool installer_is_exact_bios_partition(
         return true;
     }
     return false;
+}
+
+bool nexus_installer_deploy_system_payload(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const char *typed_id,const char *typed_erase,
+    const struct nexus_gpt_partition *system_partition) {
+    const struct nexus_boot_payloads *payloads=nexus_boot_payloads_get();
+    if(payloads==NULL||payloads->kernel_elf.data==NULL||
+       payloads->kernel_elf.size==0U||
+       payloads->kernel_elf.size>NEXUS_NXFS_MAX_FILE_BYTES||
+       !installer_is_exact_nxfs_partition(device,system_partition))
+        return false;
+    static const char manifest[]=
+        "NEXUS SYSTEM IMAGE 1\n"
+        "ARCH=x86_64\n"
+        "KERNEL=KERNEL.ELF\n"
+        "KERNEL_FORMAT=ELF64\n"
+        "DESKTOP=FRAMEBUFFER\n"
+        "FILESYSTEM=NXFS\n"
+        "BOOT=UEFI+LEGACY_BIOS\n"
+        "RELEASE_STATUS=DEVELOPMENT_PROTOTYPE\n";
+    static const char readme[]=
+        "Nexus OS\n"
+        "This NXFS system volume contains the installed Nexus kernel and system manifest.\n"
+        "The desktop, terminal, file browser, settings, and basic HTTP text viewer are currently integrated into the kernel.\n"
+        "This is an engineering prototype, not a finished general-purpose desktop release.\n";
+    if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
+        system_partition,"KERNEL.ELF",payloads->kernel_elf.data,
+        payloads->kernel_elf.size))return false;
+    if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
+        system_partition,"SYSTEM.MAN",manifest,(uint32_t)(sizeof(manifest)-1U)))
+        return false;
+    if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
+        system_partition,"README.TXT",readme,(uint32_t)(sizeof(readme)-1U)))
+        return false;
+    return true;
 }
 
 bool nexus_installer_install_bios_bootloader(

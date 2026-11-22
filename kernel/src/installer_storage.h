@@ -46,6 +46,12 @@ enum nexus_installer_journal_result nexus_installer_store_recovery_record(
     const struct nexus_gpt_partition *recovery_partition,
     const struct nexus_installer_journal_record *record);
 
+bool nexus_installer_deploy_system_payload(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const char *typed_stable_id,const char *typed_erase_phrase,
+    const struct nexus_gpt_partition *system_partition);
+
 bool nexus_installer_install_bios_bootloader(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,

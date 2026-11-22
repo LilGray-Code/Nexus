@@ -225,6 +225,10 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   graphical confirmation/progress/recovery flow, and physical hardware install
   validation are still outstanding.
 
+The installer can deploy a minimal NXFS system volume containing the kernel ELF,
+SYSTEM.MAN, and README.TXT. This is an initial payload, not a complete userland
+or general-purpose root filesystem.
+
 The installer is not release-ready. The desktop remains non-destructive and
 disk-writing is not exposed in the distributable ISO. Do not treat the tested
 storage adapters or journal primitive as a completed end-to-end installer.

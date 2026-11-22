@@ -408,6 +408,16 @@ int main(int argc,char **argv) {
     assert(target.flushes == 38U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
+    /* Deploy the actual kernel ELF and basic system-volume documentation. */
+    assert(nexus_installer_deploy_system_payload(target_handle,&identity,
+        identity.stable_id,"ERASE",&system_copy));
+    assert(target.flushes==50U);
+    assert(gpt_scan_device(target_handle));
+    const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
+    assert(data_part!=NULL);
+    assert(!nexus_installer_write_nxfs_file(target_handle,&identity,
+        identity.stable_id,"ERASE",data_part,"BAD.TXT","x",1U));
+
     /* Deploy a large system file through a one-operation installer session. */
     static uint8_t system_payload[256U * 1024U];
     static uint8_t system_readback[4096U];
@@ -416,7 +426,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 42U);
+    assert(target.flushes == 54U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){
@@ -424,6 +434,16 @@ int main(int argc,char **argv) {
         if(entry!=NULL&&strcmp(entry->name,"KERNEL.BIN")==0)system_entry=entry;
     }
     assert(system_entry!=NULL&&system_entry->size==sizeof(system_payload));
+    const struct nexus_nxfs_entry *kernel_entry=NULL;
+    const struct nexus_nxfs_entry *manifest_entry=NULL;
+    for(size_t i=0U;i<nxfs_entry_count();++i){
+        const struct nexus_nxfs_entry *entry=nxfs_entry_at(i);
+        if(entry==NULL)continue;
+        if(strcmp(entry->name,"KERNEL.ELF")==0)kernel_entry=entry;
+        if(strcmp(entry->name,"SYSTEM.MAN")==0)manifest_entry=entry;
+    }
+    assert(kernel_entry!=NULL&&kernel_entry->size==kernel_payload_size);
+    assert(manifest_entry!=NULL&&manifest_entry->size>0U);
     for(uint32_t offset=0U;offset<system_entry->size;offset+=sizeof(system_readback)){
         const uint32_t amount=system_entry->size-offset<sizeof(system_readback)
             ?system_entry->size-offset:(uint32_t)sizeof(system_readback);

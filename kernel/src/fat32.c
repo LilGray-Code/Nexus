@@ -316,17 +316,11 @@ const struct nexus_fat32_entry *fat32_root_entry_at(size_t index) {
     return &root_entries[index];
 }
 
-static bool owns_root_entry(const struct nexus_fat32_entry *entry) {
-    if (entry == NULL) return false;
-    for (size_t i = 0; i < root_entry_count; ++i) {
-        if (&root_entries[i] == entry) return true;
-    }
-    return false;
-}
-
 bool fat32_read_file(const struct nexus_fat32_entry *entry,
                      uint32_t offset, uint32_t length, void *buffer) {
-    if (mounted_device == NULL || !owns_root_entry(entry) ||
+    /* Entries may be copied into stable open-file handles by the VFS.
+     * Do not require pointer identity with the mutable directory cache. */
+    if (mounted_device == NULL || entry == NULL ||
         (entry->attributes & FAT32_ATTR_DIRECTORY) != 0U ||
         (length != 0U && buffer == NULL) ||
         length > NEXUS_FAT32_MAX_READ_BYTES ||

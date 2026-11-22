@@ -189,8 +189,8 @@ int main(void) {
            TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U);
 
     /* A damaged VFAT checksum must never rename the short directory entry. */
-    uint8_t *lfn_record = disk[TEST_PARTITION_START + TEST_DATA_START +
-                               3U * 32U];
+    uint8_t *lfn_record = disk[TEST_PARTITION_START + TEST_DATA_START] +
+                           3U * 32U;
     lfn_record[13U] ^= 0x01U;
     assert(fat32_mount(&device, &partition));
     assert(strcmp(fat32_root_entry_at(1U)->name, "LONGFI~1.TXT") == 0);

@@ -560,7 +560,13 @@ bool blockdev_install_session_begin(const struct nexus_block_device *device,
 
 static bool blockdev_install_session_valid(
     const struct nexus_block_device *device) {
+    const size_t index = blockdev_index(device);
+    /* Recheck kernel-owned exclusion state for every write and flush. A
+     * target that becomes mounted, or is later identified as the boot medium,
+     * must immediately lose destructive-write authorization. */
     return device != NULL && device == install_session_device &&
+        boot_media_detection_complete && device != boot_media_device &&
+        index != NEXUS_BLOCKDEV_MAX_DEVICES && !mounted_devices[index] &&
         blockdev_matches_identity(device, install_session_id,
                                   install_session_model,
                                   install_session_block_count,

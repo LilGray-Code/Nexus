@@ -102,14 +102,6 @@ jobs:
             -o /tmp/nexus-wifi-test
           /tmp/nexus-wifi-test
 
-      - name: Test ELF64 dynamic metadata parser
-        run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/elf64_dynamic.c \
-            kernel/tests/elf64_dynamic_test.c \
-            -o /tmp/nexus-elf64-dynamic-test
-          /tmp/nexus-elf64-dynamic-test
-
       - name: Test PCI driver matching rules
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

@@ -76,6 +76,20 @@ The current kernel does not yet provide the general-purpose environment required
 
 These are OS engineering requirements, not features that can be supplied by a browser UI mockup.
 
+## First implemented browser foundation
+
+The kernel now includes a standalone, host-testable URL model/parser
+(`kernel/src/browser_url.c`). It recognizes HTTP and HTTPS URL schemes,
+validates host and numeric port syntax, applies default ports, preserves
+path/query data, and strips fragments from the request target. It rejects
+userinfo, bracketed IPv6 literals, unsupported schemes, whitespace, and
+invalid ports rather than guessing.
+
+This is only URL parsing and navigation-state groundwork. The desktop's
+existing network path remains HTTP-only; HTTPS URLs must not be fetched until
+TLS, certificate validation, and secure transport are implemented. The parser
+does not provide HTML/CSS rendering, JavaScript, or browser security isolation.
+
 ## Implementation milestones and release gates
 
 1. **Browser foundation:** define URL, navigation, document, resource, and UI state models; separate browser code from kernel desktop code; add host-side unit tests.

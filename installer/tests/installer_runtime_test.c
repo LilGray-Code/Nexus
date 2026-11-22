@@ -18,6 +18,7 @@ static unsigned gpt_writes, journal_writes, esp_formats, system_formats;
 static unsigned payload_writes, boot_payload_writes, bios_installs;
 static enum nexus_installer_journal_result old_journal_result;
 static enum nexus_installer_journal_phase old_journal_phase;
+static uint32_t old_journal_steps, old_journal_firmware;
 static enum nexus_installer_journal_phase journal_phases[8];
 static size_t journal_phase_count;
 static struct nexus_partition_plan current_plan;
@@ -100,8 +101,17 @@ enum nexus_installer_journal_result nexus_installer_load_recovery_record(
     const struct nexus_gpt_partition *part,
     struct nexus_installer_journal_record *record) {
     (void)d; (void)identity; (void)part;
-    if (old_journal_result == NEXUS_JOURNAL_OK && record != NULL)
+    if (old_journal_result == NEXUS_JOURNAL_OK && record != NULL) {
+        record->sequence = 7U;
         record->phase = old_journal_phase;
+        record->completed_steps = old_journal_steps;
+        record->disk_block_count = disk.block_count;
+        record->block_size = disk.block_size;
+        record->firmware_mode = old_journal_firmware;
+        strcpy(record->stable_id, disk.stable_id);
+        strcpy(record->model, disk.model);
+        memcpy(record->disk_guid, current_disk_guid, 16U);
+    }
     return old_journal_result;
 }
 
@@ -132,6 +142,12 @@ enum nexus_installer_journal_result nexus_installer_store_recovery_record(
     ++journal_writes;
     if (journal_phase_count < 8U)
         journal_phases[journal_phase_count++] = record->phase;
+    if (!fail_journal) {
+        old_journal_result = NEXUS_JOURNAL_OK;
+        old_journal_phase = record->phase;
+        old_journal_steps = record->completed_steps;
+        old_journal_firmware = record->firmware_mode;
+    }
     return fail_journal ? NEXUS_JOURNAL_IO_ERROR : NEXUS_JOURNAL_OK;
 }
 
@@ -213,6 +229,8 @@ static void reset_test(void) {
     payload_writes = boot_payload_writes = bios_installs = 0U;
     old_journal_result = NEXUS_JOURNAL_NO_RECORD;
     old_journal_phase = NEXUS_JOURNAL_EMPTY;
+    old_journal_steps = 0U;
+    old_journal_firmware = NEXUS_FIRMWARE_UEFI;
     journal_phase_count = progress_count = 0U;
     memset(journal_phases, 0, sizeof(journal_phases));
     memset(progress_seen, 0, sizeof(progress_seen));
@@ -295,6 +313,35 @@ static void test_recovery_and_failures(void) {
     populate_partitions(&current_plan, dummy_disk_guid, dummy_guids);
     old_journal_result = NEXUS_JOURNAL_OK;
     old_journal_phase = NEXUS_JOURNAL_GPT_WRITTEN;
+    old_journal_steps = 1U;
+    old_journal_firmware = NEXUS_FIRMWARE_UEFI;
+    assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
+           NEXUS_INSTALL_RESULT_OK);
+    assert(gpt_writes == 0U);
+    assert(esp_formats == 1U && system_formats == 2U);
+    assert(journal_phases[journal_phase_count - 1U] ==
+           NEXUS_JOURNAL_COMPLETE);
+
+    reset_test();
+    assert(nexus_partition_plan_create(disk.block_count, disk.block_size,
+        NEXUS_FIRMWARE_DUAL, &current_plan));
+    populate_partitions(&current_plan, dummy_disk_guid, dummy_guids);
+    old_journal_result = NEXUS_JOURNAL_OK;
+    old_journal_phase = NEXUS_JOURNAL_RECOVERY_REQUIRED;
+    old_journal_steps = 3U;
+    old_journal_firmware = NEXUS_FIRMWARE_DUAL;
+    assert(run_install(NEXUS_FIRMWARE_DUAL, disk.stable_id, "ERASE") ==
+           NEXUS_INSTALL_RESULT_OK);
+    assert(gpt_writes == 0U);
+    assert(esp_formats == 0U && system_formats == 0U);
+    assert(payload_writes == 0U && boot_payload_writes == 0U);
+    assert(bios_installs == 1U);
+
+    reset_test();
+    assert(nexus_partition_plan_create(disk.block_count, disk.block_size,
+        NEXUS_FIRMWARE_UEFI, &current_plan));
+    populate_partitions(&current_plan, dummy_disk_guid, dummy_guids);
+    old_journal_result = NEXUS_JOURNAL_CORRUPT;
     assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
            NEXUS_INSTALL_RESULT_EXISTING_RECOVERY);
     assert(gpt_writes == 0U);

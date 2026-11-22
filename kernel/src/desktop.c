@@ -33,6 +33,7 @@ static uint64_t screen_width;
 static uint64_t screen_height;
 static bool desktop_ready;
 static bool start_menu_open;
+static bool window_maximized;
 static bool mouse_left_was_down;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
@@ -375,17 +376,22 @@ static void draw_shell(void) {
                        166U, 194U, 216U);
 
     uint64_t panel_width = width * 3U / 4U;
-    uint64_t panel_height = active_view == DESKTOP_INSTALLER
-        ? 480U : height * 53U / 100U;
+    uint64_t panel_height = active_view == DESKTOP_HOME
+        ? height * 53U / 100U : 512U;
     if (panel_width > 920U) panel_width = 920U;
-    if (panel_height > 480U) panel_height = 480U;
+    if (panel_height > 512U) panel_height = 512U;
     if (panel_width > width - 16U) panel_width = width - 16U;
     if (panel_height > height - top_bar - bottom_bar - 16U)
         panel_height = height - top_bar - bottom_bar - 16U;
+    if (window_maximized && active_view != DESKTOP_HOME) {
+        panel_width = width - 32U;
+        panel_height = height - top_bar - bottom_bar - 16U;
+    }
 
     const uint64_t panel_x = (width - panel_width) / 2U;
-    const uint64_t panel_y = top_bar +
-        (height - top_bar - bottom_bar - panel_height) / 2U;
+    const uint64_t panel_y = window_maximized && active_view != DESKTOP_HOME
+        ? top_bar + 8U
+        : top_bar + (height - top_bar - bottom_bar - panel_height) / 2U;
 
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
                        panel_height, 1U, 4U, 13U);
@@ -412,8 +418,12 @@ static void draw_shell(void) {
     const uint64_t controls_x = panel_x + panel_width - 66U;
     graphics_fill_rect(controls_x, panel_y + 12U, 14U, 12U,
                        49U, 69U, 91U);
+    graphics_draw_text(controls_x + 4U, panel_y + 15U, "-", 1U,
+                       229U, 239U, 248U);
     graphics_fill_rect(controls_x + 22U, panel_y + 12U, 14U, 12U,
                        49U, 69U, 91U);
+    graphics_draw_rect(controls_x + 26U, panel_y + 15U, 6U, 6U,
+                       207U, 224U, 239U);
     graphics_fill_rect(controls_x + 44U, panel_y + 12U, 14U, 12U,
                        177U, 67U, 80U);
     graphics_draw_text(controls_x + 47U, panel_y + 16U, "X", 1U,
@@ -788,11 +798,33 @@ static void draw_shell(void) {
             }
         }
         if (files_vfs_ready) {
-            graphics_draw_text(text_x, text_y + 288U,
-                               files_scan_ok
-                                   ? "FILES (FAT32 + NXFS + RAM): N NEW / E EDIT / DEL REMOVE"
-                                   : "FILES (VOLATILE RAM): N NEW / E EDIT / DEL REMOVE",
-                               1, 108, 216, 229);
+            static const char *const actions[4] = {
+                "NEW FILE", "OPEN / EDIT", "DELETE", "REFRESH"
+            };
+            static const uint8_t action_colors[4][3] = {
+                {37U, 139U, 165U}, {60U, 116U, 170U},
+                {153U, 69U, 78U}, {67U, 133U, 111U}
+            };
+            for (size_t action = 0U; action < 4U; ++action) {
+                const uint64_t action_x = text_x + (uint64_t)action * 100U;
+                graphics_fill_rect(action_x, text_y + 270U, 92U, 25U,
+                                   29U, 47U, 69U);
+                graphics_draw_rect(action_x, text_y + 270U, 92U, 25U,
+                                   action_colors[action][0],
+                                   action_colors[action][1],
+                                   action_colors[action][2]);
+                graphics_fill_rect(action_x, text_y + 270U, 3U, 25U,
+                                   action_colors[action][0],
+                                   action_colors[action][1],
+                                   action_colors[action][2]);
+                graphics_draw_text(action_x + 9U, text_y + 279U,
+                                   actions[action], 1U, 234U, 244U, 252U);
+            }
+            graphics_draw_text(text_x, text_y + 304U,
+                                files_scan_ok
+                                    ? "PERSISTENT FILES  /  FAT32 + NXFS + RAM"
+                                    : "RAM FILES  /  VOLATILE UNTIL SAVED",
+                                1U, 108U, 216U, 229U);
             for (size_t slot = 0U; slot < FILES_LISTING_VISIBLE; ++slot) {
                 const size_t index = files_listing_first_index + slot;
                 if (index >= files_listing_count) break;
@@ -801,18 +833,18 @@ static void draw_shell(void) {
                 const bool selected = index == files_selected_index;
                 if (selected)
                     graphics_fill_rect(text_x + column * 260U - 6U,
-                                       text_y + 307U + line * 24U,
-                                       240U, 20U, 34, 78, 105);
+                                       text_y + 321U + line * 24U,
+                                       240U, 20U, 34U, 78U, 105U);
                 graphics_draw_text(text_x + column * 260U,
-                                   text_y + 312U + line * 24U,
-                                   files_listing[index], 1,
-                                   selected ? 119 : 233,
-                                   selected ? 229 : 243,
-                                   selected ? 211 : 252);
+                                   text_y + 326U + line * 24U,
+                                   files_listing[index], 1U,
+                                   selected ? 119U : 233U,
+                                   selected ? 229U : 243U,
+                                   selected ? 211U : 252U);
             }
             if (files_listing_count == 0U) {
-                graphics_draw_text(text_x, text_y + 312U, "NO FILES",
-                                   1, 170, 191, 211);
+                graphics_draw_text(text_x, text_y + 326U, "NO FILES",
+                                   1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
                                "UP/DOWN SELECT  PGUP/PGDN PAGE  ENTER PREVIEW",
@@ -979,6 +1011,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     installer_refresh_plan();
     mouse_left_was_down = false;
     start_menu_open = false;
+    window_maximized = false;
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
     desktop_ready = true;
@@ -2208,20 +2241,33 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 const uint64_t top = clamp_min(screen_height / 16U, 34U);
                 const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
                 uint64_t pw = screen_width * 3U / 4U;
-                uint64_t ph = active_view == DESKTOP_INSTALLER
-                    ? 480U : screen_height * 53U / 100U;
+                uint64_t ph = 512U;
                 if (pw > 920U) pw = 920U;
-                if (ph > 480U) ph = 480U;
                 if (pw > screen_width - 16U) pw = screen_width - 16U;
                 if (ph > screen_height - top - bottom - 16U)
                     ph = screen_height - top - bottom - 16U;
+                if (window_maximized) {
+                    pw = screen_width - 32U;
+                    ph = screen_height - top - bottom - 16U;
+                }
                 const uint64_t px = (screen_width - pw) / 2U;
-                const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
-                if ((uint64_t)pointer_x >= px + pw - 24U &&
-                    (uint64_t)pointer_x < px + pw - 6U &&
-                    (uint64_t)pointer_y >= py + 8U &&
-                    (uint64_t)pointer_y < py + 28U) {
-                    active_view = DESKTOP_HOME;
+                const uint64_t py = window_maximized ? top + 8U
+                    : top + (screen_height - top - bottom - ph) / 2U;
+                const uint64_t controls_x = px + pw - 66U;
+                if ((uint64_t)pointer_y >= py + 8U &&
+                    (uint64_t)pointer_y < py + 28U &&
+                    (uint64_t)pointer_x >= controls_x &&
+                    (uint64_t)pointer_x < controls_x + 58U) {
+                    const uint64_t control = (uint64_t)pointer_x - controls_x;
+                    if (control < 14U) {
+                        active_view = DESKTOP_HOME; /* Minimize */
+                        window_maximized = false;
+                    } else if (control >= 22U && control < 36U) {
+                        window_maximized = !window_maximized; /* Maximize / restore */
+                    } else if (control >= 44U) {
+                        active_view = DESKTOP_HOME; /* Close */
+                        window_maximized = false;
+                    }
                     start_menu_open = false;
                     shell_click_handled = true;
                 }
@@ -2236,21 +2282,53 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
             uint64_t pw = screen_width * 3U / 4U;
-            uint64_t ph = screen_height * 53U / 100U;
+            uint64_t ph = 512U;
             if (pw > 920U) pw = 920U;
-            if (ph > 480U) ph = 480U;
             if (pw > screen_width - 16U) pw = screen_width - 16U;
             if (ph > screen_height - top - bottom - 16U)
                 ph = screen_height - top - bottom - 16U;
+            if (window_maximized) {
+                pw = screen_width - 32U;
+                ph = screen_height - top - bottom - 16U;
+            }
             const uint64_t px = (screen_width - pw) / 2U;
-            const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
+            const uint64_t py = window_maximized ? top + 8U
+                : top + (screen_height - top - bottom - ph) / 2U;
             const uint64_t tx = px + 32U;
             const uint64_t ty = py + 82U;
-            const int64_t relative_y = pointer_y - (int64_t)(ty + 307U);
+            const int64_t relative_y = pointer_y - (int64_t)(ty + 270U);
             const int64_t relative_x = pointer_x - (int64_t)tx;
-            if (relative_y >= 0 && relative_y < 60 &&
+            if (relative_y >= 0 && relative_y < 25 &&
+                relative_x >= 0 && relative_x < 392) {
+                const size_t action = (size_t)relative_x / 100U;
+                if (action == 0U) {
+                    files_editor_begin_new();
+                } else if (action == 1U) {
+                    files_editor_begin_selected();
+                } else if (action == 2U) {
+                    struct nexus_vfs_dirent selected;
+                    if (files_selected_index < files_listing_count &&
+                        vfs_root_entry(files_selected_index, &selected) &&
+                        selected.type == NEXUS_VFS_FILE &&
+                        vfs_remove_file(selected.name)) {
+                        serial_write("FILES: removed writable file ");
+                        serial_write(selected.name);
+                        serial_write("\r\n");
+                    }
+                    refresh_files_listing();
+                } else if (action == 3U) {
+                    refresh_files_listing();
+                    serial_write("FILES: listing refreshed by mouse\r\n");
+                }
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+            const int64_t relative_list_y =
+                pointer_y - (int64_t)(ty + 321U);
+            if (relative_list_y >= 0 && relative_list_y < 60 &&
                 relative_x >= 0 && relative_x < 500) {
-                const size_t row = (size_t)relative_y / 24U;
+                const size_t row = (size_t)relative_list_y / 24U;
                 const size_t column = (size_t)relative_x / 260U;
                 const size_t slot = row * 2U + column;
                 const size_t index = files_listing_first_index + slot;

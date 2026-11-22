@@ -18,13 +18,29 @@ desktop, terminal, file browser, settings, and early HTTP text viewer are
 currently kernel-integrated; this is not yet a separate full userland or a
 production desktop application environment.
 
-## Current installer flow
+## Live installer and installed desktop are separate environments
 
-The live desktop opens the graphical installer using **F5**. It discovers
-eligible block devices and provides a target selection and layout preview. A
-destructive install is blocked until the user confirms the selected device's
-stable identity and separately types `ERASE`. The kernel revalidates the
-device immediately before each destructive stage. The live boot medium,
+Booting the USB/live medium starts directly in the dedicated Nexus Installer.
+It is not presented as an app inside the installed desktop: the live installer
+uses a full-screen installation interface and hides the normal desktop taskbar,
+launcher, and application shortcuts.
+
+Booting from an installed Nexus disk starts the normal Nexus desktop
+(Home, Files, Browser, Settings, and Terminal). The installer is not listed in
+the installed desktop's launcher or taskbar and cannot be opened with a
+function-key shortcut. Installer mode is selected only when kernel boot-source
+identification positively establishes that the machine was started from an
+external live medium; ambiguous boot-source identity must fail closed.
+
+The installer discovers eligible block devices and provides a target
+selection and layout preview. A destructive install is blocked until the user
+confirms the selected device's stable identity and separately types `ERASE`.
+The kernel revalidates the device immediately before each destructive stage.
+
+After successful deployment, the installer displays a remove-media/reboot
+instruction. Pressing Enter requests a hardware reset. Remove the USB before
+the machine starts again; the firmware should then boot the installed Nexus
+disk into the normal desktop. The live boot medium,
 mounted devices, and devices with ambiguous identity are rejected.
 
 **The selected target disk is erased and repartitioned.** Only proceed after

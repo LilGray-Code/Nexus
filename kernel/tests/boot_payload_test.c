@@ -11,9 +11,9 @@ int main(void) {
     bios_hdd[510]=0x55; bios_hdd[511]=0xAA;
     uefi[0x3c]=0x40; uefi[0x40]='P'; uefi[0x41]='E';
     struct limine_file k={.address=kernel,.size=sizeof(kernel)};
-    struct limine_file e={.address=uefi,.size=sizeof(uefi),.path="boot():/EFI/BOOT/BOOTX64.EFI"};
-    struct limine_file b={.address=bios_hdd,.size=sizeof(bios_hdd),.path="boot():/boot/limine/limine-bios-hdd.bin"};
-    struct limine_file bs={.address=bios_sys,.size=sizeof(bios_sys),.path="boot():/boot/limine/limine-bios.sys"};
+    struct limine_file e={.address=uefi,.size=sizeof(uefi),.path="/EFI/BOOT/BOOTX64.EFI"};
+    struct limine_file b={.address=bios_hdd,.size=sizeof(bios_hdd),.path="/boot/limine/limine-bios-hdd.bin"};
+    struct limine_file bs={.address=bios_sys,.size=sizeof(bios_sys),.path="/boot/limine/limine-bios.sys"};
     struct limine_file extra={.address=bios_sys,.size=sizeof(bios_sys),.path="boot():/unrelated/extra.bin"};
     struct limine_file *items[4]={&bs,&e,&extra,&b};
     struct limine_module_response mr={.module_count=4,.modules=items};

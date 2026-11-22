@@ -5,15 +5,31 @@
 static struct nexus_boot_payloads payloads;
 static bool payloads_ready;
 
+static bool prefix_is(const char *value, const char *prefix) {
+    if (value == NULL || prefix == NULL) return false;
+    while (*prefix != '\\0') {
+        char a = *value;
+        char b = *prefix;
+        if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+        if (a != b) return false;
+        ++value;
+        ++prefix;
+    }
+    return true;
+}
+
 static bool path_is(const char *actual, const char *expected) {
     if (actual == NULL || expected == NULL) return false;
+    if (prefix_is(actual, "boot():")) actual += 7U;
+    if (prefix_is(expected, "boot():")) expected += 7U;
     while (*actual && *expected) {
         char a = *actual++, e = *expected++;
         if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
         if (e >= 'A' && e <= 'Z') e = (char)(e - 'A' + 'a');
         if (a != e) return false;
     }
-    return *actual == '\0' && *expected == '\0';
+    return *actual == '\\0' && *expected == '\\0';
 }
 
 static bool blob_from_file(struct limine_file *file,

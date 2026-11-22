@@ -24,6 +24,15 @@ struct nexus_pci_device {
     uint32_t bars[NEXUS_PCI_BAR_COUNT];
 };
 
+struct nexus_pci_msi_info {
+    bool present;
+    bool enabled;
+    bool supports_64bit_address;
+    bool per_vector_masking;
+    uint8_t maximum_message_exponent;
+    uint16_t maximum_message_count;
+};
+
 struct nexus_pci_bar {
     bool present;
     bool assigned;
@@ -42,6 +51,9 @@ const struct nexus_pci_device *pci_device_at(uint32_t index);
  */
 bool pci_find_capability(const struct nexus_pci_device *device,
                          uint8_t capability_id, uint8_t *offset);
+/* Read MSI capability properties without enabling or modifying interrupts. */
+bool pci_get_msi_info(const struct nexus_pci_device *device,
+                      struct nexus_pci_msi_info *info);
 
 /* Decode the raw BAR value captured during enumeration; never writes config. */
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,

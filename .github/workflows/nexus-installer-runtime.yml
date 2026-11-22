@@ -1,0 +1,21 @@
+name: Nexus Installer Runtime Build
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+
+permissions:
+  contents: read
+
+jobs:
+  freestanding-kernel:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Nexus source
+        uses: actions/checkout@v4
+      - name: Build the freestanding kernel with warnings as errors
+        run: make -C kernel clean all

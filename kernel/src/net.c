@@ -655,6 +655,7 @@ static void receive_frame(const uint8_t *frame, size_t length) {
 
 bool net_init(void) {
     network = (struct net_state){0};
+    tcp_connection = (struct net_tcp_connection){0};
     for (size_t i = 0; i < 4U; ++i) {
         offered_ipv4[i] = 0U;
         dhcp_server_ipv4[i] = 0U;
@@ -684,6 +685,19 @@ bool net_init(void) {
         serial_write("WARNING: DHCP Discover transmit failed\r\n");
     }
     return true;
+}
+
+bool net_select_device(uint32_t index) {
+    const uint32_t previous = netdev_default_index();
+    if (index >= netdev_device_count()) return false;
+    if (index == previous) return network.ready;
+    if (!netdev_set_default(index)) return false;
+    if (net_init()) return true;
+
+    /* Keep the previously working interface selected if the new one fails. */
+    (void)netdev_set_default(previous);
+    (void)net_init();
+    return false;
 }
 
 void net_poll(void) {

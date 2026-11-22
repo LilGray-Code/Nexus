@@ -43,9 +43,12 @@ static size_t files_partition_count;
 static uint64_t files_first_lba;
 static uint64_t files_last_lba;
 static bool files_vfs_ready;
-static char files_first_name[13];
+#define FILES_EDITOR_MAX_BYTES NEXUS_VFS_RAM_MAX_FILE_SIZE
+#define FILES_EDITOR_VIEW_BYTES 256U
+
+static char files_first_name[NEXUS_VFS_NAME_MAX];
 static char files_preview[41];
-static char files_listing[6][13];
+static char files_listing[6][NEXUS_VFS_NAME_MAX];
 static size_t files_listing_count;
 static size_t files_selected_index;
 enum files_editor_state {
@@ -55,9 +58,11 @@ enum files_editor_state {
 };
 static enum files_editor_state files_editor_state;
 static char files_edit_name[NEXUS_VFS_NAME_MAX];
-static char files_edit_content[256];
+static char files_edit_content[FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
+static size_t files_edit_view_offset;
+static bool files_edit_follow_end;
 static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
@@ -424,8 +429,8 @@ static void draw_shell(void) {
         if (files_editor_state != FILES_EDITOR_CLOSED) {
             graphics_draw_text(text_x, text_y + 48U,
                 files_editor_state == FILES_EDITOR_NAME
-                    ? "NEW FILE - ENTER AN 8.3 NAME"
-                    : "TEXT EDITOR - ASCII TEXT",
+                    ? "NEW FILE - ENTER A NAME"
+                    : "TEXT EDITOR - 4096 BYTE LIMIT",
                 1, 108, 216, 229);
             graphics_draw_text(text_x, text_y + 82U, "NAME:",
                                1, 233, 243, 252);
@@ -434,7 +439,8 @@ static void draw_shell(void) {
             if (files_editor_state == FILES_EDITOR_CONTENT) {
                 for (size_t line = 0U; line < 4U; ++line) {
                     char display[65];
-                    const size_t offset = line * 64U;
+                    const size_t offset =
+                        files_edit_view_offset + line * 64U;
                     size_t amount = 0U;
                     while (amount < 64U &&
                            offset + amount < files_edit_content_length) {
@@ -451,11 +457,11 @@ static void draw_shell(void) {
                         : "SAVE TARGET: VOLATILE RAM ONLY",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 292U,
-                    "F10 SAVE  ENTER NEW LINE  BACKSPACE DELETE",
+                    "PGUP/PGDN SCROLL  HOME/END  F10 SAVE  ENTER NEW LINE",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
-                    "VALID NAME: 1-8 CHARACTERS, OPTIONAL .EXT",
+                    "UP TO 31 CHARS: LETTERS, NUMBERS, _ - AND ONE DOT",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 156U,
                     "ENTER CONTINUE  ESC CANCEL",
@@ -798,11 +804,23 @@ static void refresh_files_listing(void) {
     }
 }
 
+static size_t files_editor_max_view_offset(void) {
+    return files_edit_content_length > FILES_EDITOR_VIEW_BYTES
+        ? files_edit_content_length - FILES_EDITOR_VIEW_BYTES : 0U;
+}
+
+static void files_editor_scroll_to_end(void) {
+    files_edit_view_offset = files_editor_max_view_offset();
+    files_edit_follow_end = true;
+}
+
 static void files_editor_begin_new(void) {
     files_edit_name[0] = '\0';
     files_edit_content[0] = '\0';
     files_edit_name_length = 0U;
     files_edit_content_length = 0U;
+    files_edit_view_offset = 0U;
+    files_edit_follow_end = true;
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_NAME;
 }
@@ -812,9 +830,9 @@ static void files_editor_begin_selected(void) {
     if (files_selected_index >= files_listing_count ||
         !vfs_root_entry(files_selected_index, &selected) ||
         selected.type != NEXUS_VFS_FILE ||
-        selected.size >= sizeof(files_edit_content)) {
+        selected.size > FILES_EDITOR_MAX_BYTES) {
         files_edit_status[0] = '\0';
-        const char *message = "SELECT A FILE SMALLER THAN 256 BYTES";
+        const char *message = "FILE EXCEEDS 4096-BYTE EDITOR LIMIT - UNCHANGED";
         size_t i = 0U;
         while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
             files_edit_status[i] = message[i];
@@ -838,6 +856,7 @@ static void files_editor_begin_selected(void) {
         ++files_edit_name_length;
     files_edit_content_length = bytes_read;
     files_edit_content[files_edit_content_length] = '\0';
+    files_editor_scroll_to_end();
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
 }
@@ -903,6 +922,30 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         }
         return;
     }
+    if (event->scancode == 0x49U) {
+        files_edit_follow_end = false;
+        files_edit_view_offset =
+            files_edit_view_offset > FILES_EDITOR_VIEW_BYTES
+                ? files_edit_view_offset - FILES_EDITOR_VIEW_BYTES : 0U;
+        return;
+    } else if (event->scancode == 0x51U) {
+        const size_t maximum = files_editor_max_view_offset();
+        if (files_edit_view_offset < maximum) {
+            files_edit_view_offset += FILES_EDITOR_VIEW_BYTES;
+            if (files_edit_view_offset > maximum)
+                files_edit_view_offset = maximum;
+        }
+        files_edit_follow_end = files_edit_view_offset == maximum;
+        return;
+    } else if (event->scancode == 0x47U) {
+        files_edit_view_offset = 0U;
+        files_edit_follow_end = files_edit_view_offset ==
+                               files_editor_max_view_offset();
+        return;
+    } else if (event->scancode == 0x4FU) {
+        files_editor_scroll_to_end();
+        return;
+    }
     if (event->scancode == 0x44U) {
         const bool saved = vfs_write_file(files_edit_name, files_edit_content,
                                           files_edit_content_length);
@@ -930,19 +973,39 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
             serial_write("\r\n");
         }
     } else if (event->scancode == 0x0EU) {
-        if (files_edit_content_length != 0U)
+        if (files_edit_content_length != 0U) {
             files_edit_content[--files_edit_content_length] = '\0';
+            if (files_edit_follow_end) files_editor_scroll_to_end();
+        }
     } else if (event->scancode == 0x1CU) {
-        if (files_edit_content_length + 1U < sizeof(files_edit_content)) {
+        if (files_edit_content_length < FILES_EDITOR_MAX_BYTES) {
             files_edit_content[files_edit_content_length++] = '\n';
             files_edit_content[files_edit_content_length] = '\0';
+            if (files_edit_follow_end) files_editor_scroll_to_end();
+        } else {
+            const char *message = "EDITOR LIMIT REACHED - SAVE OR REMOVE TEXT";
+            size_t i = 0U;
+            while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+                files_edit_status[i] = message[i];
+                ++i;
+            }
+            files_edit_status[i] = '\0';
         }
     } else {
         const char ch = terminal_scancode_char(event->scancode);
         if (ch >= 0x20 && ch <= 0x7E &&
-            files_edit_content_length + 1U < sizeof(files_edit_content)) {
+            files_edit_content_length < FILES_EDITOR_MAX_BYTES) {
             files_edit_content[files_edit_content_length++] = ch;
             files_edit_content[files_edit_content_length] = '\0';
+            if (files_edit_follow_end) files_editor_scroll_to_end();
+        } else if (ch >= 0x20 && ch <= 0x7E) {
+            const char *message = "EDITOR LIMIT REACHED - SAVE OR REMOVE TEXT";
+            size_t i = 0U;
+            while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+                files_edit_status[i] = message[i];
+                ++i;
+            }
+            files_edit_status[i] = '\0';
         }
     }
 }

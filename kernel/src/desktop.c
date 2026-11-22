@@ -177,7 +177,8 @@ static void draw_shell(void) {
                        119, 229, 211);
 
     uint64_t panel_width = width * 3U / 4U;
-    uint64_t panel_height = height * 53U / 100U;
+    uint64_t panel_height = active_view == DESKTOP_INSTALLER
+        ? 480U : height * 53U / 100U;
     if (panel_width > 920U) panel_width = 920U;
     if (panel_height > 480U) panel_height = 480U;
     if (panel_width > width - 16U) panel_width = width - 16U;
@@ -206,7 +207,8 @@ static void draw_shell(void) {
                        1, 225, 241, 255);
 
     const uint64_t text_x = panel_x + 32U;
-    const uint64_t text_y = panel_y + 82U;
+    const uint64_t text_y = panel_y +
+        (active_view == DESKTOP_INSTALLER ? 48U : 82U);
     if (active_view == DESKTOP_HOME) {
         graphics_draw_text(text_x, text_y, "WELCOME TO NEXUS OS",
                            2, 239, 249, 255);
@@ -241,7 +243,7 @@ static void draw_shell(void) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
             graphics_draw_text(text_x, text_y, "NEXUS INSTALLER - DRIVE SELECTION",
                                2, 239, 249, 255);
-            graphics_draw_text(text_x, text_y + 38U,
+            graphics_draw_text(text_x, text_y + 28U,
                                "READ-ONLY DISCOVERY - SELECT A TARGET",
                                1, 108, 216, 229);
             const size_t device_count = blockdev_count();
@@ -253,13 +255,13 @@ static void draw_shell(void) {
                 const struct nexus_block_device *device =
                     blockdev_at(installer_selected_device);
                 if (device != NULL) {
-                    graphics_draw_text(text_x, text_y + 78U,
+                    graphics_draw_text(text_x, text_y + 54U,
                                        "SELECTED DRIVE:", 1, 233, 243, 252);
                     graphics_draw_text(text_x + 140U, text_y + 78U,
                                        device->name, 1, 119, 229, 211);
-                    graphics_draw_text(text_x, text_y + 96U,
+                    graphics_draw_text(text_x, text_y + 72U,
                                        device->model, 1, 170, 225, 190);
-                    graphics_draw_text(text_x, text_y + 114U,
+                    graphics_draw_text(text_x, text_y + 90U,
                                        device->stable_id, 1, 170, 191, 211);
                     const uint64_t blocks_per_gib =
                         (1024ULL * 1024ULL * 1024ULL) / device->block_size;
@@ -267,7 +269,7 @@ static void draw_shell(void) {
                     format_u64(blocks_per_gib == 0U ? 0U :
                                device->block_count / blocks_per_gib, capacity);
                     format_u64(device->block_size, sector);
-                    graphics_draw_text(text_x, text_y + 138U,
+                    graphics_draw_text(text_x, text_y + 112U,
                                        "CAPACITY (GiB):", 1, 233, 243, 252);
                     graphics_draw_text(text_x + 140U, text_y + 138U,
                                        capacity, 1, 170, 225, 190);
@@ -281,11 +283,11 @@ static void draw_shell(void) {
                                            ? 216 : 177,
                                        blockdev_identity_is_unique(device)
                                            ? 229 : 119);
-                    graphics_draw_text(text_x, text_y + 166U,
+                    graphics_draw_text(text_x, text_y + 134U,
                                        "LOGICAL SECTOR:", 1, 233, 243, 252);
                     graphics_draw_text(text_x + 140U, text_y + 166U,
                                        sector, 1, 170, 225, 190);
-                    graphics_draw_text(text_x, text_y + 194U,
+                    graphics_draw_text(text_x, text_y + 156U,
                                        installer_firmware == NEXUS_FIRMWARE_UEFI
                                            ? "FIRMWARE PLAN: UEFI / GPT"
                                            : (installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS
@@ -293,7 +295,7 @@ static void draw_shell(void) {
                                                : "FIRMWARE PLAN: UEFI + BIOS / GPT"),
                                        1, 108, 216, 229);
                     if (installer_plan_valid) {
-                        graphics_draw_text(text_x, text_y + 222U,
+                        graphics_draw_text(text_x, text_y + 180U,
                                            "PROPOSED PARTITIONS (READ ONLY)",
                                            1, 119, 229, 211);
                         for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
@@ -314,7 +316,7 @@ static void draw_shell(void) {
                                 sectors_per_mib;
                             char size_text[21];
                             format_u64(size_mib, size_text);
-                            const uint64_t row_y = text_y + 246U + i * 20U;
+                            const uint64_t row_y = text_y + 202U + i * 16U;
                             graphics_draw_text(text_x, row_y, label,
                                                1, 233, 243, 252);
                             graphics_draw_text(text_x + 190U, row_y,
@@ -323,19 +325,19 @@ static void draw_shell(void) {
                                                "MiB", 1, 170, 191, 211);
                         }
                     } else {
-                        graphics_draw_text(text_x, text_y + 222U,
+                        graphics_draw_text(text_x, text_y + 194U,
                                            "DISK TOO SMALL OR LAYOUT UNSUPPORTED",
                                            1, 239, 177, 119);
                     }
-                    graphics_draw_text(text_x, text_y + 354U,
+                    graphics_draw_text(text_x, text_y + 274U,
                                        installer_target_status(device), 1,
                                        170, 225, 190);
                 }
             }
-            graphics_draw_text(text_x, text_y + 378U,
+            graphics_draw_text(text_x, text_y + 298U,
                                "UP/DOWN DRIVE  F1 UEFI  F2 BIOS  F3 DUAL",
                                1, 170, 191, 211);
-            graphics_draw_text(text_x, text_y + 398U,
+            graphics_draw_text(text_x, text_y + 316U,
                                "ENTER CONTINUE  ESC HOME",
                                1, 170, 191, 211);
         } else {
@@ -344,20 +346,20 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, text_y, "NEXUS INSTALLATION WIZARD",
                                2, 239, 249, 255);
             if (device != NULL) {
-                graphics_draw_text(text_x, text_y + 44U, device->model,
+                graphics_draw_text(text_x, text_y + 36U, device->model,
                                    1, 170, 225, 190);
-                graphics_draw_text(text_x, text_y + 66U, device->stable_id,
+                graphics_draw_text(text_x, text_y + 54U, device->stable_id,
                                    1, 119, 229, 211);
             }
             if (installer_ui_state == INSTALLER_UI_CONFIRM_ID) {
-                graphics_draw_text(text_x, text_y + 116U,
+                graphics_draw_text(text_x, text_y + 100U,
                                    "TYPE THE COMPLETE TARGET ID TO CONTINUE",
                                    1, 239, 177, 119);
             } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
                 graphics_draw_text(text_x, text_y + 116U,
                                    "FINAL WARNING: THIS ERASES THE SELECTED DISK",
                                    1, 239, 177, 119);
-                graphics_draw_text(text_x, text_y + 140U,
+                graphics_draw_text(text_x, text_y + 120U,
                                    "TYPE ERASE TO AUTHORIZE THE INSTALL",
                                    1, 239, 177, 119);
             } else if (installer_ui_state == INSTALLER_UI_RUNNING) {
@@ -376,7 +378,7 @@ static void draw_shell(void) {
                                    "INSTALLATION STOPPED - RECOVERY MAY BE REQUIRED",
                                    1, 239, 177, 119);
             }
-            graphics_draw_text(text_x, text_y + 188U, installer_status_text,
+            graphics_draw_text(text_x, text_y + 160U, installer_status_text,
                                1, 170, 225, 190);
             if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
                 installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
@@ -384,10 +386,10 @@ static void draw_shell(void) {
                                    11, 20, 39);
                 graphics_draw_rect(text_x, text_y + 222U, 520U, 30U,
                                    56, 88, 119);
-                graphics_draw_text(text_x + 8U, text_y + 232U,
+                graphics_draw_text(text_x + 8U, text_y + 204U,
                                    installer_input, 1, 239, 249, 255);
             }
-            graphics_draw_text(text_x, text_y + 294U,
+            graphics_draw_text(text_x, text_y + 260U,
                                "ENTER CONFIRM  BACKSPACE EDIT  ESC CANCEL",
                                1, 170, 191, 211);
         }

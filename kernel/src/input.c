@@ -188,6 +188,9 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
     uint8_t scancodes[8];
     const size_t count = usb_hid_keyboard_decode(report, scancodes,
                                                  sizeof(scancodes));
+    uint64_t interrupt_flags;
+    __asm__ volatile ("pushfq; popq %0; cli"
+                      : "=r"(interrupt_flags) : : "memory", "cc");
     for (size_t i = 0U; i < count; ++i) {
         struct nexus_input_event event = {
             .type = NEXUS_INPUT_KEYBOARD,
@@ -197,9 +200,13 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
             .mouse_dy = 0
         };
         queue_event(&event);
+    }
+    __asm__ volatile ("pushq %0; popfq"
+                      : : "r"(interrupt_flags) : "memory", "cc");
+    for (size_t i = 0U; i < count; ++i) {
         serial_write("INPUT: USB HID keyboard scancode=");
         serial_write_hex(scancodes[i]);
-        serial_write("\r\n");
+        serial_write("\\r\\n");
     }
 }
 

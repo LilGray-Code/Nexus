@@ -516,13 +516,15 @@ jobs:
         run: |
           set -euo pipefail
           EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" ./build/build-iso.sh
-          truncate -s 16G /tmp/nexus-sata-target.img
+          truncate -s 16G /tmp/nexus-sata-target.img /tmp/nexus-sata-decoy.img
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-sata-vars.fd
           rm -f /tmp/nexus-sata-installer-qmp.sock installer-sata-serial.log
           qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-sata-vars.fd \
+            -drive file=/tmp/nexus-sata-decoy.img,if=none,id=nvme0,format=raw \
+            -device nvme,drive=nvme0,serial=NEXUSNVME0002 \
             -drive file=/tmp/nexus-sata-target.img,if=ide,index=0,format=raw \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso -boot order=d \
             -display none -serial file:installer-sata-serial.log \
@@ -569,22 +571,27 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-          # Open Install (F5), select the single NVMe target, and confirm its
-          # exact stable identifier followed by the separate ERASE phrase.
+          # Two eligible disks are attached: an NVMe decoy first and the
+          # intended SATA target second. The installer must honor the user's
+          # Down-arrow selection and never write to the unselected NVMe disk.
           key("f5")
           time.sleep(0.4)
+          key("down")
           import re
           deadline = time.time() + 10
           stable_id = None
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
-              match = re.search(r"NEXUS INSTALLER TARGET: ([A-Za-z0-9_-]+)", log)
-              if match:
-                  stable_id = match.group(1).lower()
+              matches = re.findall(
+                  r"NEXUS INSTALLER TARGET SELECTED: ([A-Za-z0-9_-]+)", log)
+              if matches:
+                  stable_id = matches[-1].lower()
                   break
               time.sleep(0.2)
           if stable_id is None:
-              raise SystemExit("Installer did not expose the selected disk's stable ID")
+              raise SystemExit("Installer did not log the user's selected disk")
+          if not stable_id.startswith("sata-"):
+              raise SystemExit(f"Installer selected the wrong disk: {stable_id}")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
           key("ret")
           for char in stable_id:
@@ -612,9 +619,28 @@ jobs:
           cat installer-sata-serial.log
           grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installer-sata-serial.log
           grep -q "NEXUS INSTALLER RESULT: SUCCESS" installer-sata-serial.log
+          grep -q "NEXUS INSTALLER TARGET SELECTED: SATA-" installer-sata-serial.log
           kill "$QEMU_PID" 2>/dev/null || true
           wait "$QEMU_PID" 2>/dev/null || true
           trap - EXIT
+          python3 - <<'PY'
+          import os
+
+          path = "/tmp/nexus-sata-decoy.img"
+          size = os.path.getsize(path)
+          if size % 512:
+              raise SystemExit("NVMe decoy has an invalid sector-aligned size")
+          sectors = size // 512
+          # GPT's primary and backup headers/entry arrays must remain untouched.
+          probe = list(range(0, 34)) + list(range(sectors - 33, sectors))
+          with open(path, "rb") as disk:
+              for lba in probe:
+                  disk.seek(lba * 512)
+                  if any(disk.read(512)):
+                      raise SystemExit(
+                          f"Unselected NVMe decoy was modified at LBA {lba}")
+          print("Unselected NVMe decoy remained untouched")
+          PY
           sfdisk --dump /tmp/nexus-sata-target.img
           dd if=/tmp/nexus-sata-target.img of=/tmp/nexus-sata-esp.img \
             bs=512 skip=2048 count=1048576 status=none

@@ -450,8 +450,12 @@ int main(int argc,char **argv) {
     }
     assert(kernel_entry!=NULL&&kernel_entry->size==kernel_payload_size);
     assert(manifest_entry!=NULL&&manifest_entry->size>0U);
-    assert(nxfs_read_file(kernel_entry,0U,kernel_entry->size,system_readback));
-    assert(memcmp(system_readback,kernel_payload,kernel_entry->size)==0);
+    for(uint32_t offset=0U;offset<kernel_entry->size;offset+=sizeof(system_readback)){
+        const uint32_t amount=kernel_entry->size-offset<sizeof(system_readback)
+            ?kernel_entry->size-offset:(uint32_t)sizeof(system_readback);
+        assert(nxfs_read_file(kernel_entry,offset,amount,system_readback));
+        assert(memcmp(system_readback,kernel_payload+offset,amount)==0);
+    }
     for(uint32_t offset=0U;offset<system_entry->size;offset+=sizeof(system_readback)){
         const uint32_t amount=system_entry->size-offset<sizeof(system_readback)
             ?system_entry->size-offset:(uint32_t)sizeof(system_readback);

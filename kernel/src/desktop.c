@@ -41,6 +41,7 @@ static bool keyboard_right_shift;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
+static void desktop_reboot_after_install(void);
 static char terminal_scancode_char(uint8_t code);
 static void scan_files_once(void);
 static void refresh_files_listing(void);
@@ -673,7 +674,7 @@ static void draw_shell(void) {
                                    "INSTALLATION DEPLOYMENT COMPLETED",
                                    1, 108, 216, 229);
                 graphics_draw_text(text_x, text_y + 146U,
-                                   "SHUT DOWN, REMOVE THE LIVE MEDIA, THEN BOOT",
+                                   "REMOVE USB MEDIA, THEN PRESS ENTER TO REBOOT",
                                    1, 170, 225, 190);
             } else if (installer_ui_state == INSTALLER_UI_FAILED) {
                 graphics_draw_text(text_x, text_y + 116U,
@@ -977,8 +978,10 @@ static void draw_shell(void) {
                            1, 170, 191, 211);
     }
 
-    desktop_draw_taskbar(bottom_bar);
-    desktop_draw_start_menu(bottom_bar);
+    if (!installer_environment) {
+        desktop_draw_taskbar(bottom_bar);
+        desktop_draw_start_menu(bottom_bar);
+    }
 }
 
 bool desktop_show(const struct limine_framebuffer *framebuffer) {
@@ -1031,6 +1034,13 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     serial_write("DESKTOP: interactive framebuffer shell rendered\r\n");
     serial_write("NEXUS DESKTOP FRAMEBUFFER READY\r\n");
     return true;
+}
+
+static void desktop_reboot_after_install(void) {
+    /* Request a hardware reset through the legacy 8042 controller. */
+    const uint8_t reset_command = 0xFEU;
+    __asm__ volatile ("cli; outb %0, %1" : : "a"(reset_command), "Nd"((uint16_t)0x64U));
+    for (;;) __asm__ volatile ("hlt" ::: "memory");
 }
 
 static void draw_pointer(void) {
@@ -2540,7 +2550,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
         } else if (installer_ui_state == INSTALLER_UI_COMPLETE ||
                    installer_ui_state == INSTALLER_UI_FAILED) {
-            if (event->scancode == 0x1CU) {
+            if (event->scancode == 0x1CU && installer_ui_state == INSTALLER_UI_COMPLETE) {
+                desktop_reboot_after_install();
+            } else if (event->scancode == 0x1CU) {
                 installer_ui_state = INSTALLER_UI_SELECT;
                 installer_input_length = 0U;
                 installer_input[0] = '\0';

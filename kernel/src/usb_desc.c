@@ -52,7 +52,13 @@ bool nexus_usb_find_bulk_interface(
             const uint16_t packet = (uint16_t)(
                 configuration[offset + 4U] |
                 ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
-            if (attributes == 2U && packet != 0U) {
+            const uint8_t endpoint_number = address & 0x0FU;
+            const bool valid_packet = packet == 8U || packet == 16U ||
+                packet == 32U || packet == 64U || packet == 512U ||
+                packet == 1024U;
+            if (endpoint_number == 0U || (address & 0x70U) != 0U)
+                return false;
+            if (attributes == 2U && valid_packet) {
                 if ((address & 0x80U) != 0U &&
                     (address & 0x0FU) != 0U &&
                     candidate.bulk_in_endpoint == 0U) {

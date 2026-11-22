@@ -197,3 +197,11 @@ bool storage_probe(void) {
 size_t storage_controller_count(void) {
     return controller_count;
 }
+
+bool storage_run_selftests(void) {
+#ifdef NEXUS_STORAGE_SELFTEST
+    return ahci_storage_selftest();
+#else
+    return true;
+#endif
+}

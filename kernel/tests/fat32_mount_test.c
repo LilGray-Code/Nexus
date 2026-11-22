@@ -171,13 +171,19 @@ static void format_minimal_fat32(void) {
     put16(directory_entry + 26U, 5U);
     directory_entry[32U] = 0U;
 
-    /* One file in cluster five verifies independent subdirectory scanning. */
+    /* One file in cluster five verifies nested listing and file reads. */
     uint8_t *nested = disk[TEST_PARTITION_START + TEST_DATA_START + 3U];
     memcpy(nested, "INNER   TXT", 11U);
     nested[11U] = 0x20U;
-    /* Keep the cluster fully occupied so enumeration must follow its FAT link. */
+    put16(nested + 20U, 0U);
+    put16(nested + 26U, 6U);
+    put32(nested + 28U, 4U);
+    /* Keep the cluster occupied so enumeration must follow its FAT link. */
     for (size_t slot = 1U; slot < 16U; ++slot)
         nested[slot * 32U] = 0xE5U;
+    uint8_t *fat_table = disk[TEST_PARTITION_START + TEST_RESERVED_SECTORS];
+    put32(fat_table + 6U * 4U, 0x0FFFFFFFU);
+    memcpy(disk[TEST_PARTITION_START + TEST_DATA_START + 4U], "NEXUS", 5U);
 
     /* Mark the first unused slot so enumeration terminates normally. */
     disk[TEST_PARTITION_START + TEST_DATA_START + 2U][11U * 32U] = 0U;
@@ -214,6 +220,11 @@ int main(void) {
     assert(fat32_read_directory(directory->first_cluster));
     assert(fat32_root_entry_count() == 1U);
     assert(strcmp(fat32_root_entry_at(0U)->name, "INNER.TXT") == 0);
+    const struct nexus_fat32_entry *inner = fat32_root_entry_at(0U);
+    assert(inner != NULL && inner->size == 4U && inner->first_cluster == 6U);
+    uint8_t nested_data[4U];
+    assert(fat32_read_file(inner, 0U, sizeof(nested_data), nested_data));
+    assert(memcmp(nested_data, "NEXU", sizeof(nested_data)) == 0);
     /* Invalid navigation must leave the current directory listing intact. */
     assert(!fat32_read_directory(0U));
     assert(fat32_root_entry_count() == 1U);

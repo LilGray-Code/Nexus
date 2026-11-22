@@ -1144,12 +1144,29 @@ static char terminal_scancode_char(uint8_t code) {
         [0x18]='o',[0x19]='p',[0x1A]='[',[0x1B]=']',[0x1E]='a',
         [0x1F]='s',[0x20]='d',[0x21]='f',[0x22]='g',[0x23]='h',
         [0x24]='j',[0x25]='k',[0x26]='l',[0x27]=';',[0x28]='\'',
-        [0x29]='`',[0x2B]='\\',[0x2C]='z',[0x2D]='x',[0x2E]='c',
+        [0x29]=0x60,[0x2B]='\\',[0x2C]='z',[0x2D]='x',[0x2E]='c',
         [0x2F]='v',[0x30]='b',[0x31]='n',[0x32]='m',[0x33]=',',
         [0x34]='.',[0x35]='/',[0x39]=' '
     };
     static const char shifted_map[58] = {
-        [0x02]='!',[0x03]='@',[0x04]='#',[0x05]='
+        [0x02]='!',[0x03]='@',[0x04]='#',[0x05]='$',[0x06]='%',
+        [0x07]='^',[0x08]='&',[0x09]='*',[0x0A]='(',[0x0B]=')',
+        [0x0C]='_',[0x0D]='+',[0x1A]='{',[0x1B]='}',[0x27]=':',
+        [0x28]='"',[0x29]='~',[0x2B]='|',[0x33]='<',[0x34]='>',
+        [0x35]='?',[0x39]=' '
+    };
+    if (code >= sizeof(normal_map)) return '\0';
+
+    const bool shifted = keyboard_left_shift || keyboard_right_shift;
+    char value = normal_map[code];
+    if (value >= 'a' && value <= 'z') {
+        if (keyboard_caps_lock != shifted)
+            value = (char)(value - 'a' + 'A');
+    } else if (shifted) {
+        value = shifted_map[code];
+    }
+    return value;
+}
 
 static void browser_set_status(const char *message) {
     size_t i = 0U;

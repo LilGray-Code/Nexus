@@ -217,3 +217,23 @@ bool input_pop_event(struct nexus_input_event *event) {
     event_head = (uint8_t)((event_head + 1U) & PS2_QUEUE_MASK);
     return true;
 }
+
+
+void input_usb_mouse_report(const uint8_t report[3]) {
+    struct nexus_usb_mouse_event decoded;
+    if (!usb_hid_mouse_decode(report, &decoded)) return;
+
+    uint64_t interrupt_flags;
+    __asm__ volatile ("pushfq; popq %0; cli"
+                      : "=r"(interrupt_flags) : : "memory", "cc");
+    const struct nexus_input_event event = {
+        .type = NEXUS_INPUT_MOUSE,
+        .scancode = 0U,
+        .mouse_buttons = decoded.buttons,
+        .mouse_dx = decoded.dx,
+        .mouse_dy = decoded.dy
+    };
+    queue_event(&event);
+    __asm__ volatile ("pushq %0; popfq"
+                      : : "r"(interrupt_flags) : "memory", "cc");
+}

@@ -54,7 +54,7 @@ int main(void) {
     assert(!wifi_parse_beacon_frame(frame,n,-30,&network));
 
     n = make_frame(frame,0x0080U,false,0U);
-    frame[37]=250U; /* Invalid DS channel. */
+    frame[44]=250U; /* Invalid DS channel. */
     assert(!wifi_parse_beacon_frame(frame,n,-30,&network));
 
     n = make_frame(frame,0x0080U,true,2U);
@@ -62,7 +62,12 @@ int main(void) {
     assert(!wifi_parse_beacon_frame(frame,n,-30,&network));
 
     n = make_frame(frame,0x0080U,false,0U);
-    frame[n-1U]=0xFFU; /* Truncated trailing information element. */
-    assert(!wifi_parse_beacon_frame(frame,n,-30,&network));
+    frame[n]=0U; /* One-byte trailing IE header is truncated. */
+    assert(!wifi_parse_beacon_frame(frame,n+1U,-30,&network));
+
+    n = make_frame(frame,0x0080U,false,0U);
+    frame[n++]=221U; frame[n++]=4U;
+    frame[n++]=0x00U; frame[n++]=0x50U; frame[n++]=0xF2U; frame[n++]=1U;
+    assert(!wifi_parse_beacon_frame(frame,n,-30,&network)); /* WPA1 is not open. */
     return 0;
 }

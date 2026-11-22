@@ -81,6 +81,15 @@ int main(void) {
  d[6]=(struct dyn){0,0};
  d[5].value=16; /* malformed RELA entry size */
  assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
+ d[5].value=24;
+ d[4].tag=0; /* RELA address without a matching size/entry-size tuple. */
+ assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
+ d[4].tag=8;
+ d[3].tag=7;
+ d[3].value=0x1090;
+ d[4].tag=7; /* Duplicate DT_RELA entries are ambiguous and rejected. */
+ assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
+ d[4].tag=8;
  h->type=2; /* Static ET_EXEC is not a PIE image. */
  assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
  return 0;

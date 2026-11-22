@@ -41,6 +41,10 @@ static void test_reject_unsafe_or_ambiguous_inputs(void) {
     assert(!nexus_browser_url_parse("http://example.com:65536/", &url));
     assert(!nexus_browser_url_parse("http://example.com:abc/", &url));
     assert(!nexus_browser_url_parse("http://bad_host/", &url));
+    assert(!nexus_browser_url_parse("http://example..com/", &url));
+    assert(!nexus_browser_url_parse("http://-example.com/", &url));
+    assert(!nexus_browser_url_parse("http://example-.com/", &url));
+    assert(!nexus_browser_url_parse("http://abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com/", &url));
     assert(!nexus_browser_url_parse("http://example.com/a b", &url));
 }
 

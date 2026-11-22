@@ -2437,7 +2437,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             installer_ui_state == INSTALLER_UI_RUNNING) return;
         if (event->scancode == 0x01U) {
             if (installer_ui_state == INSTALLER_UI_SELECT) {
-                active_view = DESKTOP_HOME;
+                /* A live installer boot is a dedicated environment, not a
+                 * desktop session with an installer window to dismiss. */
+                if (!installer_environment) active_view = DESKTOP_HOME;
             } else {
                 installer_ui_state = INSTALLER_UI_SELECT;
                 installer_input_length = 0U;

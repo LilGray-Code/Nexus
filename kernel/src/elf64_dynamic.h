@@ -23,4 +23,13 @@ struct nexus_elf64_dynamic_info {
 bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
                                struct nexus_elf64_dynamic_info *info);
 
+/* Apply only symbol-free R_X86_64_RELATIVE relocations. image represents the
+ * contiguous virtual range [virtual_base, virtual_base + image_size).
+ * Every relocation target must lie in a writable PT_LOAD segment.
+ */
+bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
+                                        uint64_t virtual_base,
+                                        uint8_t *image, size_t image_size,
+                                        uint64_t load_bias);
+
 #endif

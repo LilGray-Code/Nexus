@@ -646,6 +646,21 @@ bool ahci_init_controller(const struct nexus_pci_device *device) {
 
 bool ahci_storage_selftest(void) {
 #ifdef NEXUS_STORAGE_SELFTEST
+    bool have_ahci_disk = false;
+    for (size_t port = 0U; port < registered_port_count; ++port) {
+        struct ahci_port_state *state = &registered_ports[port];
+        for (size_t i = 0U; i < blockdev_count(); ++i) {
+            const struct nexus_block_device *device = blockdev_at(i);
+            if (device != NULL && device->context == state &&
+                device->transport == NEXUS_BLOCKDEV_TRANSPORT_AHCI) {
+                have_ahci_disk = true;
+                break;
+            }
+        }
+        if (have_ahci_disk) break;
+    }
+    /* Live USB/optical boots may not have an AHCI target disk attached. */
+    if (!have_ahci_disk) return true;
     if (!blockdev_boot_media_detection_complete()) {
         serial_write("AHCI: refusing write self-test before boot-media identification\\r\\n");
         return false;

@@ -29,7 +29,11 @@ static bool allocate_table(uint64_t *physical,
 
     volatile uint64_t *table =
         (volatile uint64_t *)memory_phys_to_virt(*physical);
-    if (table == NULL) return false;
+    if (table == NULL) {
+        /* Do not leak a page when its direct-map alias is unavailable. */
+        (void)memory_free_page(*physical);
+        return false;
+    }
 
     for (unsigned int i = 0; i < 512; ++i) table[i] = 0;
     *virtual_table = table;

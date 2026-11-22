@@ -21,6 +21,7 @@ struct nexus_fat32_entry {
 bool fat32_mount(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition);
 /* Load a FAT32 directory cluster chain into the bounded directory cache. */
+uint32_t fat32_root_cluster(void);
 bool fat32_read_directory(uint32_t first_cluster);
 size_t fat32_root_entry_count(void);
 const struct nexus_fat32_entry *fat32_root_entry_at(size_t index);

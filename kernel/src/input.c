@@ -94,6 +94,26 @@ static void queue_event(const struct nexus_input_event *event) {
     event_tail = next;
 }
 
+static uint64_t input_interrupt_save(void) {
+#ifdef NEXUS_INPUT_HOST_TEST
+    return 0U;
+#else
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0; cli"
+                      : "=r"(flags) : : "memory", "cc");
+    return flags;
+#endif
+}
+
+static void input_interrupt_restore(uint64_t flags) {
+#ifdef NEXUS_INPUT_HOST_TEST
+    (void)flags;
+#else
+    __asm__ volatile ("pushq %0; popfq"
+                      : : "r"(flags) : "memory", "cc");
+#endif
+}
+
 bool input_init(void) {
     event_head = 0;
     event_tail = 0;
@@ -188,9 +208,7 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
     uint8_t scancodes[8];
     const size_t count = usb_hid_keyboard_decode(report, scancodes,
                                                  sizeof(scancodes));
-    uint64_t interrupt_flags;
-    __asm__ volatile ("pushfq; popq %0; cli"
-                      : "=r"(interrupt_flags) : : "memory", "cc");
+    const uint64_t interrupt_flags = input_interrupt_save();
     for (size_t i = 0U; i < count; ++i) {
         struct nexus_input_event event = {
             .type = NEXUS_INPUT_KEYBOARD,
@@ -201,8 +219,7 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
         };
         queue_event(&event);
     }
-    __asm__ volatile ("pushq %0; popfq"
-                      : : "r"(interrupt_flags) : "memory", "cc");
+    input_interrupt_restore(interrupt_flags);
     for (size_t i = 0U; i < count; ++i) {
         serial_write("INPUT: USB HID keyboard scancode=");
         serial_write_hex(scancodes[i]);
@@ -223,9 +240,7 @@ void input_usb_mouse_report(const uint8_t report[3]) {
     struct nexus_usb_mouse_event decoded;
     if (!usb_hid_mouse_decode(report, &decoded)) return;
 
-    uint64_t interrupt_flags;
-    __asm__ volatile ("pushfq; popq %0; cli"
-                      : "=r"(interrupt_flags) : : "memory", "cc");
+    const uint64_t interrupt_flags = input_interrupt_save();
     const struct nexus_input_event event = {
         .type = NEXUS_INPUT_MOUSE,
         .scancode = 0U,
@@ -234,6 +249,5 @@ void input_usb_mouse_report(const uint8_t report[3]) {
         .mouse_dy = decoded.dy
     };
     queue_event(&event);
-    __asm__ volatile ("pushq %0; popfq"
-                      : : "r"(interrupt_flags) : "memory", "cc");
+    input_interrupt_restore(interrupt_flags);
 }

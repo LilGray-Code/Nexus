@@ -110,11 +110,13 @@ certification has been completed.
 ## Current user-file manager
 
 The installed Files view currently exposes a flat root directory with up to
-64 indexed entries and eight visible entries at a time. Keyboard arrow keys
-and mouse selection navigate the view. Users can create, open, edit, save, and
-delete supported files. The built-in editor is limited to 4 KiB of ASCII text,
-and current filenames use an 8.3-style format. This is a bounded basic file
-manager, not a complete hierarchical desktop file manager.
+128 indexed entries and six visible entries at a time. Keyboard arrow keys,
+page navigation, and mouse selection navigate the view. Users can create,
+open, edit, save, and delete supported files. The built-in editor supports
+files up to 1 MiB and reads persistent files in bounded 4 KiB VFS chunks.
+Current filenames are limited to 31 characters using letters, digits,
+underscores, hyphens, and at most one period. The editor is a basic ASCII-text
+editor; this is not yet a complete hierarchical desktop file manager.
 
 ## Known limits
 

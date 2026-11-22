@@ -225,6 +225,18 @@ int main(void) {
     uint8_t nested_data[4U];
     assert(fat32_read_file(inner, 0U, sizeof(nested_data), nested_data));
     assert(memcmp(nested_data, "NEXU", sizeof(nested_data)) == 0);
+
+    /*
+     * File handles retain a metadata snapshot. Loading another directory
+     * replaces the shared listing cache, but must not corrupt an open file.
+     */
+    const struct nexus_fat32_entry open_file_snapshot = *inner;
+    assert(fat32_read_directory(2U));
+    assert(fat32_read_file(&open_file_snapshot, 0U, sizeof(nested_data),
+                           nested_data));
+    assert(memcmp(nested_data, "NEXU", sizeof(nested_data)) == 0);
+    assert(fat32_read_directory(5U));
+
     /* Invalid navigation must leave the current directory listing intact. */
     assert(!fat32_read_directory(0U));
     assert(fat32_root_entry_count() == 1U);

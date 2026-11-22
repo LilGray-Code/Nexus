@@ -82,6 +82,8 @@ static size_t files_edit_name_length;
 static size_t files_edit_content_length;
 static size_t files_edit_view_offset;
 static bool files_edit_follow_end;
+static bool files_delete_pending;
+static char files_delete_name[NEXUS_VFS_NAME_MAX];
 static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
@@ -1000,6 +1002,13 @@ static void draw_shell(void) {
             }
         }
         if (files_vfs_ready) {
+            if (files_delete_pending) {
+                graphics_draw_text(text_x, text_y + 340U,
+                    "DELETE FILE? Y CONFIRM  N / ESC CANCEL",
+                    1U, 255U, 177U, 119U);
+                graphics_draw_text(text_x, text_y + 360U,
+                    files_delete_name, 1U, 239U, 249U, 255U);
+            }
             static const char *const actions[4] = {
                 "NEW FILE", "OPEN / EDIT", "DELETE", "REFRESH"
             };
@@ -1420,6 +1429,39 @@ static void files_editor_begin_selected(void) {
     files_editor_scroll_to_end();
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
+}
+
+static void files_request_delete_selected(void) {
+    struct nexus_vfs_dirent selected;
+    if (files_selected_index >= files_listing_count ||
+        !vfs_root_entry(files_selected_index, &selected) ||
+        selected.type != NEXUS_VFS_FILE) {
+        files_delete_pending = false;
+        return;
+    }
+    size_t i = 0U;
+    while (i < sizeof(files_delete_name) - 1U && selected.name[i] != '\0') {
+        files_delete_name[i] = selected.name[i];
+        ++i;
+    }
+    files_delete_name[i] = '\0';
+    files_delete_pending = true;
+}
+
+static void files_confirm_delete(void) {
+    if (!files_delete_pending) return;
+    if (vfs_remove_file(files_delete_name)) {
+        serial_write("FILES: removed writable file ");
+        serial_write(files_delete_name);
+        serial_write("\r\n");
+    } else {
+        serial_write("FILES: delete refused (read-only or unsupported file) ");
+        serial_write(files_delete_name);
+        serial_write("\r\n");
+    }
+    files_delete_pending = false;
+    files_delete_name[0] = '\0';
+    refresh_files_listing();
 }
 
 static bool files_editor_name_exists(void) {
@@ -2575,16 +2617,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 } else if (action == 1U) {
                     files_editor_begin_selected();
                 } else if (action == 2U) {
-                    struct nexus_vfs_dirent selected;
-                    if (files_selected_index < files_listing_count &&
-                        vfs_root_entry(files_selected_index, &selected) &&
-                        selected.type == NEXUS_VFS_FILE &&
-                        vfs_remove_file(selected.name)) {
-                        serial_write("FILES: removed writable file ");
-                        serial_write(selected.name);
-                        serial_write("\r\n");
-                    }
-                    refresh_files_listing();
+                    files_request_delete_selected();
                 } else if (action == 3U) {
                     refresh_files_listing();
                     serial_write("FILES: listing refreshed by mouse\r\n");
@@ -2896,6 +2929,19 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
+        if (files_delete_pending) {
+            if ((event->scancode & 0x80U) != 0U) return;
+            if (event->scancode == 0x15U) {
+                files_confirm_delete();
+            } else if (event->scancode == 0x31U ||
+                       event->scancode == 0x01U) {
+                files_delete_pending = false;
+                files_delete_name[0] = '\0';
+            }
+            draw_shell();
+            draw_pointer();
+            return;
+        }
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x31U) {
             files_editor_begin_new();
@@ -2948,17 +2994,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x53U &&
             files_selected_index < files_listing_count) {
-            struct nexus_vfs_dirent selected;
-            if (vfs_root_entry(files_selected_index, &selected) &&
-                selected.type == NEXUS_VFS_FILE &&
-                vfs_remove_file(selected.name)) {
-                serial_write("FILES: removed writable file ");
-                serial_write(selected.name);
-                serial_write("\r\n");
-            } else {
-                serial_write("FILES: delete refused (read-only or unsupported file)\r\n");
-            }
-            refresh_files_listing();
+            files_request_delete_selected();
             draw_shell();
             draw_pointer();
             return;

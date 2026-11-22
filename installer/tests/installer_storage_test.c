@@ -14,7 +14,7 @@
 #define EDGE_BLOCKS 64U
 #define FORMAT_BASE 2048U
 #define FORMAT_BLOCKS 4096U
-#define NXFS_TEST_AREA_BLOCKS 4096U
+#define NXFS_TEST_AREA_BLOCKS 16384U
 #define BIOS_TEST_AREA_BLOCKS 4096U
 
 struct mock_disk {
@@ -119,6 +119,7 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
     bool ok=fseek(f,(long)(DISK_BLOCKS*512ULL-1ULL),SEEK_SET)==0&&fputc(0,f)!=EOF;
     if(ok)ok=fseek(f,0,SEEK_SET)==0&&fwrite(disk->first,1U,sizeof(disk->first),f)==sizeof(disk->first);
     if(ok)ok=fseek(f,(long)(FORMAT_BASE*512ULL),SEEK_SET)==0&&fwrite(disk->format_area,1U,sizeof(disk->format_area),f)==sizeof(disk->format_area);
+    if(ok&&disk->nxfs_base!=0U)ok=fseek(f,(long)(disk->nxfs_base*512ULL),SEEK_SET)==0&&fwrite(disk->nxfs_area,1U,sizeof(disk->nxfs_area),f)==sizeof(disk->nxfs_area);
     if(ok&&disk->bios_base!=0U)ok=fseek(f,(long)(disk->bios_base*512ULL),SEEK_SET)==0&&fwrite(disk->bios_area,1U,sizeof(disk->bios_area),f)==sizeof(disk->bios_area);
     if(ok&&disk->recovery_base!=0U)ok=fseek(f,(long)(disk->recovery_base*512ULL),SEEK_SET)==0&&fwrite(disk->recovery_area,1U,sizeof(disk->recovery_area),f)==sizeof(disk->recovery_area);
     if(ok)ok=fseek(f,(long)((DISK_BLOCKS-EDGE_BLOCKS)*512ULL),SEEK_SET)==0&&fwrite(disk->last,1U,sizeof(disk->last),f)==sizeof(disk->last);
@@ -449,6 +450,8 @@ int main(int argc,char **argv) {
     }
     assert(kernel_entry!=NULL&&kernel_entry->size==kernel_payload_size);
     assert(manifest_entry!=NULL&&manifest_entry->size>0U);
+    assert(nxfs_read_file(kernel_entry,0U,kernel_entry->size,system_readback));
+    assert(memcmp(system_readback,kernel_payload,kernel_entry->size)==0);
     for(uint32_t offset=0U;offset<system_entry->size;offset+=sizeof(system_readback)){
         const uint32_t amount=system_entry->size-offset<sizeof(system_readback)
             ?system_entry->size-offset:(uint32_t)sizeof(system_readback);

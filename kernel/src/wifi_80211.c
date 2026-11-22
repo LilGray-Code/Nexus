@@ -30,10 +30,12 @@ static bool parse_rsn(const uint8_t *data, size_t length,
     if (data == NULL || security == NULL || length < 2U ||
         read_le16(data) != 1U) return false;
     size_t offset = 2U;
+    /* This parser only advertises networks the planned initial radio path
+     * can protect: CCMP-128 group and pairwise encryption. */
     if (length - offset < 6U || data[offset] != 0x00U ||
-        data[offset + 1U] != 0x0FU || data[offset + 2U] != 0xACU)
-        return false;
-    offset += 4U; /* Group cipher suite. */
+        data[offset + 1U] != 0x0FU || data[offset + 2U] != 0xACU ||
+        data[offset + 3U] != 4U) return false;
+    offset += 4U; /* CCMP-128 group cipher suite. */
 
     if (length - offset < 2U) return false;
     const uint16_t pairwise_count = read_le16(data + offset);
@@ -42,8 +44,7 @@ static bool parse_rsn(const uint8_t *data, size_t length,
         (size_t)pairwise_count > (length - offset) / 4U) return false;
     for (uint16_t i = 0U; i < pairwise_count; ++i) {
         const uint8_t *suite = data + offset + (size_t)i * 4U;
-        if (suite[0] != 0x00U || suite[1] != 0x0FU ||
-            suite[2] != 0xACU) return false;
+        if (!suite_is(suite, 4U)) return false;
     }
     offset += (size_t)pairwise_count * 4U;
 
@@ -63,8 +64,10 @@ static bool parse_rsn(const uint8_t *data, size_t length,
     offset += (size_t)akm_count * 4U;
 
     /* Optional RSN capabilities, PMKID list and group-management cipher. */
+    uint16_t capabilities = 0U;
     if (offset < length) {
         if (length - offset < 2U) return false;
+        capabilities = read_le16(data + offset);
         offset += 2U;
         if (offset < length) {
             if (length - offset < 2U) return false;
@@ -80,6 +83,9 @@ static bool parse_rsn(const uint8_t *data, size_t length,
         }
     }
     if (offset != length || (!has_psk && !has_sae)) return false;
+    /* WPA3-Personal requires both MFPC and MFPR. Do not label an SAE
+     * advertisement usable when management-frame protection is absent. */
+    if (has_sae && (capabilities & 0x00C0U) != 0x00C0U) return false;
     *security = has_sae ? NEXUS_WIFI_SECURITY_WPA3_SAE
                         : NEXUS_WIFI_SECURITY_WPA2_PSK;
     return true;

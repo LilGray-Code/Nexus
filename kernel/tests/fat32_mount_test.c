@@ -219,6 +219,14 @@ int main(void) {
     assert(fat32_read_directory(2U));
     assert(fat32_root_entry_count() == 41U);
 
+    /* A cyclic child directory chain is rejected without losing its parent. */
+    uint8_t *fat = disk[TEST_PARTITION_START + TEST_RESERVED_SECTORS];
+    put32(fat + 5U * 4U, 5U);
+    assert(!fat32_read_directory(5U));
+    assert(fat32_root_entry_count() == 41U);
+    assert(strcmp(fat32_root_entry_at(40U)->name, "SUBDIR") == 0);
+    put32(fat + 5U * 4U, 0x0FFFFFFFU);
+
     /* A damaged VFAT checksum must never rename the short directory entry. */
     uint8_t *lfn_record = disk[TEST_PARTITION_START + TEST_DATA_START] +
                            1U * 32U;

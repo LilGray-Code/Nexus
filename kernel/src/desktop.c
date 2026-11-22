@@ -328,7 +328,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                            names[i], 1U, 225U, 238U, 249U);
     }
     graphics_draw_text(menu_x + 14U, menu_y + menu_height - 12U,
-                       "F1-F5 OPEN APPS   F6 CLOSE MENU", 1U,
+                       "1-5 OPEN APPS   F6 CLOSE MENU", 1U,
                        140U, 170U, 195U);
 }
 
@@ -457,12 +457,12 @@ static void draw_shell(void) {
                                1U, 235U, 245U, 252U);
         }
 
-        graphics_draw_text(text_x, text_y + 164U, "AT A GLANCE",
+        graphics_draw_text(text_x, text_y + (panel_height < 360U ? 146U : 164U), "AT A GLANCE",
                            1U, 133U, 164U, 190U);
         const uint64_t card_gap = 10U;
         const uint64_t card_width = (panel_width - 84U) / 3U;
-        const uint64_t card_y = text_y + 181U;
-        const uint64_t card_h = 54U;
+        const uint64_t card_y = text_y + (panel_height < 360U ? 163U : 181U);
+        const uint64_t card_h = panel_height < 360U ? 44U : 54U;
         const char *card_labels[3] = {"FREE MEMORY", "UPTIME", "STORAGE"};
         char free_mem[21], uptime[21];
         format_u64(memory_free_bytes() / (1024U * 1024U), free_mem);
@@ -488,7 +488,7 @@ static void draw_shell(void) {
             uptime_value[uptime_pos] = uptime[uptime_pos];
             ++uptime_pos;
         }
-        const char *seconds_suffix = " SECONDS";
+        const char *seconds_suffix = "s";
         for (size_t n = 0U; seconds_suffix[n] != '\0' &&
              uptime_pos < sizeof(uptime_value) - 1U; ++n) {
             uptime_value[uptime_pos++] = seconds_suffix[n];
@@ -518,13 +518,13 @@ static void draw_shell(void) {
             } else {
                 const char *storage_label =
                     vfs_nxfs_mounted() && vfs_nxfs_writable()
-                        ? "PERSISTENT READY"
-                        : (vfs_root_mounted() ? "VOLUME MOUNTED" : "RAM ONLY");
+                        ? "NXFS READY"
+                        : (vfs_root_mounted() ? "MOUNTED" : "RAM ONLY");
                 graphics_draw_text(card_x + 11U, card_y + 34U,
                                    storage_label, 1U, 233U, 244U, 252U);
             }
         }
-        graphics_draw_text(text_x, panel_y + panel_height - 22U,
+        graphics_draw_text(text_x, panel_y + panel_height - 16U,
                            "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL   F5 INSTALL",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {

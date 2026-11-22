@@ -257,7 +257,7 @@ static void draw_shell(void) {
                 if (device != NULL) {
                     graphics_draw_text(text_x, text_y + 54U,
                                        "SELECTED DRIVE:", 1, 233, 243, 252);
-                    graphics_draw_text(text_x + 140U, text_y + 78U,
+                    graphics_draw_text(text_x + 140U, text_y + 54U,
                                        device->name, 1, 119, 229, 211);
                     graphics_draw_text(text_x, text_y + 72U,
                                        device->model, 1, 170, 225, 190);
@@ -271,9 +271,9 @@ static void draw_shell(void) {
                     format_u64(device->block_size, sector);
                     graphics_draw_text(text_x, text_y + 112U,
                                        "CAPACITY (GiB):", 1, 233, 243, 252);
-                    graphics_draw_text(text_x + 140U, text_y + 138U,
+                    graphics_draw_text(text_x + 140U, text_y + 112U,
                                        capacity, 1, 170, 225, 190);
-                    graphics_draw_text(text_x + 250U, text_y + 138U,
+                    graphics_draw_text(text_x + 250U, text_y + 112U,
                                        blockdev_identity_is_unique(device)
                                            ? "IDENTITY: UNIQUE"
                                            : "IDENTITY: NOT SAFE",
@@ -285,7 +285,7 @@ static void draw_shell(void) {
                                            ? 229 : 119);
                     graphics_draw_text(text_x, text_y + 134U,
                                        "LOGICAL SECTOR:", 1, 233, 243, 252);
-                    graphics_draw_text(text_x + 140U, text_y + 166U,
+                    graphics_draw_text(text_x + 140U, text_y + 134U,
                                        sector, 1, 170, 225, 190);
                     graphics_draw_text(text_x, text_y + 156U,
                                        installer_firmware == NEXUS_FIRMWARE_UEFI
@@ -359,7 +359,7 @@ static void draw_shell(void) {
                 graphics_draw_text(text_x, text_y + 116U,
                                    "FINAL WARNING: THIS ERASES THE SELECTED DISK",
                                    1, 239, 177, 119);
-                graphics_draw_text(text_x, text_y + 120U,
+                graphics_draw_text(text_x, text_y + 140U,
                                    "TYPE ERASE TO AUTHORIZE THE INSTALL",
                                    1, 239, 177, 119);
             } else if (installer_ui_state == INSTALLER_UI_RUNNING) {
@@ -382,9 +382,9 @@ static void draw_shell(void) {
                                1, 170, 225, 190);
             if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
                 installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
-                graphics_fill_rect(text_x, text_y + 222U, 520U, 30U,
+                graphics_fill_rect(text_x, text_y + 194U, 520U, 30U,
                                    11, 20, 39);
-                graphics_draw_rect(text_x, text_y + 222U, 520U, 30U,
+                graphics_draw_rect(text_x, text_y + 194U, 520U, 30U,
                                    56, 88, 119);
                 graphics_draw_text(text_x + 8U, text_y + 204U,
                                    installer_input, 1, 239, 249, 255);

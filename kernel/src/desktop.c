@@ -474,11 +474,21 @@ static void draw_shell(void) {
     const uint8_t base_r = settings_theme == 1U ? 5U : (settings_theme == 2U ? 24U : 5U);
     const uint8_t base_g = settings_theme == 1U ? 18U : (settings_theme == 2U ? 13U : 11U);
     const uint8_t base_b = settings_theme == 1U ? 38U : (settings_theme == 2U ? 22U : 25U);
-    for (uint64_t y = 0; y < height; ++y) {
-        const uint8_t red = (uint8_t)(base_r + (settings_wallpaper == 2U ? 0U : (y * 8U / height)));
-        const uint8_t green = (uint8_t)(base_g + (settings_wallpaper == 2U ? 0U : (y * 18U / height)));
-        const uint8_t blue = (uint8_t)(base_b + (settings_wallpaper == 2U ? 0U : (y * 34U / height)));
-        graphics_fill_rect(0U, y, width, 1U, red, green, blue);
+    /* Avoid one framebuffer operation per scanline. The old gradient loop
+     * issued hundreds of thousands of tiny drawing calls on high resolutions.
+     * A solid base plus a few broad wallpaper bands is much cheaper to repaint. */
+    graphics_fill_rect(0U, 0U, width, height, base_r, base_g, base_b);
+    if (settings_wallpaper != 2U && height > 8U) {
+        const uint64_t band_height = height / 3U;
+        graphics_fill_rect(0U, height / 3U, width, band_height,
+                           (uint8_t)(base_r + 2U),
+                           (uint8_t)(base_g + 4U),
+                           (uint8_t)(base_b + 8U));
+        graphics_fill_rect(0U, (height * 2U) / 3U, width,
+                           height - (height * 2U) / 3U,
+                           (uint8_t)(base_r + 4U),
+                           (uint8_t)(base_g + 8U),
+                           (uint8_t)(base_b + 15U));
     }
     /* Wallpaper selection changes the actual framebuffer composition. */
     if (settings_wallpaper != 2U) {
@@ -1100,25 +1110,80 @@ static void draw_shell(void) {
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_BROWSER) {
-        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - EARLY TEXT PREVIEW",
-                           2, 239, 249, 255);
-        graphics_draw_text(text_x, text_y + 38U, "HOST/PATH:",
-                           1, 108, 216, 229);
-        graphics_draw_text(text_x + 82U, text_y + 38U, browser_address,
-                           1, 239, 249, 255);
-        graphics_draw_text(text_x, text_y + 66U, browser_status,
-                           1, 170, 225, 190);
-        for (size_t row = 0; row < browser_line_count; ++row) {
-            graphics_draw_text(text_x, text_y + 108U + row * 24U,
-                               browser_lines[row], 1,
-                               233, 243, 252);
+        /* Modern first-party browser shell. This is deliberately labeled as a
+         * preview: the current transport and page renderer are still limited. */
+        graphics_fill_rect(panel_x + 18U, text_y - 8U,
+                           panel_width - 36U, 28U, 23U, 39U, 61U);
+        graphics_fill_rect(panel_x + 18U, text_y - 8U, 3U, 28U,
+                           57U, 190U, 207U);
+        graphics_draw_text(panel_x + 30U, text_y + 1U,
+                           "NEXUS BROWSER", 1U, 239U, 249U, 255U);
+        graphics_draw_text(panel_x + panel_width - 170U, text_y + 1U,
+                           "FIRST-PARTY PREVIEW", 1U, 120U, 190U, 207U);
+
+        const uint64_t toolbar_y = text_y + 32U;
+        graphics_fill_rect(panel_x + 18U, toolbar_y,
+                           panel_width - 36U, 38U, 12U, 21U, 36U);
+        graphics_draw_rect(panel_x + 18U, toolbar_y,
+                           panel_width - 36U, 38U, 49U, 78U, 103U);
+        graphics_draw_text(panel_x + 30U, toolbar_y + 15U,
+                           "<", 1U, 155U, 180U, 201U);
+        graphics_draw_text(panel_x + 52U, toolbar_y + 15U,
+                           ">", 1U, 155U, 180U, 201U);
+        graphics_draw_text(panel_x + 76U, toolbar_y + 15U,
+                           "R", 1U, 155U, 180U, 201U);
+        const uint64_t address_x = panel_x + 104U;
+        const uint64_t address_width = panel_width > 180U
+            ? panel_width - 140U : panel_width - 130U;
+        graphics_fill_rect(address_x, toolbar_y + 6U,
+                           address_width, 26U, 27U, 43U, 62U);
+        graphics_draw_rect(address_x, toolbar_y + 6U,
+                           address_width, 26U, 57U, 91U, 116U);
+        graphics_draw_text(address_x + 9U, toolbar_y + 15U,
+                           "HTTP  ", 1U, 226U, 181U, 112U);
+        graphics_draw_text(address_x + 52U, toolbar_y + 15U,
+                           browser_address[0] ? browser_address :
+                           "Enter a website address", 1U,
+                           230U, 240U, 248U);
+
+        const uint64_t tab_y = toolbar_y + 46U;
+        graphics_fill_rect(panel_x + 18U, tab_y,
+                           panel_width - 36U, 28U, 17U, 29U, 46U);
+        graphics_fill_rect(panel_x + 26U, tab_y + 2U,
+                           164U, 25U, 36U, 58U, 80U);
+        graphics_fill_rect(panel_x + 26U, tab_y + 25U,
+                           164U, 2U, 57U, 190U, 207U);
+        graphics_draw_text(panel_x + 38U, tab_y + 11U,
+                           "Nexus - New tab", 1U, 232U, 242U, 250U);
+        graphics_draw_text(panel_x + 202U, tab_y + 11U,
+                           "+", 1U, 150U, 181U, 202U);
+
+        const uint64_t content_y = tab_y + 42U;
+        graphics_fill_rect(panel_x + 18U, content_y,
+                           panel_width - 36U, panel_height > 250U
+                               ? panel_height - 160U : 90U,
+                           244U, 247U, 251U);
+        graphics_draw_text(panel_x + 42U, content_y + 28U,
+                           "Welcome to Nexus Browser", 2U,
+                           29U, 48U, 67U);
+        graphics_draw_text(panel_x + 42U, content_y + 58U,
+                           "A faster, more private web experience is being built.",
+                           1U, 83U, 103U, 122U);
+        graphics_draw_text(panel_x + 42U, content_y + 88U,
+                           "Type an address above and press ENTER to try the preview.",
+                           1U, 83U, 103U, 122U);
+        for (size_t row = 0U; row < browser_line_count; ++row) {
+            graphics_draw_text(panel_x + 42U, content_y + 122U + row * 20U,
+                               browser_lines[row], 1U, 37U, 57U, 75U);
         }
-        graphics_draw_text(text_x, text_y + 360U,
-                           "ENTER LOADS  BACKSPACE EDITS  ESC HOME",
-                           1, 170, 191, 211);
-        graphics_draw_text(text_x, text_y + 382U,
-                           "HTTP ONLY - NO TLS, SCRIPTS OR SECURE SITES",
-                           1, 239, 177, 119);
+        graphics_fill_rect(panel_x + 18U, panel_y + panel_height - 34U,
+                           panel_width - 36U, 22U, 17U, 29U, 46U);
+        graphics_draw_text(panel_x + 30U, panel_y + panel_height - 19U,
+                           browser_status, 1U, 160U, 207U, 196U);
+        graphics_draw_text(panel_x + panel_width - 300U,
+                           panel_y + panel_height - 19U,
+                           "HTTP ONLY - NO TLS OR JAVASCRIPT", 1U,
+                           230U, 177U, 122U);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
                            2, 239, 249, 255);

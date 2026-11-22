@@ -356,6 +356,15 @@ static void test_recovery_and_failures(void) {
            NEXUS_INSTALL_RESULT_SYSTEM_FORMAT);
     assert(journal_phase_count == 2U);
     assert(journal_phases[1] == NEXUS_JOURNAL_RECOVERY_REQUIRED);
+    /* The next explicit install attempt resumes from the durable journal
+     * without rewriting the already-committed GPT. */
+    fail_system = false;
+    journal_phase_count = 0U;
+    esp_formats = system_formats = payload_writes = boot_payload_writes = 0U;
+    assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
+           NEXUS_INSTALL_RESULT_OK);
+    assert(gpt_writes == 1U);
+    assert(esp_formats == 1U && system_formats == 2U);
 
     reset_test(); fail_payload = true;
     assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==

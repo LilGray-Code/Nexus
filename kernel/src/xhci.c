@@ -87,8 +87,15 @@ struct xhci_mmio_mapping {
     volatile uint32_t *virtual_page;
 };
 
-struct xhci_keyboard {
+enum xhci_hid_kind {
+    XHCI_HID_NONE = 0,
+    XHCI_HID_KEYBOARD = 1,
+    XHCI_HID_MOUSE = 2
+};
+
+struct xhci_hid_device {
     bool active;
+    enum xhci_hid_kind kind;
     uint8_t slot_id;
     uint8_t endpoint_id;
     uint16_t max_packet;
@@ -103,6 +110,7 @@ struct xhci_keyboard {
 struct xhci_controller {
     bool initialized;
     bool keyboard_active;
+    bool mouse_active;
     uint64_t bar_base;
     uint8_t cap_length;
     uint8_t max_slots;
@@ -122,7 +130,8 @@ struct xhci_controller {
     uint64_t erst_physical;
     struct xhci_mmio_mapping mappings[XHCI_MAX_MMIO_PAGES];
     size_t mapping_count;
-    struct xhci_keyboard keyboard;
+    struct xhci_hid_device keyboard;
+    struct xhci_hid_device mouse;
 };
 
 static struct xhci_controller controller;
@@ -383,7 +392,7 @@ static bool xhci_wait_transfer(struct xhci_controller *xhci,
 }
 
 static bool xhci_control_transfer(struct xhci_controller *xhci,
-                                  struct xhci_keyboard *device,
+                                  struct xhci_hid_device *device,
                                   uint8_t request_type, uint8_t request,
                                   uint16_t value, uint16_t index,
                                   void *buffer, uint16_t length) {
@@ -655,7 +664,7 @@ static bool xhci_command_enable_slot(struct xhci_controller *xhci,
 }
 
 static bool xhci_setup_device_context(struct xhci_controller *xhci,
-                                      struct xhci_keyboard *device,
+                                      struct xhci_hid_device *device,
                                       uint8_t port_number, uint8_t speed,
                                       uint16_t ep0_packet) {
     volatile uint8_t *input_page = NULL;
@@ -707,7 +716,7 @@ static bool xhci_setup_device_context(struct xhci_controller *xhci,
 }
 
 static bool xhci_update_ep0_packet(struct xhci_controller *xhci,
-                                   struct xhci_keyboard *device,
+                                   struct xhci_hid_device *device,
                                    uint16_t packet_size) {
     if (packet_size == 0U || packet_size > 512U) return false;
     volatile uint8_t *input_page =
@@ -735,7 +744,7 @@ static bool xhci_update_ep0_packet(struct xhci_controller *xhci,
 }
 
 static bool xhci_get_descriptor(struct xhci_controller *xhci,
-                                struct xhci_keyboard *device,
+                                struct xhci_hid_device *device,
                                 uint8_t descriptor_type, uint8_t descriptor_index,
                                 uint16_t language, uint16_t length,
                                 void *output) {
@@ -745,18 +754,20 @@ static bool xhci_get_descriptor(struct xhci_controller *xhci,
                                  value, language, output, length);
 }
 
-static bool xhci_find_boot_keyboard(const uint8_t *configuration,
-                                   size_t length, uint8_t *interface_number,
-                                   uint8_t *configuration_value,
-                                   uint8_t *endpoint_address,
-                                   uint16_t *max_packet, uint8_t *interval) {
+static bool xhci_find_boot_hid(const uint8_t *configuration,
+                                size_t length, uint8_t *interface_number,
+                                uint8_t *configuration_value,
+                                uint8_t *endpoint_address,
+                                uint16_t *max_packet, uint8_t *interval,
+                                enum xhci_hid_kind *kind) {
     if (configuration == NULL || length < 9U || interface_number == NULL ||
         configuration_value == NULL || endpoint_address == NULL ||
-        max_packet == NULL || interval == NULL) return false;
+        max_packet == NULL || interval == NULL || kind == NULL) return false;
 
-    bool in_boot_keyboard = false;
+    bool in_boot_hid = false;
     bool found = false;
     *configuration_value = configuration[5];
+    *kind = XHCI_HID_NONE;
     size_t offset = 0U;
     while (offset + 2U <= length) {
         const uint8_t descriptor_length = configuration[offset];
@@ -765,19 +776,27 @@ static bool xhci_find_boot_keyboard(const uint8_t *configuration,
             return false;
 
         if (descriptor_type == 4U && descriptor_length >= 9U) {
-            in_boot_keyboard = configuration[offset + 5U] == 3U &&
+            const bool boot_interface = configuration[offset + 5U] == 3U &&
                 configuration[offset + 6U] == 1U &&
-                configuration[offset + 7U] == 1U;
-            if (in_boot_keyboard) *interface_number = configuration[offset + 2U];
+                (configuration[offset + 7U] == 1U ||
+                 configuration[offset + 7U] == 2U);
+            in_boot_hid = boot_interface;
+            if (in_boot_hid) {
+                *interface_number = configuration[offset + 2U];
+                *kind = configuration[offset + 7U] == 1U
+                    ? XHCI_HID_KEYBOARD : XHCI_HID_MOUSE;
+            }
         } else if (descriptor_type == 5U && descriptor_length >= 7U &&
-                   in_boot_keyboard) {
+                   in_boot_hid) {
             const uint8_t address = configuration[offset + 2U];
             const uint8_t attributes = configuration[offset + 3U] & 0x03U;
             const uint16_t packet = (uint16_t)(
                 configuration[offset + 4U] |
                 ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
+            const uint16_t minimum_packet =
+                *kind == XHCI_HID_KEYBOARD ? 8U : 3U;
             if ((address & 0x80U) != 0U && attributes == 3U &&
-                packet >= 8U && packet <= 64U) {
+                packet >= minimum_packet && packet <= 64U) {
                 *endpoint_address = address;
                 *max_packet = packet;
                 *interval = configuration[offset + 6U];
@@ -787,7 +806,7 @@ static bool xhci_find_boot_keyboard(const uint8_t *configuration,
         }
         offset += descriptor_length;
     }
-    return found && *configuration_value != 0U;
+    return found && *configuration_value != 0U && *kind != XHCI_HID_NONE;
 }
 
 static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
@@ -805,8 +824,8 @@ static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
     return encoded > 15U ? 15U : (uint8_t)encoded;
 }
 
-static bool xhci_configure_keyboard_endpoint(struct xhci_controller *xhci,
-                                              struct xhci_keyboard *device,
+static bool xhci_configure_interrupt_endpoint(struct xhci_controller *xhci,
+                                              struct xhci_hid_device *device,
                                               uint8_t endpoint_address,
                                               uint16_t max_packet,
                                               uint8_t interval, uint8_t speed) {
@@ -857,8 +876,8 @@ static bool xhci_configure_keyboard_endpoint(struct xhci_controller *xhci,
                         ((uint32_t)device->slot_id << 24), NULL);
 }
 
-static bool xhci_schedule_keyboard_read(struct xhci_controller *xhci,
-                                         struct xhci_keyboard *device) {
+static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
+                                         struct xhci_hid_device *device) {
     if (device == NULL || !device->active ||
         device->interrupt_ring.trbs == NULL) return false;
     volatile struct xhci_trb *trb = xhci_ring_push(
@@ -875,11 +894,31 @@ static bool xhci_schedule_keyboard_read(struct xhci_controller *xhci,
     return true;
 }
 
-static bool xhci_enumerate_keyboard_port(struct xhci_controller *xhci,
-                                        uint8_t port_number, uint8_t speed,
-                                        struct xhci_keyboard *device) {
-    device->active = false;
-    device->slot_id = 0U;
+static void xhci_release_hid_device(struct xhci_controller *xhci,
+                                    struct xhci_hid_device *device) {
+    if (xhci == NULL || device == NULL) return;
+    if (device->slot_id != 0U) {
+        (void)xhci_disable_slot(xhci, device->slot_id);
+        if (xhci->dcbaa != NULL) xhci->dcbaa[device->slot_id] = 0U;
+    }
+    if (device->input_context_physical != 0U)
+        (void)memory_free_page(device->input_context_physical);
+    if (device->device_context_physical != 0U)
+        (void)memory_free_page(device->device_context_physical);
+    if (device->ep0_ring.physical != 0U)
+        (void)memory_free_page(device->ep0_ring.physical);
+    if (device->interrupt_ring.physical != 0U)
+        (void)memory_free_page(device->interrupt_ring.physical);
+    if (device->report_buffer_physical != 0U)
+        (void)memory_free_page(device->report_buffer_physical);
+    *device = (struct xhci_hid_device){0};
+}
+
+static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
+                                    uint8_t port_number, uint8_t speed,
+                                    struct xhci_hid_device *device) {
+    if (xhci == NULL || device == NULL) return false;
+    *device = (struct xhci_hid_device){0};
     if (!xhci_command_enable_slot(xhci, &device->slot_id)) return false;
 
     const uint16_t default_packet = speed == 3U ? 64U :
@@ -919,44 +958,34 @@ static bool xhci_enumerate_keyboard_port(struct xhci_controller *xhci,
     uint8_t endpoint_address = 0U;
     uint16_t max_packet = 0U;
     uint8_t interval = 0U;
-    const bool boot_keyboard = xhci_find_boot_keyboard(
+    enum xhci_hid_kind kind = XHCI_HID_NONE;
+    const bool boot_hid = xhci_find_boot_hid(
         (const uint8_t *)(uintptr_t)config_buffer, total_length,
         &interface_number, &configuration_value, &endpoint_address,
-        &max_packet, &interval);
+        &max_packet, &interval, &kind);
     (void)memory_free_page(config_buffer_physical);
-    if (!boot_keyboard) goto failed;
+    if (!boot_hid) goto failed;
 
     if (!xhci_control_transfer(xhci, device, 0x00U, 0x09U,
                                configuration_value, 0U, NULL, 0U)) goto failed;
-    /* HID Set_Protocol(Boot) on the boot-keyboard interface. */
+    /* HID Set_Protocol(Boot) on the selected boot interface. */
     if (!xhci_control_transfer(xhci, device, 0x21U, 0x0BU,
                                0U, interface_number, NULL, 0U)) goto failed;
-    if (!xhci_configure_keyboard_endpoint(xhci, device, endpoint_address,
-                                          max_packet, interval, speed))
+    if (!xhci_configure_interrupt_endpoint(xhci, device, endpoint_address,
+                                           max_packet, interval, speed))
         goto failed;
+    device->kind = kind;
     device->active = true;
-    if (!xhci_schedule_keyboard_read(xhci, device)) goto failed;
-    serial_write("USB: HID boot keyboard attached to xHCI port ");
+    if (!xhci_schedule_interrupt_read(xhci, device)) goto failed;
+    serial_write(kind == XHCI_HID_KEYBOARD
+        ? "USB: HID boot keyboard attached to xHCI port "
+        : "USB: HID boot mouse attached to xHCI port ");
     serial_write_hex(port_number);
     serial_write("\r\n");
     return true;
 
 failed:
-    if (device->slot_id != 0U) {
-        (void)xhci_disable_slot(xhci, device->slot_id);
-        xhci->dcbaa[device->slot_id] = 0U;
-    }
-    if (device->input_context_physical != 0U)
-        (void)memory_free_page(device->input_context_physical);
-    if (device->device_context_physical != 0U)
-        (void)memory_free_page(device->device_context_physical);
-    if (device->ep0_ring.physical != 0U)
-        (void)memory_free_page(device->ep0_ring.physical);
-    if (device->interrupt_ring.physical != 0U)
-        (void)memory_free_page(device->interrupt_ring.physical);
-    if (device->report_buffer_physical != 0U)
-        (void)memory_free_page(device->report_buffer_physical);
-    device->active = false;
+    xhci_release_hid_device(xhci, device);
     return false;
 }
 
@@ -1004,6 +1033,7 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     xhci->initialized = true;
 
     for (uint8_t port = 1U; port <= xhci->max_ports; ++port) {
+        if (xhci->keyboard_active && xhci->mouse_active) break;
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port, &speed)) continue;
         serial_write("xHCI: connected root port ");
@@ -1012,17 +1042,27 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         serial_write_hex(speed);
         serial_write("\r\n");
 
-        struct xhci_keyboard device = {0};
-        if (!xhci_enumerate_keyboard_port(xhci, port, speed, &device))
+        struct xhci_hid_device device = {0};
+        if (!xhci_enumerate_hid_port(xhci, port, speed, &device))
             continue;
-        xhci->keyboard = device;
-        xhci->keyboard_active = true;
-        xhci->initialized = true;
-        serial_write("NEXUS USB HID KEYBOARD READY\r\n");
-        return true;
+        if (device.kind == XHCI_HID_KEYBOARD && !xhci->keyboard_active) {
+            xhci->keyboard = device;
+            xhci->keyboard_active = true;
+            serial_write("NEXUS USB HID KEYBOARD READY\r\n");
+        } else if (device.kind == XHCI_HID_MOUSE && !xhci->mouse_active) {
+            xhci->mouse = device;
+            xhci->mouse_active = true;
+            serial_write("NEXUS USB HID MOUSE READY\r\n");
+        } else {
+            /* Only one boot keyboard and one boot mouse are retained. */
+            xhci_release_hid_device(xhci, &device);
+        }
     }
-    serial_write("xHCI: no directly attached HID boot keyboard found\r\n");
-    return false;
+    if (!xhci->keyboard_active && !xhci->mouse_active) {
+        serial_write("xHCI: no directly attached HID boot input found\r\n");
+        return false;
+    }
+    return true;
 }
 
 bool xhci_init(void) {
@@ -1038,10 +1078,20 @@ bool xhci_init(void) {
     return false;
 }
 
+bool xhci_keyboard_ready(void) {
+    return controller.initialized && controller.keyboard_active &&
+           controller.keyboard.active;
+}
+
+bool xhci_mouse_ready(void) {
+    return controller.initialized && controller.mouse_active &&
+           controller.mouse.active;
+}
+
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
-    if (!xhci->initialized || !xhci->keyboard_active ||
-        !xhci->keyboard.active) return;
+    if (!xhci->initialized ||
+        (!xhci->keyboard_active && !xhci->mouse_active)) return;
 
     struct xhci_trb event;
     while (xhci_event_next(xhci, &event)) {
@@ -1049,24 +1099,49 @@ void xhci_poll(void) {
         const uint8_t slot = (uint8_t)(event.control >> 24);
         const uint8_t endpoint =
             (uint8_t)((event.control >> 16) & 0x1FU);
-        if (slot != xhci->keyboard.slot_id ||
-            endpoint != xhci->keyboard.endpoint_id) continue;
+        struct xhci_hid_device *device = NULL;
+        if (xhci->keyboard_active &&
+            slot == xhci->keyboard.slot_id &&
+            endpoint == xhci->keyboard.endpoint_id) {
+            device = &xhci->keyboard;
+        } else if (xhci->mouse_active &&
+                   slot == xhci->mouse.slot_id &&
+                   endpoint == xhci->mouse.endpoint_id) {
+            device = &xhci->mouse;
+        }
+        if (device == NULL || !device->active) continue;
 
         const uint8_t code = xhci_event_code(&event);
         if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
-            input_usb_keyboard_report(
-                (const uint8_t *)(uintptr_t)xhci->keyboard.report_buffer);
+            if (device->kind == XHCI_HID_KEYBOARD) {
+                input_usb_keyboard_report(
+                    (const uint8_t *)(uintptr_t)device->report_buffer);
+            } else if (device->kind == XHCI_HID_MOUSE) {
+                input_usb_mouse_report(
+                    (const uint8_t *)(uintptr_t)device->report_buffer);
+            }
         } else {
-            serial_write("xHCI: USB keyboard transfer failed; code=");
+            serial_write(device->kind == XHCI_HID_KEYBOARD
+                ? "xHCI: USB keyboard transfer failed; code="
+                : "xHCI: USB mouse transfer failed; code=");
             serial_write_hex(code);
             serial_write("\r\n");
-            xhci->keyboard_active = false;
-            return;
+            device->active = false;
+            if (device->kind == XHCI_HID_KEYBOARD)
+                xhci->keyboard_active = false;
+            else
+                xhci->mouse_active = false;
+            continue;
         }
-        if (!xhci_schedule_keyboard_read(xhci, &xhci->keyboard)) {
-            serial_write("xHCI: unable to re-arm USB keyboard endpoint\r\n");
-            xhci->keyboard_active = false;
-            return;
+        if (!xhci_schedule_interrupt_read(xhci, device)) {
+            serial_write(device->kind == XHCI_HID_KEYBOARD
+                ? "xHCI: unable to re-arm USB keyboard endpoint\r\n"
+                : "xHCI: unable to re-arm USB mouse endpoint\r\n");
+            device->active = false;
+            if (device->kind == XHCI_HID_KEYBOARD)
+                xhci->keyboard_active = false;
+            else
+                xhci->mouse_active = false;
         }
     }
 }

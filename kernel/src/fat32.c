@@ -250,6 +250,10 @@ fail:
     return false;
 }
 
+uint32_t fat32_root_cluster(void) {
+    return mounted_device == NULL ? 0U : root_cluster;
+}
+
 bool fat32_read_directory(uint32_t first_cluster) {
     if (mounted_device == NULL || !valid_cluster(first_cluster)) return false;
     root_entry_count = 0U;

@@ -551,10 +551,10 @@ static void draw_shell(void) {
                 const bool selected = list_index == files_selected_index;
                 if (selected)
                     graphics_fill_rect(text_x + column * 260U - 6U,
-                                       text_y + 307U + line * 24U,
-                                       240U, 20U, 34, 78, 105);
+                                       text_y + 307U + line * 18U,
+                                       240U, 16U, 34, 78, 105);
                 graphics_draw_text(text_x + column * 260U,
-                                   text_y + 312U + line * 24U,
+                                   text_y + 312U + line * 18U,
                                    files_listing[list_index], 1,
                                    selected ? 119 : 233,
                                    selected ? 229 : 243,
@@ -568,11 +568,8 @@ static void draw_shell(void) {
                                "UP/DOWN SELECT  N NEW  E EDIT  ENTER OPEN  DEL DELETE",
                                1, 170, 191, 211);
         }
-        graphics_draw_text(text_x, text_y + 366U,
-                           files_listing_count > NEXUS_FILES_LIST_CAPACITY - 1U
-                               ? "FIRST 64 ENTRIES SHOWN - ARROW KEYS SCROLL"
-                               : "F10 SAVE IN EDITOR  ESC HOME",
-                           1, 119, 229, 211);
+        /* The list is paged by keeping the selected entry in the eight-row
+         * viewport.  The controls below the last row remain visible. */
         }
     } else if (active_view == DESKTOP_TERMINAL) {
         graphics_draw_text(text_x, text_y, "NEXUS COMMAND SHELL",

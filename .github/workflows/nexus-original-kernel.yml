@@ -10,6 +10,9 @@ on:
       - "build/**"
       - "installer/**"
       - ".github/workflows/nexus-original-kernel.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
   workflow_dispatch:
 
 permissions:

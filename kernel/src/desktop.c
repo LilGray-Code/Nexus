@@ -221,6 +221,58 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
     }
 }
 
+static bool settings_persisted;
+
+/* Settings are stored as a tiny versioned record on the writable NXFS Data
+ * volume. A checksum and strict range checks keep corrupt or old records
+ * from changing the desktop into an invalid state. */
+static uint8_t desktop_settings_checksum(const uint8_t *record, size_t length) {
+    uint8_t checksum = 0xA5U;
+    for (size_t i = 0U; i < length; ++i) checksum ^= record[i];
+    return checksum;
+}
+
+static bool desktop_save_settings(void) {
+    if (!vfs_nxfs_writable()) return false;
+    uint8_t record[9] = {
+        'N', 'X', 'S', '1', settings_theme, settings_wallpaper,
+        settings_show_status ? 1U : 0U, window_maximized ? 1U : 0U, 0U
+    };
+    record[8] = desktop_settings_checksum(record, 8U);
+    const bool saved = vfs_write_file("desktop.cfg", record, sizeof(record));
+    settings_persisted = saved;
+    if (saved) serial_write("DESKTOP: settings saved to persistent NXFS\r\n");
+    else serial_write("DESKTOP: settings save failed\r\n");
+    return saved;
+}
+
+static void desktop_load_settings(void) {
+    if (!files_scanned) scan_files_once();
+    if (!vfs_nxfs_mounted()) return;
+    struct nexus_vfs_file file;
+    if (!vfs_open_readonly("desktop.cfg", &file)) return;
+    uint32_t size = 0U;
+    uint8_t record[9] = {0U};
+    size_t received = 0U;
+    const bool valid_size = vfs_file_size(&file, &size) && size == sizeof(record);
+    const bool read_ok = valid_size && vfs_read(&file, record, sizeof(record), &received);
+    vfs_close(&file);
+    if (!read_ok || received != sizeof(record) ||
+        record[0] != 'N' || record[1] != 'X' ||
+        record[2] != 'S' || record[3] != '1' ||
+        record[4] > 2U || record[5] > 2U ||
+        record[6] > 1U || record[7] > 1U ||
+        record[8] != desktop_settings_checksum(record, 8U)) {
+        serial_write("DESKTOP: ignored invalid settings record\r\n");
+        return;
+    }
+    settings_theme = record[4];
+    settings_wallpaper = record[5];
+    settings_show_status = record[6] != 0U;
+    window_maximized = record[7] != 0U;
+    settings_persisted = true;
+    serial_write("DESKTOP: restored settings from persistent NXFS\r\n");
+}
 static void desktop_open_view(enum desktop_view view) {
     if (view == DESKTOP_INSTALLER && !installer_environment) return;
     active_view = view;
@@ -590,6 +642,10 @@ static void draw_shell(void) {
             graphics_draw_text(row_x + row_w / 2U, y + 12U, values[i], 1U, 235U, 245U, 252U);
             graphics_draw_text(row_x + 15U, y + 31U, hints[i], 1U, 119U, 157U, 184U);
         }
+        graphics_draw_text(text_x, panel_y + panel_height - 34U,
+                           settings_persisted ? "PREFERENCES SAVED ON THIS DEVICE" : "SESSION ONLY - PERSISTENT NXFS NOT AVAILABLE",
+                           1U, settings_persisted ? 112U : 226U,
+                           settings_persisted ? 222U : 177U, settings_persisted ? 190U : 112U);
         graphics_draw_text(text_x, panel_y + panel_height - 18U,
                            "1-4 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
                            1U, 151U, 178U, 201U);
@@ -1111,6 +1167,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     mouse_left_was_down = false;
     start_menu_open = false;
     window_maximized = false;
+    settings_persisted = false;
+    if (!installer_environment) desktop_load_settings();
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
     desktop_ready = true;
@@ -2731,6 +2789,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else {
             return;
         }
+        (void)desktop_save_settings();
         draw_shell();
         draw_pointer();
         return;

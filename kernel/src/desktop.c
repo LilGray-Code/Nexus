@@ -1404,24 +1404,35 @@ static void files_editor_begin_new(void) {
     files_editor_state = FILES_EDITOR_NAME;
 }
 
+static void files_editor_set_status(const char *message) {
+    size_t i = 0U;
+    while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+        files_edit_status[i] = message[i];
+        ++i;
+    }
+    files_edit_status[i] = '\0';
+}
+
 static void files_editor_begin_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
-        !vfs_root_entry(files_selected_index, &selected) ||
-        selected.type != NEXUS_VFS_FILE ||
-        selected.size > FILES_EDITOR_MAX_BYTES) {
-        files_edit_status[0] = '\0';
-        const char *message = "FILE EXCEEDS 1MB EDITOR LIMIT - UNCHANGED";
-        size_t i = 0U;
-        while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
-            files_edit_status[i] = message[i];
-            ++i;
-        }
-        files_edit_status[i] = '\0';
+        !vfs_root_entry(files_selected_index, &selected)) {
+        files_editor_set_status("SELECT A FILE");
+        return;
+    }
+    if (selected.type != NEXUS_VFS_FILE) {
+        files_editor_set_status("SELECTED ITEM IS NOT A FILE");
+        return;
+    }
+    if (selected.size > FILES_EDITOR_MAX_BYTES) {
+        files_editor_set_status("FILE EXCEEDS 1MB LIMIT - UNCHANGED");
         return;
     }
     struct nexus_vfs_file file;
-    if (!vfs_open_readonly(selected.name, &file)) return;
+    if (!vfs_open_readonly(selected.name, &file)) {
+        files_editor_set_status("FILE OPEN FAILED");
+        return;
+    }
     size_t bytes_read = 0U;
     bool read_ok = true;
     while (bytes_read < selected.size) {

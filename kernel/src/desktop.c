@@ -456,10 +456,10 @@ static void draw_shell(void) {
                         ++amount;
                     }
                     size_t display_length = amount;
-                    const bool caret_here = files_edit_cursor >= offset &&
-                        files_edit_cursor <= offset + amount &&
-                        (files_edit_cursor < offset + amount ||
-                         files_edit_cursor == files_edit_content_length);
+                    const bool caret_here =
+                        first_line + line == cursor_line &&
+                        files_edit_cursor >= offset &&
+                        files_edit_cursor <= offset + amount;
                     if (caret_here) {
                         const size_t caret = files_edit_cursor - offset;
                         for (size_t i = display_length; i > caret; --i)
@@ -477,7 +477,7 @@ static void draw_shell(void) {
                         : "SAVE TARGET: VOLATILE RAM ONLY",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 292U,
-                    "F10 SAVE  ENTER NEW LINE  BACKSPACE DELETE (APPEND AT END)",
+                    "F10 SAVE  ARROWS MOVE  HOME/END LINE  BKSP/DEL ERASE",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,

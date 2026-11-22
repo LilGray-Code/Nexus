@@ -73,6 +73,7 @@ int main(void) {
     assert(!wifi_connect(&networks[0], NULL));
     assert(!wifi_connect(&networks[0], "short"));
     assert(!wifi_connect(&networks[1], "not-empty"));
+    networks[1].security = NEXUS_WIFI_SECURITY_WPA3_SAE;
     assert(wifi_connect(&networks[1], "s"));
     assert(wifi_get_state() == NEXUS_WIFI_CONNECTING);
     wifi_report_disconnected();

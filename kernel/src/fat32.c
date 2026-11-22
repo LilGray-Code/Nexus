@@ -27,6 +27,8 @@ static uint64_t partition_start;
 static uint64_t partition_sectors;
 static uint32_t volume_sectors;
 static const struct nexus_block_device *mounted_device;
+
+static uint16_t le16(const uint8_t *p);
 static uint16_t lfn_chars[32];
 static uint8_t lfn_checksum;
 static uint8_t lfn_expected;

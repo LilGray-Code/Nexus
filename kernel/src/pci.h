@@ -43,7 +43,10 @@ struct nexus_pci_bar {
 };
 
 bool pci_init(void);
+/* Number of entries addressable through pci_device_at(). */
 uint32_t pci_device_count(void);
+/* Total discovered PCI functions, including entries beyond storage capacity. */
+uint32_t pci_discovered_device_count(void);
 const struct nexus_pci_device *pci_device_at(uint32_t index);
 
 /* Find a conventional PCI capability (for example MSI or PCI Express).

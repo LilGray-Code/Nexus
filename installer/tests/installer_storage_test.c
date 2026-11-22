@@ -461,6 +461,7 @@ int main(int argc,char **argv) {
         assert(memcmp(system_readback,system_payload+offset,amount)==0);
     }
     assert(!nxfs_write_file("DENIED.TXT",system_payload,1U));
+    nxfs_unmount();
 
     /* The data volume is independently formatted and writable while the
      * system volume remains a separate, independently mounted NXFS volume. */

@@ -32,6 +32,7 @@ static enum desktop_view active_view = DESKTOP_HOME;
 static uint64_t screen_width;
 static uint64_t screen_height;
 static bool desktop_ready;
+static bool installer_environment;
 static bool start_menu_open;
 static bool window_maximized;
 static bool mouse_left_was_down;
@@ -215,6 +216,7 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
 }
 
 static void desktop_open_view(enum desktop_view view) {
+    if (view == DESKTOP_INSTALLER && !installer_environment) return;
     active_view = view;
     start_menu_open = false;
     if (view == DESKTOP_FILES) {
@@ -227,7 +229,7 @@ static void desktop_open_view(enum desktop_view view) {
 }
 
 static void desktop_open_app(size_t app_index) {
-    if (app_index >= 5U) return;
+    if (app_index >= 4U) return;
     desktop_open_view(desktop_view_for_app(app_index));
 }
 
@@ -246,8 +248,8 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     graphics_draw_text(51U, button_y + button_h / 2U - 4U,
                        "START", 1U, 239U, 247U, 255U);
 
-    static const char *const labels[5] = {
-        "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL"
+    static const char *const labels[4] = {
+        "FILES", "WEB", "SETTINGS", "TERMINAL"
     };
     static const uint8_t accents[5][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
@@ -255,7 +257,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     };
     const uint64_t tab_width = 72U;
     const uint64_t tab_step = 78U;
-    for (size_t i = 0U; i < 5U; ++i) {
+    for (size_t i = 0U; i < 4U; ++i) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
@@ -312,12 +314,11 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                        "NEXUS APP LAUNCHER", 1U,
                        239U, 247U, 255U);
 
-    static const char *const names[5] = {
+    static const char *const names[4] = {
         "FILES - MANAGE YOUR DATA",
         "WEB - NETWORK TEXT BROWSER",
         "SETTINGS - SYSTEM OVERVIEW",
-        "TERMINAL - COMMAND LINE",
-        "INSTALL - DISK INSTALL WIZARD"
+        "TERMINAL - COMMAND LINE"
     };
     static const uint8_t accents[5][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
@@ -444,17 +445,16 @@ static void draw_shell(void) {
                            1U, 111U, 207U, 231U);
 
         const uint64_t tile_y = text_y + 76U;
-        uint64_t tile_width = (panel_width - 100U) / 5U;
+        uint64_t tile_width = (panel_width - 90U) / 4U;
         if (tile_width > 190U) tile_width = 190U;
-        static const char *const labels[5] = {
-            "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL"
+        static const char *const labels[4] = {
+            "FILES", "WEB", "SETTINGS", "TERMINAL"
         };
-        static const uint8_t accent[5][3] = {
+        static const uint8_t accent[4][3] = {
             {45U, 177U, 202U}, {117U, 136U, 244U},
-            {82U, 198U, 155U}, {217U, 164U, 83U},
-            {239U, 177U, 119U}
+            {82U, 198U, 155U}, {217U, 164U, 83U}
         };
-        for (uint32_t i = 0U; i < 5U; ++i) {
+        for (uint32_t i = 0U; i < 4U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
             graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
@@ -539,7 +539,7 @@ static void draw_shell(void) {
             }
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,
-                           "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL   F5 INSTALL",
+                           "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
@@ -1009,7 +1009,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 
     screen_width = graphics_width();
     screen_height = graphics_height();
-    active_view = DESKTOP_HOME;
+    installer_environment = blockdev_boot_source_is_external();
+    active_view = installer_environment ? DESKTOP_INSTALLER : DESKTOP_HOME;
+    installer_ui_state = INSTALLER_UI_SELECT;
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
     installer_refresh_plan();
@@ -2553,7 +2555,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (active_view != DESKTOP_INSTALLER &&
-        event->scancode >= 0x3BU && event->scancode <= 0x3FU) {
+        event->scancode >= 0x3BU && event->scancode <= 0x3EU) {
         desktop_open_app((size_t)(event->scancode - 0x3BU));
         draw_shell();
         draw_pointer();

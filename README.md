@@ -22,11 +22,12 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   System Partition, Nexus System volume, Recovery journal partition, and
   separate Nexus Data volume; BIOS installs also include a BIOS Boot
   partition.
-- A Files view with a flat root listing (up to 64 indexed entries, eight
-  visible at once), keyboard/mouse selection, create/open/edit/delete, and a
-  4 KiB ASCII text editor. The installed NXFS Data volume is the persistent
-  user-file target. FAT32 volumes are read-only; RAM-only fallback saves are
-  volatile.
+- A Files view with a flat root listing (up to 128 indexed entries, six
+  visible at once), keyboard/mouse selection, create/open/edit/delete, names
+  up to 31 characters, and a scrollable 4 KiB ASCII text editor. The desktop
+  mounts the dedicated NXFS Data partition after the Recovery partition;
+  it does not expose the NXFS System partition as the user's file store.
+  FAT32 volumes are read-only; RAM-only fallback saves are volatile.
 - An early E1000 networking stack with DHCP, DNS, TCP, and a plain HTTP text
   viewer.
 

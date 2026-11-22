@@ -17,7 +17,7 @@ static size_t make_frame(uint8_t *frame, uint16_t subtype,
     memcpy(frame+n, "NEXU", 4U); n += 4U;
     frame[n++] = 3; frame[n++] = 1; frame[n++] = 6;
     if (include_rsn) {
-        frame[n++] = 48; frame[n++] = 18;
+        frame[n++] = 48; frame[n++] = (uint8_t)(akm_type == 8U ? 20U : 18U);
         frame[n++] = 1; frame[n++] = 0; /* RSN version */
         frame[n++] = 0; frame[n++] = 0x0F; frame[n++] = 0xAC;
         frame[n++] = 4; /* CCMP group cipher */
@@ -27,6 +27,9 @@ static size_t make_frame(uint8_t *frame, uint16_t subtype,
         frame[n++] = 1; frame[n++] = 0; /* one AKM */
         frame[n++] = 0; frame[n++] = 0x0F; frame[n++] = 0xAC;
         frame[n++] = akm_type;
+        if (akm_type == 8U) {
+            frame[n++] = 0xC0U; frame[n++] = 0x00U; /* MFPC | MFPR */
+        }
     }
     return n;
 }
@@ -48,6 +51,18 @@ int main(void) {
     n = make_frame(frame,0x0080U,true,8U);
     assert(wifi_parse_beacon_frame(frame,n,-30,&network));
     assert(network.security==NEXUS_WIFI_SECURITY_WPA3_SAE);
+
+    n = make_frame(frame,0x0080U,true,8U);
+    frame[46] = 18U; /* SAE without required PMF capabilities. */
+    assert(!wifi_parse_beacon_frame(frame,n-2U,-30,&network));
+
+    n = make_frame(frame,0x0080U,true,2U);
+    frame[52] = 2U; /* TKIP group cipher is outside supported profile. */
+    assert(!wifi_parse_beacon_frame(frame,n,-30,&network));
+
+    n = make_frame(frame,0x0080U,true,2U);
+    frame[58] = 2U; /* TKIP pairwise cipher is outside supported profile. */
+    assert(!wifi_parse_beacon_frame(frame,n,-30,&network));
 
     assert(!wifi_parse_beacon_frame(frame,10U,-30,&network));
     frame[0]=0x08U; /* Data frame, not a management beacon. */

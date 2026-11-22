@@ -83,7 +83,7 @@ static void test_uefi_image(void) {
 static void test_dual_firmware_image(void) {
     struct nexus_partition_plan plan;
     struct nexus_gpt_image_buffers image;
-    uint8_t disk_guid[16], partition_guids[4][16];
+    uint8_t disk_guid[16], partition_guids[5][16];
     fill_guids(disk_guid,partition_guids);
     assert(nexus_partition_plan_create(64ULL*1024ULL*1024ULL*1024ULL/512ULL,
         512U,NEXUS_FIRMWARE_DUAL,&plan));
@@ -100,7 +100,7 @@ static void test_dual_firmware_image(void) {
 static void test_4kn_image(void) {
     struct nexus_partition_plan plan;
     struct nexus_gpt_image_buffers image;
-    uint8_t disk_guid[16], partition_guids[4][16];
+    uint8_t disk_guid[16], partition_guids[5][16];
     fill_guids(disk_guid, partition_guids);
     assert(nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
                                        4096ULL, 4096U,
@@ -115,7 +115,7 @@ static void test_4kn_image(void) {
 static void test_rejects_duplicate_guids_and_invalid_plan(void) {
     struct nexus_partition_plan plan;
     struct nexus_gpt_image_buffers image;
-    uint8_t disk_guid[16], partition_guids[4][16];
+    uint8_t disk_guid[16], partition_guids[5][16];
     fill_guids(disk_guid, partition_guids);
     assert(nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
                                        512ULL, 512U,

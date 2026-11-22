@@ -328,7 +328,10 @@ static bool blockdev_exact_text(const char *expected, const char *provided,
     if (expected == NULL || provided == NULL) return false;
     size_t i = 0U;
     while (i < capacity && expected[i] != '\0' && provided[i] != '\0') {
-        if (expected[i] != provided[i]) return false;
+        char a = expected[i], b = provided[i];
+        if (a >= 'a' && a <= 'z') a = (char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = (char)(b - 'a' + 'A');
+        if (a != b) return false;
         ++i;
     }
     return i < capacity && expected[i] == '\0' && provided[i] == '\0';

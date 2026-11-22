@@ -182,6 +182,46 @@ struct elf_rela_entry {
     int64_t addend;
 } __attribute__((packed));
 
+static bool prepare_relative_relocation(
+    const struct elf_rela_entry *relocation,
+    const struct elf_program_header *const *loads, uint16_t load_count,
+    uint64_t virtual_base, size_t image_size, uint64_t load_bias,
+    uint64_t *target_offset, uint64_t *relocated_value) {
+    if (relocation == NULL || loads == NULL || target_offset == NULL ||
+        relocated_value == NULL || (uint32_t)relocation->info != 8U ||
+        (uint32_t)(relocation->info >> 32) != 0U ||
+        relocation->offset < virtual_base ||
+        relocation->offset > UINT64_MAX - sizeof(uint64_t)) return false;
+
+    bool writable_target = false;
+    for (uint16_t i = 0U; i < load_count; ++i) {
+        const struct elf_program_header *load = loads[i];
+        if ((load->flags & 2U) == 0U ||
+            relocation->offset < load->vaddr ||
+            relocation->offset + sizeof(uint64_t) >
+                load->vaddr + load->memsz) continue;
+        writable_target = true;
+        break;
+    }
+    if (!writable_target) return false;
+
+    *target_offset = relocation->offset - virtual_base;
+    if (*target_offset > (uint64_t)image_size - sizeof(uint64_t))
+        return false;
+
+    if (relocation->addend >= 0) {
+        const uint64_t addend = (uint64_t)relocation->addend;
+        if (load_bias > UINT64_MAX - addend) return false;
+        *relocated_value = load_bias + addend;
+    } else {
+        const uint64_t magnitude =
+            (uint64_t)(-(relocation->addend + 1)) + 1U;
+        if (load_bias < magnitude) return false;
+        *relocated_value = load_bias - magnitude;
+    }
+    return true;
+}
+
 bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
                                         uint64_t virtual_base,
                                         uint8_t *image, size_t image_size,
@@ -207,7 +247,7 @@ bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
     }
     if (dynamic == NULL) return false;
 
-    uint64_t rela_offset = 0U;
+    uint64_t rela_address = 0U;
     bool rela_found = false;
     for (uint64_t offset = 0U; offset < dynamic->filesz;
          offset += ELF_DYNAMIC_ENTRY_SIZE) {
@@ -215,7 +255,7 @@ bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
             (const void *)(bytes + dynamic->offset + offset);
         if (entry->tag == DT_NULL) break;
         if (entry->tag == DT_RELA) {
-            rela_offset = entry->value;
+            rela_address = entry->value;
             rela_found = true;
         }
     }
@@ -225,8 +265,8 @@ bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
     bool rela_mapped = false;
     for (uint16_t i = 0U; i < load_count; ++i) {
         const struct elf_program_header *load = loads[i];
-        if (rela_offset < load->vaddr) continue;
-        const uint64_t delta = rela_offset - load->vaddr;
+        if (rela_address < load->vaddr) continue;
+        const uint64_t delta = rela_address - load->vaddr;
         if (delta > load->filesz || info.rela_size > load->filesz - delta)
             continue;
         if (load->offset > UINT64_MAX - delta) return false;
@@ -238,41 +278,25 @@ bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
         !range_valid(rela_file_offset, info.rela_size, file_size)) return false;
 
     const uint64_t relocation_count = info.rela_size / ELF_RELA_SIZE;
+    /* Preflight every relocation before modifying the loaded image. */
     for (uint64_t i = 0U; i < relocation_count; ++i) {
         const struct elf_rela_entry *relocation = (const void *)(
             bytes + rela_file_offset + i * ELF_RELA_SIZE);
-        const uint32_t relocation_type = (uint32_t)relocation->info;
-        const uint32_t symbol_index = (uint32_t)(relocation->info >> 32);
-        if (relocation_type != 8U || symbol_index != 0U) return false;
-
-        bool writable_target = false;
-        for (uint16_t j = 0U; j < load_count; ++j) {
-            const struct elf_program_header *load = loads[j];
-            if ((load->flags & 2U) == 0U ||
-                relocation->offset < load->vaddr ||
-                relocation->offset > UINT64_MAX - sizeof(uint64_t) ||
-                relocation->offset + sizeof(uint64_t) >
-                    load->vaddr + load->memsz) continue;
-            writable_target = true;
-            break;
-        }
-        if (!writable_target || relocation->offset < virtual_base) return false;
-        const uint64_t target_offset = relocation->offset - virtual_base;
-        if (target_offset > (uint64_t)image_size - sizeof(uint64_t))
+        uint64_t target_offset, relocated_value;
+        if (!prepare_relative_relocation(relocation, loads, load_count,
+                                         virtual_base, image_size, load_bias,
+                                         &target_offset, &relocated_value))
             return false;
+    }
 
-        uint64_t relocated_value;
-        if (relocation->addend >= 0) {
-            const uint64_t addend = (uint64_t)relocation->addend;
-            if (load_bias > UINT64_MAX - addend) return false;
-            relocated_value = load_bias + addend;
-        } else {
-            const uint64_t magnitude =
-                (uint64_t)(-(relocation->addend + 1)) + 1U;
-            if (load_bias < magnitude) return false;
-            relocated_value = load_bias - magnitude;
-        }
-
+    for (uint64_t i = 0U; i < relocation_count; ++i) {
+        const struct elf_rela_entry *relocation = (const void *)(
+            bytes + rela_file_offset + i * ELF_RELA_SIZE);
+        uint64_t target_offset, relocated_value;
+        if (!prepare_relative_relocation(relocation, loads, load_count,
+                                         virtual_base, image_size, load_bias,
+                                         &target_offset, &relocated_value))
+            return false;
         for (uint8_t byte = 0U; byte < 8U; ++byte)
             image[target_offset + byte] =
                 (uint8_t)(relocated_value >> (byte * 8U));

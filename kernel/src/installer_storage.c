@@ -258,7 +258,7 @@ static bool installer_is_exact_bios_partition(
     return false;
 }
 
-bool nexus_installer_deploy_system_payload(
+enum nexus_installer_system_payload_result nexus_installer_deploy_system_payload(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
     const char *typed_id,const char *typed_erase,
@@ -266,9 +266,10 @@ bool nexus_installer_deploy_system_payload(
     const struct nexus_boot_payloads *payloads=nexus_boot_payloads_get();
     if(payloads==NULL||payloads->kernel_elf.data==NULL||
        payloads->kernel_elf.size==0U||
-       payloads->kernel_elf.size>NEXUS_NXFS_MAX_FILE_BYTES||
-       !installer_is_exact_nxfs_partition(device,system_partition))
-        return false;
+       payloads->kernel_elf.size>NEXUS_NXFS_MAX_FILE_BYTES)
+        return NEXUS_SYSTEM_PAYLOAD_INVALID_PAYLOAD;
+    if(!installer_is_exact_nxfs_partition(device,system_partition))
+        return NEXUS_SYSTEM_PAYLOAD_INVALID_PARTITION;
     static const char manifest[]=
         "NEXUS SYSTEM IMAGE 1\n"
         "ARCH=x86_64\n"
@@ -285,14 +286,14 @@ bool nexus_installer_deploy_system_payload(
         "This is an engineering prototype, not a finished general-purpose desktop release.\n";
     if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
         system_partition,"KERNEL.ELF",payloads->kernel_elf.data,
-        payloads->kernel_elf.size))return false;
+        payloads->kernel_elf.size))return NEXUS_SYSTEM_PAYLOAD_KERNEL_WRITE_FAILED;
     if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
         system_partition,"SYSTEM.MAN",manifest,(uint32_t)(sizeof(manifest)-1U)))
-        return false;
+        return NEXUS_SYSTEM_PAYLOAD_MANIFEST_WRITE_FAILED;
     if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
         system_partition,"README.TXT",readme,(uint32_t)(sizeof(readme)-1U)))
-        return false;
-    return true;
+        return NEXUS_SYSTEM_PAYLOAD_README_WRITE_FAILED;
+    return NEXUS_SYSTEM_PAYLOAD_OK;
 }
 
 bool nexus_installer_install_bios_bootloader(

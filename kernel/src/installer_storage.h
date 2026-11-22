@@ -46,7 +46,16 @@ enum nexus_installer_journal_result nexus_installer_store_recovery_record(
     const struct nexus_gpt_partition *recovery_partition,
     const struct nexus_installer_journal_record *record);
 
-bool nexus_installer_deploy_system_payload(
+enum nexus_installer_system_payload_result {
+    NEXUS_SYSTEM_PAYLOAD_OK = 0,
+    NEXUS_SYSTEM_PAYLOAD_INVALID_PAYLOAD,
+    NEXUS_SYSTEM_PAYLOAD_INVALID_PARTITION,
+    NEXUS_SYSTEM_PAYLOAD_KERNEL_WRITE_FAILED,
+    NEXUS_SYSTEM_PAYLOAD_MANIFEST_WRITE_FAILED,
+    NEXUS_SYSTEM_PAYLOAD_README_WRITE_FAILED
+};
+
+enum nexus_installer_system_payload_result nexus_installer_deploy_system_payload(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
     const char *typed_stable_id,const char *typed_erase_phrase,

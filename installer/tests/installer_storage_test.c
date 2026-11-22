@@ -409,8 +409,13 @@ int main(int argc,char **argv) {
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy the actual kernel ELF and basic system-volume documentation. */
-    assert(nexus_installer_deploy_system_payload(target_handle,&identity,
-        identity.stable_id,"ERASE",&system_copy));
+    const enum nexus_installer_system_payload_result payload_result=
+        nexus_installer_deploy_system_payload(target_handle,&identity,
+            identity.stable_id,"ERASE",&system_copy);
+    if(payload_result!=NEXUS_SYSTEM_PAYLOAD_OK)
+        (void)fprintf(stderr,"system payload deploy result=%u kernel_size=%u\\n",
+            (unsigned)payload_result,kernel_payload_size);
+    assert(payload_result==NEXUS_SYSTEM_PAYLOAD_OK);
     assert(target.flushes==50U);
     assert(gpt_scan_device(target_handle));
     const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);

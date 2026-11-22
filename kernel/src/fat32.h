@@ -8,7 +8,7 @@
 #include "blockdev.h"
 #include "gpt.h"
 
-#define NEXUS_FAT32_MAX_ROOT_ENTRIES 32U
+#define NEXUS_FAT32_MAX_ROOT_ENTRIES 128U
 #define NEXUS_FAT32_MAX_READ_BYTES 4096U
 
 struct nexus_fat32_entry {

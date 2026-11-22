@@ -128,7 +128,7 @@ static void format_minimal_fat32(void) {
           0x0FFFFFFFU);
 
     for (uint32_t index = 0U; index < 40U; ++index) {
-        const uint32_t physical_slot = index + (index >= 1U ? 2U : 0U);
+        const uint32_t physical_slot = index + (index >= 2U ? 2U : 0U);
         const uint32_t cluster = 2U + physical_slot / 16U;
         const uint32_t slot = physical_slot % 16U;
         uint8_t *root = disk[TEST_PARTITION_START + TEST_DATA_START +

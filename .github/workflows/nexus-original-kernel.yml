@@ -33,6 +33,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file dosfstools mtools
 
+      - name: Test durable installer recovery journal (host-only mock disk)
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
+            -Iinstaller installer/installer_journal.c \\
+            installer/tests/installer_journal_test.c \\
+            -o /tmp/nexus-installer-journal-test
+          /tmp/nexus-installer-journal-test
+
       - name: Test Nexus installer partition planner (host-only, no disk writes)
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

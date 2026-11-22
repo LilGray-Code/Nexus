@@ -3256,8 +3256,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 selected.type == NEXUS_VFS_DIRECTORY) {
                 if (vfs_enter_directory(selected.name)) {
                     refresh_files_listing();
-                    files_preview[0] = '\\0';
-                    files_first_name[0] = '\\0';
+                    files_preview[0] = '\0';
+                    files_first_name[0] = '\0';
                 }
             } else if (vfs_root_entry(files_selected_index, &selected) &&
                        selected.type == NEXUS_VFS_FILE) {

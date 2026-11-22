@@ -13,7 +13,8 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - A framebuffer desktop with Home, Files, Browser, Settings, and Terminal,
-  plus keyboard and mouse input. The installed desktop does not expose the
+  plus keyboard and mouse input. The installed desktop displays an animated
+  Nexus startup splash before showing the workspace and does not expose the
   installer as an application or launcher item.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
@@ -32,8 +33,9 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   mounts the dedicated NXFS Data partition after the Recovery partition;
   it does not expose the NXFS System partition as the user's file store.
   FAT32 volumes are read-only; RAM-only fallback saves are volatile.
-- An early E1000 networking stack with DHCP, DNS, TCP, and a plain HTTP text
-  viewer.
+- An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, and a plain
+  HTTP text viewer. This is limited network access, not a general-purpose
+  internet/browser implementation.
 
 The desktop applications and current system services are integrated into the
 kernel. The presence of an ELF loader and ring-3 execution tests does **not**
@@ -80,8 +82,13 @@ the latest run attached to the current branch.
 - No physical PC installation or hardware-compatibility matrix has been
   completed. Hardware testing remains required.
 - Secure Boot is not supported.
-- The browser is an early plain-HTTP text viewer; HTTPS/TLS and modern web
-  rendering are not implemented.
+- The built-in Browser is the current default web app, but it is only an early
+  plain-HTTP text viewer. HTTPS/TLS, modern web rendering, Wi-Fi, and broad
+  network-adapter support are not implemented. Google Chrome cannot run on
+  the current freestanding kernel: Nexus still lacks the Linux/POSIX runtime,
+  dynamic userspace, graphics and system interfaces Chrome depends on.
+- The E1000/DHCP stack is exercised with emulated networking in QEMU; actual
+  public-internet access on physical hardware has not yet been validated.
 - The Files view is currently a flat root listing with bounded filename and
   editor sizes; it is not yet a full hierarchical file manager.
 - Desktop applications and much of the system runtime remain kernel-integrated.

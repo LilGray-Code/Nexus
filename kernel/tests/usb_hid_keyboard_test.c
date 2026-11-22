@@ -26,11 +26,64 @@ static void test_release_then_press(void) {
     usb_hid_keyboard_reset();
     report[2] = 4U;
     assert(usb_hid_keyboard_decode(report, output, 8U) == 1U);
+    assert(output[0] == 0x1EU);
     report[2] = 0U;
-    assert(usb_hid_keyboard_decode(report, output, 8U) == 0U);
+    assert(usb_hid_keyboard_decode(report, output, 8U) == 1U);
+    assert(output[0] == 0x9EU); /* A release */
     report[2] = 4U;
     assert(usb_hid_keyboard_decode(report, output, 8U) == 1U);
     assert(output[0] == 0x1EU);
+}
+
+static void test_shift_and_caps_lock_transitions(void) {
+    uint8_t report[8] = {0U};
+    uint8_t output[14] = {0U};
+    usb_hid_keyboard_reset();
+
+    report[0] = 0x02U; /* Left Shift down */
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0x2AU);
+
+    report[2] = 4U; /* A down while Shift is held */
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0x1EU);
+
+    report[0] = 0U; /* Left Shift up */
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0xAAU);
+
+    report[2] = 0U; /* A up */
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0x9EU);
+
+    report[0] = 0x20U; /* Right Shift down/up */
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0x36U);
+    report[0] = 0U;
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0xB6U);
+
+    report[2] = 57U; /* Caps Lock down/up */
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0x3AU);
+    report[2] = 0U;
+    assert(usb_hid_keyboard_decode(report, output, 14U) == 1U);
+    assert(output[0] == 0xBAU);
+}
+
+static void test_full_report_transition_capacity(void) {
+    uint8_t previous[8] = {0U,0U,4U,5U,6U,7U,8U,9U};
+    uint8_t current[8] = {0x22U,0U,10U,11U,12U,13U,14U,15U};
+    uint8_t output[14] = {0U};
+    usb_hid_keyboard_reset();
+    assert(usb_hid_keyboard_decode(previous, output, 14U) == 6U);
+    const size_t count = usb_hid_keyboard_decode(current, output, 14U);
+    assert(count == 14U); /* two shifts, six releases, six new makes */
+    assert(output[0] == 0x2AU && output[1] == 0x36U);
+    for (size_t i = 2U; i < 8U; ++i)
+        assert((output[i] & 0x80U) != 0U);
+    for (size_t i = 8U; i < 14U; ++i)
+        assert((output[i] & 0x80U) == 0U);
 }
 
 static void test_arrows_and_function_keys(void) {
@@ -66,6 +119,8 @@ static void test_capacity_and_null_arguments(void) {
 int main(void) {
     test_basic_keys_and_deduplication();
     test_release_then_press();
+    test_shift_and_caps_lock_transitions();
+    test_full_report_transition_capacity();
     test_arrows_and_function_keys();
     test_rollover_does_not_poison_state();
     test_capacity_and_null_arguments();

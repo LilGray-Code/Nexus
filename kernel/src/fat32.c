@@ -29,13 +29,13 @@ static uint32_t volume_sectors;
 static const struct nexus_block_device *mounted_device;
 
 static uint16_t le16(const uint8_t *p);
-static uint16_t lfn_chars[32];
+static uint16_t lfn_chars[40];
 static uint8_t lfn_checksum;
 static uint8_t lfn_expected;
 static bool lfn_active;
 
 static void reset_lfn(void) {
-    for (size_t i = 0; i < 32U; ++i) lfn_chars[i] = 0xFFFFU;
+    for (size_t i = 0; i < 40U; ++i) lfn_chars[i] = 0xFFFFU;
     lfn_checksum = 0U;
     lfn_expected = 0U;
     lfn_active = false;
@@ -55,7 +55,7 @@ static void decode_lfn_part(const uint8_t *raw) {
     const uint8_t ordinal = raw[0] & 0x1FU;
     if ((raw[0] & 0x40U) != 0U) {
         reset_lfn();
-        if (ordinal == 0U || ordinal > 2U) return;
+        if (ordinal == 0U || ordinal > 3U) return;
         lfn_active = true;
         lfn_expected = ordinal;
         lfn_checksum = raw[13U];
@@ -69,7 +69,7 @@ static void decode_lfn_part(const uint8_t *raw) {
     const size_t base = (size_t)(ordinal - 1U) * 13U;
     for (size_t i = 0; i < 13U; ++i) {
         const uint16_t ch = le16(raw + offsets[i]);
-        if (base + i < 32U) lfn_chars[base + i] = ch;
+        if (base + i < 40U) lfn_chars[base + i] = ch;
     }
     --lfn_expected;
 }
@@ -78,7 +78,7 @@ static bool copy_lfn_name(char output[32], const uint8_t *short_name) {
     if (!lfn_active || lfn_expected != 0U ||
         short_name_checksum(short_name) != lfn_checksum) return false;
     size_t out = 0U;
-    for (size_t i = 0U; i < 32U; ++i) {
+    for (size_t i = 0U; i < 40U; ++i) {
         const uint16_t ch = lfn_chars[i];
         if (ch == 0U || ch == 0xFFFFU) break;
         if (ch < 0x20U || ch > 0x7EU || out >= 31U) return false;

@@ -323,7 +323,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
     };
     static const uint8_t accents[4][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {239U, 177U, 119U}
+        {217U, 164U, 83U}
     };
     for (size_t i = 0U; i < 4U; ++i) {
         const uint64_t row_y = menu_y + 49U + (uint64_t)i * 34U;

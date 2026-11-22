@@ -1411,7 +1411,7 @@ static void files_editor_begin_selected(void) {
         selected.type != NEXUS_VFS_FILE ||
         selected.size > FILES_EDITOR_MAX_BYTES) {
         files_edit_status[0] = '\0';
-        const char *message = "FILE EXCEEDS 4096-BYTE EDITOR LIMIT - UNCHANGED";
+        const char *message = "FILE EXCEEDS 1MB EDITOR LIMIT - UNCHANGED";
         size_t i = 0U;
         while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
             files_edit_status[i] = message[i];

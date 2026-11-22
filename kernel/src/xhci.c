@@ -1074,7 +1074,7 @@ bool xhci_init(void) {
             device->programming_interface != 0x30U) continue;
         if (xhci_try_controller(device)) return true;
     }
-    serial_write("USB: no usable xHCI HID keyboard\r\n");
+    serial_write("USB: no usable xHCI HID keyboard or mouse\r\n");
     return false;
 }
 

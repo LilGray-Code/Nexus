@@ -1423,10 +1423,30 @@ static void files_editor_begin_selected(void) {
     struct nexus_vfs_file file;
     if (!vfs_open_readonly(selected.name, &file)) return;
     size_t bytes_read = 0U;
-    const bool read_ok = vfs_read(&file, files_edit_content,
-                                  selected.size, &bytes_read);
+    bool read_ok = true;
+    while (bytes_read < selected.size) {
+        size_t chunk = (size_t)selected.size - bytes_read;
+        if (chunk > NEXUS_VFS_READ_CHUNK) chunk = NEXUS_VFS_READ_CHUNK;
+        size_t received = 0U;
+        if (!vfs_read(&file, files_edit_content + bytes_read,
+                      chunk, &received) || received == 0U) {
+            read_ok = false;
+            break;
+        }
+        bytes_read += received;
+    }
     vfs_close(&file);
-    if (!read_ok || bytes_read != selected.size) return;
+    if (!read_ok || bytes_read != selected.size) {
+        files_edit_status[0] = '\0';
+        const char *message = "COULD NOT READ COMPLETE FILE";
+        size_t i = 0U;
+        while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+            files_edit_status[i] = message[i];
+            ++i;
+        }
+        files_edit_status[i] = '\0';
+        return;
+    }
     for (size_t i = 0U; i < sizeof(files_edit_name); ++i)
         files_edit_name[i] = selected.name[i];
     files_edit_name_length = 0U;

@@ -258,8 +258,10 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
     if (fat_entry == NULL) return false;
 
     size_t n = 0U;
-    for (; n < NEXUS_VFS_NAME_MAX - 1U && fat_entry->name[n] != '\0'; ++n)
+    for (; n < sizeof(fat_entry->name) - 1U &&
+           fat_entry->name[n] != '\0'; ++n) {
         entry->name[n] = fat_entry->name[n];
+    }
     entry->name[n] = '\0';
     entry->type = (fat_entry->attributes & 0x10U) != 0U
         ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;

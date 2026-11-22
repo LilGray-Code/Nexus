@@ -15,6 +15,21 @@ static size_t bounded_length(const char *s, size_t capacity) {
     return n;
 }
 
+static bool exact_case_insensitive(const char *a, const char *b,
+                                   size_t capacity) {
+    if (a == NULL || b == NULL) return false;
+    const size_t an = bounded_length(a, capacity);
+    const size_t bn = bounded_length(b, capacity);
+    if (an >= capacity || an != bn) return false;
+    for (size_t i = 0U; i < an; ++i) {
+        char x = a[i], y = b[i];
+        if (x >= 'a' && x <= 'z') x = (char)(x - 'a' + 'A');
+        if (y >= 'a' && y <= 'z') y = (char)(y - 'a' + 'A');
+        if (x != y) return false;
+    }
+    return true;
+}
+
 static bool copy_text(char *out, size_t capacity, const char *in) {
     if (out == NULL || in == NULL || capacity == 0U) return false;
     const size_t n = bounded_length(in, capacity);
@@ -142,12 +157,11 @@ enum nexus_installer_runtime_result nexus_installer_runtime_apply(
         blockdev_is_boot_media(device) || blockdev_is_mounted(device) ||
         !blockdev_identity_is_unique(device) ||
         !blockdev_install_write_supported(device) ||
-        !blockdev_matches_identity(device, typed_stable_id, device->model,
-                                   device->block_count, device->block_size) ||
-        bounded_length(typed_erase_phrase, 8U) != 5U ||
-        typed_erase_phrase[0] != 'E' || typed_erase_phrase[1] != 'R' ||
-        typed_erase_phrase[2] != 'A' || typed_erase_phrase[3] != 'S' ||
-        typed_erase_phrase[4] != 'E')
+        !exact_case_insensitive(device->stable_id, typed_stable_id,
+                                NEXUS_BLOCKDEV_ID_MAX) ||
+        !exact_case_insensitive("ERASE", typed_erase_phrase, 8U) ||
+        !blockdev_matches_identity(device, device->stable_id, device->model,
+                                   device->block_count, device->block_size))
         return NEXUS_INSTALL_RESULT_UNSAFE_TARGET;
 
     struct nexus_installer_disk_identity identity = {0};

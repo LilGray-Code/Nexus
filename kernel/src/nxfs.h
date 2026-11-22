@@ -35,6 +35,8 @@ bool nxfs_format(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition);
 bool nxfs_mount(const struct nexus_block_device *device,
                 const struct nexus_gpt_partition *partition);
+/* Releases a read-only mounted NXFS volume so another partition can be mounted. */
+void nxfs_unmount(void);
 bool nxfs_is_mounted(void);
 bool nxfs_is_writable(void);
 size_t nxfs_entry_count(void);

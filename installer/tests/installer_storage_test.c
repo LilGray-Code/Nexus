@@ -22,6 +22,8 @@ struct mock_disk {
     uint8_t last[EDGE_BLOCKS * 512U];
     uint8_t format_area[FORMAT_BLOCKS * 512U];
     uint64_t nxfs_base;
+    uint64_t recovery_base;
+    uint8_t recovery_area[2U * 512U];
     uint8_t nxfs_area[NXFS_TEST_AREA_BLOCKS * 512U];
     uint64_t bios_base;
     uint8_t bios_area[BIOS_TEST_AREA_BLOCKS * 512U];
@@ -48,6 +50,11 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
     if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
         lba + count <= disk->nxfs_base + NXFS_TEST_AREA_BLOCKS) {
         *base = disk->nxfs_area + (lba - disk->nxfs_base) * 512ULL;
+        return true;
+    }
+    if (disk->recovery_base != 0U && lba >= disk->recovery_base &&
+        lba + count <= disk->recovery_base + 2U) {
+        *base = disk->recovery_area + (lba - disk->recovery_base) * 512ULL;
         return true;
     }
     if (lba >= DISK_BLOCKS - EDGE_BLOCKS) {
@@ -113,6 +120,7 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
     if(ok)ok=fseek(f,0,SEEK_SET)==0&&fwrite(disk->first,1U,sizeof(disk->first),f)==sizeof(disk->first);
     if(ok)ok=fseek(f,(long)(FORMAT_BASE*512ULL),SEEK_SET)==0&&fwrite(disk->format_area,1U,sizeof(disk->format_area),f)==sizeof(disk->format_area);
     if(ok&&disk->bios_base!=0U)ok=fseek(f,(long)(disk->bios_base*512ULL),SEEK_SET)==0&&fwrite(disk->bios_area,1U,sizeof(disk->bios_area),f)==sizeof(disk->bios_area);
+    if(ok&&disk->recovery_base!=0U)ok=fseek(f,(long)(disk->recovery_base*512ULL),SEEK_SET)==0&&fwrite(disk->recovery_area,1U,sizeof(disk->recovery_area),f)==sizeof(disk->recovery_area);
     if(ok)ok=fseek(f,(long)((DISK_BLOCKS-EDGE_BLOCKS)*512ULL),SEEK_SET)==0&&fwrite(disk->last,1U,sizeof(disk->last),f)==sizeof(disk->last);
     if(fclose(f)!=0)ok=false;
     return ok;
@@ -270,6 +278,40 @@ int main(int argc,char **argv) {
     assert(target.first[510U]==0x55U&&target.first[511U]==0xAAU);
     assert(memcmp(target.first+440U,boot_image.protective_mbr+440U,70U)==0);
 
+    /* Persist installer recovery records in the authenticated GPT recovery
+     * partition through the same guarded block-device write gate. */
+    assert(plan.partitions[3].kind==NEXUS_PARTITION_RECOVERY);
+    target.recovery_base=plan.partitions[3].first_lba;
+    assert(gpt_scan_device(target_handle));
+    const struct nexus_gpt_partition *recovery_part=gpt_partition_at(3U);
+    assert(recovery_part!=NULL);
+    struct nexus_gpt_partition recovery_copy=*recovery_part;
+    struct nexus_installer_journal_record journal={0},journal_readback;
+    journal.sequence=1U;journal.phase=NEXUS_JOURNAL_PREPARED;
+    journal.disk_block_count=target_handle->block_count;
+    journal.block_size=target_handle->block_size;
+    journal.firmware_mode=NEXUS_FIRMWARE_DUAL;
+    (void)snprintf(journal.stable_id,sizeof(journal.stable_id),"%s",
+                   target_handle->stable_id);
+    (void)snprintf(journal.model,sizeof(journal.model),"%s",
+                   target_handle->model);
+    memcpy(journal.disk_guid,disk_guid,sizeof(journal.disk_guid));
+    assert(nexus_installer_store_recovery_record(target_handle,&identity,
+        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_OK);
+    assert(nexus_installer_load_recovery_record(target_handle,&identity,
+        &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
+    assert(journal_readback.sequence==1U&&
+           journal_readback.phase==NEXUS_JOURNAL_PREPARED);
+    journal.sequence=2U;journal.phase=NEXUS_JOURNAL_GPT_WRITTEN;
+    journal.completed_steps=1U;
+    assert(nexus_installer_store_recovery_record(target_handle,&identity,
+        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_OK);
+    assert(nexus_installer_load_recovery_record(target_handle,&identity,
+        &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
+    assert(journal_readback.sequence==2U&&
+           journal_readback.phase==NEXUS_JOURNAL_GPT_WRITTEN);
+    assert(target.flushes==33U);
+
     const uint32_t bps=512U;
     const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
         ((uint32_t)target.format_area[esp_offset+15U]<<8));
@@ -359,7 +401,7 @@ int main(int argc,char **argv) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 36U);
+    assert(target.flushes == 38U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy a large system file through a one-operation installer session. */
@@ -370,7 +412,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 40U);
+    assert(target.flushes == 42U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

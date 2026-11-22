@@ -45,10 +45,10 @@ static void check_header(const uint8_t *header, uint32_t block_size,
     assert(crc32(copy, 92U) == expected);
 }
 
-static void fill_guids(uint8_t disk[16], uint8_t parts[4][16]) {
+static void fill_guids(uint8_t disk[16], uint8_t parts[5][16]) {
     for (size_t i = 0U; i < 16U; ++i) {
         disk[i] = (uint8_t)(0xA0U + i);
-        for (size_t p = 0U; p < 4U; ++p)
+        for (size_t p = 0U; p < 5U; ++p)
             parts[p][i] = (uint8_t)(0x10U + p * 16U + i);
     }
 }
@@ -56,7 +56,7 @@ static void fill_guids(uint8_t disk[16], uint8_t parts[4][16]) {
 static void test_uefi_image(void) {
     struct nexus_partition_plan plan;
     struct nexus_gpt_image_buffers image;
-    uint8_t disk_guid[16], partition_guids[4][16];
+    uint8_t disk_guid[16], partition_guids[5][16];
     fill_guids(disk_guid, partition_guids);
     assert(nexus_partition_plan_create(64ULL * 1024ULL * 1024ULL * 1024ULL /
                                        512ULL, 512U,
@@ -75,7 +75,9 @@ static void test_uefi_image(void) {
     for (size_t i = 0U; i < NEXUS_GPT_IMAGE_ENTRY_BYTES; ++i)
         assert(image.primary_entries[i] == image.backup_entries[i]);
     assert(image.primary_entries[0] == 0x28U); /* EFI System GUID */
-    assert(image.primary_entries[128] == 0x46U); /* Nexus NXFS GUID */
+    assert(image.primary_entries[128] == 0x46U); /* Nexus system NXFS */
+    assert(image.primary_entries[256] == 0x4EU); /* Nexus recovery */
+    assert(image.primary_entries[384] == 0x46U); /* Nexus data NXFS */
 }
 
 static void test_dual_firmware_image(void) {
@@ -89,7 +91,8 @@ static void test_dual_firmware_image(void) {
     assert(image.primary_entries[0]==0x28U);
     assert(image.primary_entries[128]=='H');
     assert(image.primary_entries[256]==0x46U);
-    assert(image.primary_entries[384]==0x46U);
+    assert(image.primary_entries[384]==0x4EU);
+    assert(image.primary_entries[512]==0x46U);
     for(size_t i=0U;i<NEXUS_GPT_IMAGE_ENTRY_BYTES;i++)
         assert(image.primary_entries[i]==image.backup_entries[i]);
 }

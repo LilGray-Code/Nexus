@@ -19,6 +19,10 @@ static const uint8_t nxfs_type_guid[16] = {
     0x46U, 0x53U, 0x58U, 0x4EU, 0x01U, 0x00U, 0x58U, 0x4EU,
     0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x46U, 0x53U
 };
+static const uint8_t recovery_type_guid[16] = {
+    0x4EU, 0x58U, 0x52U, 0x43U, 0x01U, 0x00U, 0x58U, 0x4EU,
+    0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x52U, 0x43U
+};
 
 static void zero_bytes(void *buffer, size_t length) {
     uint8_t *bytes = (uint8_t *)buffer;
@@ -78,6 +82,7 @@ static const uint8_t *partition_type(enum nexus_partition_kind kind) {
         case NEXUS_PARTITION_BIOS_BOOT: return bios_boot_type_guid;
         case NEXUS_PARTITION_SYSTEM:
         case NEXUS_PARTITION_DATA: return nxfs_type_guid;
+        case NEXUS_PARTITION_RECOVERY: return recovery_type_guid;
         default: return NULL;
     }
 }
@@ -87,6 +92,7 @@ static const char *partition_name(enum nexus_partition_kind kind) {
         case NEXUS_PARTITION_ESP: return "Nexus EFI";
         case NEXUS_PARTITION_BIOS_BOOT: return "Nexus BIOS";
         case NEXUS_PARTITION_SYSTEM: return "Nexus System";
+        case NEXUS_PARTITION_RECOVERY: return "Nexus Recovery";
         case NEXUS_PARTITION_DATA: return "Nexus Data";
         default: return NULL;
     }
@@ -126,19 +132,22 @@ static bool validate_plan(const struct nexus_partition_plan *plan,
                 return false;
         previous_last = part->last_lba;
     }
-    if (plan->partition_count == 3U) {
-        if ((plan->partitions[0].kind != NEXUS_PARTITION_ESP &&
-             plan->partitions[0].kind != NEXUS_PARTITION_BIOS_BOOT) ||
-            plan->partitions[1].kind != NEXUS_PARTITION_SYSTEM ||
-            plan->partitions[2].kind != NEXUS_PARTITION_DATA) return false;
-    } else if (plan->partition_count == 4U) {
-        if (plan->partitions[0].kind != NEXUS_PARTITION_ESP ||
-            plan->partitions[1].kind != NEXUS_PARTITION_BIOS_BOOT ||
-            plan->partitions[2].kind != NEXUS_PARTITION_SYSTEM ||
-            plan->partitions[3].kind != NEXUS_PARTITION_DATA) return false;
+    size_t index = 0U;
+    if (plan->partitions[index].kind == NEXUS_PARTITION_ESP) {
+        ++index;
+        if (index < plan->partition_count &&
+            plan->partitions[index].kind == NEXUS_PARTITION_BIOS_BOOT)
+            ++index;
+    } else if (plan->partitions[index].kind == NEXUS_PARTITION_BIOS_BOOT) {
+        ++index;
     } else {
         return false;
     }
+    if (index + 3U != plan->partition_count ||
+        plan->partitions[index].kind != NEXUS_PARTITION_SYSTEM ||
+        plan->partitions[index + 1U].kind != NEXUS_PARTITION_RECOVERY ||
+        plan->partitions[index + 2U].kind != NEXUS_PARTITION_DATA)
+        return false;
     return true;
 }
 

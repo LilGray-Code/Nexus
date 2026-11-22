@@ -65,6 +65,7 @@ bool nexus_partition_plan_create(uint64_t disk_block_count,
     uint64_t blocks;
     uint64_t next;
     uint64_t minimum_system;
+    uint64_t recovery_blocks = 0U;
     uint64_t esp_blocks = 0U;
     uint64_t bios_blocks = 0U;
 
@@ -116,6 +117,11 @@ bool nexus_partition_plan_create(uint64_t disk_block_count,
                        &minimum_system) ||
         !append_partition(out, NEXUS_PARTITION_SYSTEM, first,
                           minimum_system, alignment, &next) ||
+        !round_up_u64(next, alignment, &first) ||
+        !mib_to_blocks(NEXUS_PLAN_RECOVERY_MIB, logical_block_size,
+                       &recovery_blocks) ||
+        !append_partition(out, NEXUS_PARTITION_RECOVERY, first,
+                          recovery_blocks, alignment, &next) ||
         !round_up_u64(next, alignment, &first)) goto fail;
 
     if (first > last) goto fail;

@@ -5,10 +5,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define NEXUS_PLAN_MAX_PARTITIONS 4U
+#define NEXUS_PLAN_MAX_PARTITIONS 5U
 #define NEXUS_PLAN_ESP_MIB 512U
 #define NEXUS_PLAN_BIOS_BOOT_MIB 2U
 #define NEXUS_PLAN_SYSTEM_MIB 8192U
+#define NEXUS_PLAN_RECOVERY_MIB 16U
 #define NEXUS_PLAN_ALIGNMENT_BYTES (1024U * 1024U)
 
 enum nexus_firmware_mode {
@@ -21,7 +22,8 @@ enum nexus_partition_kind {
     NEXUS_PARTITION_ESP = 1,
     NEXUS_PARTITION_BIOS_BOOT = 2,
     NEXUS_PARTITION_SYSTEM = 3,
-    NEXUS_PARTITION_DATA = 4
+    NEXUS_PARTITION_DATA = 4,
+  NEXUS_PARTITION_RECOVERY = 5
 };
 
 struct nexus_planned_partition {

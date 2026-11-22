@@ -54,16 +54,19 @@ passed their independent tests.
 - GPT partition table.
 - EFI System Partition: FAT32, with the Nexus Limine UEFI loader and Nexus boot
   configuration.
-- Nexus System partition: dedicated Nexus filesystem (NXFS) containing the
-  kernel, system services, desktop, libraries, and signed/hashed system
-  manifests.
-- Optional Nexus Data partition: NXFS for user data and settings, separate
-  from the system image to support upgrades and recovery.
+- Nexus System partition: dedicated Nexus filesystem (NXFS) for the kernel and
+  installed system payload.
+- Nexus Recovery partition: a dedicated reserved partition for redundant,
+  checksummed installer transaction records. It is not mounted as a normal
+  filesystem and must remain separate from system/data files.
+- Nexus Data partition: NXFS for user data and settings, separate from system
+  replacement to support upgrades and recovery.
 
 ### Legacy BIOS
 
 - GPT with a BIOS Boot Partition for the Limine BIOS stage.
-- Nexus System partition (NXFS), and optional separate Nexus Data partition.
+- Nexus System partition (NXFS), dedicated Nexus Recovery partition for the
+  durable install journal, and separate Nexus Data partition.
 - The installer writes and verifies the BIOS boot stage only after validating
   the target disk identity and partition geometry.
 

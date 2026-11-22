@@ -285,7 +285,9 @@ static void draw_shell(void) {
                             (part->kind == NEXUS_PARTITION_BIOS_BOOT
                                 ? "BIOS BOOT" :
                             (part->kind == NEXUS_PARTITION_SYSTEM
-                                ? "NEXUS SYSTEM" : "NEXUS DATA"));
+                                ? "NEXUS SYSTEM" :
+                            (part->kind == NEXUS_PARTITION_RECOVERY
+                                ? "NEXUS RECOVERY" : "NEXUS DATA")));
                         const uint64_t sectors_per_mib =
                             (1024ULL * 1024ULL) / device->block_size;
                         const uint64_t size_mib =
@@ -293,7 +295,7 @@ static void draw_shell(void) {
                             sectors_per_mib;
                         char size_text[21];
                         format_u64(size_mib, size_text);
-                        const uint64_t row_y = text_y + 252U + i * 24U;
+                        const uint64_t row_y = text_y + 246U + i * 20U;
                         graphics_draw_text(text_x, row_y, label,
                                            1, 233, 243, 252);
                         graphics_draw_text(text_x + 190U, row_y,

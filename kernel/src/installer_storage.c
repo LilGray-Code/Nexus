@@ -122,6 +122,87 @@ enum nexus_fat32_file_result nexus_installer_write_efi_file(
 }
 
 
+static bool installer_is_exact_recovery_partition(
+    const struct nexus_block_device *device,
+    const struct nexus_gpt_partition *requested) {
+    static const uint8_t recovery_guid[16]={
+        0x4EU,0x58U,0x52U,0x43U,0x01U,0x00U,0x58U,0x4EU,
+        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x52U,0x43U
+    };
+    if(device==NULL||requested==NULL||
+       requested->last_lba<requested->first_lba||
+       requested->last_lba-requested->first_lba<1U||
+       !gpt_scan_device(device))return false;
+    for(size_t i=0U;i<gpt_partition_count();++i){
+        const struct nexus_gpt_partition *part=gpt_partition_at(i);
+        if(part==NULL||part->first_lba!=requested->first_lba||
+           part->last_lba!=requested->last_lba)continue;
+        for(size_t b=0U;b<16U;++b)
+            if(part->type_guid[b]!=recovery_guid[b]||
+               part->unique_guid[b]!=requested->unique_guid[b])return false;
+        return true;
+    }
+    return false;
+}
+
+static bool journal_target_read(void *context,uint64_t lba,uint32_t blocks,
+                                void *buffer) {
+    return installer_target_read(context,lba,blocks,buffer);
+}
+static bool journal_target_write(void *context,uint64_t lba,uint32_t blocks,
+                                 const void *buffer) {
+    return installer_target_write(context,lba,blocks,buffer);
+}
+static bool journal_target_flush(void *context) {
+    return installer_target_flush(context);
+}
+
+enum nexus_installer_journal_result nexus_installer_load_recovery_record(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const struct nexus_gpt_partition *recovery_partition,
+    struct nexus_installer_journal_record *record) {
+    if(device==NULL||identity==NULL||record==NULL||
+       !blockdev_matches_identity(device,identity->stable_id,identity->model,
+          identity->block_count,identity->block_size)||
+       !installer_is_exact_recovery_partition(device,recovery_partition))
+        return NEXUS_JOURNAL_INVALID;
+    const struct nexus_installer_journal_device target={
+        .block_count=device->block_count,.block_size=device->block_size,
+        .max_blocks_per_request=device->max_blocks_per_request,
+        .context=(void*)device,.read=journal_target_read,
+        .write=journal_target_write,.flush=journal_target_flush
+    };
+    return nexus_installer_journal_load(&target,recovery_partition->first_lba,
+                                        record);
+}
+
+enum nexus_installer_journal_result nexus_installer_store_recovery_record(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const char *typed_id,const char *typed_erase,
+    const struct nexus_gpt_partition *recovery_partition,
+    const struct nexus_installer_journal_record *record) {
+    if(device==NULL||identity==NULL||record==NULL||
+       !blockdev_matches_identity(device,identity->stable_id,identity->model,
+          identity->block_count,identity->block_size)||
+       !installer_is_exact_recovery_partition(device,recovery_partition))
+        return NEXUS_JOURNAL_INVALID;
+    if(!blockdev_install_session_begin(device,typed_id,typed_erase))
+        return NEXUS_JOURNAL_INVALID;
+    const struct nexus_installer_journal_device target={
+        .block_count=device->block_count,.block_size=device->block_size,
+        .max_blocks_per_request=device->max_blocks_per_request,
+        .context=(void*)device,.read=journal_target_read,
+        .write=journal_target_write,.flush=journal_target_flush
+    };
+    const enum nexus_installer_journal_result result=
+        nexus_installer_journal_commit(&target,recovery_partition->first_lba,
+                                       record);
+    blockdev_install_session_end();
+    return result;
+}
+
 static bool installer_is_exact_bios_partition(
     const struct nexus_block_device *device,
     const struct nexus_gpt_partition *requested) {

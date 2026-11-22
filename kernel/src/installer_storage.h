@@ -8,6 +8,7 @@
 #include "nxfs.h"
 #include "boot_payload.h"
 #include "bios_install.h"
+#include "installer_journal.h"
 
 struct nexus_installer_disk_identity {
     char stable_id[NEXUS_BLOCKDEV_ID_MAX];
@@ -32,6 +33,18 @@ bool nexus_installer_format_nxfs(
     const char *typed_stable_id,
     const char *typed_erase_phrase,
     const struct nexus_gpt_partition *partition);
+
+enum nexus_installer_journal_result nexus_installer_load_recovery_record(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const struct nexus_gpt_partition *recovery_partition,
+    struct nexus_installer_journal_record *record);
+enum nexus_installer_journal_result nexus_installer_store_recovery_record(
+    const struct nexus_block_device *device,
+    const struct nexus_installer_disk_identity *identity,
+    const char *typed_stable_id,const char *typed_erase_phrase,
+    const struct nexus_gpt_partition *recovery_partition,
+    const struct nexus_installer_journal_record *record);
 
 bool nexus_installer_install_bios_bootloader(
     const struct nexus_block_device *device,

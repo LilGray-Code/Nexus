@@ -254,7 +254,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     };
     static const uint8_t accents[4][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {239U, 177U, 119U}
+        {217U, 164U, 83U}
     };
     const uint64_t tab_width = 72U;
     const uint64_t tab_step = 78U;

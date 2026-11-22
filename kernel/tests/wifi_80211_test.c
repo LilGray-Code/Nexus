@@ -17,7 +17,7 @@ static size_t make_frame(uint8_t *frame, uint16_t subtype,
     memcpy(frame+n, "NEXU", 4U); n += 4U;
     frame[n++] = 3; frame[n++] = 1; frame[n++] = 6;
     if (include_rsn) {
-        frame[n++] = 48; frame[n++] = 20;
+        frame[n++] = 48; frame[n++] = 18;
         frame[n++] = 1; frame[n++] = 0; /* RSN version */
         frame[n++] = 0; frame[n++] = 0x0F; frame[n++] = 0xAC;
         frame[n++] = 4; /* CCMP group cipher */

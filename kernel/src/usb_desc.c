@@ -54,6 +54,7 @@ bool nexus_usb_find_bulk_interface(
                 ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
             if (attributes == 2U && packet != 0U) {
                 if ((address & 0x80U) != 0U &&
+                    (address & 0x0FU) != 0U &&
                     candidate.bulk_in_endpoint == 0U) {
                     candidate.bulk_in_endpoint = address;
                     candidate.bulk_in_max_packet = packet;

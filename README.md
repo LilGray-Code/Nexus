@@ -1,69 +1,96 @@
-# Nexus OS
+# Nexus OS — Original Kernel
 
-Nexus is an independent x86-64 desktop operating system. Its target runtime is
-fully Nexus-owned: kernel, userland, system services, desktop, applications,
-filesystem, and graphical installer. It is not a Linux, Debian, or FreeBSD
-distribution.
+Nexus is an independent x86-64 operating-system project. The active **Original
+Kernel** edition boots a Nexus-written freestanding kernel and its integrated
+framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 
-## Active implementation
+> **Status: QEMU-validated installable engineering prototype.** The dual-mode
+> BIOS/UEFI ISO and graphical installer have been exercised in virtual
+> machines. Nexus has not yet been certified on physical PCs and is not a
+> production-ready general-purpose desktop OS.
 
-The original-kernel implementation is developed on the
-[nexus-original-kernel-roadmap branch](https://github.com/LilGray-Code/Nexus/tree/nexus-original-kernel-roadmap).
-It uses a freestanding x86-64 kernel and Limine for UEFI and legacy BIOS boot.
-The Debian-based prototype is historical only and is not part of the target
-runtime or installer.
+## What is implemented
 
-## Current prototype
+- A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
+- A framebuffer desktop with Home, Files, Browser, Settings, Terminal, and
+  Installer views, plus keyboard and mouse input.
+- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
+- NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
+  and supports guarded installer writes when the device provides flush support.
+- GPT, FAT32, NXFS, and a virtual filesystem layer.
+- A Nexus graphical installer. The installer builds a GPT layout with an EFI
+  System Partition, Nexus System volume, Recovery journal partition, and
+  separate Nexus Data volume; BIOS installs also include a BIOS Boot
+  partition.
+- A Files view with a flat root listing (up to 64 indexed entries, eight
+  visible at once), keyboard/mouse selection, create/open/edit/delete, and a
+  4 KiB ASCII text editor. The installed NXFS Data volume is the persistent
+  user-file target. FAT32 volumes are read-only; RAM-only fallback saves are
+  volatile.
+- An early E1000 networking stack with DHCP, DNS, TCP, and a plain HTTP text
+  viewer.
 
-The active branch contains a freestanding x86-64 kernel, Limine BIOS/UEFI boot
-media, a framebuffer desktop shell, PS/2 keyboard/mouse input, kernel terminal,
-cooperative scheduler foundation, ring-3 ELF execution, read-only GPT/FAT32
-storage and VFS, volatile RAM filesystem, Intel E1000 networking, DHCP, DNS,
-and an early single-connection TCP/plain-HTTP client.
+The desktop applications and current system services are integrated into the
+kernel. The presence of an ELF loader and ring-3 execution tests does **not**
+mean that Nexus currently has a full separate userland, a mature init/service
+manager, or ordinary preemptive multitasking.
 
-The desktop includes an **Install F5** graphical wizard with disk
-selection, UEFI/dual-firmware planning, exact stable-ID confirmation, and a
-separate typed `ERASE` confirmation. The kernel runtime creates GPT, formats
-the EFI, NXFS system, and NXFS data partitions, deploys the system and boot
-payloads, installs the optional BIOS boot stage, and journals each completed
-phase. Interrupted installs resume from the last verified journal phase.
+## Installer safety
 
-The CI release ISO is built with `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES`
-after the host tests, disposable-disk integration test, keyboard-driven QEMU
-installer test, installed-disk UEFI/BIOS boot tests, and final ISO boot check
-pass. The supported target write backend is currently NVMe only; AHCI/SATA and
-USB mass-storage installation are not implemented.
+The installer requires the user to choose a target disk, confirm its stable
+device identity, and separately type `ERASE` before destructive operations.
+It revalidates the target and keeps a durable recovery journal. The Recovery
+partition is separate from the System and Data volumes. An interrupted install
+can be retried against the same target; the transaction tests verify resume
+after simulated restarts without rewriting an already-committed GPT.
 
-This is an **installable prototype**, not a finished general-purpose desktop
-OS. The installed system payload is still a minimal kernel, manifest, and
-README rather than a complete userland. The data partition is formatted, but
-normal persistent user-file writes and the file-management UI still need
-completion. Physical NVMe hardware validation, broader GPU/audio/Wi-Fi/USB
-drivers, power management, updates, and production recovery hardening remain
-outstanding.
+**Installing erases the selected disk.** Use a disposable disk or virtual
+machine while evaluating Nexus. Back up important data and check the displayed
+model, capacity, and stable identity before confirming.
 
-## First-party graphical installer
+## Validation evidence
 
-Nexus has its own graphical installer, running directly in the Nexus live
-environment. It does not launch or depend on another distribution's installer
-or package manager. The wizard invokes the guarded installer runtime; the
-implementation, safety invariants, test gates, and remaining limitations are
-documented in [installer/README.md](installer/README.md).
+The repository's GitHub Actions workflows build both the write-locked kernel
+and the installer-enabled kernel and exercise:
 
-The GPT transaction and kernel storage adapters have host-side tests
-against disposable in-memory block devices. Boot-medium provenance is resolved
-from Limine's executable-file handoff by matching validated GPT partition GUID,
-GPT disk GUID, or MBR disk ID; ambiguous or unknown identity fails closed.
-The installer runtime, storage adapters, recovery path, both kernel
-build variants, and QEMU install/boot matrix passed GitHub Actions run
-[44969951849](https://github.com/LilGray-Code/Nexus/actions/runs/44969951849).
-The resulting ISO is an installable NVMe-targeted prototype, not a claim of
-physical-hardware certification or a complete general-purpose userland.
+- live UEFI boot with OVMF and live legacy-BIOS boot with SeaBIOS;
+- installed UEFI and BIOS boot;
+- graphical installation to disposable NVMe and AHCI/SATA targets;
+- persistent NXFS user-file creation and fresh-boot retention on NVMe and
+  AHCI/SATA targets;
+- a Files-editor keyboard edit followed by save, reboot, and verification of
+  the edited file on the NVMe Data volume;
+- host-side installer fault injection across simulated power cycles, journal
+  recovery, and NXFS unmount/remount/edit/remount persistence;
+- dual-mode ISO construction and a boot check of the distributable ISO.
+
+These are virtual-machine and host-test results. They do not demonstrate
+physical power-loss behavior, compatibility with every controller or
+firmware, or successful installation on arbitrary PCs. Check the
+[GitHub Actions workflows](https://github.com/LilGray-Code/Nexus/actions) for
+the latest run attached to the current branch.
+
+## Important limitations
+
+- No physical PC installation or hardware-compatibility matrix has been
+  completed. Hardware testing remains required.
+- Secure Boot is not supported.
+- The browser is an early plain-HTTP text viewer; HTTPS/TLS and modern web
+  rendering are not implemented.
+- The Files view is currently a flat-file interface with 8.3-style filenames
+  and a 4 KiB ASCII editor; it is not a full hierarchical file manager.
+- Desktop applications and much of the system runtime remain kernel-integrated.
+  A separate userland, a full application/process model, robust preemptive
+  multitasking, updates, and production recovery/upgrade tooling remain work
+  in progress.
+- Broad GPU acceleration, audio, Wi-Fi, Bluetooth, power management, and
+  support for arbitrary third-party hardware are not claimed.
 
 ## Build and test
 
-See the [original-kernel architecture roadmap](docs/architecture/ORIGINAL-KERNEL-ROADMAP.md)
-and [GitHub Actions](https://github.com/LilGray-Code/Nexus/actions) for BIOS/UEFI
-build and QEMU test status. A buildable ISO is not a finished OS: release
-requires verified boots, actual installer and first-boot tests, recovery tests,
-and a multi-vendor x86-64 hardware matrix.
+See the [installer documentation](installer/README.md), the
+[original-kernel architecture roadmap](docs/architecture/ORIGINAL-KERNEL-ROADMAP.md),
+and [GitHub Actions](https://github.com/LilGray-Code/Nexus/actions).
+
+A successful build or QEMU test is not a substitute for testing on the actual
+PC and storage hardware where Nexus will be used.

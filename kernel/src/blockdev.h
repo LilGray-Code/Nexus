@@ -67,6 +67,11 @@ bool blockdev_set_boot_media_from_gpt_partition_guid(const uint8_t partition_gui
 bool blockdev_set_boot_media_from_gpt_disk_guid(const uint8_t disk_guid[16]);
 bool blockdev_set_boot_media_from_mbr_disk_id(uint32_t disk_id);
 bool blockdev_set_boot_media_external(uint32_t source_kind);
+/* Treat an unregistered generic boot medium as external only after comparing
+ * its bootloader-provided identity against every registered disk. */
+bool blockdev_set_boot_media_external_if_unmatched(
+    const uint8_t partition_guid[16], const uint8_t disk_guid[16],
+    uint32_t mbr_disk_id);
 bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted);
 bool blockdev_boot_media_detection_complete(void);
 bool blockdev_is_boot_media(const struct nexus_block_device *device);

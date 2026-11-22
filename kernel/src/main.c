@@ -109,6 +109,14 @@ static bool boot_media_provenance_init(void) {
     if(file->mbr_disk_id&&blockdev_set_boot_media_from_mbr_disk_id(file->mbr_disk_id)){
         serial_write("BOOT MEDIA: matched MBR disk ID\r\n");return true;
     }
+    if(file->media_type==LIMINE_MEDIA_TYPE_GENERIC&&
+       blockdev_set_boot_media_external_if_unmatched(
+           (const uint8_t *)&file->gpt_part_uuid,
+           (const uint8_t *)&file->gpt_disk_uuid,
+           file->mbr_disk_id)){
+        serial_write("BOOT MEDIA: generic source identity does not match any registered disk\\r\\n");
+        return true;
+    }
     if(file->media_type==LIMINE_MEDIA_TYPE_OPTICAL&&blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL)){
         serial_write("BOOT MEDIA: optical source is not a registered disk\r\n");return true;
     }
@@ -252,9 +260,16 @@ void kmain(void) {
         serial_write("WARNING: no mass-storage PCI controller discovered\r\n");
     }
     serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
-    if (!boot_media_provenance_init()) {
-        serial_write("INSTALLER: destructive writes locked until boot source is identified\r\n");
+    const bool boot_media_identity_ready = boot_media_provenance_init();
+    if (!boot_media_identity_ready) {
+        serial_write("INSTALLER: destructive writes locked until boot source is identified\\r\\n");
     }
+#ifdef NEXUS_STORAGE_SELFTEST
+    if (!storage_run_selftests()) {
+        serial_write("ERROR: post-provenance storage write self-test failed\\r\\n");
+        halt_forever();
+    }
+#endif
 
     timer_init(100);
     if (e1000_ready() && !net_init()) {

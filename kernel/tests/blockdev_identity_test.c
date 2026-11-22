@@ -87,6 +87,13 @@ int main(void) {
     assert(!blockdev_identity_is_unique(blockdev_at(0U)));
 
     blockdev_init();
+    struct nexus_block_device placeholder_sata =
+        make_device("sata0", "SATA-UNKNOWN");
+    placeholder_sata.transport = NEXUS_BLOCKDEV_TRANSPORT_AHCI;
+    assert(blockdev_register(&placeholder_sata));
+    assert(!blockdev_identity_is_unique(blockdev_at(0U)));
+
+    blockdev_init();
     struct nexus_block_device install_disk =
         make_device("disk0", "NVME-SERIAL-003");
     install_disk.flags = NEXUS_BLOCKDEV_READ_ONLY |
@@ -148,6 +155,23 @@ int main(void) {
     assert(blockdev_is_mounted(boot_registered));
     assert(blockdev_set_mounted(boot_registered,false));
     assert(!blockdev_is_mounted(boot_registered));
+
+    /* Generic USB boot media may be absent from the block-device registry.
+     * Its MBR ID must be compared against each registered target before it is
+     * accepted as an external source. */
+    blockdev_init();
+    struct nexus_block_device generic_boot =
+        make_device("disk0", "SATA-BOOT-001");
+    generic_boot.transport = NEXUS_BLOCKDEV_TRANSPORT_AHCI;
+    generic_boot.read = test_read_boot_mbr;
+    assert(blockdev_register(&generic_boot));
+    assert(!blockdev_set_boot_media_external_if_unmatched(
+        NULL, NULL, 0x12345678U));
+    assert(!blockdev_boot_media_detection_complete());
+    assert(blockdev_set_boot_media_external_if_unmatched(
+        NULL, NULL, 0x87654321U));
+    assert(blockdev_boot_media_detection_complete());
+    assert(!blockdev_is_boot_media(blockdev_at(0U)));
 
     blockdev_init();
     struct nexus_block_device nonboot_disk = make_device("disk1","NVME-DATA-001");

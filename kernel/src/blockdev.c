@@ -255,13 +255,105 @@ bool blockdev_set_boot_media_from_mbr_disk_id(uint32_t disk_id) {
     return true;
 }
 bool blockdev_set_boot_media_external(uint32_t source_kind) {
-    if(boot_media_detection_complete||boot_media_device!=NULL)return false;
+    if (boot_media_detection_complete || boot_media_device != NULL)
+        return false;
     uint32_t transport;
-    if(source_kind==NEXUS_BOOT_SOURCE_OPTICAL)transport=NEXUS_BLOCKDEV_TRANSPORT_OPTICAL;
-    else if(source_kind==NEXUS_BOOT_SOURCE_NETWORK)transport=NEXUS_BLOCKDEV_TRANSPORT_NETWORK;
-    else return false;
-    for(size_t i=0U;i<registered_count;++i)if(devices[i].transport==transport)return false;
-    boot_media_detection_complete=true;
+    if (source_kind == NEXUS_BOOT_SOURCE_OPTICAL) {
+        transport = NEXUS_BLOCKDEV_TRANSPORT_OPTICAL;
+    } else if (source_kind == NEXUS_BOOT_SOURCE_NETWORK) {
+        transport = NEXUS_BLOCKDEV_TRANSPORT_NETWORK;
+    } else {
+        return false;
+    }
+    if (transport != 0U) {
+        for (size_t i = 0U; i < registered_count; ++i) {
+            if (devices[i].transport == transport) return false;
+        }
+    }
+    boot_media_detection_complete = true;
+    return true;
+}
+
+bool blockdev_set_boot_media_external_if_unmatched(
+    const uint8_t partition_guid[16], const uint8_t disk_guid[16],
+    uint32_t mbr_disk_id) {
+    if (boot_media_detection_complete || boot_media_device != NULL)
+        return false;
+
+    uint8_t part_nonzero = 0U;
+    uint8_t disk_nonzero = 0U;
+    if (partition_guid != NULL) {
+        for (size_t i = 0U; i < 16U; ++i) part_nonzero |= partition_guid[i];
+    }
+    if (disk_guid != NULL) {
+        for (size_t i = 0U; i < 16U; ++i) disk_nonzero |= disk_guid[i];
+    }
+    if (part_nonzero == 0U && disk_nonzero == 0U && mbr_disk_id == 0U) {
+        /* Without an identity token, a generic source is only unambiguous
+         * when there is no registered disk that could be the boot medium. */
+        if (registered_count != 0U) return false;
+        boot_media_detection_complete = true;
+        return true;
+    }
+
+    uint8_t sector[4096];
+    for (size_t d = 0U; d < registered_count; ++d) {
+        const struct nexus_block_device *candidate = &devices[d];
+        if (candidate->block_size < 512U ||
+            candidate->block_size > sizeof(sector) ||
+            !blockdev_read(candidate, 0U, 1U, sector)) {
+            /* An unreadable candidate cannot safely be ruled out as boot media. */
+            return false;
+        }
+
+        const bool mbr_valid = sector[510] == 0x55U && sector[511] == 0xAAU;
+        if (!mbr_valid) continue;
+
+        const uint32_t candidate_mbr_id =
+            (uint32_t)sector[440] |
+            ((uint32_t)sector[441] << 8) |
+            ((uint32_t)sector[442] << 16) |
+            ((uint32_t)sector[443] << 24);
+        if (mbr_disk_id != 0U && candidate_mbr_id == mbr_disk_id)
+            return false;
+
+        bool protective_gpt = false;
+        for (size_t entry = 0U; entry < 4U; ++entry) {
+            if (sector[446U + entry * 16U + 4U] == 0xEEU) {
+                protective_gpt = true;
+                break;
+            }
+        }
+        if (!protective_gpt ||
+            (part_nonzero == 0U && disk_nonzero == 0U)) {
+            continue;
+        }
+
+        if (!gpt_scan_device(candidate)) {
+            /* A broken protective GPT is ambiguous, so fail closed. */
+            return false;
+        }
+        const uint8_t *candidate_disk_guid = gpt_scanned_disk_guid();
+        if (disk_nonzero != 0U && candidate_disk_guid != NULL &&
+            guid_equal(candidate_disk_guid, disk_guid)) {
+            return false;
+        }
+        if (part_nonzero != 0U) {
+            for (size_t p = 0U; p < gpt_partition_count(); ++p) {
+                const struct nexus_gpt_partition *partition =
+                    gpt_partition_at(p);
+                if (partition != NULL &&
+                    guid_equal(partition->unique_guid, partition_guid)) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    /* The bootloader's generic source identity matched no registered disk.
+     * It is therefore safe to exclude all currently registered block devices
+     * from the target list while retaining the ordinary write gates. */
+    boot_media_detection_complete = true;
     return true;
 }
 static bool blockdev_set_boot_media_detection_complete(void) {
@@ -372,9 +464,12 @@ bool blockdev_identity_is_unique(const struct nexus_block_device *device) {
     }
 
     /* A placeholder serial is not safe enough to authorize destructive work. */
-    static const char unknown_id[] = "NVME-UNKNOWN";
+    static const char unknown_nvme_id[] = "NVME-UNKNOWN";
+    static const char unknown_sata_id[] = "SATA-UNKNOWN";
     if (blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
-                              unknown_id, sizeof(unknown_id))) {
+                              unknown_nvme_id, sizeof(unknown_nvme_id)) ||
+        blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
+                              unknown_sata_id, sizeof(unknown_sata_id))) {
         return false;
     }
 

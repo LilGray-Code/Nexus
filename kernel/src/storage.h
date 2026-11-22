@@ -6,6 +6,8 @@
 
 /* Classifies mass-storage controllers from the read-only PCI inventory. */
 bool storage_probe(void);
+/* Test writable controller paths only after boot-medium identity is complete. */
+bool storage_run_selftests(void);
 size_t storage_controller_count(void);
 
 #endif

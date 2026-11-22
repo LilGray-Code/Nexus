@@ -123,6 +123,11 @@ bool graphics_write_pixel(uint64_t x, uint64_t y, uint32_t pixel) {
     return true;
 }
 
+bool graphics_write_rgb_pixel(uint64_t x, uint64_t y, uint8_t red,
+                              uint8_t green, uint8_t blue) {
+    return graphics_write_pixel(x, y, pack_rgb(red, green, blue));
+}
+
 void graphics_clear(uint8_t red, uint8_t green, uint8_t blue) {
     graphics_fill_rect(0, 0, graphics_width(), graphics_height(),
                        red, green, blue);

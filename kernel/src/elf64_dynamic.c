@@ -94,10 +94,21 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
         const struct elf_program_header *p = (const void *)(
             bytes + h->phoff + (uint64_t)i * h->phentsize);
         if (p->type == ELF_PT_LOAD) {
-            if (p->filesz > p->memsz ||
+            if (p->memsz == 0U || p->filesz > p->memsz ||
                 !range_valid(p->offset, p->filesz, file_size) ||
                 p->vaddr > UINT64_MAX - p->memsz ||
-                load_count >= ELF_MAX_PROGRAM_HEADERS) return false;
+                load_count >= ELF_MAX_PROGRAM_HEADERS ||
+                (p->align > 1U &&
+                 ((p->align & (p->align - 1U)) != 0U ||
+                  (p->vaddr & (p->align - 1U)) !=
+                  (p->offset & (p->align - 1U))))) return false;
+            const uint64_t segment_end = p->vaddr + p->memsz;
+            for (uint16_t j = 0U; j < load_count; ++j) {
+                const struct elf_program_header *prior = &loads[j];
+                const uint64_t prior_end = prior->vaddr + prior->memsz;
+                if (p->vaddr < prior_end && prior->vaddr < segment_end)
+                    return false;
+            }
             loads[load_count++] = *p;
         } else if (p->type == ELF_PT_DYNAMIC) {
             if (dynamic != NULL || p->filesz == 0U ||

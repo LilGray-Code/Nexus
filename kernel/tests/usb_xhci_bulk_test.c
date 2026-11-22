@@ -64,6 +64,14 @@ static void test_bulk_out_transfer_trb(void) {
     assert((trb.control & (1U << 5)) != 0U);
 }
 
+static void test_endpoint_one_out_is_valid(void) {
+    struct nexus_xhci_bulk_trb trb;
+    assert(nexus_xhci_bulk_transfer_trb(0x01, 0x200000, 64, &trb));
+    assert((trb.control & (1U << 2)) == 0U);
+    assert(!nexus_xhci_bulk_transfer_trb(0x11, 0x200000, 64, &trb));
+    assert(!nexus_xhci_bulk_transfer_trb(0x71, 0x200000, 64, &trb));
+}
+
 static void test_rejects_invalid_transfer(void) {
     struct nexus_xhci_bulk_trb trb;
     assert(!nexus_xhci_bulk_transfer_trb(0x00, 0x200000, 64, &trb));
@@ -81,6 +89,7 @@ int main(void) {
     test_rejects_invalid_endpoint_or_ring();
     test_bulk_in_transfer_trb();
     test_bulk_out_transfer_trb();
+    test_endpoint_one_out_is_valid();
     test_rejects_invalid_transfer();
     puts("NEXUS xHCI BULK ENDPOINT AND TRANSFER BUILDER TESTS PASSED");
     return 0;

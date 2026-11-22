@@ -1,13 +1,18 @@
 # Nexus Installer
 
-**Status:** The x86-64 kernel boots from a dual-mode ISO and from a
-separately installed disposable GPT disk under both OVMF (UEFI) and SeaBIOS
-(legacy BIOS), as verified in CI. The installer has guarded GPT, FAT32, NXFS,
-Limine payload, and BIOS boot-stage storage adapters. The desktop drive chooser
-is still a non-destructive preview; it does not yet execute the install flow.
-The root filesystem/userland image, persistent journal placement and recovery
-workflow, physical-drive installation matrix, and production hardware support
-remain incomplete.
+**Status:** An installable x86-64 prototype ISO has been built and passed
+the full GitHub Actions validation run
+[44969951849](https://github.com/LilGray-Code/Nexus/actions/runs/44969951849).
+CI drove the graphical installer with a keyboard, installed to a disposable
+16 GiB NVMe target, booted that installed disk under OVMF (UEFI) and SeaBIOS
+(legacy BIOS), and boot-checked the final install-enabled ISO. The ISO SHA-256
+is `cf7c5f0af18ac43024b33db4b44cab50d55742ae04a9551a47fea6c94481e622`.
+
+This is a QEMU-validated installable prototype, not a production hardware
+certification or a complete general-purpose OS. The current installer writes
+to NVMe targets only; AHCI/SATA and USB mass-storage target writes are not
+implemented. Physical hardware installation and recovery still require
+validation.
 
 ## Product requirement
 
@@ -44,10 +49,10 @@ Planned screens:
 The default must be non-destructive. No disk is selected automatically, and
 the installer must never silently erase, repartition, or format a disk.
 
-## Disk and boot layout (proposed v1)
+## Disk and boot layout (implemented v1)
 
-The layout is a proposal until the GPT writer, filesystem, and boot paths have
-passed their independent tests.
+The following GPT layout is implemented and exercised by the disposable-disk
+installer and boot tests.
 
 ### UEFI
 
@@ -135,120 +140,49 @@ No gate may be marked complete from compilation alone. Each exit requires captur
 
 ## Current implementation status
 
-- A pure, host-testable partition planner exists in
-  `installer/partition_plan.c`. It plans GPT partition extents for UEFI
-  (512 MiB ESP) and legacy BIOS (2 MiB BIOS Boot partition), followed by an
-  8 GiB Nexus System partition and an aligned remainder data partition.
-  It supports 512-byte and 4096-byte logical sectors, checks arithmetic and
-  bounds, and performs no disk I/O.
-- `installer/gpt_image.c` serializes a protective MBR, primary and backup GPT
-  headers, mirrored entry arrays, partition type GUIDs, and CRC32 checksums.
-  It performs no disk I/O. CI tests both 512-byte and 4Kn metadata and rejects
-  duplicate GUIDs and invalid layouts.
-- `installer/gpt_install.c` provides a guarded metadata-install transaction.
-  It requires two separate confirmations and flags proving target identity was
-  revalidated, the target is not live media, and it is not mounted. It writes
-  backup entries/header first, then primary entries/header, and the protective
-  MBR last; every phase is flushed and read back. Mock-disk CI tests verify
-  write order, read-back, rejection without confirmation, unsafe-target
-  rejection, and injected I/O failures.
-- `installer/installer_core.c` implements the installer authorization state
-  machine: target selection, pure partition planning, exact stable-ID
-  confirmation, a second typed `ERASE` confirmation, immediate target
-  revalidation, apply eligibility, cancellation, and a recovery-required state
-  after a changed target or failed apply. Host CI tests all state transitions.
-- The kernel desktop now has an **Install F5** screen that displays the selected
-  block device, capacity, sector size, and a UEFI or BIOS partition preview.
-  It is explicitly read-only and does not invoke the GPT install transaction,
-  FAT32 formatter, or the installer state machine.
-- The kernel has GPT primary/backup header and entry-array CRC validation,
-  exercised against a disposable QEMU disk image.
-- NXFS has an early on-disk formatter/mounter, two checksummed superblocks,
-  journal replay, copy-on-write data banks, and file read/write/delete. Its
-  current CI self-test formats and tests only a disposable virtual disk. It
-  remains a small prototype (16 files, up to 16 KiB each), not a production
-  system filesystem.
-- NVMe block writes and flush are available to the CI-only self-test build,
-  where a reserved sector is written, read back, and restored on a disposable
-  QEMU image. The distributable ISO intentionally registers NVMe as read-only;
-  normal boots do not write to user disks.
-- `installer/fat32_file.c` writes bounded nested FAT32 paths, allocates and
-  initializes one-cluster directories (including `.` and `..`), mirrors FAT
-  chains, verifies file sectors and directory entries, and emits the VFAT long
-  filename entry for Limine's required `limine.conf` name. Directory expansion
-  and general Unicode/long-name support are not implemented; full directories
-  fail closed. Host tests cover nested `EFI/BOOT` deployment and a >2 TiB LBA.
-- `installer/fat32_format.c` formats an existing partition as FAT32 with
-  primary/backup boot sectors and FSInfo, two allocation tables, initialized
-  reserved entries, and an empty root cluster. It uses bounded writes, flushes,
-  and read-back verification. Host tests cover a sparse 8 GiB volume, invalid
-  geometry, and injected I/O failure.
-- `kernel/src/installer_storage.c` adapts GPT writing and FAT32 formatting to
-  the registered kernel block-device API. Both paths revalidate stable device
-  identity and obtain a kernel-owned destructive-write session. FAT32 formatting
-  additionally requires an exact GPT EFI System Partition extent; arbitrary
-  LBAs and non-ESP partitions are rejected. The adapter is linked into the
-  kernel but is not called by the desktop.
-- The kernel requests Limine's standard Executable File response. It resolves
-  boot provenance by matching a unique GPT partition GUID, GPT disk GUID, or
-  MBR disk ID against registered devices after validating on-disk metadata.
-  Optical and TFTP boots are accepted as non-disk sources only when no device
-  of the corresponding transport is registered. Missing or ambiguous identity
-  remains fail-closed. The low-level setters are private to `blockdev.c`.
-- CI now verifies that the executable-file handoff identifies the live optical
-  source in both OVMF UEFI and SeaBIOS boots, including the distributable ISO.
-  The GPT partition resolver is host-tested against validated mock GPT metadata
-  and rejects duplicate matches. Physical GPT/MBR boot-media matching still
-  needs testing with actual USB/SATA/NVMe boot media. Never infer identity from
-  device order, model, or capacity.
-- The distributable NVMe driver blocks ordinary filesystem writes but exposes
-  its write/flush callbacks only through the kernel installer authorization
-  session. The physical NVMe write path has CI-only disposable-disk coverage;
-  physical-drive installation has not been tested. The desktop does not yet
-  invoke the guarded GPT or FAT32 adapters.
-- The graphical preview is not yet a complete installer. It supports
-  keyboard-based target selection and firmware-mode planning, and displays
-  boot-source, mounted-state, stable-identity, and write-path eligibility.
-  It deliberately does not start destructive operations.
-- `installer/installer_journal.c` provides a host-tested, dual-sector
-  recovery-record primitive. It alternates journal sectors, stores a sequence,
-  phase, target identity, geometry, firmware mode, progress count, and disk
-  GUID, and verifies each flushed update by reading it back. A torn update
-  leaves the previous valid record recoverable. Tests cover 512-byte and
-  4096-byte sectors, corrupt records, write/flush failures, identity changes,
-  and monotonic sequence enforcement. This journal is not yet assigned a
-  dedicated on-disk partition or wired into the installer transaction.
-- Installed-disk UEFI and legacy BIOS boot, plus live ISO UEFI and legacy BIOS
-  boot, pass the current QEMU CI workflow. These tests use disposable virtual
-  media and do not establish physical hardware compatibility.
-- A complete root filesystem/userland image, durable journal partition layout,
-  graphical confirmation/progress/recovery flow, and physical hardware install
-  validation are still outstanding.
+- **Graphical wizard:** The live desktop opens the installer with F5. It
+  enumerates eligible NVMe devices, displays stable identity/capacity/sector
+  size, previews UEFI or dual UEFI+BIOS partition layouts, asks for the exact
+  stable disk ID, and requires a separate typed `ERASE` confirmation. The
+  keyboard-driven flow is exercised in QEMU. No disk is selected or erased
+  automatically.
+- **Kernel installer runtime:** `kernel/src/installer_runtime.c` orchestrates
+  target revalidation, GPT creation/read-back, EFI FAT32 formatting, NXFS
+  system and data formatting, system/boot payload deployment, optional BIOS
+  boot-stage installation, and durable journal updates.
+- **Recovery:** The journal stores target identity, geometry, firmware mode,
+  disk GUID, sequence, phase, and completed-step count in alternating sectors.
+  A confirmed retry validates the journal and partition layout, then resumes
+  from the last committed phase without rewriting GPT. Corrupt or inconsistent
+  records fail closed.
+- **Storage:** GPT metadata, FAT32, NXFS, boot-payload deployment, and BIOS
+  installation use the kernel block-device API. The system partition receives
+  the kernel ELF, SYSTEM.MAN, and README.TXT. The separate NXFS data partition
+  is formatted and mounted by the desktop file-browser scan.
+- **Boot support:** The same dual-layout installation boots under OVMF/UEFI and
+  SeaBIOS/legacy BIOS in CI. The final ISO itself also passes UEFI and BIOS live
+  boot checks. Secure Boot is not supported.
+- **CI evidence:** Run
+  [44969951849](https://github.com/LilGray-Code/Nexus/actions/runs/44969951849)
+  passed the host recovery and partition tests, storage-adapter tests, both
+  write-locked and installer-enabled kernel builds, disposable-disk runtime
+  install, graphical QEMU install, installed-target UEFI and BIOS boots, and
+  final ISO boot check. The uploaded artifact is named
+  `NexusOS-OriginalKernel-BIOS-UEFI`.
+- **Release write gate:** The ordinary kernel Makefile remains write-locked.
+  The CI distributable ISO explicitly defines
+  `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES` after the complete QEMU
+  validation matrix passes. The installer still requires an explicit disk ID
+  and typed `ERASE` confirmation.
+- **Remaining limitations:** Only NVMe target writes are implemented. No
+  physical hardware install has been completed. The installed system payload
+  is not a complete userland/root filesystem, and ordinary persistent user
+  file writes remain read-only (user-facing writes can use the volatile RAM
+  overlay). The file-management UI, physical NVMe recovery tests, SATA/USB
+  storage, broader device drivers, upgrades, and production hardening remain
+  unfinished.
 
-The installer now has a kernel-side transaction orchestrator in
-`kernel/src/installer_runtime.c`. It sequences GPT creation and verification,
-EFI FAT32 formatting, NXFS system formatting, kernel/manifest deployment,
-UEFI boot-file deployment, optional BIOS boot-stage installation, and durable
-journal phase updates. If power or a device error interrupts an installation,
-the next confirmed attempt validates the disk identity, GPT layout, and journal
-then resumes from the last committed phase without rewriting GPT. Corrupt or
-inconsistent recovery records fail closed. Legacy-BIOS installs use the dual
-partition layout so Limine's configuration remains available on FAT32. The
-graphical wizard collects the exact selected disk ID and a separate typed
-`ERASE` confirmation.
-
-The runtime call is deliberately compile-time locked in the normal kernel
-build. `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES` is not defined by the
-release Makefile. A host-side runtime test and a dedicated GitHub Actions build
-gate have been added, but their results must be checked before the lock is
-removed. The runtime formats the separate NXFS data partition as well, and the desktop
-file-browser scan can mount the final data volume for persistent user files.
-The system payload is still only the kernel ELF, SYSTEM.MAN, and README.TXT—not
-a complete general-purpose userland or root filesystem.
-
-The installer is not release-ready. Do not enable the compile-time write gate
-until the new host transaction tests, the full freestanding kernel build, and
-the QEMU install/reboot/recovery matrix all pass. Physical NVMe installation
-and recovery still require validation; AHCI/SATA and USB mass-storage writes
-are not implemented. Do not treat the tested individual storage adapters or
-journal primitive as proof of a finished end-to-end installer.
+The artifact is suitable for testing the install flow in a virtual machine.
+Before installing on physical hardware, back up the selected disk and treat
+the ISO as an early prototype; QEMU success does not establish compatibility
+with every NVMe controller, firmware, or motherboard.

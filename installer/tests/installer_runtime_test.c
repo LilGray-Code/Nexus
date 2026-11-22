@@ -237,8 +237,8 @@ static void test_uefi_install(void) {
     assert(journal_phases[2] == NEXUS_JOURNAL_PAYLOAD_DEPLOYED);
     assert(journal_phases[3] == NEXUS_JOURNAL_BOOTLOADER_INSTALLED);
     assert(journal_phases[4] == NEXUS_JOURNAL_COMPLETE);
-    assert(progress_count == 5U);
-    assert(progress_seen[4] == NEXUS_INSTALL_PHASE_COMPLETE);
+    assert(progress_count == 6U);
+    assert(progress_seen[5] == NEXUS_INSTALL_PHASE_COMPLETE);
 }
 
 static void test_bios_layouts(void) {

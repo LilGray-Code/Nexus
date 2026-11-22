@@ -27,20 +27,26 @@ int main(void) {
  struct dyn *d=(void *)(image+0x1000);
  d[0]=(struct dyn){1,1};       /* DT_NEEDED */
  d[1]=(struct dyn){5,0x1080};  /* DT_STRTAB */
- d[2]=(struct dyn){10,8};      /* DT_STRSZ */
+ d[2]=(struct dyn){10,9};      /* DT_STRSZ */
  d[3]=(struct dyn){7,0x1090};  /* DT_RELA */
  d[4]=(struct dyn){8,24};      /* DT_RELASZ */
  d[5]=(struct dyn){9,24};      /* DT_RELAENT */
  d[6]=(struct dyn){0,0};
  image[0x1080]=0;image[0x1081]='l';image[0x1082]='i';
  image[0x1083]='b';image[0x1084]='c';image[0x1085]='.';image[0x1086]='s';
- image[0x1087]='o';
+ image[0x1087]='o';image[0x1088]=0;
  struct nexus_elf64_dynamic_info info;
  assert(nexus_elf64_dynamic_parse(image,sizeof(image),&info));
  assert(info.position_independent && !info.has_interpreter);
  assert(info.needed_count==1 && info.has_rela);
  assert(info.rela_address==0x1090 && info.rela_size==24 &&
         info.rela_entry_size==24);
+ d[0].value=9;
+ assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
+ d[0].value=1;
+ image[0x1088]='x';
+ assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
+ image[0x1088]=0;
  assert(!nexus_elf64_dynamic_parse(image,63,&info));
  image[0x1000+6*16]=1; /* remove DT_NULL */
  assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));

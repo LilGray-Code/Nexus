@@ -215,6 +215,45 @@ const struct nexus_pci_device *pci_device_at(uint32_t index) {
     return &stored_devices[index];
 }
 
+
+bool pci_find_capability(const struct nexus_pci_device *device,
+                         uint8_t capability_id, uint8_t *offset) {
+    if (device == NULL || offset == NULL ||
+        (device->status & 0x0010U) == 0U) {
+        return false;
+    }
+
+    /* Status bit 4 advertises a conventional capability list. */
+    uint8_t cursor = (uint8_t)pci_config_read(
+        device->bus, device->slot, device->function, 0x34U);
+
+    /* Config space from 0x40 through 0xFC contains at most 48 dwords.
+     * The hard bound also makes malformed/cyclic lists harmless.
+     */
+    for (uint8_t step = 0U; step < 48U; ++step) {
+        if (cursor < 0x40U || cursor > 0xFCU ||
+            (cursor & 0x03U) != 0U) {
+            return false;
+        }
+
+        const uint32_t capability = pci_config_read(
+            device->bus, device->slot, device->function, cursor);
+        if (capability == UINT32_MAX) return false;
+
+        if ((uint8_t)capability == capability_id) {
+            *offset = cursor;
+            return true;
+        }
+
+        const uint8_t next = (uint8_t)(capability >> 8);
+        if (next == 0U) return false;
+        cursor = next;
+    }
+
+    /* More than 48 entries implies a corrupt or cyclic list. */
+    return false;
+}
+
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,
                     struct nexus_pci_bar *bar) {
     if (device == NULL || bar == NULL || index >= NEXUS_PCI_BAR_COUNT)

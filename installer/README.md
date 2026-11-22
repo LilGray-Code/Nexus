@@ -252,3 +252,8 @@ the QEMU install/reboot/recovery matrix all pass. Physical NVMe installation
 and recovery still require validation; AHCI/SATA and USB mass-storage writes
 are not implemented. Do not treat the tested individual storage adapters or
 journal primitive as proof of a finished end-to-end installer.
+
+
+The branch's pull-request CI now runs the installer transaction and storage
+adapter host tests, both write-locked and installer-enabled kernel builds, and
+the full BIOS/UEFI QEMU build-and-boot matrix before changes are accepted.

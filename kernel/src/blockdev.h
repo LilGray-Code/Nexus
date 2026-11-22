@@ -20,7 +20,6 @@
 #define NEXUS_BLOCKDEV_TRANSPORT_NETWORK 5U
 #define NEXUS_BOOT_SOURCE_OPTICAL 1U
 #define NEXUS_BOOT_SOURCE_NETWORK 2U
-#define NEXUS_BOOT_SOURCE_GENERIC 3U
 
 typedef bool (*nexus_blockdev_read_fn)(void *context,
                                        uint64_t lba,

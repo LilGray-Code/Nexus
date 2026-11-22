@@ -175,7 +175,9 @@ static void format_minimal_fat32(void) {
     uint8_t *nested = disk[TEST_PARTITION_START + TEST_DATA_START + 3U];
     memcpy(nested, "INNER   TXT", 11U);
     nested[11U] = 0x20U;
-    nested[32U] = 0U;
+    /* Keep the cluster fully occupied so enumeration must follow its FAT link. */
+    for (size_t slot = 1U; slot < 16U; ++slot)
+        nested[slot * 32U] = 0xE5U;
 
     /* Mark the first unused slot so enumeration terminates normally. */
     disk[TEST_PARTITION_START + TEST_DATA_START + 2U][11U * 32U] = 0U;

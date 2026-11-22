@@ -164,7 +164,7 @@ static void format_minimal_fat32(void) {
     uint8_t *directory_fat = disk[TEST_PARTITION_START + TEST_RESERVED_SECTORS];
     put32(directory_fat + 5U * 4U, 0x0FFFFFFFU);
     uint8_t *directory_entry =
-        disk[TEST_PARTITION_START + TEST_DATA_START + 2U] + 8U * 32U;
+        disk[TEST_PARTITION_START + TEST_DATA_START + 2U] + 10U * 32U;
     memcpy(directory_entry, "SUBDIR     ", 11U);
     directory_entry[11U] = 0x10U;
     put16(directory_entry + 20U, 0U);
@@ -178,7 +178,7 @@ static void format_minimal_fat32(void) {
     nested[32U] = 0U;
 
     /* Mark the first unused slot so enumeration terminates normally. */
-    disk[TEST_PARTITION_START + TEST_DATA_START + 2U][9U * 32U] = 0U;
+    disk[TEST_PARTITION_START + TEST_DATA_START + 2U][11U * 32U] = 0U;
 
     uint8_t *file_data =
         disk[TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U];

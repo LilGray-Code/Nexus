@@ -103,8 +103,10 @@ static bool ahci_allocate_dma_page(uint64_t *physical,
         !memory_alloc_dma_page(AHCI_DMA_LIMIT, physical)) return false;
     volatile uint8_t *page =
         (volatile uint8_t *)memory_phys_to_virt(*physical);
-    if (page == NULL || *physical > UINT32_MAX - (AHCI_PAGE_SIZE - 1U))
+    if (page == NULL || *physical > UINT32_MAX - (AHCI_PAGE_SIZE - 1U)) {
+        (void)memory_free_page(*physical);
         return false;
+    }
     for (size_t i = 0U; i < AHCI_PAGE_SIZE; ++i) page[i] = 0U;
     *virtual_address = page;
     return true;
@@ -519,7 +521,7 @@ static bool ahci_prepare_port(const struct nexus_pci_device *pci_device,
     if (serial_length > sizeof(state->stable_id) - 7U)
         serial_length = sizeof(state->stable_id) - 7U;
     for (size_t i = serial_length; i > 0U; --i)
-        state->stable_id[i + 4U] = state->stable_id[i - 1U];
+        state->stable_id[i + 5U] = state->stable_id[i - 1U];
     const char prefix[] = "SATA-";
     for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
         state->stable_id[i] = prefix[i];

@@ -27,7 +27,7 @@ static void test_bulk_pair_on_matching_interface(void) {
 
 static void test_does_not_pair_endpoints_across_interfaces(void) {
     const uint8_t config[] = {
-        9,2,39,0,2,1,0,0x80,50,
+        9,2,41,0,2,1,0,0x80,50,
         9,4,0,0,1,0xFF,1,1,0,
         7,5,0x81,2,64,0,0,
         9,4,1,0,1,0xFF,1,1,0,

@@ -43,15 +43,13 @@ static bool normalize_ramfs_name(const char *source,
                                  char output[NEXUS_VFS_NAME_MAX]) {
     if (source == NULL || output == NULL) return false;
     size_t length = 0U;
-    size_t base_length = 0U;
-    size_t extension_length = 0U;
     bool extension = false;
 
     while (source[length] != '\0') {
+        if (length >= NEXUS_VFS_NAME_MAX - 1U) return false;
         const char ch = source[length];
         if (ch == '.') {
-            if (length >= NEXUS_VFS_NAME_MAX - 1U ||
-                extension || base_length == 0U) return false;
+            if (extension || length == 0U) return false;
             extension = true;
             output[length++] = '.';
             continue;
@@ -60,17 +58,11 @@ static bool normalize_ramfs_name(const char *source,
                            (ch >= 'A' && ch <= 'Z') ||
                            (ch >= '0' && ch <= '9') ||
                            ch == '_' || ch == '-';
-        if (!valid || length >= NEXUS_VFS_NAME_MAX - 1U) return false;
-        if (extension) {
-            if (++extension_length > 3U) return false;
-        } else {
-            if (++base_length > 8U) return false;
-        }
+        if (!valid) return false;
         output[length++] = ascii_upper(ch);
     }
 
-    if (length == 0U || base_length == 0U ||
-        (extension && extension_length == 0U)) return false;
+    if (length == 0U || output[length - 1U] == '.') return false;
     output[length] = '\0';
     return true;
 }

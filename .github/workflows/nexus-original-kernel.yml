@@ -94,6 +94,14 @@ jobs:
             -o /tmp/nexus-netdev-test
           /tmp/nexus-netdev-test
 
+      - name: Test wireless interface state manager
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi.c \
+            kernel/tests/wifi_test.c \
+            -o /tmp/nexus-wifi-test
+          /tmp/nexus-wifi-test
+
       - name: Test PCI driver matching rules
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

@@ -42,6 +42,13 @@ int main(void) {
  assert(info.needed_count==1 && info.has_rela);
  assert(info.rela_address==0x1090 && info.rela_size==24 &&
         info.rela_entry_size==24);
+ /* Overlapping PT_LOAD virtual ranges make address-to-file mapping
+  * ambiguous and must be rejected before parsing dynamic metadata.
+  */
+ h->phnum=3;
+ p[2]=(struct phdr){1,4,0x800,0x800,0,0x100,0x100,0x1000};
+ assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
+ h->phnum=2;
  /* Dynamic metadata must be backed by the PT_LOAD bytes at its virtual
   * address, not merely point at an arbitrary in-range file offset.
   */

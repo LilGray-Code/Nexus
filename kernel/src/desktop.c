@@ -151,6 +151,19 @@ static void installer_refresh_plan(void) {
         device->block_count, device->block_size, layout, &installer_plan);
 }
 
+/* Record the exact target whenever the user changes the drive selection.
+ * This makes installer diagnostics and automated UI verification match the
+ * device that will be revalidated at the destructive confirmation boundary.
+ */
+static void installer_log_selected_target(void) {
+    const struct nexus_block_device *device =
+        blockdev_at(installer_selected_device);
+    serial_write("NEXUS INSTALLER TARGET SELECTED: ");
+    if (device != NULL) serial_write(device->stable_id);
+    else serial_write("NONE");
+    serial_write("\r\n");
+}
+
 
 static const char *installer_target_status(
     const struct nexus_block_device *device) {
@@ -1816,10 +1829,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (event->scancode == 0x48U && blockdev_count() > 0U) {
                 if (installer_selected_device > 0U) --installer_selected_device;
                 installer_refresh_plan();
+                installer_log_selected_target();
             } else if (event->scancode == 0x50U && blockdev_count() > 0U) {
                 if (installer_selected_device + 1U < blockdev_count())
                     ++installer_selected_device;
                 installer_refresh_plan();
+                installer_log_selected_target();
             } else if (event->scancode == 0x1CU) {
                 const struct nexus_block_device *device =
                     blockdev_at(installer_selected_device);
@@ -2057,6 +2072,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             serial_write("NEXUS INSTALLER TARGET: ");
             serial_write(target->stable_id);
             serial_write("\r\n");
+            installer_log_selected_target();
         }
     }
     if (next_view == active_view) return;

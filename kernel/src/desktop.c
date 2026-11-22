@@ -68,8 +68,8 @@ static char installer_confirmed_id[NEXUS_BLOCKDEV_ID_MAX];
 static char installer_input[64];
 static size_t installer_input_length;
 static char installer_status_text[96] = "Select a supported target disk";
-static enum nexus_installer_runtime_result installer_last_result =
-    NEXUS_INSTALL_RESULT_INVALID_ARGUMENT;
+/* Destructive installation remains compile-time locked until end-to-end
+ * disposable-disk validation is recorded. */
 
 #define NEXUS_BROWSER_LINE_COUNT 9U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
@@ -1449,6 +1449,7 @@ static void installer_set_status(const char *message) {
     installer_status_text[i] = '\0';
 }
 
+#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
 static void installer_progress_update(
     void *context, enum nexus_installer_runtime_phase phase,
     const char *message) {
@@ -1489,6 +1490,7 @@ static const char *installer_result_message(
         default: return "Installer rejected the selected target or input";
     }
 }
+#endif
 
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
@@ -1648,20 +1650,27 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 } else if (installer_text_equal_ci(installer_input, "ERASE")) {
                     const struct nexus_block_device *device =
                         blockdev_at(installer_selected_device);
+#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
                     installer_ui_state = INSTALLER_UI_RUNNING;
                     installer_set_status("Starting guarded installation");
                     draw_shell();
                     draw_pointer();
-                    installer_last_result = nexus_installer_runtime_apply(
-                        device, installer_firmware, installer_confirmed_id,
-                        "ERASE", installer_progress_update, NULL);
-                    if (installer_last_result == NEXUS_INSTALL_RESULT_OK) {
+                    const enum nexus_installer_runtime_result result =
+                        nexus_installer_runtime_apply(
+                            device, installer_firmware, installer_confirmed_id,
+                            "ERASE", installer_progress_update, NULL);
+                    if (result == NEXUS_INSTALL_RESULT_OK) {
                         installer_ui_state = INSTALLER_UI_COMPLETE;
                     } else {
                         installer_ui_state = INSTALLER_UI_FAILED;
-                        installer_set_status(
-                            installer_result_message(installer_last_result));
+                        installer_set_status(installer_result_message(result));
                     }
+#else
+                    (void)device;
+                    installer_ui_state = INSTALLER_UI_FAILED;
+                    installer_set_status(
+                        "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
+#endif
                 } else {
                     installer_set_status("Type ERASE exactly to continue");
                 }

@@ -75,6 +75,18 @@ static void test_does_not_accept_zero_packet_endpoint(void) {
         0xFF, 1, 1, &found));
 }
 
+static void test_rejects_reserved_bulk_packet_bits(void) {
+    const uint8_t config[] = {
+        9,2,32,0,1,1,0,0x80,50,
+        9,4,0,0,2,0xFF,1,1,0,
+        7,5,0x81,2,64,0x08,0,
+        7,5,0x02,2,64,0,0
+    };
+    struct nexus_usb_bulk_interface found;
+    assert(!nexus_usb_find_bulk_interface(config, sizeof(config),
+        0xFF, 1, 1, &found));
+}
+
 static void test_rejects_invalid_bulk_endpoint_addresses(void) {
     const uint8_t endpoint_zero[] = {
         9,2,32,0,1,1,0,0x80,50,
@@ -110,6 +122,7 @@ int main(void) {
     test_rejects_malformed_descriptors();
     test_does_not_accept_zero_packet_endpoint();
     test_rejects_invalid_bulk_endpoint_addresses();
+    test_rejects_reserved_bulk_packet_bits();
     puts("NEXUS USB BULK INTERFACE DESCRIPTOR TESTS PASSED");
     return 0;
 }

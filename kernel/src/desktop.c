@@ -3172,6 +3172,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         draw_pointer();
         return;
     }
+    if (active_view == DESKTOP_FILES && event->scancode == 0x01U &&
+        vfs_directory_depth() != 0U) {
+        if (vfs_parent_directory()) refresh_files_listing();
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
         if (files_delete_pending) {
             if ((event->scancode & 0x80U) != 0U) return;
@@ -3246,7 +3253,14 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if (event->scancode == 0x1CU && files_selected_index < files_listing_count) {
             struct nexus_vfs_dirent selected;
             if (vfs_root_entry(files_selected_index, &selected) &&
-                selected.type == NEXUS_VFS_FILE) {
+                selected.type == NEXUS_VFS_DIRECTORY) {
+                if (vfs_enter_directory(selected.name)) {
+                    refresh_files_listing();
+                    files_preview[0] = '\\0';
+                    files_first_name[0] = '\\0';
+                }
+            } else if (vfs_root_entry(files_selected_index, &selected) &&
+                       selected.type == NEXUS_VFS_FILE) {
                 struct nexus_vfs_file file;
                 if (vfs_open_readonly(selected.name, &file)) {
                     uint8_t preview_data[sizeof(files_preview) - 1U];

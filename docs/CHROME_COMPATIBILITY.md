@@ -21,6 +21,28 @@ The existing user application path is intentionally small:
 
 These constraints mean Chrome cannot currently be installed or executed on Nexus. Raising the executable size limit alone would not solve the missing runtime and operating-system interfaces.
 
+## Mandatory release packaging requirement
+
+Chrome is a required preinstalled component of the finished Nexus desktop release,
+not an optional post-install download or a web shortcut. The release acceptance
+criteria are:
+
+- The distributable Nexus ISO contains the browser payload and every required
+  runtime dependency; installation deploys them onto the selected system disk.
+- A fresh offline installation exposes a working Chrome launcher in the desktop
+  and can start the browser without downloading an operating system or browser
+  runtime first.
+- The shipped build is the genuine Google Chrome product obtained through a
+  distribution method authorized by Google. Do not relabel Chromium, a text
+  browser, or a compatibility placeholder as Google Chrome.
+- Browser version, package provenance, signatures/hashes, license notices, and
+  update channel are recorded in the release manifest.
+- If authorized Chrome redistribution cannot be arranged, this release gate is
+  not met; do not silently substitute another browser.
+
+This is a requirement for the finished release, not a statement that the current
+prototype already contains or runs Chrome.
+
 ## Required platform work
 
 The following are engineering gates, not claims that the features already exist.

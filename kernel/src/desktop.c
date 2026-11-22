@@ -2725,6 +2725,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
     }
+    /* The installer is a live-media-only environment. Guard this
+     * keyboard path as well as desktop_open_view(), so a function-key
+     * shortcut can never expose installer UI from an installed system. */
+    if (next_view == DESKTOP_INSTALLER && !installer_environment) return;
     if (next_view == DESKTOP_FILES) {
         scan_files_once();
         refresh_files_listing();

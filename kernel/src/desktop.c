@@ -463,44 +463,37 @@ static void draw_shell(void) {
         const uint64_t card_width = (panel_width - 84U) / 3U;
         const uint64_t card_y = text_y + 181U;
         const uint64_t card_h = 54U;
-        const char *card_labels[3] = {"MEMORY AVAILABLE", "SESSION UPTIME", "FILE STORAGE"};
+        const char *card_labels[3] = {"FREE MEMORY", "UPTIME", "STORAGE"};
         char free_mem[21], uptime[21];
         format_u64(memory_free_bytes() / (1024U * 1024U), free_mem);
         format_u64(timer_ticks() / 100U, uptime);
-        char memory_value[40] = " ";
+        char memory_value[40] = "";
         size_t memory_pos = 0U;
-        while (free_mem[memory_pos] != '\0' && memory_pos < sizeof(memory_value) - 8U) {
-            memory_value[memory_pos + 1U] = free_mem[memory_pos];
+        while (free_mem[memory_pos] != '\0' &&
+               memory_pos < sizeof(memory_value) - 1U) {
+            memory_value[memory_pos] = free_mem[memory_pos];
             ++memory_pos;
         }
         const char *memory_suffix = " MiB FREE";
         for (size_t n = 0U; memory_suffix[n] != '\0' &&
-             memory_pos + n + 1U < sizeof(memory_value); ++n)
-            memory_value[memory_pos + n + 1U] = memory_suffix[n];
-        memory_value[memory_pos + 1U +
-            (sizeof(memory_value) - memory_pos - 2U < 0U ? 0U : 0U)] = '\0';
-        /* Re-terminate at the actual appended suffix boundary. */
-        memory_value[memory_pos + 1U] = '\0';
-        for (size_t n = 0U; memory_suffix[n] != '\0' &&
-             memory_pos + n + 1U < sizeof(memory_value); ++n)
-            memory_value[memory_pos + n + 1U] = memory_suffix[n];
-        memory_value[memory_pos + 1U +
-            (memory_pos + 1U < sizeof(memory_value) ? 0U : 0U)] = '\0';
-        /* Keep the value bounded even on unusually small memory maps. */
-        size_t mv_end = memory_pos + 1U;
-        while (memory_suffix[mv_end - memory_pos - 1U] != '\0' &&
-               mv_end < sizeof(memory_value) - 1U) ++mv_end;
-        memory_value[mv_end] = '\0';
+             memory_pos < sizeof(memory_value) - 1U; ++n) {
+            memory_value[memory_pos++] = memory_suffix[n];
+        }
+        memory_value[memory_pos] = '\0';
+
         char uptime_value[40] = "";
         size_t uptime_pos = 0U;
-        for (; uptime[uptime_pos] != '\0' && uptime_pos < 26U; ++uptime_pos)
+        while (uptime[uptime_pos] != '\0' &&
+               uptime_pos < sizeof(uptime_value) - 1U) {
             uptime_value[uptime_pos] = uptime[uptime_pos];
+            ++uptime_pos;
+        }
         const char *seconds_suffix = " SECONDS";
         for (size_t n = 0U; seconds_suffix[n] != '\0' &&
-             uptime_pos + n < sizeof(uptime_value) - 1U; ++n)
-            uptime_value[uptime_pos + n] = seconds_suffix[n];
-        uptime_value[uptime_pos +
-            (sizeof(uptime_value) - uptime_pos > 1U ? 8U : 0U)] = '\0';
+             uptime_pos < sizeof(uptime_value) - 1U; ++n) {
+            uptime_value[uptime_pos++] = seconds_suffix[n];
+        }
+        uptime_value[uptime_pos] = '\0';
         static const uint8_t card_accent[3][3] = {
             {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U}
         };

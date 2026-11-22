@@ -228,7 +228,7 @@ static void test_uefi_install(void) {
     reset_test();
     assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
            NEXUS_INSTALL_RESULT_OK);
-    assert(gpt_writes == 1U && esp_formats == 1U && system_formats == 1U);
+    assert(gpt_writes == 1U && esp_formats == 1U && system_formats == 2U);
     assert(payload_writes == 1U && boot_payload_writes == 1U);
     assert(bios_installs == 0U);
     assert(journal_phase_count == 5U);
@@ -237,8 +237,8 @@ static void test_uefi_install(void) {
     assert(journal_phases[2] == NEXUS_JOURNAL_PAYLOAD_DEPLOYED);
     assert(journal_phases[3] == NEXUS_JOURNAL_BOOTLOADER_INSTALLED);
     assert(journal_phases[4] == NEXUS_JOURNAL_COMPLETE);
-    assert(progress_count == 6U);
-    assert(progress_seen[5] == NEXUS_INSTALL_PHASE_COMPLETE);
+    assert(progress_count == 7U);
+    assert(progress_seen[6] == NEXUS_INSTALL_PHASE_COMPLETE);
 }
 
 static void test_bios_layouts(void) {

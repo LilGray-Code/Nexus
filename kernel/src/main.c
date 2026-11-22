@@ -329,12 +329,16 @@ void kmain(void) {
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     const bool ps2_input_ready = input_init();
-    const bool usb_keyboard_ready = xhci_init();
+    (void)xhci_init();
+    const bool usb_keyboard_ready = xhci_keyboard_ready();
+    const bool usb_mouse_ready = xhci_mouse_ready();
     if (!ps2_input_ready && !usb_keyboard_ready) {
-        serial_write("INPUT: no PS/2 or USB HID keyboard detected; desktop input inactive\r\n");
-    } else if (usb_keyboard_ready) {
-        serial_write("INPUT: USB HID boot keyboard available\r\n");
+        serial_write("INPUT: no PS/2 or USB HID keyboard detected; keyboard input unavailable\r\n");
     }
+    if (usb_keyboard_ready)
+        serial_write("INPUT: USB HID boot keyboard available\r\n");
+    if (usb_mouse_ready)
+        serial_write("INPUT: USB HID boot mouse available\r\n");
     process_init();
     if (!usermode_run_selftest()) {
         serial_write("ERROR: CPL3 user-mode self-test failed\r\n");

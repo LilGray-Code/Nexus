@@ -252,3 +252,24 @@ the QEMU install/reboot/recovery matrix all pass. Physical NVMe installation
 and recovery still require validation; AHCI/SATA and USB mass-storage writes
 are not implemented. Do not treat the tested individual storage adapters or
 journal primitive as proof of a finished end-to-end installer.
+
+
+The branch's pull-request CI now runs the installer transaction and storage
+adapter host tests, both write-locked and installer-enabled kernel builds, and
+the full BIOS/UEFI QEMU build-and-boot matrix before changes are accepted.
+
+The full integration gate now runs the actual runtime against a disposable
+in-memory NVMe disk, writes the resulting GPT/FAT32/NXFS/BIOS payload image, and
+boots that image under OVMF and SeaBIOS. The same test checks the durable
+journal reaches COMPLETE before the image is handed to QEMU.
+
+The full QEMU workflow now also drives the graphical installer through its two
+confirmation screens on a disposable 16 GiB NVMe target, then boots the result
+from both OVMF/UEFI and SeaBIOS/legacy BIOS. The distributable ISO is built
+with the installer write gate enabled only after that test succeeds.
+
+The QEMU keyboard script selects the dual UEFI+BIOS layout before confirming
+the disk, so the resulting single installation is boot-tested in both modes.
+
+The QEMU input test reads the exact stable disk ID from the live installer log
+instead of assuming a controller-generated serial string.

@@ -648,6 +648,11 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
     desktop_ready = true;
+#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
+    serial_write("NEXUS INSTALLER WRITE GATE ENABLED\r\n");
+#else
+    serial_write("NEXUS INSTALLER WRITE GATE LOCKED\r\n");
+#endif
     draw_shell();
     draw_pointer();
     serial_write("DESKTOP: interactive framebuffer shell rendered\r\n");
@@ -1457,6 +1462,9 @@ static void installer_progress_update(
     const char *message) {
     (void)context;
     installer_set_status(message);
+    serial_write("NEXUS INSTALLER PHASE: ");
+    serial_write(message != NULL ? message : "");
+    serial_write("\r\n");
     installer_ui_state = phase == NEXUS_INSTALL_PHASE_COMPLETE
         ? INSTALLER_UI_COMPLETE : INSTALLER_UI_RUNNING;
     draw_shell();
@@ -1663,15 +1671,20 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             "ERASE", installer_progress_update, NULL);
                     if (result == NEXUS_INSTALL_RESULT_OK) {
                         installer_ui_state = INSTALLER_UI_COMPLETE;
+                        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
                     } else {
                         installer_ui_state = INSTALLER_UI_FAILED;
                         installer_set_status(installer_result_message(result));
+                        serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
+                        serial_write(installer_result_message(result));
+                        serial_write("\r\n");
                     }
 #else
                     (void)device;
                     installer_ui_state = INSTALLER_UI_FAILED;
                     installer_set_status(
                         "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
+                    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
 #endif
                 } else {
                     installer_set_status("Type ERASE exactly to continue");

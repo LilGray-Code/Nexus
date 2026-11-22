@@ -54,7 +54,7 @@ static void test_empty_and_alternating_commit(void) {
     assert(disk.writes==2U);
 }
 static void test_torn_update_preserves_previous_record(void) {
-    struct mock_disk disk={0};
+    struct mock_disk disk={.sector_size=512U};
     struct nexus_installer_journal_device dev={16U,512U,1U,&disk,rd,wr,fl};
     struct nexus_installer_journal_record a=rec(1U,NEXUS_JOURNAL_PREPARED),out;
     assert(nexus_installer_journal_commit(&dev,4U,&a)==NEXUS_JOURNAL_OK);
@@ -66,7 +66,7 @@ static void test_torn_update_preserves_previous_record(void) {
     assert(out.sequence==1U&&out.phase==NEXUS_JOURNAL_PREPARED);
 }
 static void test_corruption_and_io_fail_closed(void) {
-    struct mock_disk disk={0};
+    struct mock_disk disk={.sector_size=512U};
     struct nexus_installer_journal_device dev={16U,512U,1U,&disk,rd,wr,fl};
     struct nexus_installer_journal_record out;
     memset(disk.sectors[4],0xA5U,512U);
@@ -78,7 +78,7 @@ static void test_corruption_and_io_fail_closed(void) {
     assert(nexus_installer_journal_commit(&dev,4U,&a)==NEXUS_JOURNAL_IO_ERROR);
 }
 static void test_identity_and_sequence_rejection(void) {
-    struct mock_disk disk={0};
+    struct mock_disk disk={.sector_size=512U};
     struct nexus_installer_journal_device dev={16U,512U,1U,&disk,rd,wr,fl};
     struct nexus_installer_journal_record a=rec(1U,NEXUS_JOURNAL_PREPARED);
     assert(nexus_installer_journal_commit(&dev,4U,&a)==NEXUS_JOURNAL_OK);

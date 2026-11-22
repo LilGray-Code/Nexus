@@ -41,8 +41,16 @@ int main(void) {
     assert(wifi_parse_beacon_frame(frame,n,-42,&network));
     assert(network.ssid_length==4U && memcmp(network.ssid,"NEXU",4U)==0);
     assert(network.channel==6U && network.signal_dbm==-42);
+    assert(network.band==NEXUS_WIFI_BAND_2GHZ);
+    assert(network.frequency_mhz==2437U);
     assert(network.security==NEXUS_WIFI_SECURITY_OPEN);
     assert(network.bssid[0]==0x02U && network.bssid[5]==0x55U);
+
+    n = make_frame(frame,0x0080U,false,0U);
+    frame[44]=36U; /* 5 GHz channel 36. */
+    assert(wifi_parse_beacon_frame(frame,n,-48,&network));
+    assert(network.band==NEXUS_WIFI_BAND_5GHZ);
+    assert(network.frequency_mhz==5180U);
 
     n = make_frame(frame,0x0050U,true,2U);
     assert(wifi_parse_beacon_frame(frame,n,-61,&network));

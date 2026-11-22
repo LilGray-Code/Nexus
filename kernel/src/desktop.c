@@ -399,6 +399,55 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                        140U, 170U, 195U);
 }
 
+static void desktop_draw_startup_animation(void) {
+    /* A short, timer-paced splash gives the user visible feedback while the
+     * installed desktop is being brought up. Keep it framebuffer-only so it
+     * works on both BIOS and UEFI without a graphics driver. */
+    const uint64_t center_x = screen_width / 2U;
+    const uint64_t center_y = screen_height / 2U;
+    const uint64_t panel_width = screen_width > 520U ? 440U : screen_width - 32U;
+    const uint64_t panel_x = (screen_width - panel_width) / 2U;
+    const uint64_t title_y = center_y > 70U ? center_y - 70U : 12U;
+    const uint64_t bar_y = center_y + 52U;
+    const uint64_t bar_width = panel_width > 64U ? panel_width - 64U : 32U;
+
+    graphics_fill_rect(0U, 0U, screen_width, screen_height, 5U, 11U, 25U);
+    graphics_fill_rect(panel_x, title_y - 24U, panel_width, 176U,
+                       12U, 25U, 45U);
+    graphics_draw_rect(panel_x, title_y - 24U, panel_width, 176U,
+                       39U, 111U, 143U);
+    graphics_fill_rect(center_x - 18U, title_y - 5U, 36U, 36U,
+                       30U, 154U, 184U);
+    graphics_draw_text(center_x - 6U, title_y + 9U, "N", 1U,
+                       7U, 23U, 39U);
+    graphics_draw_text(center_x - 64U, title_y + 48U,
+                       "NEXUS", 2U, 239U, 247U, 255U);
+    graphics_draw_text(center_x - 88U, title_y + 78U,
+                       "Starting your workspace", 1U,
+                       165U, 190U, 211U);
+
+    for (uint64_t frame = 0U; frame < 12U; ++frame) {
+        for (uint64_t dot = 0U; dot < 5U; ++dot) {
+            const uint64_t x = center_x - 30U + dot * 15U;
+            const bool active = dot == frame % 5U;
+            const uint8_t level = active ? 225U : 75U;
+            graphics_fill_rect(x, center_y + 20U, 8U, 8U,
+                               45U, level, active ? 220U : 135U);
+        }
+        graphics_fill_rect(panel_x + 32U, bar_y, bar_width, 5U,
+                           34U, 52U, 72U);
+        const uint64_t progress = (bar_width * (frame + 1U)) / 12U;
+        graphics_fill_rect(panel_x + 32U, bar_y, progress, 5U,
+                           47U, 177U, 202U);
+
+        const uint64_t deadline = timer_ticks() + 4U;
+        __asm__ volatile ("sti" : : : "memory");
+        while (timer_ticks() < deadline)
+            __asm__ volatile ("hlt" : : : "memory");
+        __asm__ volatile ("cli" : : : "memory");
+    }
+}
+
 static void draw_shell(void) {
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
@@ -1169,6 +1218,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     window_maximized = false;
     settings_persisted = false;
     if (!installer_environment) desktop_load_settings();
+    desktop_draw_startup_animation();
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
     desktop_ready = true;

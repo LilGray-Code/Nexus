@@ -58,7 +58,7 @@ static size_t files_partition_count;
 static uint64_t files_first_lba;
 static uint64_t files_last_lba;
 static bool files_vfs_ready;
-#define FILES_EDITOR_MAX_BYTES NEXUS_VFS_RAM_MAX_FILE_SIZE
+#define FILES_EDITOR_MAX_BYTES NEXUS_NXFS_MAX_FILE_BYTES
 #define FILES_EDITOR_VIEW_BYTES 256U
 
 #define FILES_LISTING_MAX_ENTRIES 128U

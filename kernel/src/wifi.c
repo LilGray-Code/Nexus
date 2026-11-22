@@ -87,7 +87,9 @@ bool wifi_connect(const struct nexus_wifi_network *network,
         if (passphrase == NULL) return false;
         while (passphrase_length <= NEXUS_WIFI_PASSPHRASE_MAX &&
                passphrase[passphrase_length] != '\0') ++passphrase_length;
-        if (passphrase_length < 8U ||
+        const size_t minimum_length =
+            network->security == NEXUS_WIFI_SECURITY_WPA2_PSK ? 8U : 1U;
+        if (passphrase_length < minimum_length ||
             passphrase_length > NEXUS_WIFI_PASSPHRASE_MAX) return false;
     }
     if (!driver_ops->connect(driver_context, network, passphrase)) {

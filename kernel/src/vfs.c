@@ -207,18 +207,45 @@ bool vfs_write_file(const char *name, const void *data, size_t length) {
     return vfs_ramfs_write(name, data, length);
 }
 
+/* Higher-priority writable layers hide lower-layer names, matching open(). */
+static bool ramfs_shadows_name(const char *name) {
+    return ramfs_find(name) != NULL;
+}
+
+static bool nxfs_shadows_name(const char *name) {
+    if (!nxfs_root_mounted || name == NULL) return false;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && name_equal(entry->name, name)) return true;
+    }
+    return false;
+}
+
 size_t vfs_root_entry_count(void) {
-    size_t count = root_mounted ? fat32_root_entry_count() : 0U;
-    if (nxfs_root_mounted) count += nxfs_entry_count();
-    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+    size_t count = 0U;
+    for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
         if (ramfs[i].used) ++count;
+    }
+    if (nxfs_root_mounted) {
+        for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+            const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+            if (entry != NULL && !ramfs_shadows_name(entry->name)) ++count;
+        }
+    }
+    if (root_mounted) {
+        for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
+            const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
+            if (entry == NULL || ramfs_shadows_name(entry->name) ||
+                nxfs_shadows_name(entry->name)) continue;
+            ++count;
+        }
     }
     return count;
 }
 
 bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
     if (entry == NULL) return false;
-    for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+    for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
         if (!ramfs[i].used) continue;
         if (index == 0U) {
             size_t n = 0U;
@@ -235,10 +262,13 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
     }
 
     if (nxfs_root_mounted) {
-        const size_t nxfs_count = nxfs_entry_count();
-        if (index < nxfs_count) {
-            const struct nexus_nxfs_entry *nx_entry = nxfs_entry_at(index);
-            if (nx_entry == NULL) return false;
+        for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+            const struct nexus_nxfs_entry *nx_entry = nxfs_entry_at(i);
+            if (nx_entry == NULL || ramfs_shadows_name(nx_entry->name)) continue;
+            if (index != 0U) {
+                --index;
+                continue;
+            }
             size_t n = 0U;
             while (n < NEXUS_VFS_NAME_MAX - 1U &&
                    nx_entry->name[n] != '\0') {
@@ -250,23 +280,30 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
             entry->size = nx_entry->size;
             return true;
         }
-        index -= nxfs_count;
     }
 
-    if (!root_mounted) return false;
-    const struct nexus_fat32_entry *fat_entry = fat32_root_entry_at(index);
-    if (fat_entry == NULL) return false;
-
-    size_t n = 0U;
-    for (; n < sizeof(fat_entry->name) - 1U &&
-           fat_entry->name[n] != '\0'; ++n) {
-        entry->name[n] = fat_entry->name[n];
+    if (root_mounted) {
+        for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
+            const struct nexus_fat32_entry *fat_entry = fat32_root_entry_at(i);
+            if (fat_entry == NULL || ramfs_shadows_name(fat_entry->name) ||
+                nxfs_shadows_name(fat_entry->name)) continue;
+            if (index != 0U) {
+                --index;
+                continue;
+            }
+            size_t n = 0U;
+            for (; n < sizeof(fat_entry->name) - 1U &&
+                   fat_entry->name[n] != '\0'; ++n) {
+                entry->name[n] = fat_entry->name[n];
+            }
+            entry->name[n] = '\0';
+            entry->type = (fat_entry->attributes & 0x10U) != 0U
+                ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
+            entry->size = fat_entry->size;
+            return true;
+        }
     }
-    entry->name[n] = '\0';
-    entry->type = (fat_entry->attributes & 0x10U) != 0U
-        ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
-    entry->size = fat_entry->size;
-    return true;
+    return false;
 }
 
 bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {

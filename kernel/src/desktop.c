@@ -35,6 +35,9 @@ static bool desktop_ready;
 static bool installer_environment;
 static bool start_menu_open;
 static bool window_maximized;
+static uint8_t settings_theme;
+static uint8_t settings_wallpaper;
+static bool settings_show_status = true;
 static bool mouse_left_was_down;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
@@ -284,10 +287,12 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     char uptime[21];
     format_u64(timer_ticks() / 100U, uptime);
     const uint64_t status_x = screen_width > 118U ? screen_width - 112U : 8U;
-    graphics_draw_text(status_x, button_y + 5U, "UPTIME", 1U,
-                       122U, 155U, 183U);
-    graphics_draw_text(status_x, button_y + 21U, uptime, 1U,
-                       220U, 236U, 248U);
+    if (settings_show_status) {
+        graphics_draw_text(status_x, button_y + 5U, "UPTIME", 1U,
+                           122U, 155U, 183U);
+        graphics_draw_text(status_x, button_y + 21U, uptime, 1U,
+                           220U, 236U, 248U);
+    }
 }
 
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
@@ -345,25 +350,32 @@ static void draw_shell(void) {
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
 
+    const uint8_t base_r = settings_theme == 1U ? 5U : (settings_theme == 2U ? 24U : 5U);
+    const uint8_t base_g = settings_theme == 1U ? 18U : (settings_theme == 2U ? 13U : 11U);
+    const uint8_t base_b = settings_theme == 1U ? 38U : (settings_theme == 2U ? 22U : 25U);
     for (uint64_t y = 0; y < height; ++y) {
-        const uint8_t red = (uint8_t)(5U + (y * 8U / height));
-        const uint8_t green = (uint8_t)(11U + (y * 18U / height));
-        const uint8_t blue = (uint8_t)(25U + (y * 34U / height));
+        const uint8_t red = (uint8_t)(base_r + (y * 8U / height));
+        const uint8_t green = (uint8_t)(base_g + (y * 18U / height));
+        const uint8_t blue = (uint8_t)(base_b + (y * 34U / height));
         graphics_fill_rect(0U, y, width, 1U, red, green, blue);
     }
-    /* Layered geometric wallpaper: deliberately native framebuffer artwork. */
-    graphics_fill_rect(width / 2U, 0U, width / 2U, height,
-                       9U, 26U, 49U);
-    graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
-                       10U, 31U, 58U);
-    graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
-                       12U, 35U, 63U);
-    for (uint64_t band = 0U; band < 5U; ++band) {
-        const uint64_t x = width / 2U + band * (width / 14U);
-        if (x < width)
-            graphics_fill_rect(x, top_bar, 1U, height - top_bar,
-                               14U, (uint8_t)(42U + band * 3U),
-                               (uint8_t)(70U + band * 4U));
+    /* Wallpaper selection changes the actual framebuffer composition. */
+    if (settings_wallpaper != 2U) {
+        const uint8_t wr = settings_theme == 2U ? 48U : 9U;
+        const uint8_t wg = settings_theme == 1U ? 37U : 26U;
+        const uint8_t wb = settings_theme == 2U ? 62U : 49U;
+        if (settings_wallpaper == 0U) {
+            graphics_fill_rect(width / 2U, 0U, width / 2U, height, wr, wg, wb);
+            graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
+                               (uint8_t)(wr + 1U), (uint8_t)(wg + 5U), (uint8_t)(wb + 9U));
+            graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
+                               (uint8_t)(wr + 3U), (uint8_t)(wg + 9U), (uint8_t)(wb + 14U));
+            for (uint64_t band = 0U; band < 5U; ++band) {
+                const uint64_t x = width / 2U + band * (width / 14U);
+                if (x < width) graphics_fill_rect(x, top_bar, 1U, height - top_bar,
+                    (uint8_t)(wr + 5U), (uint8_t)(wg + 16U + band), (uint8_t)(wb + 21U + band));
+            }
+        }
     }
     graphics_fill_rect(0U, 0U, width, top_bar, 10U, 17U, 33U);
     graphics_fill_rect(0U, top_bar - 2U, width, 2U, 38U, 159U, 192U);
@@ -541,6 +553,38 @@ static void draw_shell(void) {
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,
                            "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL",
+                           1U, 151U, 178U, 201U);
+    } else if (active_view == DESKTOP_SETTINGS) {
+        graphics_draw_text(text_x, text_y, "MAKE NEXUS YOURS", 2U, 241U, 248U, 255U);
+        graphics_draw_text(text_x, text_y + 30U,
+                           "PERSONALIZATION AND DESKTOP BEHAVIOR", 1U, 111U, 207U, 231U);
+        const uint64_t row_x = panel_x + 24U;
+        const uint64_t row_w = panel_width - 48U;
+        const uint64_t row_y = text_y + 62U;
+        const char *theme_name = settings_theme == 0U ? "MIDNIGHT" :
+                                 (settings_theme == 1U ? "OCEAN" : "EMBER");
+        const char *wallpaper_name = settings_wallpaper == 0U ? "GEOMETRIC" :
+                                     (settings_wallpaper == 1U ? "PLAIN GRADIENT" : "SOLID");
+        const char *status_name = settings_show_status ? "ON" : "OFF";
+        const char *window_name = window_maximized ? "MAXIMIZED" : "WINDOWED";
+        const char *labels[4] = {"COLOR THEME", "WALLPAPER", "TASKBAR STATUS", "WINDOW SIZE"};
+        const char *values[4] = {theme_name, wallpaper_name, status_name, window_name};
+        const char *hints[4] = {"1  CYCLE COLOR PALETTE", "2  CHANGE BACKGROUND STYLE",
+                                "3  SHOW OR HIDE UPTIME", "4  TOGGLE WINDOW SIZE"};
+        for (size_t i = 0U; i < 4U; ++i) {
+            const uint64_t y = row_y + (uint64_t)i * 59U;
+            graphics_fill_rect(row_x, y, row_w, 48U, 23U, 39U, 60U);
+            graphics_draw_rect(row_x, y, row_w, 48U, 55U, 88U, 116U);
+            graphics_fill_rect(row_x, y, 4U, 48U,
+                               i == 0U ? 45U : (i == 1U ? 117U : (i == 2U ? 82U : 217U)),
+                               i == 0U ? 177U : (i == 1U ? 136U : (i == 2U ? 198U : 164U)),
+                               i == 0U ? 202U : (i == 1U ? 244U : (i == 2U ? 155U : 83U)));
+            graphics_draw_text(row_x + 15U, y + 12U, labels[i], 1U, 145U, 177U, 198U);
+            graphics_draw_text(row_x + row_w / 2U, y + 12U, values[i], 1U, 235U, 245U, 252U);
+            graphics_draw_text(row_x + 15U, y + 31U, hints[i], 1U, 119U, 157U, 184U);
+        }
+        graphics_draw_text(text_x, panel_y + panel_height - 18U,
+                           "1-4 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
@@ -2617,6 +2661,24 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view != DESKTOP_INSTALLER &&
         event->scancode >= 0x3BU && event->scancode <= 0x3EU) {
         desktop_open_app((size_t)(event->scancode - 0x3BU));
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (active_view == DESKTOP_SETTINGS) {
+        if (event->scancode == 0x01U) {
+            active_view = DESKTOP_HOME;
+        } else if (event->scancode == 0x02U) {
+            settings_theme = (uint8_t)((settings_theme + 1U) % 3U);
+        } else if (event->scancode == 0x03U) {
+            settings_wallpaper = (uint8_t)((settings_wallpaper + 1U) % 3U);
+        } else if (event->scancode == 0x04U) {
+            settings_show_status = !settings_show_status;
+        } else if (event->scancode == 0x05U) {
+            window_maximized = !window_maximized;
+        } else {
+            return;
+        }
         draw_shell();
         draw_pointer();
         return;

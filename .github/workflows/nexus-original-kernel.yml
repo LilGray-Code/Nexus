@@ -488,6 +488,147 @@ jobs:
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-bios.log
 
+      - name: Verify persistent file creation, editing and reboot retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-files-vars.fd
+          rm -f /tmp/nexus-files-qmp.sock nexus-files-serial.log
+          qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-files-vars.fd \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
+            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -boot order=c -display none -serial file:nexus-files-serial.log \
+            -qmp unix:/tmp/nexus-files-qmp.sock,server,nowait \
+            -monitor none -no-reboot -no-shutdown >/tmp/nexus-files-qemu.log 2>&1 &
+          QEMU_PID=$!
+          trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import json, os, socket, time
+
+          log_path = "nexus-files-serial.log"
+          deadline = time.time() + 90
+          while time.time() < deadline:
+              if os.path.exists(log_path):
+                  log = open(log_path, encoding="utf-8", errors="replace").read()
+                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS DESKTOP FRAMEBUFFER READY" in log:
+                      break
+              time.sleep(1)
+          else:
+              raise SystemExit("Installed desktop did not boot for persistent-file test")
+
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.settimeout(10)
+          sock.connect("/tmp/nexus-files-qmp.sock")
+          stream = sock.makefile("rwb", buffering=0)
+          json.loads(stream.readline())
+
+          def command(payload):
+              stream.write(json.dumps(payload).encode() + b"\\r\\n")
+              while True:
+                  result = json.loads(stream.readline())
+                  if "return" in result or "error" in result:
+                      if "error" in result:
+                          raise RuntimeError(result["error"])
+                      return result["return"]
+
+          command({"execute": "qmp_capabilities"})
+
+          def key(name):
+              command({"execute": "human-monitor-command",
+                       "arguments": {"command-line": f"sendkey {name} 90"}})
+              time.sleep(0.16)
+
+          key("f1")
+          key("n")
+          for char in "persist":
+              key(char)
+          key("ret")
+          for char in "nexus-data-saved":
+              key(char)
+          key("f10")
+          deadline = time.time() + 15
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              if "FILES: SAVED PERSISTENT NXFS PERSIST" in log:
+                  break
+              if "FILES: SAVE FAILED" in log or "FILES: SAVED VOLATILE RAM" in log:
+                  print(log)
+                  raise SystemExit("File save did not reach persistent NXFS")
+              time.sleep(0.5)
+          else:
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit("Persistent file save was not observed")
+          sock.close()
+          PY
+          kill "$QEMU_PID" 2>/dev/null || true
+          wait "$QEMU_PID" 2>/dev/null || true
+          trap - EXIT
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-files-reboot-vars.fd
+          rm -f /tmp/nexus-files-reboot-qmp.sock nexus-files-reboot-serial.log
+          qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-files-reboot-vars.fd \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
+            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -boot order=c -display none -serial file:nexus-files-reboot-serial.log \
+            -qmp unix:/tmp/nexus-files-reboot-qmp.sock,server,nowait \
+            -monitor none -no-reboot -no-shutdown >/tmp/nexus-files-reboot-qemu.log 2>&1 &
+          QEMU_PID=$!
+          trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import json, os, socket, time
+
+          log_path = "nexus-files-reboot-serial.log"
+          deadline = time.time() + 90
+          while time.time() < deadline:
+              if os.path.exists(log_path):
+                  log = open(log_path, encoding="utf-8", errors="replace").read()
+                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS DESKTOP FRAMEBUFFER READY" in log:
+                      break
+              time.sleep(1)
+          else:
+              raise SystemExit("Installed desktop did not reboot for persistence check")
+
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.settimeout(10)
+          sock.connect("/tmp/nexus-files-reboot-qmp.sock")
+          stream = sock.makefile("rwb", buffering=0)
+          json.loads(stream.readline())
+
+          def command(payload):
+              stream.write(json.dumps(payload).encode() + b"\\r\\n")
+              while True:
+                  result = json.loads(stream.readline())
+                  if "return" in result or "error" in result:
+                      if "error" in result:
+                          raise RuntimeError(result["error"])
+                      return result["return"]
+
+          command({"execute": "qmp_capabilities"})
+          command({"execute": "human-monitor-command",
+                   "arguments": {"command-line": "sendkey f1 90"}})
+          deadline = time.time() + 15
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              if "FILES: entry PERSIST" in log:
+                  break
+              time.sleep(0.5)
+          else:
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit("Saved file was not present after reboot")
+          sock.close()
+          PY
+          cat nexus-files-serial.log nexus-files-reboot-serial.log
+          grep -q "FILES: SAVED PERSISTENT NXFS PERSIST" nexus-files-serial.log
+          grep -q "FILES: entry PERSIST" nexus-files-reboot-serial.log
+          kill "$QEMU_PID" 2>/dev/null || true
+          wait "$QEMU_PID" 2>/dev/null || true
+          trap - EXIT
+
       - name: Build installable distributable ISO without CI-only disk read
         run: |
           EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" ./build/build-iso.sh

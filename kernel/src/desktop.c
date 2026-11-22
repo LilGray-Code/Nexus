@@ -354,9 +354,9 @@ static void draw_shell(void) {
     const uint8_t base_g = settings_theme == 1U ? 18U : (settings_theme == 2U ? 13U : 11U);
     const uint8_t base_b = settings_theme == 1U ? 38U : (settings_theme == 2U ? 22U : 25U);
     for (uint64_t y = 0; y < height; ++y) {
-        const uint8_t red = (uint8_t)(base_r + (y * 8U / height));
-        const uint8_t green = (uint8_t)(base_g + (y * 18U / height));
-        const uint8_t blue = (uint8_t)(base_b + (y * 34U / height));
+        const uint8_t red = (uint8_t)(base_r + (settings_wallpaper == 2U ? 0U : (y * 8U / height)));
+        const uint8_t green = (uint8_t)(base_g + (settings_wallpaper == 2U ? 0U : (y * 18U / height)));
+        const uint8_t blue = (uint8_t)(base_b + (settings_wallpaper == 2U ? 0U : (y * 34U / height)));
         graphics_fill_rect(0U, y, width, 1U, red, green, blue);
     }
     /* Wallpaper selection changes the actual framebuffer composition. */
@@ -378,7 +378,10 @@ static void draw_shell(void) {
         }
     }
     graphics_fill_rect(0U, 0U, width, top_bar, 10U, 17U, 33U);
-    graphics_fill_rect(0U, top_bar - 2U, width, 2U, 38U, 159U, 192U);
+    graphics_fill_rect(0U, top_bar - 2U, width, 2U,
+                       settings_theme == 0U ? 38U : (settings_theme == 1U ? 63U : 210U),
+                       settings_theme == 0U ? 159U : (settings_theme == 1U ? 174U : 133U),
+                       settings_theme == 0U ? 192U : (settings_theme == 1U ? 229U : 75U));
     graphics_fill_rect(16U, 7U, 28U, top_bar - 14U, 30U, 154U, 184U);
     graphics_draw_text(25U, top_bar / 2U - 4U, "N", 1U, 7U, 23U, 39U);
     graphics_draw_text(54U, top_bar / 2U - 4U,

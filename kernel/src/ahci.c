@@ -212,7 +212,7 @@ static bool ahci_issue_command(struct ahci_port_state *state,
     const uint32_t task_file = port[0x20U / 4U];
     if (!completed || (interrupt_status & AHCI_PXIS_TFES) != 0U ||
         (task_file & AHCI_PXTFD_ERR) != 0U ||
-        header->transferred_bytes > transfer_bytes) {
+        header->transferred_bytes != transfer_bytes) {
         state->failed = true;
         serial_write("AHCI: command failed or timed out; port locked\r\n");
         return false;

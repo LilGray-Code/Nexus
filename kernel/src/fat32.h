@@ -12,7 +12,7 @@
 #define NEXUS_FAT32_MAX_READ_BYTES 4096U
 
 struct nexus_fat32_entry {
-    char name[13];
+    char name[32];
     uint8_t attributes;
     uint32_t first_cluster;
     uint32_t size;

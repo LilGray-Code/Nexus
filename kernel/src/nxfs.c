@@ -796,3 +796,14 @@ bool nxfs_selftest(void) {
 
     return true;
 }
+
+
+void nxfs_unmount(void) {
+    /* Installer write sessions own their mount lifecycle and cannot be
+     * interrupted by the ordinary desktop unmount path. */
+    if (nxfs_install_authorized) return;
+    nxfs_mounted = false;
+    nxfs_busy = false;
+    nxfs_device = NULL;
+    zero_bytes(nxfs_entries, sizeof(nxfs_entries));
+}

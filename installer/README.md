@@ -267,3 +267,6 @@ The full QEMU workflow now also drives the graphical installer through its two
 confirmation screens on a disposable 16 GiB NVMe target, then boots the result
 from both OVMF/UEFI and SeaBIOS/legacy BIOS. The distributable ISO is built
 with the installer write gate enabled only after that test succeeds.
+
+The QEMU keyboard script selects the dual UEFI+BIOS layout before confirming
+the disk, so the resulting single installation is boot-tested in both modes.

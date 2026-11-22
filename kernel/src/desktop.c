@@ -114,7 +114,7 @@ static char installer_status_text[96] = "Select a supported target disk";
 #define NEXUS_BROWSER_LINE_WIDTH 72U
 static char browser_address[96];
 static size_t browser_address_length;
-static char browser_status[80] = "Enter host/path; HTTP only, no HTTPS";
+static char browser_status[80] = "Early preview - HTTP only, no HTTPS";
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 
@@ -379,7 +379,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
 
     static const char *const names[5] = {
         "FILES - MANAGE YOUR DATA",
-        "WEB - NETWORK TEXT BROWSER",
+        "NEXUS BROWSER - EARLY PREVIEW",
         "SETTINGS - PERSONALIZE NEXUS",
         "TERMINAL - COMMAND LINE",
         "MONITOR - SYSTEM RESOURCES"
@@ -1095,7 +1095,7 @@ static void draw_shell(void) {
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_BROWSER) {
-        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - HTTP TEXT VIEW",
+        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - EARLY TEXT PREVIEW",
                            2, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 38U, "HOST/PATH:",
                            1, 108, 216, 229);
@@ -1112,7 +1112,7 @@ static void draw_shell(void) {
                            "ENTER LOADS  BACKSPACE EDITS  ESC HOME",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 382U,
-                           "PLAIN HTTP ONLY - DO NOT SEND PRIVATE DATA",
+                           "HTTP ONLY - NO TLS, SCRIPTS OR SECURE SITES",
                            1, 239, 177, 119);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
@@ -1993,7 +1993,7 @@ static void browser_navigate(void) {
         return;
     }
     browser_render_body(response, response_length);
-    browser_set_status("Loaded HTTP text; no TLS or script execution");
+    browser_set_status("Loaded plain HTTP text; browser features unavailable");
 }
 
 static void terminal_execute(void) {

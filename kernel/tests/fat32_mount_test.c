@@ -160,8 +160,25 @@ static void format_minimal_fat32(void) {
             root[11U] = 0x20U;
         }
     }
+    /* Add a real subdirectory after the forty ordinary root entries. */
+    uint8_t *directory_fat = disk[TEST_PARTITION_START + TEST_RESERVED_SECTORS];
+    put32(directory_fat + 5U * 4U, 0x0FFFFFFFU);
+    uint8_t *directory_entry =
+        disk[TEST_PARTITION_START + TEST_DATA_START + 2U] + 8U * 32U;
+    memcpy(directory_entry, "SUBDIR     ", 11U);
+    directory_entry[11U] = 0x10U;
+    put16(directory_entry + 20U, 0U);
+    put16(directory_entry + 26U, 5U);
+    directory_entry[32U] = 0U;
+
+    /* One file in cluster five verifies independent subdirectory scanning. */
+    uint8_t *nested = disk[TEST_PARTITION_START + TEST_DATA_START + 3U];
+    memcpy(nested, "INNER   TXT", 11U);
+    nested[11U] = 0x20U;
+    nested[32U] = 0U;
+
     /* Mark the first unused slot so enumeration terminates normally. */
-    disk[TEST_PARTITION_START + TEST_DATA_START + 2U][10U * 32U] = 0U;
+    disk[TEST_PARTITION_START + TEST_DATA_START + 2U][9U * 32U] = 0U;
 
     uint8_t *file_data =
         disk[TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U];
@@ -177,7 +194,7 @@ int main(void) {
     format_minimal_fat32();
     highest_read_lba = 0U;
     assert(fat32_mount(&device, &partition));
-    assert(fat32_root_entry_count() == 40U);
+    assert(fat32_root_entry_count() == 41U);
     assert(strcmp(fat32_root_entry_at(1U)->name, "Long Filename.txt") == 0);
     const struct nexus_fat32_entry *entry = fat32_root_entry_at(0U);
     assert(entry != NULL);
@@ -187,6 +204,16 @@ int main(void) {
         assert(output[i] == (uint8_t)(i ^ 0xA5U));
     assert(highest_read_lba <=
            TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U);
+
+    const struct nexus_fat32_entry *directory = fat32_root_entry_at(40U);
+    assert(directory != NULL);
+    assert((directory->attributes & 0x10U) != 0U);
+    assert(directory->first_cluster == 5U);
+    assert(fat32_read_directory(directory->first_cluster));
+    assert(fat32_root_entry_count() == 1U);
+    assert(strcmp(fat32_root_entry_at(0U)->name, "INNER.TXT") == 0);
+    assert(fat32_read_directory(2U));
+    assert(fat32_root_entry_count() == 41U);
 
     /* A damaged VFAT checksum must never rename the short directory entry. */
     uint8_t *lfn_record = disk[TEST_PARTITION_START + TEST_DATA_START] +

@@ -1067,8 +1067,13 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 100U, text_y + 198U,
                                last_text, 1, 170, 191, 211);
             if (files_vfs_ready) {
+                graphics_draw_text(text_x, text_y + 204U,
+                    vfs_directory_depth() == 0U
+                        ? "LOCATION: /  (ROOT)"
+                        : "LOCATION: SUBDIRECTORY  /  ESC TO GO UP",
+                    1U, 108U, 216U, 229U);
                 graphics_draw_text(text_x, text_y + 228U,
-                                   "ROOT FILE:", 1, 233, 243, 252);
+                                   "FIRST ITEM:", 1, 233, 243, 252);
                 graphics_draw_text(text_x + 100U, text_y + 228U,
                                    files_first_name, 1, 119, 229, 211);
                 graphics_draw_text(text_x, text_y + 258U,
@@ -1139,7 +1144,7 @@ static void draw_shell(void) {
                                    1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  PGUP/PGDN PAGE  ENTER PREVIEW",
+                               "UP/DOWN SELECT  ENTER OPEN/PREVIEW  ESC PARENT",
                                1, 170, 191, 211);
             if (files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 414U,

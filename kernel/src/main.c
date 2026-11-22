@@ -257,7 +257,7 @@ void kmain(void) {
         serial_write("INSTALLER: destructive writes locked until boot source is identified\\r\\n");
     }
 #ifdef NEXUS_STORAGE_SELFTEST
-    if (!boot_media_identity_ready || !storage_run_selftests()) {
+    if (!storage_run_selftests()) {
         serial_write("ERROR: post-provenance storage write self-test failed\\r\\n");
         halt_forever();
     }

@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 struct ehdr {
  uint8_t ident[16]; uint16_t type,machine; uint32_t version;
@@ -22,7 +23,7 @@ int main(void) {
  h->type=3;h->machine=62;h->version=1;h->ehsize=64;
  h->phoff=64;h->phentsize=56;h->phnum=2;
  struct phdr *p=(void *)(image+64);
- p[0]=(struct phdr){1,5,0,0,0,sizeof(image),sizeof(image),0x1000};
+ p[0]=(struct phdr){1,7,0,0,0,sizeof(image),sizeof(image),0x1000};
  p[1]=(struct phdr){2,6,0x1000,0x1000,0,7*16,7*16,8};
  struct dyn *d=(void *)(image+0x1000);
  d[0]=(struct dyn){1,1};       /* DT_NEEDED */
@@ -41,6 +42,33 @@ int main(void) {
  assert(info.needed_count==1 && info.has_rela);
  assert(info.rela_address==0x1090 && info.rela_size==24 &&
         info.rela_entry_size==24);
+ struct { uint64_t offset, info; int64_t addend; } __attribute__((packed)) *rela =
+     (void *)(image + 0x1090);
+ rela->offset=0x10B0; rela->info=8U; rela->addend=0x1234;
+ uint8_t loaded[sizeof(image)];
+ memcpy(loaded,image,sizeof(image));
+ assert(nexus_elf64_dynamic_apply_relative(image,sizeof(image),0U,
+                                            loaded,sizeof(loaded),0x400000U));
+ uint64_t relocated=0U;
+ memcpy(&relocated,loaded+0x10B0,sizeof(relocated));
+ assert(relocated==0x401234U);
+ rela->info=7U; /* Unsupported relocation must be rejected. */
+ memcpy(loaded,image,sizeof(image));
+ assert(!nexus_elf64_dynamic_apply_relative(image,sizeof(image),0U,
+                                             loaded,sizeof(loaded),0x400000U));
+ rela->info=8U;
+ rela->offset=0x1200; /* Outside mapped writable load segment. */
+ assert(!nexus_elf64_dynamic_apply_relative(image,sizeof(image),0U,
+                                             loaded,sizeof(loaded),0x400000U));
+ rela->offset=0x10B0;
+ rela->addend=INT64_MAX;
+ assert(!nexus_elf64_dynamic_apply_relative(image,sizeof(image),0U,
+                                             loaded,sizeof(loaded),UINT64_MAX));
+ rela->addend=0x1234;
+ p[0].flags=5U; /* Read/execute load segment is not a writable target. */
+ assert(!nexus_elf64_dynamic_apply_relative(image,sizeof(image),0U,
+                                             loaded,sizeof(loaded),0x400000U));
+ p[0].flags=7U;
  d[0].value=9;
  assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
  d[0].value=1;

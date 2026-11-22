@@ -302,8 +302,23 @@ static bool xhci_command(struct xhci_controller *xhci, uint64_t parameter,
         if (xhci_event_type(&event) != XHCI_TRB_COMMAND_EVENT) continue;
         if (completion != NULL) *completion = event;
         if (xhci_event_code(&event) != XHCI_CC_SUCCESS) {
+            const uint16_t last_index = xhci->command_ring.enqueue == 0U
+                ? (uint16_t)(XHCI_RING_USABLE - 1U)
+                : (uint16_t)(xhci->command_ring.enqueue - 1U);
+            const volatile struct xhci_trb *submitted =
+                &xhci->command_ring.trbs[last_index];
             serial_write("xHCI: command completion error code=");
             serial_write_hex(xhci_event_code(&event));
+            serial_write(" command type=");
+            serial_write_hex((submitted->control >> 10) & 0x3FU);
+            serial_write(" slot=");
+            serial_write_hex((submitted->control >> 24) & 0xFFU);
+            serial_write(" command parameter=");
+            serial_write_hex(submitted->parameter);
+            serial_write(" event parameter=");
+            serial_write_hex(event.parameter);
+            serial_write(" context size=");
+            serial_write_hex(xhci->context_size);
             serial_write("\r\n");
             return false;
         }

@@ -372,9 +372,12 @@ bool blockdev_identity_is_unique(const struct nexus_block_device *device) {
     }
 
     /* A placeholder serial is not safe enough to authorize destructive work. */
-    static const char unknown_id[] = "NVME-UNKNOWN";
+    static const char unknown_nvme_id[] = "NVME-UNKNOWN";
+    static const char unknown_sata_id[] = "SATA-UNKNOWN";
     if (blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
-                              unknown_id, sizeof(unknown_id))) {
+                              unknown_nvme_id, sizeof(unknown_nvme_id)) ||
+        blockdev_string_equal(device->stable_id, NEXUS_BLOCKDEV_ID_MAX,
+                              unknown_sata_id, sizeof(unknown_sata_id))) {
         return false;
     }
 

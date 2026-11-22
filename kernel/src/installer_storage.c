@@ -173,8 +173,22 @@ enum nexus_installer_journal_result nexus_installer_load_recovery_record(
         .context=(void*)device,.read=journal_target_read,
         .write=journal_target_write,.flush=journal_target_flush
     };
-    return nexus_installer_journal_load(&target,recovery_partition->first_lba,
-                                        record);
+    const enum nexus_installer_journal_result result=
+        nexus_installer_journal_load(&target,recovery_partition->first_lba,
+                                     record);
+    if(result!=NEXUS_JOURNAL_OK)return result;
+    const uint8_t *disk_guid=gpt_scanned_disk_guid();
+    if(disk_guid==NULL||record->disk_block_count!=identity->block_count||
+       record->block_size!=identity->block_size)return NEXUS_JOURNAL_CORRUPT;
+    for(size_t i=0U;i<16U;++i)
+        if(record->disk_guid[i]!=disk_guid[i])return NEXUS_JOURNAL_CORRUPT;
+    for(size_t i=0U;i<NEXUS_BLOCKDEV_ID_MAX;++i)
+        if(record->stable_id[i]!=identity->stable_id[i])
+            return NEXUS_JOURNAL_CORRUPT;
+    for(size_t i=0U;i<NEXUS_BLOCKDEV_MODEL_MAX;++i)
+        if(record->model[i]!=identity->model[i])
+            return NEXUS_JOURNAL_CORRUPT;
+    return NEXUS_JOURNAL_OK;
 }
 
 enum nexus_installer_journal_result nexus_installer_store_recovery_record(
@@ -186,8 +200,20 @@ enum nexus_installer_journal_result nexus_installer_store_recovery_record(
     if(device==NULL||identity==NULL||record==NULL||
        !blockdev_matches_identity(device,identity->stable_id,identity->model,
           identity->block_count,identity->block_size)||
-       !installer_is_exact_recovery_partition(device,recovery_partition))
+       !installer_is_exact_recovery_partition(device,recovery_partition)||
+       record->disk_block_count!=identity->block_count||
+       record->block_size!=identity->block_size)
         return NEXUS_JOURNAL_INVALID;
+    const uint8_t *disk_guid=gpt_scanned_disk_guid();
+    if(disk_guid==NULL)return NEXUS_JOURNAL_INVALID;
+    for(size_t i=0U;i<16U;++i)
+        if(record->disk_guid[i]!=disk_guid[i])return NEXUS_JOURNAL_INVALID;
+    for(size_t i=0U;i<NEXUS_BLOCKDEV_ID_MAX;++i)
+        if(record->stable_id[i]!=identity->stable_id[i])
+            return NEXUS_JOURNAL_INVALID;
+    for(size_t i=0U;i<NEXUS_BLOCKDEV_MODEL_MAX;++i)
+        if(record->model[i]!=identity->model[i])
+            return NEXUS_JOURNAL_INVALID;
     if(!blockdev_install_session_begin(device,typed_id,typed_erase))
         return NEXUS_JOURNAL_INVALID;
     const struct nexus_installer_journal_device target={

@@ -311,6 +311,10 @@ int main(int argc,char **argv) {
     assert(journal_readback.sequence==2U&&
            journal_readback.phase==NEXUS_JOURNAL_GPT_WRITTEN);
     assert(target.flushes==33U);
+    journal.disk_guid[0]^=0xFFU;
+    assert(nexus_installer_store_recovery_record(target_handle,&identity,
+        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_INVALID);
+    journal.disk_guid[0]^=0xFFU;
 
     const uint32_t bps=512U;
     const uint32_t reserved=(uint32_t)(target.format_area[esp_offset+14U] |
@@ -432,7 +436,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_format_fat32(target_handle, &identity,
         identity.stable_id, "ERASE", 0U, 1024U, 0x12345678U) ==
         NEXUS_FAT32_FORMAT_INVALID);
-    assert(target.flushes == 40U);
+    assert(target.flushes == 42U);
 
     identity.block_count--;
     assert(nexus_installer_write_gpt(target_handle, &identity,

@@ -381,17 +381,20 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
         const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
         if (entry == NULL || !name_equal(entry->name, name) ||
             (entry->attributes & 0x10U) != 0U) continue;
-        file->filesystem_entry = entry;
-        file->offset = 0;
+        file->fat32_snapshot = *entry;
+        file->offset = 0U;
         file->open = true;
+        file->fat32_file = true;
         return true;
     }
     return false;
 }
 
 bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
-    if (file == NULL || !file->open ||
-        file->filesystem_entry == NULL || size == NULL) return false;
+    if (file == NULL || !file->open || size == NULL ||
+        (!file->ram_file && !file->nxfs_file && !file->fat32_file) ||
+        ((file->ram_file || file->nxfs_file) &&
+         file->filesystem_entry == NULL)) return false;
     if (file->ram_file) {
         const struct ramfs_entry *entry =
             (const struct ramfs_entry *)file->filesystem_entry;
@@ -406,10 +409,8 @@ bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
         *size = entry->size;
         return true;
     }
-    if (!root_mounted) return false;
-    const struct nexus_fat32_entry *entry =
-        (const struct nexus_fat32_entry *)file->filesystem_entry;
-    *size = entry->size;
+    if (!root_mounted || !file->fat32_file) return false;
+    *size = file->fat32_snapshot.size;
     return true;
 }
 
@@ -452,10 +453,9 @@ bool vfs_read(struct nexus_vfs_file *file, void *buffer,
         return true;
     }
 
-    if (!root_mounted) return false;
-    const struct nexus_fat32_entry *entry =
-        (const struct nexus_fat32_entry *)file->filesystem_entry;
-    if (entry == NULL || file->offset > entry->size) return false;
+    if (!root_mounted || !file->fat32_file) return false;
+    const struct nexus_fat32_entry *entry = &file->fat32_snapshot;
+    if (file->offset > entry->size) return false;
     size_t completed = 0;
     uint8_t *out = (uint8_t *)buffer;
     while (completed < requested && file->offset < entry->size) {

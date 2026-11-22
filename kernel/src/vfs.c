@@ -9,6 +9,9 @@
 
 static bool root_mounted;
 static bool nxfs_root_mounted;
+#define VFS_DIRECTORY_MAX_DEPTH 16U
+static uint32_t directory_stack[VFS_DIRECTORY_MAX_DEPTH];
+static size_t directory_depth;
 
 struct ramfs_entry {
     bool used;
@@ -140,7 +143,7 @@ bool vfs_ramfs_remove(const char *name) {
  * read-only, so a name found only on FAT32 is never deleted here.
  */
 bool vfs_remove_file(const char *name) {
-    if (name == NULL) return false;
+    if (name == NULL || directory_depth != 0U) return false;
 
     /* A volatile overlay shadows a persistent file with the same name. */
     if (ramfs_find(name) != NULL) return vfs_ramfs_remove(name);
@@ -160,11 +163,40 @@ bool vfs_mount_root_fat32(const struct nexus_block_device *device,
     if (!fat32_mount(device, partition)) return false;
     if (!blockdev_set_mounted(device, true)) return false;
     root_mounted = true;
+    directory_depth = 0U;
+    directory_stack[0] = fat32_root_cluster();
     return true;
 }
 
 bool vfs_root_mounted(void) {
     return root_mounted;
+}
+
+size_t vfs_directory_depth(void) {
+    return directory_depth;
+}
+
+bool vfs_enter_directory(const char *name) {
+    if (!root_mounted || name == NULL ||
+        directory_depth + 1U >= VFS_DIRECTORY_MAX_DEPTH) return false;
+    for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
+        const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
+        if (entry == NULL || !name_equal(entry->name, name) ||
+            (entry->attributes & 0x10U) == 0U ||
+            entry->first_cluster < 2U) continue;
+        if (!fat32_read_directory(entry->first_cluster)) return false;
+        directory_stack[++directory_depth] = entry->first_cluster;
+        return true;
+    }
+    return false;
+}
+
+bool vfs_parent_directory(void) {
+    if (!root_mounted || directory_depth == 0U) return false;
+    const uint32_t parent = directory_stack[directory_depth - 1U];
+    if (!fat32_read_directory(parent)) return false;
+    --directory_depth;
+    return true;
 }
 
 bool vfs_mount_root_nxfs(const struct nexus_block_device *device,
@@ -199,7 +231,8 @@ bool vfs_save_ram_file_to_nxfs(const char *name) {
  * successful RAM-only write.
  */
 bool vfs_write_file(const char *name, const void *data, size_t length) {
-    if (name == NULL || (length != 0U && data == NULL)) return false;
+    if (name == NULL || directory_depth != 0U ||
+        (length != 0U && data == NULL)) return false;
     if (nxfs_root_mounted && nxfs_is_writable()) {
         if (length > NEXUS_NXFS_MAX_FILE_BYTES) return false;
         return nxfs_write_file(name, data, length);
@@ -223,10 +256,10 @@ static bool nxfs_shadows_name(const char *name) {
 
 size_t vfs_root_entry_count(void) {
     size_t count = 0U;
-    for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+    if (directory_depth == 0U) for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
         if (ramfs[i].used) ++count;
     }
-    if (nxfs_root_mounted) {
+    if (directory_depth == 0U && nxfs_root_mounted) {
         for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
             const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
             if (entry != NULL && !ramfs_shadows_name(entry->name)) ++count;
@@ -245,7 +278,7 @@ size_t vfs_root_entry_count(void) {
 
 bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
     if (entry == NULL) return false;
-    for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
+    if (directory_depth == 0U) for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
         if (!ramfs[i].used) continue;
         if (index == 0U) {
             size_t n = 0U;
@@ -256,12 +289,13 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
             entry->name[n] = '\0';
             entry->type = NEXUS_VFS_FILE;
             entry->size = ramfs[i].size;
+            entry->first_cluster = 0U;
             return true;
         }
         --index;
     }
 
-    if (nxfs_root_mounted) {
+    if (directory_depth == 0U && nxfs_root_mounted) {
         for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
             const struct nexus_nxfs_entry *nx_entry = nxfs_entry_at(i);
             if (nx_entry == NULL || ramfs_shadows_name(nx_entry->name)) continue;
@@ -278,6 +312,7 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
             entry->name[n] = '\0';
             entry->type = NEXUS_VFS_FILE;
             entry->size = nx_entry->size;
+            entry->first_cluster = 0U;
             return true;
         }
     }
@@ -300,6 +335,7 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
             entry->type = (fat_entry->attributes & 0x10U) != 0U
                 ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
             entry->size = fat_entry->size;
+            entry->first_cluster = fat_entry->first_cluster;
             return true;
         }
     }
@@ -310,7 +346,8 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
     if (name == NULL || file == NULL) return false;
     *file = (struct nexus_vfs_file){0};
 
-    struct ramfs_entry *ram_entry = ramfs_find(name);
+    struct ramfs_entry *ram_entry = directory_depth == 0U
+        ? ramfs_find(name) : NULL;
     if (ram_entry != NULL) {
         file->filesystem_entry = ram_entry;
         file->offset = 0U;
@@ -319,7 +356,7 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
         return true;
     }
 
-    if (nxfs_root_mounted) {
+    if (directory_depth == 0U && nxfs_root_mounted) {
         for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
             const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
             if (entry == NULL || !name_equal(entry->name, name)) continue;

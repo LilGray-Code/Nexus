@@ -86,6 +86,22 @@ bool nexus_browser_url_parse(const char *input,
     for (size_t i = 0U; i < host_length; ++i)
         parsed.host[i] = input[authority_start + i];
     parsed.host[host_length] = '\0';
+    /* DNS labels are 1..63 octets and cannot begin or end with a hyphen.
+     * Reject empty labels and overlong labels before passing the host to DNS. */
+    size_t label_length = 0U;
+    for (size_t i = 0U; i < host_length; ++i) {
+        if (parsed.host[i] == '.') {
+            if (label_length == 0U || label_length > 63U ||
+                parsed.host[i - 1U] == '-') return false;
+            label_length = 0U;
+        } else {
+            if (label_length == 0U && parsed.host[i] == '-') return false;
+            ++label_length;
+            if (label_length > 63U) return false;
+        }
+    }
+    if (label_length == 0U || parsed.host[host_length - 1U] == '-')
+        return false;
 
     if (colon != authority_end) {
         if (!parse_port(input + colon + 1U, authority_end - colon - 1U,

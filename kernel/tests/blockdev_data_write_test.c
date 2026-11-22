@@ -10,7 +10,7 @@
 #define DATA_FIRST 12288U
 #define DATA_LAST 32766U
 #define SYSTEM_FIRST 4096U
-#define SYSTEM_LAST 12287U
+#define SYSTEM_LAST 11263U
 
 static struct nexus_gpt_partition partitions[4];
 static const struct nexus_block_device *gpt_device;

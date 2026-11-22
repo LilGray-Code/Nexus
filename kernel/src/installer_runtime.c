@@ -212,11 +212,12 @@ enum nexus_installer_runtime_result nexus_installer_runtime_apply(
         partitions[i] = *part;
     }
 
-    struct nexus_gpt_partition esp, system, recovery, bios;
+    struct nexus_gpt_partition esp, system, recovery, data, bios;
     if (!find_partition_kind(&plan, partitions, NEXUS_PARTITION_ESP, &esp) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_SYSTEM, &system) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_RECOVERY,
-                             &recovery))
+                             &recovery) ||
+        !find_partition_kind(&plan, partitions, NEXUS_PARTITION_DATA, &data))
         return NEXUS_INSTALL_RESULT_PARTITION_VERIFY;
     const bool needs_bios = firmware != NEXUS_FIRMWARE_UEFI;
     if (needs_bios &&
@@ -254,8 +255,12 @@ enum nexus_installer_runtime_result nexus_installer_runtime_apply(
             typed_erase_phrase, &recovery, &journal);
         return NEXUS_INSTALL_RESULT_ESP_FORMAT;
     }
+    report(progress, progress_context, NEXUS_INSTALL_PHASE_FORMATTING,
+           "Formatting the Nexus system and data volumes");
     if (!nexus_installer_format_nxfs(device, &identity, typed_stable_id,
-        typed_erase_phrase, &system)) {
+        typed_erase_phrase, &system) ||
+        !nexus_installer_format_nxfs(device, &identity, typed_stable_id,
+        typed_erase_phrase, &data)) {
         journal_require_recovery(device, &identity, typed_stable_id,
             typed_erase_phrase, &recovery, &journal);
         return NEXUS_INSTALL_RESULT_SYSTEM_FORMAT;

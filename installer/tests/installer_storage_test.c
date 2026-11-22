@@ -498,6 +498,7 @@ int main(int argc,char **argv) {
     assert(nxfs_read_file(user_entry, 0U, (uint32_t)sizeof(user_data) - 1U,
                           user_readback));
     assert(memcmp(user_readback, user_data, sizeof(user_data) - 1U) == 0);
+    nxfs_unmount();
 
     /* FAT32 formatting rejects arbitrary LBAs and non-ESP GPT partitions
      * without issuing any additional target writes. */

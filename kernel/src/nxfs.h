@@ -10,7 +10,7 @@
 
 #define NEXUS_NXFS_MAX_FILES 64U
 #define NEXUS_NXFS_MAX_FILE_BYTES (1024U * 1024U)
-#define NEXUS_NXFS_NAME_MAX 13U
+#define NEXUS_NXFS_NAME_MAX 32U /* 31 printable characters plus NUL */
 
 struct nexus_nxfs_entry {
     bool used;

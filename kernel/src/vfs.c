@@ -43,15 +43,13 @@ static bool normalize_ramfs_name(const char *source,
                                  char output[NEXUS_VFS_NAME_MAX]) {
     if (source == NULL || output == NULL) return false;
     size_t length = 0U;
-    size_t base_length = 0U;
-    size_t extension_length = 0U;
     bool extension = false;
 
     while (source[length] != '\0') {
+        if (length >= NEXUS_VFS_NAME_MAX - 1U) return false;
         const char ch = source[length];
         if (ch == '.') {
-            if (length >= NEXUS_VFS_NAME_MAX - 1U ||
-                extension || base_length == 0U) return false;
+            if (extension || length == 0U) return false;
             extension = true;
             output[length++] = '.';
             continue;
@@ -60,17 +58,11 @@ static bool normalize_ramfs_name(const char *source,
                            (ch >= 'A' && ch <= 'Z') ||
                            (ch >= '0' && ch <= '9') ||
                            ch == '_' || ch == '-';
-        if (!valid || length >= NEXUS_VFS_NAME_MAX - 1U) return false;
-        if (extension) {
-            if (++extension_length > 3U) return false;
-        } else {
-            if (++base_length > 8U) return false;
-        }
+        if (!valid) return false;
         output[length++] = ascii_upper(ch);
     }
 
-    if (length == 0U || base_length == 0U ||
-        (extension && extension_length == 0U)) return false;
+    if (length == 0U || output[length - 1U] == '.') return false;
     output[length] = '\0';
     return true;
 }
@@ -266,8 +258,10 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
     if (fat_entry == NULL) return false;
 
     size_t n = 0U;
-    for (; n < NEXUS_VFS_NAME_MAX - 1U && fat_entry->name[n] != '\0'; ++n)
+    for (; n < sizeof(fat_entry->name) - 1U &&
+           fat_entry->name[n] != '\0'; ++n) {
         entry->name[n] = fat_entry->name[n];
+    }
     entry->name[n] = '\0';
     entry->type = (fat_entry->attributes & 0x10U) != 0U
         ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
@@ -407,6 +401,8 @@ void vfs_close(struct nexus_vfs_file *file) {
 
 bool vfs_ramfs_selftest(void) {
     static const char payload[] = "NEXUS RAMFS READY";
+    static const char long_name[] = "NEXUS-LONG-FILE-NAME-ROUNDTRIP";
+    static const char long_payload[] = "long filenames remain readable";
     if (!vfs_write_file("NXRAM.TST", payload, sizeof(payload) - 1U))
         return false;
 
@@ -414,7 +410,7 @@ bool vfs_ramfs_selftest(void) {
     if (!vfs_open_readonly("nxram.tst", &file) ||
         (vfs_nxfs_writable() ? !file.nxfs_file : !file.ram_file))
         return false;
-    uint8_t buffer[32];
+    uint8_t buffer[64];
     size_t bytes_read = 0U;
     const bool read_ok = vfs_read(&file, buffer, sizeof(buffer), &bytes_read);
     vfs_close(&file);
@@ -427,5 +423,25 @@ bool vfs_ramfs_selftest(void) {
         vfs_close(&file);
         return false;
     }
-    return true;
+
+    /* Exercise names longer than the legacy 8.3 limit on both NXFS and RAMFS. */
+    if (!vfs_write_file(long_name, long_payload, sizeof(long_payload) - 1U) ||
+        !vfs_open_readonly("nexus-long-file-name-roundtrip", &file)) {
+        (void)vfs_remove_file(long_name);
+        return false;
+    }
+    bytes_read = 0U;
+    const bool long_read_ok = vfs_read(&file, buffer, sizeof(buffer), &bytes_read);
+    vfs_close(&file);
+    if (!long_read_ok || bytes_read != sizeof(long_payload) - 1U) {
+        (void)vfs_remove_file(long_name);
+        return false;
+    }
+    for (size_t i = 0U; i < bytes_read; ++i) {
+        if (buffer[i] != (uint8_t)long_payload[i]) {
+            (void)vfs_remove_file(long_name);
+            return false;
+        }
+    }
+    return vfs_remove_file(long_name);
 }

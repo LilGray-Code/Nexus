@@ -25,6 +25,31 @@ static bool suite_is(const uint8_t *suite, uint8_t type) {
            suite[2] == 0xACU && suite[3] == type;
 }
 
+static bool channel_frequency(uint8_t channel,
+                              enum nexus_wifi_band *band,
+                              uint16_t *frequency_mhz) {
+    if (band == NULL || frequency_mhz == NULL || channel == 0U) return false;
+    if (channel <= 13U) {
+        *band = NEXUS_WIFI_BAND_2GHZ;
+        *frequency_mhz = (uint16_t)(2407U + 5U * channel);
+        return true;
+    }
+    if (channel == 14U) {
+        *band = NEXUS_WIFI_BAND_2GHZ;
+        *frequency_mhz = 2484U;
+        return true;
+    }
+    if ((channel >= 32U && channel <= 68U && (channel % 4U) == 0U) ||
+        (channel >= 96U && channel <= 144U && (channel % 4U) == 0U) ||
+        (channel >= 149U && channel <= 177U &&
+         ((channel - 149U) % 4U) == 0U)) {
+        *band = NEXUS_WIFI_BAND_5GHZ;
+        *frequency_mhz = (uint16_t)(5000U + 5U * channel);
+        return true;
+    }
+    return false;
+}
+
 static bool parse_rsn(const uint8_t *data, size_t length,
                       enum nexus_wifi_security *security) {
     if (data == NULL || security == NULL || length < 2U ||
@@ -146,7 +171,8 @@ bool wifi_parse_beacon_frame(const uint8_t *frame, size_t frame_length,
     }
     if (!have_ssid || !have_channel || unsupported_wpa1) return false;
     if (!have_rsn) parsed.security = NEXUS_WIFI_SECURITY_OPEN;
-    if (parsed.channel > 233U) return false;
+    if (!channel_frequency(parsed.channel, &parsed.band,
+                           &parsed.frequency_mhz)) return false;
     *network = parsed;
     return true;
 }

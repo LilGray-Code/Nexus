@@ -115,6 +115,7 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
 
     bool terminated = false;
     bool have_strtab = false, have_strsz = false;
+    bool have_rela = false, have_relasz = false, have_relaent = false;
     uint64_t strtab = 0U, strsz = 0U;
     uint64_t needed_offsets[NEXUS_ELF64_DYNAMIC_MAX_NEEDED] = {0U};
     for (uint64_t off = 0U; off < dynamic->filesz;
@@ -128,14 +129,24 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
                     return false;
                 needed_offsets[parsed.needed_count++] = entry->value;
                 break;
-            case DT_STRTAB: strtab = entry->value; have_strtab = true; break;
-            case DT_STRSZ: strsz = entry->value; have_strsz = true; break;
+            case DT_STRTAB:
+                if (have_strtab) return false;
+                strtab = entry->value; have_strtab = true; break;
+            case DT_STRSZ:
+                if (have_strsz) return false;
+                strsz = entry->value; have_strsz = true; break;
             case DT_RELA:
+                if (have_rela) return false;
                 parsed.rela_address = entry->value;
-                parsed.has_rela = true;
+                have_rela = true;
                 break;
-            case DT_RELASZ: parsed.rela_size = entry->value; break;
-            case DT_RELAENT: parsed.rela_entry_size = entry->value; break;
+            case DT_RELASZ:
+                if (have_relasz) return false;
+                parsed.rela_size = entry->value; have_relasz = true; break;
+            case DT_RELAENT:
+                if (have_relaent) return false;
+                parsed.rela_entry_size = entry->value;
+                have_relaent = true; break;
             case DT_REL: case DT_RELSZ: case DT_RELENT:
             case DT_JMPREL: case DT_PLTRELSZ: case DT_PLTREL:
                 /* The first loader milestone supports RELA metadata only. */
@@ -164,7 +175,9 @@ bool nexus_elf64_dynamic_parse(const void *file, size_t file_size,
             if (!name_terminated) return false;
         }
     }
-    if (parsed.has_rela) {
+    if (have_rela || have_relasz || have_relaent) {
+        if (!have_rela || !have_relasz || !have_relaent) return false;
+        parsed.has_rela = true;
         uint64_t rela_offset;
         if (parsed.rela_entry_size != ELF_RELA_SIZE ||
             parsed.rela_size % ELF_RELA_SIZE != 0U ||

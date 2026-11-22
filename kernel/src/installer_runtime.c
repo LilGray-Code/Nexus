@@ -464,6 +464,14 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
          journal.phase != NEXUS_JOURNAL_PAYLOAD_DEPLOYED &&
          journal.phase != NEXUS_JOURNAL_BOOTLOADER_INSTALLED))
         return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
+    if (journal.phase != NEXUS_JOURNAL_RECOVERY_REQUIRED) {
+        const uint32_t expected_steps =
+            journal.phase == NEXUS_JOURNAL_GPT_WRITTEN ? 1U :
+            (journal.phase == NEXUS_JOURNAL_FILESYSTEMS_FORMATTED ? 2U :
+            (journal.phase == NEXUS_JOURNAL_PAYLOAD_DEPLOYED ? 3U : 4U));
+        if (journal.completed_steps != expected_steps)
+            return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
+    }
 
     const enum nexus_firmware_mode layout =
         firmware == NEXUS_FIRMWARE_UEFI

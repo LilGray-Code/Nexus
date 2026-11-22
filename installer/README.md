@@ -1,12 +1,13 @@
 # Nexus Installer
 
-**Status:** An installable x86-64 prototype ISO has been built and passed
-the full GitHub Actions validation run
-[44969951849](https://github.com/LilGray-Code/Nexus/actions/runs/44969951849).
-CI drove the graphical installer with a keyboard, installed to a disposable
-16 GiB NVMe target, booted that installed disk under OVMF (UEFI) and SeaBIOS
-(legacy BIOS), and boot-checked the final install-enabled ISO. The ISO SHA-256
-is `cf7c5f0af18ac43024b33db4b44cab50d55742ae04a9551a47fea6c94481e622`.
+**Status:** The latest installable prototype passed GitHub Actions run
+[44971424953](https://github.com/LilGray-Code/Nexus/actions/runs/44971424953).
+CI exercised the graphical installer on a disposable NVMe target, booted the
+installed target under OVMF (UEFI) and SeaBIOS (legacy BIOS), verified
+persistent file creation/editing across reboot, and boot-checked the final
+distributable ISO. The workflow artifact is named
+`NexusOS-OriginalKernel-BIOS-UEFI`; its ISO checksum is included in the
+artifact's `release/SHA256SUMS.txt` manifest.
 
 This is a QEMU-validated installable prototype, not a production hardware
 certification or a complete general-purpose OS. The current installer writes
@@ -158,16 +159,20 @@ No gate may be marked complete from compilation alone. Each exit requires captur
 - **Storage:** GPT metadata, FAT32, NXFS, boot-payload deployment, and BIOS
   installation use the kernel block-device API. The system partition receives
   the kernel ELF, SYSTEM.MAN, and README.TXT. The separate NXFS data partition
-  is formatted and mounted by the desktop file-browser scan.
+  is formatted and mounted by the desktop Files view. Ordinary user-file writes
+  are authorized only within the exact validated NXFS data-partition LBA range
+  on the positively identified boot disk; EFI, system, recovery, and unrelated
+  sectors remain outside the write authorization.
 - **Boot support:** The same dual-layout installation boots under OVMF/UEFI and
   SeaBIOS/legacy BIOS in CI. The final ISO itself also passes UEFI and BIOS live
   boot checks. Secure Boot is not supported.
 - **CI evidence:** Run
-  [44969951849](https://github.com/LilGray-Code/Nexus/actions/runs/44969951849)
-  passed the host recovery and partition tests, storage-adapter tests, both
+  [44971424953](https://github.com/LilGray-Code/Nexus/actions/runs/44971424953)
+  passed the host recovery, partition, and storage-write-scope tests, both
   write-locked and installer-enabled kernel builds, disposable-disk runtime
-  install, graphical QEMU install, installed-target UEFI and BIOS boots, and
-  final ISO boot check. The uploaded artifact is named
+  install, graphical QEMU install, installed-target UEFI and BIOS boots,
+  persistent user-file create/edit/reboot-retention test, final ISO build,
+  and distributable ISO boot check. The uploaded artifact is named
   `NexusOS-OriginalKernel-BIOS-UEFI`.
 - **Release write gate:** The ordinary kernel Makefile remains write-locked.
   The CI distributable ISO explicitly defines
@@ -176,11 +181,11 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   and typed `ERASE` confirmation.
 - **Remaining limitations:** Only NVMe target writes are implemented. No
   physical hardware install has been completed. The installed system payload
-  is not a complete userland/root filesystem, and ordinary persistent user
-  file writes remain read-only (user-facing writes can use the volatile RAM
-  overlay). The file-management UI, physical NVMe recovery tests, SATA/USB
-  storage, broader device drivers, upgrades, and production hardening remain
-  unfinished.
+  is still a minimal kernel/manifest/readme, not a complete userland/root
+  filesystem. The Files view supports only a small keyboard-driven text editor,
+  not a general file manager. SATA/AHCI and USB mass-storage target writes,
+  USB HID, GPU acceleration, audio, Wi-Fi/Bluetooth, power management, system
+  updates, full recovery/rollback, and production hardening remain unfinished.
 
 The artifact is suitable for testing the install flow in a virtual machine.
 Before installing on physical hardware, back up the selected disk and treat

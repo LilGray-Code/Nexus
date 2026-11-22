@@ -35,9 +35,9 @@ jobs:
 
       - name: Test durable installer recovery journal (host-only mock disk)
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
-            -Iinstaller installer/installer_journal.c \\
-            installer/tests/installer_journal_test.c \\
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iinstaller installer/installer_journal.c \
+            installer/tests/installer_journal_test.c \
             -o /tmp/nexus-installer-journal-test
           /tmp/nexus-installer-journal-test
 

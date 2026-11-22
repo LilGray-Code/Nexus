@@ -71,7 +71,7 @@ static void test_corruption_and_io_fail_closed(void) {
     struct nexus_installer_journal_record out;
     memset(disk.sectors[4],0xA5U,512U);
     assert(nexus_installer_journal_load(&dev,4U,&out)==NEXUS_JOURNAL_CORRUPT);
-    memset(&disk,0,sizeof(disk));disk.fail_write=true;
+    memset(&disk,0,sizeof(disk));disk.sector_size=512U;disk.fail_write=true;
     struct nexus_installer_journal_record a=rec(1U,NEXUS_JOURNAL_PREPARED);
     assert(nexus_installer_journal_commit(&dev,4U,&a)==NEXUS_JOURNAL_IO_ERROR);
     disk.fail_write=false;disk.fail_flush=true;

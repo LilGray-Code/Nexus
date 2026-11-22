@@ -1826,7 +1826,16 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         scan_files_once();
         refresh_files_listing();
     }
-    if (next_view == DESKTOP_INSTALLER) installer_refresh_plan();
+    if (next_view == DESKTOP_INSTALLER) {
+        installer_refresh_plan();
+        const struct nexus_block_device *target =
+            blockdev_at(installer_selected_device);
+        if (target != NULL) {
+            serial_write("NEXUS INSTALLER TARGET: ");
+            serial_write(target->stable_id);
+            serial_write("\r\n");
+        }
+    }
     if (next_view == active_view) return;
     active_view = next_view;
     draw_shell();

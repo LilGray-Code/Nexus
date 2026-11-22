@@ -255,8 +255,14 @@ bool fat32_read_directory(uint32_t first_cluster) {
     root_entry_count = 0U;
     reset_lfn();
     uint32_t cluster = first_cluster;
+    uint32_t visited[FAT32_MAX_ROOT_CLUSTERS];
+    size_t visited_count = 0U;
     for (uint32_t chain = 0U; chain < FAT32_MAX_ROOT_CLUSTERS; ++chain) {
         if (!valid_cluster(cluster)) return false;
+        for (size_t prior = 0U; prior < visited_count; ++prior) {
+            if (visited[prior] == cluster) return false;
+        }
+        visited[visited_count++] = cluster;
         const uint64_t first_sector = (uint64_t)data_start +
             (uint64_t)(cluster - 2U) * sectors_per_cluster;
         for (uint32_t sector = 0U; sector < sectors_per_cluster; ++sector) {

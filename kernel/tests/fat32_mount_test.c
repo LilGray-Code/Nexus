@@ -89,6 +89,12 @@ static void format_minimal_fat32(void) {
         const uint32_t next = cluster == 4U ? 0x0FFFFFFFU : cluster + 1U;
         put32(disk[TEST_PARTITION_START + fat_sector] + fat_offset, next);
     }
+    const uint64_t final_fat_byte = (uint64_t)TEST_LAST_CLUSTER * 4U;
+    const uint32_t final_fat_sector = TEST_RESERVED_SECTORS +
+        (uint32_t)(final_fat_byte / 512U);
+    const uint32_t final_fat_offset = (uint32_t)(final_fat_byte % 512U);
+    put32(disk[TEST_PARTITION_START + final_fat_sector] + final_fat_offset,
+          0x0FFFFFFFU);
 
     for (uint32_t index = 0U; index < 40U; ++index) {
         const uint32_t cluster = 2U + index / 16U;

@@ -222,8 +222,19 @@ bool nexus_elf64_dynamic_apply_relative(const void *file, size_t file_size,
     if (!rela_found) return false;
 
     uint64_t rela_file_offset = 0U;
-    if (!vaddr_to_file((const struct elf_program_header *)loads, load_count,
-                       rela_offset, info.rela_size, &rela_file_offset) ||
+    bool rela_mapped = false;
+    for (uint16_t i = 0U; i < load_count; ++i) {
+        const struct elf_program_header *load = loads[i];
+        if (rela_offset < load->vaddr) continue;
+        const uint64_t delta = rela_offset - load->vaddr;
+        if (delta > load->filesz || info.rela_size > load->filesz - delta)
+            continue;
+        if (load->offset > UINT64_MAX - delta) return false;
+        rela_file_offset = load->offset + delta;
+        rela_mapped = true;
+        break;
+    }
+    if (!rela_mapped ||
         !range_valid(rela_file_offset, info.rela_size, file_size)) return false;
 
     const uint64_t relocation_count = info.rela_size / ELF_RELA_SIZE;

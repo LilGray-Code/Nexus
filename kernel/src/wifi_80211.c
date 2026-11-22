@@ -30,13 +30,21 @@ static bool parse_rsn(const uint8_t *data, size_t length,
     if (data == NULL || security == NULL || length < 2U ||
         read_le16(data) != 1U) return false;
     size_t offset = 2U;
-    if (length - offset < 6U) return false;
+    if (length - offset < 6U || data[offset] != 0x00U ||
+        data[offset + 1U] != 0x0FU || data[offset + 2U] != 0xACU)
+        return false;
     offset += 4U; /* Group cipher suite. */
 
     if (length - offset < 2U) return false;
     const uint16_t pairwise_count = read_le16(data + offset);
     offset += 2U;
-    if ((size_t)pairwise_count > (length - offset) / 4U) return false;
+    if (pairwise_count == 0U ||
+        (size_t)pairwise_count > (length - offset) / 4U) return false;
+    for (uint16_t i = 0U; i < pairwise_count; ++i) {
+        const uint8_t *suite = data + offset + (size_t)i * 4U;
+        if (suite[0] != 0x00U || suite[1] != 0x0FU ||
+            suite[2] != 0xACU) return false;
+    }
     offset += (size_t)pairwise_count * 4U;
 
     if (length - offset < 2U) return false;
@@ -85,7 +93,8 @@ bool wifi_parse_beacon_frame(const uint8_t *frame, size_t frame_length,
 
     const uint16_t frame_control = read_le16(frame);
     const uint16_t subtype = frame_control & IEEE80211_SUBTYPE_MASK;
-    if ((frame_control & IEEE80211_TYPE_MASK) != IEEE80211_TYPE_MANAGEMENT ||
+    if ((frame_control & 3U) != 0U ||
+        (frame_control & IEEE80211_TYPE_MASK) != IEEE80211_TYPE_MANAGEMENT ||
         (subtype != IEEE80211_SUBTYPE_BEACON &&
          subtype != IEEE80211_SUBTYPE_PROBE_RESPONSE)) return false;
 

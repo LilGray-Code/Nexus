@@ -103,8 +103,8 @@ static void format_minimal_fat32(void) {
             put32(root + 28U, 512U);
         } else {
             memcpy(root, "FILE0001TXT", 11U);
-            root[7U] = (uint8_t)('0' + (index / 10U));
-            root[8U] = (uint8_t)('0' + (index % 10U));
+            root[6U] = (uint8_t)('0' + (index / 10U));
+            root[7U] = (uint8_t)('0' + (index % 10U));
             root[11U] = 0x20U;
         }
     }

@@ -262,3 +262,8 @@ The full integration gate now runs the actual runtime against a disposable
 in-memory NVMe disk, writes the resulting GPT/FAT32/NXFS/BIOS payload image, and
 boots that image under OVMF and SeaBIOS. The same test checks the durable
 journal reaches COMPLETE before the image is handed to QEMU.
+
+The full QEMU workflow now also drives the graphical installer through its two
+confirmation screens on a disposable 16 GiB NVMe target, then boots the result
+from both OVMF/UEFI and SeaBIOS/legacy BIOS. The distributable ISO is built
+with the installer write gate enabled only after that test succeeds.

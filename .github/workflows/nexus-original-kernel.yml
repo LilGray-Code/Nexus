@@ -218,6 +218,7 @@ jobs:
             -drive file=ahci-test.img,if=ide,index=0,format=raw \
             -device qemu-xhci,id=xhci \
             -device usb-kbd,bus=xhci.0 \
+            -device usb-mouse,bus=xhci.0 \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:uefi-serial.log \
             -monitor none -no-reboot -no-shutdown
@@ -247,7 +248,9 @@ jobs:
           grep -q "NEXUS ACPI MADT READY" uefi-serial.log
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" uefi-serial.log
           grep -q "NEXUS USB HID KEYBOARD READY" uefi-serial.log
+          grep -q "NEXUS USB HID MOUSE READY" uefi-serial.log
           grep -q "INPUT: USB HID boot keyboard available" uefi-serial.log
+          grep -q "INPUT: USB HID boot mouse available" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log
           grep -q "NEXUS E1000 TX READY" uefi-serial.log
           grep -q "NEXUS DHCP READY" uefi-serial.log

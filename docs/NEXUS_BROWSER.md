@@ -59,7 +59,37 @@ The project must make an explicit engine strategy decision: build and maintain a
 - Extensions only after a defined permission model, signing policy, and compatibility/security strategy.
 - Accessibility: keyboard-only operation, screen-reader semantics, zoom, high contrast, and text scaling.
 
-### 6. OS integration and distribution
+### 6. Downloads and file handling
+
+Nexus Browser is intended to download ordinary web files (documents, images,
+archives, installers, and other user-selected content) into the user's chosen
+Nexus storage location. This is a required browser feature, not an optional
+extension.
+
+The download manager must provide:
+- a visible list of active, paused, completed, and failed transfers;
+- progress, byte counts, transfer rate, remaining-time estimate, and cancel/retry;
+- safe handling of redirects, interrupted connections, partial files, and
+  insufficient disk space;
+- sanitized filenames and path confinement to the selected download directory;
+- temporary partial files followed by an atomic final rename after a complete
+  transfer, with integrity checks where the server provides a digest;
+- explicit warnings for executable or potentially dangerous file types;
+- no automatic execution or installation of downloaded content;
+- HTTPS certificate validation before secure downloads are allowed;
+- persistent download history and recovery after browser or OS restart.
+
+A download must never silently overwrite an existing file. The user chooses
+the destination or uses a clearly displayed default Downloads folder. Browser
+downloads must use the same VFS/storage APIs as the file manager so completed
+files appear in Nexus Files.
+
+**Current status:** downloads are not implemented. The existing browser is an
+HTTP-only text prototype and cannot safely save web resources. This feature
+must not be advertised as available until transfer, persistence, UI, security,
+and reboot-recovery tests pass.
+
+### 7. OS integration and distribution
 - Native Nexus windowing, input, clipboard, fonts, audio, filesystem, network sockets, process, and memory APIs.
 - Browser and engine payloads preinstalled on the release ISO and copied to the selected installation target.
 - Offline first launch with all required runtime assets present.
@@ -97,7 +127,8 @@ does not provide HTML/CSS rendering, JavaScript, or browser security isolation.
 3. **Rendering foundation:** select the engine strategy, implement HTML/CSS layout and paint pipeline, and pass a published baseline of standards tests.
 4. **JavaScript and Web APIs:** integrate the runtime and event loop; test real script-driven sites and storage APIs.
 5. **Isolation and features:** add process separation, sandbox, tabs, history, bookmarks, downloads, permissions, accessibility, and media.
-6. **Nexus integration:** connect to native OS services, install all browser assets, and verify offline first launch and persistent profile behavior.
-7. **Release validation:** test modern HTTPS sites, forms, authentication, downloads, tabs, crash recovery, malicious/malformed content, privacy controls, updates, and performance in QEMU and on supported physical PCs.
+6. **Downloads:** implement secure transfer streaming, destination selection, safe filename/path validation, atomic file completion, persistent download history, and recovery tests.
+7. **Nexus integration:** connect to native OS services, install all browser assets, and verify offline first launch and persistent profile behavior.
+8. **Release validation:** test modern HTTPS sites, forms, authentication, downloads, tabs, crash recovery, malicious/malformed content, privacy controls, updates, and performance in QEMU and on supported physical PCs.
 
 A release may claim only the browser features that have passed their corresponding tests. “Chrome-like” is the long-term product target, not a current compatibility claim. No final Nexus OS release may claim a complete browser until secure modern websites and ordinary browser workflows work on a clean standalone installation.

@@ -853,6 +853,7 @@ jobs:
           sock.close()
           PY
           cat nexus-files-serial.log nexus-files-reboot-serial.log
+          grep -q "FILES: mounted persistent Nexus user Data volume on" nexus-files-serial.log
           grep -q "FILES: SAVED PERSISTENT NXFS PERSIST" nexus-files-serial.log
           grep -q "FILES: entry PERSIST size=21" nexus-files-serial.log
           grep -q "FILES: entry PERSIST size=21" nexus-files-reboot-serial.log
@@ -993,6 +994,7 @@ jobs:
           sock.close()
           PY
           cat nexus-sata-files-serial.log nexus-sata-files-reboot-serial.log
+          grep -q "FILES: mounted persistent Nexus user Data volume on" nexus-sata-files-serial.log
           grep -q "FILES: SAVED PERSISTENT NXFS PERSIST" nexus-sata-files-serial.log
           grep -q "FILES: entry PERSIST size=16" nexus-sata-files-reboot-serial.log
           kill "$QEMU_PID" 2>/dev/null || true
@@ -1135,6 +1137,7 @@ jobs:
           sock.close()
           PY
           cat nexus-files-serial.log nexus-files-reboot-serial.log
+          grep -q "FILES: mounted persistent Nexus user Data volume on" nexus-files-serial.log
           grep -q "FILES: SAVED PERSISTENT NXFS NEXUS-LONG-PERSISTENT-NOTE" nexus-files-serial.log
           grep -q "FILES: entry NEXUS-LONG-PERSISTENT-NOTE size=286" nexus-files-reboot-serial.log
           kill "$QEMU_PID" 2>/dev/null || true
@@ -1274,6 +1277,7 @@ jobs:
           sock.close()
           PY
           cat nexus-sata-files-serial.log nexus-sata-files-reboot-serial.log
+          grep -q "FILES: mounted persistent Nexus user Data volume on" nexus-sata-files-serial.log
           grep -q "FILES: SAVED PERSISTENT NXFS NEXUS-LONG-PERSISTENT-NOTE" nexus-sata-files-serial.log
           grep -q "FILES: entry NEXUS-LONG-PERSISTENT-NOTE size=16" nexus-sata-files-reboot-serial.log
           kill "$QEMU_PID" 2>/dev/null || true

@@ -130,6 +130,7 @@ struct xhci_controller {
     uint64_t erst_physical;
     struct xhci_mmio_mapping mappings[XHCI_MAX_MMIO_PAGES];
     size_t mapping_count;
+    /* One directly attached boot keyboard and one directly attached boot mouse. */
     struct xhci_hid_device keyboard;
     struct xhci_hid_device mouse;
 };

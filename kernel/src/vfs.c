@@ -480,5 +480,55 @@ bool vfs_ramfs_selftest(void) {
             return false;
         }
     }
-    return vfs_remove_file(long_name);
+    if (!vfs_remove_file(long_name)) return false;
+
+    /*
+     * A volatile RAMFS overlay must hide, not duplicate, a same-named NXFS
+     * file in directory listings. Removing the overlay reveals the persistent
+     * file again without deleting it.
+     */
+    if (vfs_nxfs_writable()) {
+        static const char shadow_name[] = "NXFS-SHADOW-TEST.TST";
+        static const char persistent_data[] = "persistent";
+        static const char overlay_data[] = "volatile";
+        const size_t before = vfs_root_entry_count();
+        if (!vfs_write_file(shadow_name, persistent_data,
+                            sizeof(persistent_data) - 1U))
+            return false;
+        if (vfs_root_entry_count() != before + 1U ||
+            !vfs_ramfs_write(shadow_name, overlay_data,
+                             sizeof(overlay_data) - 1U)) {
+            (void)vfs_remove_file(shadow_name);
+            return false;
+        }
+        if (vfs_root_entry_count() != before + 1U) {
+            (void)vfs_ramfs_remove(shadow_name);
+            (void)vfs_remove_file(shadow_name);
+            return false;
+        }
+
+        size_t visible_matches = 0U;
+        for (size_t i = 0U; i < vfs_root_entry_count(); ++i) {
+            struct nexus_vfs_dirent listed;
+            if (vfs_root_entry(i, &listed) &&
+                name_equal(listed.name, shadow_name))
+                ++visible_matches;
+        }
+        if (visible_matches != 1U ||
+            !vfs_open_readonly(shadow_name, &file) || !file.ram_file) {
+            (void)vfs_ramfs_remove(shadow_name);
+            (void)vfs_remove_file(shadow_name);
+            return false;
+        }
+        vfs_close(&file);
+        if (!vfs_ramfs_remove(shadow_name) ||
+            vfs_root_entry_count() != before + 1U ||
+            !vfs_open_readonly(shadow_name, &file) || !file.nxfs_file) {
+            (void)vfs_remove_file(shadow_name);
+            return false;
+        }
+        vfs_close(&file);
+        if (!vfs_remove_file(shadow_name)) return false;
+    }
+    return true;
 }

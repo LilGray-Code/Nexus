@@ -402,7 +402,16 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
 static void desktop_draw_startup_animation(void) {
     /* A short, timer-paced splash gives the user visible feedback while the
      * installed desktop is being brought up. Keep it framebuffer-only so it
-     * works on both BIOS and UEFI without a graphics driver. */
+     * works on both BIOS and UEFI without a graphics driver.
+     *
+     * The centered layout uses fixed offsets from the midpoint. On unusually
+     * small framebuffers those offsets could underflow unsigned coordinates
+     * and wrap drawing calls to the far edge of the display. Skip the optional
+     * splash rather than risk corrupt geometry; the regular shell still draws. */
+    if (screen_width < 176U || screen_height < 188U) {
+        serial_write("DESKTOP: startup splash skipped for small framebuffer\\r\\n");
+        return;
+    }
     const uint64_t center_x = screen_width / 2U;
     const uint64_t center_y = screen_height / 2U;
     const uint64_t panel_width = screen_width > 520U ? 440U : screen_width - 32U;

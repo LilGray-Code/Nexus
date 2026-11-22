@@ -46,7 +46,8 @@ static bool valid_cluster(uint32_t cluster) {
 }
 
 static bool read_volume_sector(uint32_t relative_lba, uint8_t *buffer) {
-    if (mounted_device == NULL || relative_lba >= partition_sectors)
+    if (mounted_device == NULL || relative_lba >= partition_sectors ||
+        (volume_sectors != 0U && relative_lba >= volume_sectors))
         return false;
     return blockdev_read(mounted_device, partition_start + relative_lba,
                          1U, buffer);

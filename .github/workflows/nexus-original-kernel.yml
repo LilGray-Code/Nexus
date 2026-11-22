@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-installed-desktop-separation
     paths:
       - "kernel/**"
       - "boot/**"

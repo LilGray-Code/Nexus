@@ -26,7 +26,7 @@ static void test_bulk_out_context(void) {
         0x02, 64, 0xABCDEF000ULL, context, &endpoint_id));
     assert(endpoint_id == 4);
     assert(((context[1] >> 3) & 7U) == 2U);
-    assert(context[2] == 0xCDEF0001U);
+    assert(context[2] == 0xBCDEF001U);
     assert(context[3] == 0xAU);
 }
 

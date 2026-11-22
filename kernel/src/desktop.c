@@ -33,6 +33,10 @@ static uint64_t screen_width;
 static uint64_t screen_height;
 static bool desktop_ready;
 static bool mouse_left_was_down;
+static bool keyboard_left_shift;
+static bool keyboard_right_shift;
+static bool keyboard_caps_lock;
+static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
 static char terminal_scancode_char(uint8_t code);
 static int64_t pointer_x;
@@ -1013,7 +1017,7 @@ static void scan_files_once(void) {
 
 
 static char terminal_scancode_char(uint8_t code) {
-    static const char map[58] = {
+    static const char normal_map[58] = {
         [0x02]='1',[0x03]='2',[0x04]='3',[0x05]='4',[0x06]='5',
         [0x07]='6',[0x08]='7',[0x09]='8',[0x0A]='9',[0x0B]='0',
         [0x0C]='-',[0x0D]='=',[0x10]='q',[0x11]='w',[0x12]='e',
@@ -1021,11 +1025,28 @@ static char terminal_scancode_char(uint8_t code) {
         [0x18]='o',[0x19]='p',[0x1A]='[',[0x1B]=']',[0x1E]='a',
         [0x1F]='s',[0x20]='d',[0x21]='f',[0x22]='g',[0x23]='h',
         [0x24]='j',[0x25]='k',[0x26]='l',[0x27]=';',[0x28]='\'',
-        [0x2B]='\\',[0x2C]='z',[0x2D]='x',[0x2E]='c',[0x2F]='v',
-        [0x30]='b',[0x31]='n',[0x32]='m',[0x33]=',',[0x34]='.',
-        [0x35]='/',[0x39]=' '
+        [0x29]='`',[0x2B]='\\',[0x2C]='z',[0x2D]='x',[0x2E]='c',
+        [0x2F]='v',[0x30]='b',[0x31]='n',[0x32]='m',[0x33]=',',
+        [0x34]='.',[0x35]='/',[0x39]=' '
     };
-    return code < sizeof(map) ? map[code] : '\0';
+    static const char shifted_map[58] = {
+        [0x02]='!',[0x03]='@',[0x04]='#',[0x05]='$',[0x06]='%',
+        [0x07]='^',[0x08]='&',[0x09]='*',[0x0A]='(',[0x0B]=')',
+        [0x0C]='_',[0x0D]='+',[0x1A]='{',[0x1B]='}',[0x27]=':',
+        [0x28]='"',[0x29]='~',[0x2B]='|',[0x33]='<',[0x34]='>',
+        [0x35]='?',[0x39]=' '
+    };
+    if (code >= sizeof(normal_map)) return '\0';
+
+    const bool shifted = keyboard_left_shift || keyboard_right_shift;
+    char value = normal_map[code];
+    if (value >= 'a' && value <= 'z') {
+        if (keyboard_caps_lock != shifted)
+            value = (char)(value - 'a' + 'A');
+    } else if (shifted) {
+        value = shifted_map[code];
+    }
+    return value;
 }
 
 static void browser_set_status(const char *message) {
@@ -1803,7 +1824,34 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (event->type != NEXUS_INPUT_KEYBOARD) return;
-    /* Set-1 make codes only; break codes are ignored. */
+
+    /*
+     * Maintain modifiers before view-specific key handling. PS/2 delivers
+     * ordinary Set-1 make/break codes; the USB HID decoder now emits the same
+     * Shift transitions, keeping both input paths consistent.
+     */
+    const uint8_t key_code = (uint8_t)(event->scancode & 0x7FU);
+    const bool key_released = (event->scancode & 0x80U) != 0U;
+    if (key_code == 0x2AU) {
+        keyboard_left_shift = !key_released;
+        return;
+    }
+    if (key_code == 0x36U) {
+        keyboard_right_shift = !key_released;
+        return;
+    }
+    if (key_code == 0x3AU) {
+        if (key_released) {
+            keyboard_caps_lock_down = false;
+        } else if (!keyboard_caps_lock_down) {
+            keyboard_caps_lock = !keyboard_caps_lock;
+            keyboard_caps_lock_down = true;
+        }
+        return;
+    }
+
+    /* Set-1 break codes are not inserted as text or commands. */
+    if (key_released) return;
     if (active_view == DESKTOP_INSTALLER) {
         if ((event->scancode & 0x80U) != 0U ||
             installer_ui_state == INSTALLER_UI_RUNNING) return;

@@ -42,6 +42,13 @@ int main(void) {
  assert(info.needed_count==1 && info.has_rela);
  assert(info.rela_address==0x1090 && info.rela_size==24 &&
         info.rela_entry_size==24);
+ /* Dynamic metadata must be backed by the PT_LOAD bytes at its virtual
+  * address, not merely point at an arbitrary in-range file offset.
+  */
+ p[1].offset=0x0FF0;
+ assert(!nexus_elf64_dynamic_parse(image,sizeof(image),&info));
+ p[1].offset=0x1000;
+ assert(nexus_elf64_dynamic_parse(image,sizeof(image),&info));
  struct { uint64_t offset, info; int64_t addend; } __attribute__((packed)) *rela =
      (void *)(image + 0x1090);
  rela->offset=0x10B0; rela->info=8U; rela->addend=0x1234;

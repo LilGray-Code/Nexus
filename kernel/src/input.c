@@ -205,7 +205,8 @@ void input_mouse_interrupt(void) {
 }
 
 void input_usb_keyboard_report(const uint8_t report[8]) {
-    uint8_t scancodes[8];
+    /* At most two Shift transitions, six key releases, and six makes. */
+    uint8_t scancodes[14];
     const size_t count = usb_hid_keyboard_decode(report, scancodes,
                                                  sizeof(scancodes));
     const uint64_t interrupt_flags = input_interrupt_save();

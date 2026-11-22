@@ -262,10 +262,6 @@ bool blockdev_set_boot_media_external(uint32_t source_kind) {
         transport = NEXUS_BLOCKDEV_TRANSPORT_OPTICAL;
     } else if (source_kind == NEXUS_BOOT_SOURCE_NETWORK) {
         transport = NEXUS_BLOCKDEV_TRANSPORT_NETWORK;
-    } else if (source_kind == NEXUS_BOOT_SOURCE_GENERIC) {
-        /* Generic sources are accepted only through the identity-checking
-         * helper below, not as an unconditional provenance shortcut. */
-        transport = 0U;
     } else {
         return false;
     }
@@ -295,8 +291,9 @@ bool blockdev_set_boot_media_external_if_unmatched(
     if (part_nonzero == 0U && disk_nonzero == 0U && mbr_disk_id == 0U) {
         /* Without an identity token, a generic source is only unambiguous
          * when there is no registered disk that could be the boot medium. */
-        return registered_count == 0U &&
-               blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_GENERIC);
+        if (registered_count != 0U) return false;
+        boot_media_detection_complete = true;
+        return true;
     }
 
     uint8_t sector[4096];
@@ -356,7 +353,8 @@ bool blockdev_set_boot_media_external_if_unmatched(
     /* The bootloader's generic source identity matched no registered disk.
      * It is therefore safe to exclude all currently registered block devices
      * from the target list while retaining the ordinary write gates. */
-    return blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_GENERIC);
+    boot_media_detection_complete = true;
+    return true;
 }
 static bool blockdev_set_boot_media_detection_complete(void) {
     if (boot_media_device == NULL || boot_media_detection_complete) return false;

@@ -483,6 +483,46 @@ bool vfs_ramfs_selftest(void) {
     if (!vfs_remove_file(long_name)) return false;
 
     /*
+     * Exercise multi-chunk reads on persistent files. vfs_read deliberately
+     * bounds each transfer to NEXUS_VFS_READ_CHUNK, so callers handling larger
+     * files must advance until the complete file has been consumed.
+     */
+    if (vfs_nxfs_writable()) {
+        static const char large_name[] = "NXFS-LARGE-READ-TEST.BIN";
+        static uint8_t large_payload[2U * NEXUS_VFS_READ_CHUNK + 137U];
+        uint8_t chunk_buffer[NEXUS_VFS_READ_CHUNK];
+        for (size_t i = 0U; i < sizeof(large_payload); ++i)
+            large_payload[i] = (uint8_t)((i * 37U + 11U) & 0xFFU);
+        if (!vfs_write_file(large_name, large_payload, sizeof(large_payload)) ||
+            !vfs_open_readonly(large_name, &file)) {
+            (void)vfs_remove_file(large_name);
+            return false;
+        }
+        size_t total_read = 0U;
+        bool large_read_ok = true;
+        while (total_read < sizeof(large_payload)) {
+            size_t received = 0U;
+            if (!vfs_read(&file, chunk_buffer, sizeof(chunk_buffer), &received) ||
+                received == 0U) {
+                large_read_ok = false;
+                break;
+            }
+            for (size_t i = 0U; i < received; ++i) {
+                if (chunk_buffer[i] != large_payload[total_read + i]) {
+                    large_read_ok = false;
+                    break;
+                }
+            }
+            if (!large_read_ok) break;
+            total_read += received;
+        }
+        vfs_close(&file);
+        const bool removed = vfs_remove_file(large_name);
+        if (!large_read_ok || total_read != sizeof(large_payload) || !removed)
+            return false;
+    }
+
+    /*
      * A volatile RAMFS overlay must hide, not duplicate, a same-named NXFS
      * file in directory listings. Removing the overlay reveals the persistent
      * file again without deleting it.

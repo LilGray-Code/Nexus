@@ -37,6 +37,12 @@ bool pci_init(void);
 uint32_t pci_device_count(void);
 const struct nexus_pci_device *pci_device_at(uint32_t index);
 
+/* Find a conventional PCI capability (for example MSI or PCI Express).
+ * Returns its config-space offset; traversal is bounded and read-only.
+ */
+bool pci_find_capability(const struct nexus_pci_device *device,
+                         uint8_t capability_id, uint8_t *offset);
+
 /* Decode the raw BAR value captured during enumeration; never writes config. */
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,
                     struct nexus_pci_bar *bar);

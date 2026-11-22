@@ -49,6 +49,20 @@ uint32_t pci_device_count(void);
 uint32_t pci_discovered_device_count(void);
 const struct nexus_pci_device *pci_device_at(uint32_t index);
 
+/* Wildcards for the driver-match helper. */
+#define NEXUS_PCI_MATCH_ANY_ID 0xFFFFU
+#define NEXUS_PCI_MATCH_ANY_CLASS 0xFFU
+
+/* Match any supplied subset of PCI identity and class fields. */
+bool pci_device_matches(const struct nexus_pci_device *device,
+                        uint16_t vendor_id, uint16_t device_id,
+                        uint8_t class_code, uint8_t subclass,
+                        uint8_t programming_interface);
+/* Return the first enumerated device matching the supplied fields. */
+const struct nexus_pci_device *pci_find_matching_device(
+    uint16_t vendor_id, uint16_t device_id, uint8_t class_code,
+    uint8_t subclass, uint8_t programming_interface);
+
 /* Find a conventional PCI capability (for example MSI or PCI Express).
  * Returns its config-space offset; traversal is bounded and read-only.
  */

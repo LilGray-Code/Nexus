@@ -15,6 +15,12 @@ enum nexus_wifi_security {
     NEXUS_WIFI_SECURITY_WPA3_SAE
 };
 
+enum nexus_wifi_band {
+    NEXUS_WIFI_BAND_UNKNOWN = 0,
+    NEXUS_WIFI_BAND_2GHZ,
+    NEXUS_WIFI_BAND_5GHZ
+};
+
 enum nexus_wifi_state {
     NEXUS_WIFI_UNAVAILABLE = 0,
     NEXUS_WIFI_READY,
@@ -29,6 +35,8 @@ struct nexus_wifi_network {
     uint8_t ssid_length;
     uint8_t bssid[6];
     uint8_t channel;
+    enum nexus_wifi_band band;
+    uint16_t frequency_mhz;
     int8_t signal_dbm;
     enum nexus_wifi_security security;
 };

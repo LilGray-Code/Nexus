@@ -2,6 +2,7 @@
 
 #include "pci.h"
 #include "nvme.h"
+#include "ahci.h"
 #include "paging.h"
 #include "serial.h"
 
@@ -177,6 +178,7 @@ bool storage_probe(void) {
 
         if (device->subclass == 0x06 &&
             device->programming_interface == 0x01) {
+            (void)ahci_init_controller(device);
             (void)ahci_register_probe(device);
         } else if (device->subclass == 0x08 &&
                    device->programming_interface == 0x02) {

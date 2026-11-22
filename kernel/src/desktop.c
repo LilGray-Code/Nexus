@@ -2590,6 +2590,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             return;
         }
         if (clicked && active_view == DESKTOP_FILES && files_vfs_ready) {
+            if (files_delete_pending) {
+                draw_shell();
+                draw_pointer();
+                return;
+            }
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
             uint64_t pw = screen_width * 3U / 4U;

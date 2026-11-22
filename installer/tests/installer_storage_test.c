@@ -494,7 +494,7 @@ int main(int argc,char **argv) {
     }
     assert(user_entry != NULL &&
            user_entry->size == sizeof(user_data) - 1U);
-    char user_readback[sizeof(user_data)] = {0};
+    char user_readback[128] = {0};
     assert(nxfs_read_file(user_entry, 0U, (uint32_t)sizeof(user_data) - 1U,
                           user_readback));
     assert(memcmp(user_readback, user_data, sizeof(user_data) - 1U) == 0);

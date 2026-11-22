@@ -1760,8 +1760,10 @@ static void terminal_execute(void) {
         if (count == 0U) {
             const char *message = "no block devices detected";
             while (message[out] != '\0' &&
-                   out < sizeof(terminal_output) - 1U)
-                terminal_output[out++] = message[out];
+                   out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = message[out];
+                ++out;
+            }
         } else {
             for (size_t slot = 0U; slot < count &&
                  out < sizeof(terminal_output) - 32U; ++slot) {

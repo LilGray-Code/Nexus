@@ -23,6 +23,7 @@
 #include "timer.h"
 #include "usermode.h"
 #include "process.h"
+#include "xhci.h"
 #include "vfs.h"
 
 __attribute__((used, section(".limine_requests")))
@@ -327,9 +328,12 @@ void kmain(void) {
     serial_write("NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
-    const bool input_ready = input_init();
-    if (!input_ready) {
-        serial_write("INPUT: no PS/2 devices detected; desktop remains keyboard/mouse inactive\r\n");
+    const bool ps2_input_ready = input_init();
+    const bool usb_keyboard_ready = xhci_init();
+    if (!ps2_input_ready && !usb_keyboard_ready) {
+        serial_write("INPUT: no PS/2 or USB HID keyboard detected; desktop input inactive\r\n");
+    } else if (usb_keyboard_ready) {
+        serial_write("INPUT: USB HID boot keyboard available\r\n");
     }
     process_init();
     if (!usermode_run_selftest()) {
@@ -363,6 +367,7 @@ void kmain(void) {
     __asm__ volatile ("sti" : : : "memory");
     for (;;) {
         net_poll();
+        xhci_poll();
         struct nexus_input_event event;
         while (input_pop_event(&event)) {
             desktop_handle_input(&event);

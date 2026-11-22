@@ -1,6 +1,6 @@
 #include "net.h"
 
-#include "e1000.h"
+#include "netdev.h"
 #include "serial.h"
 #include "timer.h"
 
@@ -158,7 +158,7 @@ static bool send_ethernet(const uint8_t destination[6], uint16_t ethertype,
     copy_bytes(frame + 6U, network.mac, 6U);
     write_be16(frame + 12U, ethertype);
     if (length != 0U) copy_bytes(frame + NET_ETHERNET_HEADER, payload, length);
-    return e1000_send_frame(frame, NET_ETHERNET_HEADER + length);
+    return netdev_send_frame(frame, NET_ETHERNET_HEADER + length);
 }
 
 static void arp_update(const uint8_t address[4], const uint8_t mac[6]) {
@@ -670,7 +670,7 @@ bool net_init(void) {
     dns_query_done = false;
     dns_query_success = false;
     dns_next_id = 0x4E58U;
-    if (!e1000_get_mac(network.mac)) return false;
+    if (!netdev_ready() || !netdev_get_mac(network.mac)) return false;
     network.ready = true;
     network.ipv4_id = 1U;
     dhcp_state = NET_DHCP_DISCOVERING;
@@ -690,7 +690,7 @@ void net_poll(void) {
     if (!network.ready) return;
     for (size_t i = 0; i < 32U; ++i) {
         size_t length = 0U;
-        if (!e1000_receive_frame(rx_frame, sizeof(rx_frame), &length)) break;
+        if (!netdev_receive_frame(rx_frame, sizeof(rx_frame), &length)) break;
         receive_frame(rx_frame, length);
     }
     dhcp_retry();

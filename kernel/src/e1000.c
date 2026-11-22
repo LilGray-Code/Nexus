@@ -365,7 +365,7 @@ bool e1000_init(void) {
         (void)register_write(E1000_REG_RCTL, 0U);
         (void)register_write(E1000_REG_TCTL, 0U);
         release_dma_resources();
-        serial_write("E1000: network-device registration failed\\r\\n");
+        serial_write("E1000: network-device registration failed\r\n");
         return false;
     }
     serial_write("E1000: initialized in polling mode; MAC=");

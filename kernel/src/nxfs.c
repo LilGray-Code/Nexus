@@ -99,14 +99,12 @@ static bool normalize_name(const char *source,
                            char output[NEXUS_NXFS_NAME_MAX]) {
     if (source == NULL || output == NULL) return false;
     size_t length = 0U;
-    size_t base = 0U;
-    size_t extension = 0U;
     bool after_dot = false;
     while (source[length] != '\0') {
+        if (length >= NEXUS_NXFS_NAME_MAX - 1U) return false;
         const char ch = source[length];
         if (ch == '.') {
-            if (after_dot || base == 0U || length >= NEXUS_NXFS_NAME_MAX - 1U)
-                return false;
+            if (after_dot || length == 0U) return false;
             after_dot = true;
             output[length++] = '.';
             continue;
@@ -115,16 +113,10 @@ static bool normalize_name(const char *source,
                            (ch >= 'A' && ch <= 'Z') ||
                            (ch >= '0' && ch <= '9') ||
                            ch == '_' || ch == '-';
-        if (!valid || length >= NEXUS_NXFS_NAME_MAX - 1U) return false;
-        if (after_dot) {
-            if (++extension > 3U) return false;
-        } else {
-            if (++base > 8U) return false;
-        }
+        if (!valid) return false;
         output[length++] = ascii_upper(ch);
     }
-    if (length == 0U || base == 0U || (after_dot && extension == 0U))
-        return false;
+    if (length == 0U || output[length - 1U] == '.') return false;
     output[length] = '\0';
     return true;
 }
@@ -212,6 +204,10 @@ static bool decode_entry(const uint8_t record[NXFS_ENTRY_BYTES],
     for (size_t i = 0U; i < NEXUS_NXFS_NAME_MAX; ++i)
         raw_name[i] = (char)record[28U + i];
     raw_name[NEXUS_NXFS_NAME_MAX - 1U] = '\0';
+    size_t stored_name_length = 0U;
+    while (stored_name_length < NEXUS_NXFS_NAME_MAX - 1U &&
+           raw_name[stored_name_length] != '\0') ++stored_name_length;
+    if (stored_name_length != record[10]) return false;
     char normalized[NEXUS_NXFS_NAME_MAX];
     if (!normalize_name(raw_name, normalized)) return false;
     if (!names_equal(raw_name, normalized)) return false;

@@ -47,15 +47,19 @@ static size_t files_partition_count;
 static uint64_t files_first_lba;
 static uint64_t files_last_lba;
 static bool files_vfs_ready;
-static char files_first_name[13];
+#define FILES_EDITOR_MAX_BYTES NEXUS_VFS_RAM_MAX_FILE_SIZE
+#define FILES_EDITOR_VIEW_BYTES 256U
+
+#define FILES_LISTING_MAX_ENTRIES 128U
+#define FILES_LISTING_VISIBLE 6U
+
+static char files_first_name[NEXUS_VFS_NAME_MAX];
 static char files_preview[41];
-#define NEXUS_FILES_LIST_CAPACITY 64U
-#define NEXUS_FILES_VISIBLE_COUNT 8U
-#define NEXUS_FILES_EDITOR_MAX_BYTES 4096U
-static char files_listing[NEXUS_FILES_LIST_CAPACITY][NEXUS_VFS_NAME_MAX];
+static char files_listing[FILES_LISTING_MAX_ENTRIES][NEXUS_VFS_NAME_MAX];
 static size_t files_listing_count;
 static size_t files_selected_index;
-static size_t files_scroll_offset;
+static size_t files_listing_first_index;
+static bool files_listing_truncated;
 enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
@@ -63,10 +67,11 @@ enum files_editor_state {
 };
 static enum files_editor_state files_editor_state;
 static char files_edit_name[NEXUS_VFS_NAME_MAX];
-static char files_edit_content[NEXUS_FILES_EDITOR_MAX_BYTES + 1U];
+static char files_edit_content[FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
-static size_t files_edit_cursor;
+static size_t files_edit_view_offset;
+static bool files_edit_follow_end;
 static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
@@ -211,9 +216,8 @@ static void draw_shell(void) {
                        119, 229, 211);
 
     uint64_t panel_width = width * 3U / 4U;
-    uint64_t panel_height =
-        (active_view == DESKTOP_INSTALLER || active_view == DESKTOP_FILES)
-            ? 480U : height * 53U / 100U;
+    uint64_t panel_height = active_view == DESKTOP_INSTALLER
+        ? 480U : height * 53U / 100U;
     if (panel_width > 920U) panel_width = 920U;
     if (panel_height > 480U) panel_height = 480U;
     if (panel_width > width - 16U) panel_width = width - 16U;
@@ -434,41 +438,25 @@ static void draw_shell(void) {
         if (files_editor_state != FILES_EDITOR_CLOSED) {
             graphics_draw_text(text_x, text_y + 48U,
                 files_editor_state == FILES_EDITOR_NAME
-                    ? "NEW FILE - ENTER AN 8.3 NAME"
-                    : "TEXT EDITOR - ASCII TEXT",
+                    ? "NEW FILE - ENTER A NAME"
+                    : "TEXT EDITOR - 4096 BYTE LIMIT",
                 1, 108, 216, 229);
             graphics_draw_text(text_x, text_y + 82U, "NAME:",
                                1, 233, 243, 252);
             graphics_draw_text(text_x + 48U, text_y + 82U, files_edit_name,
                                1, 119, 229, 211);
             if (files_editor_state == FILES_EDITOR_CONTENT) {
-                const size_t cursor_line = files_edit_cursor / 64U;
-                const size_t first_line = cursor_line >= 3U
-                    ? cursor_line - 3U : 0U;
-                const size_t view_start = first_line * 64U;
                 for (size_t line = 0U; line < 4U; ++line) {
-                    char display[66];
-                    const size_t offset = view_start + line * 64U;
+                    char display[65];
+                    const size_t offset =
+                        files_edit_view_offset + line * 64U;
                     size_t amount = 0U;
                     while (amount < 64U &&
                            offset + amount < files_edit_content_length) {
-                        const char ch = files_edit_content[offset + amount];
-                        display[amount] = ch == '\n' ? ' ' : ch;
+                        display[amount] = files_edit_content[offset + amount];
                         ++amount;
                     }
-                    size_t display_length = amount;
-                    const bool caret_here =
-                        first_line + line == cursor_line &&
-                        files_edit_cursor >= offset &&
-                        files_edit_cursor <= offset + amount;
-                    if (caret_here) {
-                        const size_t caret = files_edit_cursor - offset;
-                        for (size_t i = display_length; i > caret; --i)
-                            display[i] = display[i - 1U];
-                        display[caret] = '|';
-                        ++display_length;
-                    }
-                    display[display_length] = '\0';
+                    display[amount] = '\0';
                     graphics_draw_text(text_x, text_y + 124U + line * 28U,
                                        display, 1, 239, 249, 255);
                 }
@@ -478,11 +466,11 @@ static void draw_shell(void) {
                         : "SAVE TARGET: VOLATILE RAM ONLY",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 292U,
-                    "F10 SAVE  ARROWS MOVE  HOME/END LINE  BKSP/DEL ERASE",
+                    "PGUP/PGDN SCROLL  HOME/END  F10 SAVE  ENTER NEW LINE",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
-                    "VALID NAME: 1-8 CHARACTERS, OPTIONAL .EXT",
+                    "UP TO 31 CHARS: LETTERS, NUMBERS, _ - AND ONE DOT",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 156U,
                     "ENTER CONTINUE  ESC CANCEL",
@@ -495,9 +483,7 @@ static void draw_shell(void) {
                            "STORAGE DEVICE DISCOVERY IS ACTIVE",
                            1, 108, 216, 229);
         graphics_draw_text(text_x, text_y + 78U,
-                           vfs_nxfs_writable()
-                               ? "NEXUS DATA VOLUME IS PERSISTENT AND WRITABLE"
-                               : "READ-ONLY VOLUME - RAM SAVES ARE VOLATILE",
+                           "DISKS ARE CURRENTLY READ ONLY",
                            1, 233, 243, 252);
         if (!files_scanned) {
             graphics_draw_text(text_x, text_y + 108U,
@@ -554,25 +540,23 @@ static void draw_shell(void) {
         }
         if (files_vfs_ready) {
             graphics_draw_text(text_x, text_y + 288U,
-                               files_scan_ok ? "ROOT DIRECTORY (NEXUS DATA + FAT32 + RAM)"
-                                             : "ROOT DIRECTORY (VOLATILE RAM)",
+                               files_scan_ok
+                                   ? "FILES (FAT32 + NXFS + RAM): N NEW / E EDIT / DEL REMOVE"
+                                   : "FILES (VOLATILE RAM): N NEW / E EDIT / DEL REMOVE",
                                1, 108, 216, 229);
-            size_t visible_count = files_listing_count > files_scroll_offset
-                ? files_listing_count - files_scroll_offset : 0U;
-            if (visible_count > NEXUS_FILES_VISIBLE_COUNT)
-                visible_count = NEXUS_FILES_VISIBLE_COUNT;
-            for (size_t n = 0U; n < visible_count; ++n) {
-                const size_t list_index = files_scroll_offset + n;
-                const uint64_t column = n % 2U;
-                const uint64_t line = n / 2U;
-                const bool selected = list_index == files_selected_index;
+            for (size_t slot = 0U; slot < FILES_LISTING_VISIBLE; ++slot) {
+                const size_t index = files_listing_first_index + slot;
+                if (index >= files_listing_count) break;
+                const uint64_t column = slot % 2U;
+                const uint64_t line = slot / 2U;
+                const bool selected = index == files_selected_index;
                 if (selected)
                     graphics_fill_rect(text_x + column * 260U - 6U,
-                                       text_y + 307U + line * 18U,
-                                       240U, 16U, 34, 78, 105);
+                                       text_y + 307U + line * 24U,
+                                       240U, 20U, 34, 78, 105);
                 graphics_draw_text(text_x + column * 260U,
-                                   text_y + 312U + line * 18U,
-                                   files_listing[list_index], 1,
+                                   text_y + 312U + line * 24U,
+                                   files_listing[index], 1,
                                    selected ? 119 : 233,
                                    selected ? 229 : 243,
                                    selected ? 211 : 252);
@@ -582,11 +566,14 @@ static void draw_shell(void) {
                                    1, 170, 191, 211);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "ARROWS/CLICK SELECT  N NEW  E EDIT  ENTER OPEN  DEL DELETE",
+                               "UP/DOWN SELECT  PGUP/PGDN PAGE  ENTER PREVIEW",
                                1, 170, 191, 211);
+            if (files_listing_truncated) {
+                graphics_draw_text(text_x, text_y + 414U,
+                                   "LISTING LIMITED TO 128 ENTRIES",
+                                   1, 239, 177, 119);
+            }
         }
-        /* The list is paged by keeping the selected entry in the eight-row
-         * viewport.  The controls below the last row remain visible. */
         }
     } else if (active_view == DESKTOP_TERMINAL) {
         graphics_draw_text(text_x, text_y, "NEXUS COMMAND SHELL",
@@ -774,13 +761,14 @@ static void refresh_files_listing(void) {
     files_vfs_ready = vfs_has_filesystem();
     files_listing_count = 0U;
     files_selected_index = 0U;
+    files_listing_first_index = 0U;
+    files_listing_truncated = false;
     for (size_t n = 0; n < sizeof(files_first_name); ++n)
         files_first_name[n] = '\0';
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
-    files_scroll_offset = 0U;
-    for (size_t n = 0; n < NEXUS_FILES_LIST_CAPACITY; ++n) {
-        for (size_t k = 0; k < sizeof(files_listing[n]); ++k)
+    for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n) {
+        for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
     }
     if (!files_vfs_ready) return;
@@ -790,18 +778,23 @@ static void refresh_files_listing(void) {
         if (!vfs_root_entry(index, &entry)) continue;
         serial_write("FILES: entry ");
         serial_write(entry.name);
-        serial_write(" bytes=");
-        serial_write_hex(entry.size);
+        char entry_size_text[21];
+        format_u64(entry.size, entry_size_text);
+        serial_write(" size=");
+        serial_write(entry_size_text);
         serial_write("\r\n");
-        if (files_listing_count < NEXUS_FILES_LIST_CAPACITY) {
+        if (files_listing_count < FILES_LISTING_MAX_ENTRIES) {
             size_t length = 0U;
-            while (length < sizeof(files_listing[0]) - 1U &&
+            while (length < NEXUS_VFS_NAME_MAX - 1U &&
                    entry.name[length] != '\0') {
                 files_listing[files_listing_count][length] = entry.name[length];
                 ++length;
             }
             files_listing[files_listing_count][length] = '\0';
             ++files_listing_count;
+        } else {
+            files_listing_truncated = true;
+            break;
         }
         if (files_first_name[0] == '\0') {
             size_t length = 0U;
@@ -834,12 +827,60 @@ static void refresh_files_listing(void) {
     }
 }
 
+static size_t files_editor_max_view_offset(void) {
+    return files_edit_content_length > FILES_EDITOR_VIEW_BYTES
+        ? files_edit_content_length - FILES_EDITOR_VIEW_BYTES : 0U;
+}
+
+static void files_editor_scroll_to_end(void) {
+    files_edit_view_offset = files_editor_max_view_offset();
+    files_edit_follow_end = true;
+}
+
+static void files_listing_ensure_selection_visible(void) {
+    if (files_listing_count == 0U) {
+        files_listing_first_index = 0U;
+        files_selected_index = 0U;
+        return;
+    }
+    if (files_selected_index >= files_listing_count)
+        files_selected_index = files_listing_count - 1U;
+    if (files_selected_index < files_listing_first_index) {
+        files_listing_first_index = files_selected_index;
+    } else if (files_selected_index >=
+               files_listing_first_index + FILES_LISTING_VISIBLE) {
+        files_listing_first_index =
+            files_selected_index - FILES_LISTING_VISIBLE + 1U;
+    }
+    const size_t maximum_first = files_listing_count > FILES_LISTING_VISIBLE
+        ? files_listing_count - FILES_LISTING_VISIBLE : 0U;
+    if (files_listing_first_index > maximum_first)
+        files_listing_first_index = maximum_first;
+}
+
+static void files_listing_page(int direction) {
+    if (files_listing_count == 0U) return;
+    const size_t maximum_first = files_listing_count > FILES_LISTING_VISIBLE
+        ? files_listing_count - FILES_LISTING_VISIBLE : 0U;
+    if (direction < 0) {
+        files_listing_first_index =
+            files_listing_first_index > FILES_LISTING_VISIBLE
+                ? files_listing_first_index - FILES_LISTING_VISIBLE : 0U;
+    } else {
+        files_listing_first_index += FILES_LISTING_VISIBLE;
+        if (files_listing_first_index > maximum_first)
+            files_listing_first_index = maximum_first;
+    }
+    files_selected_index = files_listing_first_index;
+}
+
 static void files_editor_begin_new(void) {
     files_edit_name[0] = '\0';
     files_edit_content[0] = '\0';
     files_edit_name_length = 0U;
     files_edit_content_length = 0U;
-    files_edit_cursor = 0U;
+    files_edit_view_offset = 0U;
+    files_edit_follow_end = true;
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_NAME;
 }
@@ -849,9 +890,9 @@ static void files_editor_begin_selected(void) {
     if (files_selected_index >= files_listing_count ||
         !vfs_root_entry(files_selected_index, &selected) ||
         selected.type != NEXUS_VFS_FILE ||
-        selected.size > NEXUS_FILES_EDITOR_MAX_BYTES) {
+        selected.size > FILES_EDITOR_MAX_BYTES) {
         files_edit_status[0] = '\0';
-        const char *message = "SELECT A FILE OF 4 KiB OR LESS";
+        const char *message = "FILE EXCEEDS 4096-BYTE EDITOR LIMIT - UNCHANGED";
         size_t i = 0U;
         while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
             files_edit_status[i] = message[i];
@@ -874,22 +915,10 @@ static void files_editor_begin_selected(void) {
            files_edit_name[files_edit_name_length] != '\0')
         ++files_edit_name_length;
     files_edit_content_length = bytes_read;
-    files_edit_cursor = files_edit_content_length;
     files_edit_content[files_edit_content_length] = '\0';
+    files_editor_scroll_to_end();
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
-}
-
-static void files_keep_selection_visible(void) {
-    const size_t visible_rows = NEXUS_FILES_VISIBLE_COUNT / 2U;
-    const size_t selected_row = files_selected_index / 2U;
-    const size_t first_visible_row = files_scroll_offset / 2U;
-    if (selected_row < first_visible_row) {
-        files_scroll_offset = selected_row * 2U;
-    } else if (selected_row >= first_visible_row + visible_rows) {
-        files_scroll_offset =
-            (selected_row - visible_rows + 1U) * 2U;
-    }
 }
 
 static bool files_editor_name_exists(void) {
@@ -953,6 +982,30 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         }
         return;
     }
+    if (event->scancode == 0x49U) {
+        files_edit_follow_end = false;
+        files_edit_view_offset =
+            files_edit_view_offset > FILES_EDITOR_VIEW_BYTES
+                ? files_edit_view_offset - FILES_EDITOR_VIEW_BYTES : 0U;
+        return;
+    } else if (event->scancode == 0x51U) {
+        const size_t maximum = files_editor_max_view_offset();
+        if (files_edit_view_offset < maximum) {
+            files_edit_view_offset += FILES_EDITOR_VIEW_BYTES;
+            if (files_edit_view_offset > maximum)
+                files_edit_view_offset = maximum;
+        }
+        files_edit_follow_end = files_edit_view_offset == maximum;
+        return;
+    } else if (event->scancode == 0x47U) {
+        files_edit_view_offset = 0U;
+        files_edit_follow_end = files_edit_view_offset ==
+                               files_editor_max_view_offset();
+        return;
+    } else if (event->scancode == 0x4FU) {
+        files_editor_scroll_to_end();
+        return;
+    }
     if (event->scancode == 0x44U) {
         const bool saved = vfs_write_file(files_edit_name, files_edit_content,
                                           files_edit_content_length);
@@ -971,8 +1024,6 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                 ? "FILES: SAVED PERSISTENT NXFS "
                 : "FILES: SAVED VOLATILE RAM ");
             serial_write(files_edit_name);
-            serial_write(" bytes=");
-            serial_write_hex(files_edit_content_length);
             serial_write("\r\n");
             files_editor_state = FILES_EDITOR_CLOSED;
             refresh_files_listing();
@@ -981,53 +1032,40 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
             serial_write(files_edit_name);
             serial_write("\r\n");
         }
-    } else if (event->scancode == 0x4BU) {
-        if (files_edit_cursor > 0U) --files_edit_cursor;
-    } else if (event->scancode == 0x4DU) {
-        if (files_edit_cursor < files_edit_content_length)
-            ++files_edit_cursor;
-    } else if (event->scancode == 0x47U) {
-        while (files_edit_cursor > 0U &&
-               files_edit_content[files_edit_cursor - 1U] != '\n')
-            --files_edit_cursor;
-    } else if (event->scancode == 0x4FU) {
-        while (files_edit_cursor < files_edit_content_length &&
-               files_edit_content[files_edit_cursor] != '\n')
-            ++files_edit_cursor;
     } else if (event->scancode == 0x0EU) {
-        if (files_edit_cursor > 0U) {
-            for (size_t i = files_edit_cursor - 1U;
-                 i < files_edit_content_length; ++i)
-                files_edit_content[i] = files_edit_content[i + 1U];
-            --files_edit_content_length;
-            --files_edit_cursor;
-        }
-    } else if (event->scancode == 0x53U) {
-        if (files_edit_cursor < files_edit_content_length) {
-            for (size_t i = files_edit_cursor;
-                 i < files_edit_content_length; ++i)
-                files_edit_content[i] = files_edit_content[i + 1U];
-            --files_edit_content_length;
+        if (files_edit_content_length != 0U) {
+            files_edit_content[--files_edit_content_length] = '\0';
+            if (files_edit_follow_end) files_editor_scroll_to_end();
         }
     } else if (event->scancode == 0x1CU) {
-        if (files_edit_content_length < NEXUS_FILES_EDITOR_MAX_BYTES) {
-            for (size_t i = files_edit_content_length;
-                 i > files_edit_cursor; --i)
-                files_edit_content[i] = files_edit_content[i - 1U];
-            files_edit_content[files_edit_cursor++] = '\n';
-            ++files_edit_content_length;
+        if (files_edit_content_length < FILES_EDITOR_MAX_BYTES) {
+            files_edit_content[files_edit_content_length++] = '\n';
             files_edit_content[files_edit_content_length] = '\0';
+            if (files_edit_follow_end) files_editor_scroll_to_end();
+        } else {
+            const char *message = "EDITOR LIMIT REACHED - SAVE OR REMOVE TEXT";
+            size_t i = 0U;
+            while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+                files_edit_status[i] = message[i];
+                ++i;
+            }
+            files_edit_status[i] = '\0';
         }
     } else {
         const char ch = terminal_scancode_char(event->scancode);
         if (ch >= 0x20 && ch <= 0x7E &&
-            files_edit_content_length < NEXUS_FILES_EDITOR_MAX_BYTES) {
-            for (size_t i = files_edit_content_length;
-                 i > files_edit_cursor; --i)
-                files_edit_content[i] = files_edit_content[i - 1U];
-            files_edit_content[files_edit_cursor++] = ch;
-            ++files_edit_content_length;
+            files_edit_content_length < FILES_EDITOR_MAX_BYTES) {
+            files_edit_content[files_edit_content_length++] = ch;
             files_edit_content[files_edit_content_length] = '\0';
+            if (files_edit_follow_end) files_editor_scroll_to_end();
+        } else if (ch >= 0x20 && ch <= 0x7E) {
+            const char *message = "EDITOR LIMIT REACHED - SAVE OR REMOVE TEXT";
+            size_t i = 0U;
+            while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+                files_edit_status[i] = message[i];
+                ++i;
+            }
+            files_edit_status[i] = '\0';
         }
     }
 }
@@ -1086,8 +1124,7 @@ static void scan_files_once(void) {
         files_preview[n] = '\0';
     files_listing_count = 0U;
     files_selected_index = 0U;
-    files_scroll_offset = 0U;
-    for (size_t n = 0U; n < NEXUS_FILES_LIST_CAPACITY; ++n)
+    for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n)
         for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
 
@@ -1149,7 +1186,7 @@ static char terminal_scancode_char(uint8_t code) {
         [0x18]='o',[0x19]='p',[0x1A]='[',[0x1B]=']',[0x1E]='a',
         [0x1F]='s',[0x20]='d',[0x21]='f',[0x22]='g',[0x23]='h',
         [0x24]='j',[0x25]='k',[0x26]='l',[0x27]=';',[0x28]='\'',
-        [0x29]='`',[0x2B]='\\',[0x2C]='z',[0x2D]='x',[0x2E]='c',
+        [0x29]=0x60,[0x2B]='\\',[0x2C]='z',[0x2D]='x',[0x2E]='c',
         [0x2F]='v',[0x30]='b',[0x31]='n',[0x32]='m',[0x33]=',',
         [0x34]='.',[0x35]='/',[0x39]=' '
     };
@@ -1898,14 +1935,17 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t ty = py + 82U;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 307U);
             const int64_t relative_x = pointer_x - (int64_t)tx;
-            if (relative_y >= 0 &&
-                relative_y < (int64_t)(NEXUS_FILES_VISIBLE_COUNT / 2U * 18U) &&
+            if (relative_y >= 0 && relative_y < 60 &&
                 relative_x >= 0 && relative_x < 500) {
-                const size_t row = (size_t)relative_y / 18U;
+                const size_t row = (size_t)relative_y / 24U;
                 const size_t column = (size_t)relative_x / 260U;
-                const size_t index = files_scroll_offset + row * 2U + column;
-                if (column < 2U && index < files_listing_count)
+                const size_t slot = row * 2U + column;
+                const size_t index = files_listing_first_index + slot;
+                if (column < 2U && slot < FILES_LISTING_VISIBLE &&
+                    index < files_listing_count) {
                     files_selected_index = index;
+                    files_listing_ensure_selection_visible();
+                }
             }
         }
         if (clicked && active_view == DESKTOP_HOME) {
@@ -1949,11 +1989,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (event->type != NEXUS_INPUT_KEYBOARD) return;
-
     /*
-     * Maintain modifiers before view-specific key handling. PS/2 delivers
-     * ordinary Set-1 make/break codes; the USB HID decoder now emits the same
-     * Shift transitions, keeping both input paths consistent.
+     * Preserve keyboard modifiers for both PS/2 and USB HID input. USB HID
+     * emits the same Set-1 make/break transitions as the PS/2 path.
      */
     const uint8_t key_code = (uint8_t)(event->scancode & 0x7FU);
     const bool key_released = (event->scancode & 0x80U) != 0U;
@@ -1974,8 +2012,6 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         return;
     }
-
-    /* Set-1 break codes are not inserted as text or commands. */
     if (key_released) return;
     if (active_view == DESKTOP_INSTALLER) {
         if ((event->scancode & 0x80U) != 0U ||
@@ -2162,34 +2198,42 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x48U && files_listing_count > 0U) {
-            if (files_selected_index >= 2U)
-                files_selected_index -= 2U;
-            files_keep_selection_visible();
+            if (files_selected_index > 0U) --files_selected_index;
+            files_listing_ensure_selection_visible();
             draw_shell();
             draw_pointer();
             return;
         }
         if (event->scancode == 0x50U && files_listing_count > 0U) {
-            if (files_selected_index + 2U < files_listing_count)
-                files_selected_index += 2U;
-            files_keep_selection_visible();
-            draw_shell();
-            draw_pointer();
-            return;
-        }
-        if (event->scancode == 0x4BU && files_listing_count > 0U) {
-            if ((files_selected_index % 2U) == 1U)
-                --files_selected_index;
-            files_keep_selection_visible();
-            draw_shell();
-            draw_pointer();
-            return;
-        }
-        if (event->scancode == 0x4DU && files_listing_count > 0U) {
-            if ((files_selected_index % 2U) == 0U &&
-                files_selected_index + 1U < files_listing_count)
+            if (files_selected_index + 1U < files_listing_count)
                 ++files_selected_index;
-            files_keep_selection_visible();
+            files_listing_ensure_selection_visible();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x49U && files_listing_count > 0U) {
+            files_listing_page(-1);
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x51U && files_listing_count > 0U) {
+            files_listing_page(1);
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x47U && files_listing_count > 0U) {
+            files_selected_index = 0U;
+            files_listing_ensure_selection_visible();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x4FU && files_listing_count > 0U) {
+            files_selected_index = files_listing_count - 1U;
+            files_listing_ensure_selection_visible();
             draw_shell();
             draw_pointer();
             return;

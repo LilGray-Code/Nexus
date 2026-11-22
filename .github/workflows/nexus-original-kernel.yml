@@ -102,6 +102,14 @@ jobs:
             -o /tmp/nexus-pci-match-test
           /tmp/nexus-pci-match-test
 
+      - name: Test PCI BAR decoding
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/pci_bar.c \
+            kernel/tests/pci_bar_test.c \
+            -o /tmp/nexus-pci-bar-test
+          /tmp/nexus-pci-bar-test
+
       - name: Test USB HID boot-keyboard decoder
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

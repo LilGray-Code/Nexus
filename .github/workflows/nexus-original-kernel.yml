@@ -93,6 +93,23 @@ jobs:
             -o /tmp/nexus-usb-hid-keyboard-test
           /tmp/nexus-usb-hid-keyboard-test
 
+      - name: Test USB HID boot-mouse decoder
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hid.c \
+            kernel/tests/usb_hid_mouse_test.c \
+            -o /tmp/nexus-usb-hid-mouse-test
+          /tmp/nexus-usb-hid-mouse-test
+
+      - name: Test USB mouse desktop input queue
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_INPUT_HOST_TEST -Ikernel/src \
+            kernel/src/input.c kernel/src/usb_hid.c \
+            kernel/tests/usb_mouse_input_test.c \
+            -o /tmp/nexus-usb-mouse-input-test
+          /tmp/nexus-usb-mouse-input-test
+
       - name: Test Limine BIOS boot-sector and stage-2 installation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
@@ -210,6 +227,7 @@ jobs:
             -drive file=ahci-test.img,if=ide,index=0,format=raw \
             -device qemu-xhci,id=xhci \
             -device usb-kbd,bus=xhci.0 \
+            -device usb-mouse,bus=xhci.0 \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:uefi-serial.log \
             -monitor none -no-reboot -no-shutdown
@@ -239,7 +257,9 @@ jobs:
           grep -q "NEXUS ACPI MADT READY" uefi-serial.log
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" uefi-serial.log
           grep -q "NEXUS USB HID KEYBOARD READY" uefi-serial.log
+          grep -q "NEXUS USB HID MOUSE READY" uefi-serial.log
           grep -q "INPUT: USB HID boot keyboard available" uefi-serial.log
+          grep -q "INPUT: USB HID boot mouse available" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log
           grep -q "NEXUS E1000 TX READY" uefi-serial.log
           grep -q "NEXUS DHCP READY" uefi-serial.log

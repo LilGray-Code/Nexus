@@ -24,5 +24,7 @@ void input_mouse_interrupt(void);
 bool input_pop_event(struct nexus_input_event *event);
 /* Submit an eight-byte USB HID boot-keyboard report to the desktop queue. */
 void input_usb_keyboard_report(const uint8_t report[8]);
+/* Submit a three-byte USB HID boot-mouse report to the desktop queue. */
+void input_usb_mouse_report(const uint8_t report[3]);
 
 #endif

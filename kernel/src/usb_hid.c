@@ -71,3 +71,14 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
     have_previous_report = true;
     return count;
 }
+
+
+bool usb_hid_mouse_decode(const uint8_t report[3],
+                          struct nexus_usb_mouse_event *event) {
+    if (report == NULL || event == NULL) return false;
+    event->buttons = (uint8_t)(report[0] & 0x07U);
+    event->dx = (int16_t)(int8_t)report[1];
+    /* Desktop coordinates grow downwards; invert HID's positive-up Y. */
+    event->dy = (int16_t)-(int16_t)(int8_t)report[2];
+    return true;
+}

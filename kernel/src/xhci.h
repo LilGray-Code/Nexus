@@ -3,11 +3,13 @@
 
 #include <stdbool.h>
 
-/* Initialize one xHCI controller and enumerate a directly attached HID
- * boot keyboard. USB hubs and USB mass storage are intentionally unsupported. */
+/* Initialize one xHCI controller and enumerate directly attached HID boot
+ * keyboards and mice. USB hubs and USB mass storage remain unsupported. */
 bool xhci_init(void);
+bool xhci_keyboard_ready(void);
+bool xhci_mouse_ready(void);
 
-/* Drain completed USB keyboard interrupt transfers. Called from the main loop. */
+/* Drain completed USB HID keyboard and mouse interrupt transfers. */
 void xhci_poll(void);
 
 #endif

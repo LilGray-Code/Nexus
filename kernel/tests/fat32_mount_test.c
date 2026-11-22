@@ -188,6 +188,20 @@ int main(void) {
     assert(highest_read_lba <=
            TEST_PARTITION_START + TEST_VOLUME_SECTORS - 1U);
 
+    /* A damaged VFAT checksum must never rename the short directory entry. */
+    uint8_t *lfn_record = disk[TEST_PARTITION_START + TEST_DATA_START +
+                               3U * 32U];
+    lfn_record[13U] ^= 0x01U;
+    assert(fat32_mount(&device, &partition));
+    assert(strcmp(fat32_root_entry_at(1U)->name, "LONGFI~1.TXT") == 0);
+    lfn_record[13U] ^= 0x01U;
+
+    /* A deleted LFN slot invalidates the sequence before the short entry. */
+    lfn_record[0U] = 0xE5U;
+    assert(fat32_mount(&device, &partition));
+    assert(strcmp(fat32_root_entry_at(1U)->name, "LONGFI~1.TXT") == 0);
+    lfn_record[0U] = 0x42U;
+
     /* A partition may be larger than its BPB-declared volume; the parser
      * must use the BPB volume boundary for all data-sector reads. */
     partition.last_lba = TEST_PARTITION_START + TEST_PARTITION_SECTORS - 1U;

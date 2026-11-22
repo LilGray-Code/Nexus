@@ -21,6 +21,8 @@ struct nexus_graphics_surface {
 bool graphics_init(const struct nexus_graphics_surface *surface);
 uint64_t graphics_width(void);
 uint64_t graphics_height(void);
+bool graphics_read_pixel(uint64_t x, uint64_t y, uint32_t *pixel);
+bool graphics_write_pixel(uint64_t x, uint64_t y, uint32_t pixel);
 void graphics_clear(uint8_t red, uint8_t green, uint8_t blue);
 void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,

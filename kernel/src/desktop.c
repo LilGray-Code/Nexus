@@ -882,7 +882,9 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
             const char ch = terminal_scancode_char(event->scancode);
             if (ch != '\0' &&
                 files_edit_name_length < sizeof(files_edit_name) - 1U) {
-                files_edit_name[files_edit_name_length++] = ch;
+                const char normalized = ch >= 'a' && ch <= 'z'
+                    ? (char)(ch - 'a' + 'A') : ch;
+                files_edit_name[files_edit_name_length++] = normalized;
                 files_edit_name[files_edit_name_length] = '\0';
             }
         }

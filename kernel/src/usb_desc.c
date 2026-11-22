@@ -9,10 +9,13 @@ bool nexus_usb_find_bulk_interface(
 
     const size_t total = (size_t)configuration[2] |
                          ((size_t)configuration[3] << 8);
-    if (total < 9U || total > length) return false;
+    if (total < 9U || total > length || configuration[0] > total ||
+        configuration[5] == 0U) return false;
 
     struct nexus_usb_bulk_interface candidate = {0};
     bool have_interface = false;
+    uint8_t expected_endpoints = 0U;
+    uint8_t observed_endpoints = 0U;
     size_t offset = 0U;
     while (offset < total) {
         if (total - offset < 2U) return false;
@@ -23,7 +26,8 @@ bool nexus_usb_find_bulk_interface(
 
         if (descriptor_type == 4U) {
             if (descriptor_length < 9U) return false;
-            if (have_interface && candidate.bulk_in_endpoint != 0U &&
+            if (have_interface && observed_endpoints == expected_endpoints &&
+                candidate.bulk_in_endpoint != 0U &&
                 candidate.bulk_out_endpoint != 0U) {
                 *result = candidate;
                 return true;
@@ -32,6 +36,8 @@ bool nexus_usb_find_bulk_interface(
             const uint8_t cls = configuration[offset + 5U];
             const uint8_t sub = configuration[offset + 6U];
             const uint8_t proto = configuration[offset + 7U];
+            expected_endpoints = configuration[offset + 4U];
+            observed_endpoints = 0U;
             have_interface =
                 (class_code == NEXUS_USB_DESC_ANY || cls == class_code) &&
                 (subclass == NEXUS_USB_DESC_ANY || sub == subclass) &&
@@ -47,6 +53,8 @@ bool nexus_usb_find_bulk_interface(
             }
         } else if (descriptor_type == 5U && have_interface) {
             if (descriptor_length < 7U) return false;
+            if (observed_endpoints == UINT8_MAX) return false;
+            ++observed_endpoints;
             const uint8_t address = configuration[offset + 2U];
             const uint8_t attributes = configuration[offset + 3U] & 0x03U;
             const uint16_t packet = (uint16_t)(
@@ -77,7 +85,8 @@ bool nexus_usb_find_bulk_interface(
         offset += descriptor_length;
     }
 
-    if (have_interface && candidate.bulk_in_endpoint != 0U &&
+    if (have_interface && observed_endpoints == expected_endpoints &&
+        candidate.bulk_in_endpoint != 0U &&
         candidate.bulk_out_endpoint != 0U) {
         *result = candidate;
         return true;

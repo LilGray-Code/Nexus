@@ -911,7 +911,7 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, text_y + 48U,
                 files_editor_state == FILES_EDITOR_NAME
                     ? "NEW FILE - ENTER A NAME"
-                    : "TEXT EDITOR - 4096 BYTE LIMIT",
+                    : "TEXT EDITOR - 1MB LIMIT",
                 1, 108, 216, 229);
             graphics_draw_text(text_x, text_y + 82U, "NAME:",
                                1, 233, 243, 252);

@@ -211,8 +211,9 @@ static void draw_shell(void) {
                        119, 229, 211);
 
     uint64_t panel_width = width * 3U / 4U;
-    uint64_t panel_height = active_view == DESKTOP_INSTALLER
-        ? 480U : height * 53U / 100U;
+    uint64_t panel_height =
+        (active_view == DESKTOP_INSTALLER || active_view == DESKTOP_FILES)
+            ? 480U : height * 53U / 100U;
     if (panel_width > 920U) panel_width = 920U;
     if (panel_height > 480U) panel_height = 480U;
     if (panel_width > width - 16U) panel_width = width - 16U;

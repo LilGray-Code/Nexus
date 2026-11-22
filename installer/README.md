@@ -257,3 +257,8 @@ journal primitive as proof of a finished end-to-end installer.
 The branch's pull-request CI now runs the installer transaction and storage
 adapter host tests, both write-locked and installer-enabled kernel builds, and
 the full BIOS/UEFI QEMU build-and-boot matrix before changes are accepted.
+
+The full integration gate now runs the actual runtime against a disposable
+in-memory NVMe disk, writes the resulting GPT/FAT32/NXFS/BIOS payload image, and
+boots that image under OVMF and SeaBIOS. The same test checks the durable
+journal reaches COMPLETE before the image is handed to QEMU.

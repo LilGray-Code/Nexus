@@ -73,6 +73,9 @@ int main(void) {
     assert(!wifi_connect(&networks[0], NULL));
     assert(!wifi_connect(&networks[0], "short"));
     assert(!wifi_connect(&networks[1], "not-empty"));
+    assert(wifi_connect(&networks[1], "s"));
+    assert(wifi_get_state() == NEXUS_WIFI_CONNECTING);
+    wifi_report_disconnected();
     assert(wifi_connect(&networks[0], "correcthorsebattery"));
     assert(wifi_get_state() == NEXUS_WIFI_CONNECTING);
     wifi_report_connected();

@@ -453,7 +453,7 @@ static bool ahci_prepare_port(const struct nexus_pci_device *pci_device,
     for (size_t i = 0U; i < sizeof(name_prefix) - 1U; ++i)
         device.name[i] = name_prefix[i];
     device.name[sizeof(name_prefix) - 1U] =
-        (char)('0' + (port_number % 10U));
+        (char)('0' + (port_index % 10U));
     device.name[sizeof(name_prefix)] = '\0';
     for (size_t i = 0U; i < sizeof(state->stable_id) &&
          i < sizeof(device.stable_id); ++i)

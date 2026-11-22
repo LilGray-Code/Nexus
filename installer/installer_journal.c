@@ -118,6 +118,12 @@ static bool same_target(const struct nexus_installer_journal_record *a,
         if(a->disk_guid[i]!=b->disk_guid[i])return false;
     return true;
 }
+static bool same_record(const struct nexus_installer_journal_record *a,
+                        const struct nexus_installer_journal_record *b) {
+    return same_target(a,b) && a->sequence==b->sequence &&
+        a->phase==b->phase && a->firmware_mode==b->firmware_mode &&
+        a->completed_steps==b->completed_steps;
+}
 
 enum nexus_installer_journal_result nexus_installer_journal_load(
     const struct nexus_installer_journal_device *d,uint64_t lba,
@@ -129,7 +135,8 @@ enum nexus_installer_journal_result nexus_installer_journal_load(
     struct nexus_installer_journal_record ra,rb;
     bool va=decode(a,d->block_size,&ra),vb=decode(b,d->block_size,&rb);
     if(va&&vb) {
-        if(ra.sequence==rb.sequence&&!same_target(&ra,&rb))
+        if(!same_target(&ra,&rb) ||
+           (ra.sequence==rb.sequence&&!same_record(&ra,&rb)))
             return NEXUS_JOURNAL_CORRUPT;
         *record=ra.sequence>=rb.sequence?ra:rb;
         return NEXUS_JOURNAL_OK;

@@ -6,7 +6,8 @@
 #include <string.h>
 
 struct mock_disk {
-    uint8_t sectors[16][512];
+    uint8_t sectors[16][4096];
+    uint32_t sector_size;
     unsigned writes;
     bool fail_write;
     bool tear_write;
@@ -15,14 +16,14 @@ struct mock_disk {
 static bool rd(void *ctx,uint64_t lba,uint32_t count,void *buffer) {
     struct mock_disk *d=ctx;
     if(count!=1U||lba>=16U)return false;
-    memcpy(buffer,d->sectors[lba],512U);return true;
+    memcpy(buffer,d->sectors[lba],d->sector_size);return true;
 }
 static bool wr(void *ctx,uint64_t lba,uint32_t count,const void *buffer) {
     struct mock_disk *d=ctx;
     if(d->fail_write||count!=1U||lba>=16U)return false;
     ++d->writes;
     if(d->tear_write){memcpy(d->sectors[lba],buffer,127U);return true;}
-    memcpy(d->sectors[lba],buffer,512U);return true;
+    memcpy(d->sectors[lba],buffer,d->sector_size);return true;
 }
 static bool fl(void *ctx) {
     struct mock_disk *d=ctx;return !d->fail_flush;
@@ -38,7 +39,7 @@ static struct nexus_installer_journal_record rec(uint64_t seq,
     return r;
 }
 static void test_empty_and_alternating_commit(void) {
-    struct mock_disk disk={0};
+    struct mock_disk disk={.sector_size=512U};
     struct nexus_installer_journal_device dev={16U,512U,1U,&disk,rd,wr,fl};
     struct nexus_installer_journal_record out;
     assert(nexus_installer_journal_load(&dev,4U,&out)==NEXUS_JOURNAL_NO_RECORD);
@@ -89,11 +90,23 @@ static void test_identity_and_sequence_rejection(void) {
     b=rec(3U,NEXUS_JOURNAL_GPT_WRITTEN);
     assert(nexus_installer_journal_commit(&dev,4U,&b)==NEXUS_JOURNAL_OK);
 }
+
+static void test_4k_logical_sectors(void) {
+    struct mock_disk disk={.sector_size=4096U};
+    struct nexus_installer_journal_device dev={16U,4096U,1U,&disk,rd,wr,fl};
+    struct nexus_installer_journal_record a=rec(1U,NEXUS_JOURNAL_PREPARED),out;
+    a.disk_block_count=16U;a.block_size=4096U;
+    assert(nexus_installer_journal_commit(&dev,4U,&a)==NEXUS_JOURNAL_OK);
+    assert(nexus_installer_journal_load(&dev,4U,&out)==NEXUS_JOURNAL_OK);
+    assert(out.block_size==4096U&&out.sequence==1U);
+}
+
 int main(void) {
     test_empty_and_alternating_commit();
     test_torn_update_preserves_previous_record();
     test_corruption_and_io_fail_closed();
     test_identity_and_sequence_rejection();
+    test_4k_logical_sectors();
     puts("NEXUS INSTALLER DURABLE JOURNAL TESTS PASSED");
     return 0;
 }

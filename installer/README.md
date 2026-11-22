@@ -1,12 +1,13 @@
 # Nexus Installer
 
-**Status:** GPT metadata writing, kernel write authorization, boot-medium
-provenance resolution, and a bounded FAT32 formatter are implemented and linked
-into the kernel build. CI verifies the live optical ISO boot source in UEFI and
-legacy BIOS and host-tests unique GPT/MBR disk identity matching. Physical
-USB/SATA/NVMe boot-source matching remains unvalidated. The desktop is still a
-read-only preview; no complete installable system image or bootloader deployment
-exists, so the live UI does not initiate destructive writes.
+**Status:** The x86-64 kernel boots from a dual-mode ISO and from a
+separately installed disposable GPT disk under both OVMF (UEFI) and SeaBIOS
+(legacy BIOS), as verified in CI. The installer has guarded GPT, FAT32, NXFS,
+Limine payload, and BIOS boot-stage storage adapters. The desktop drive chooser
+is still a non-destructive preview; it does not yet execute the install flow.
+The root filesystem/userland image, persistent journal placement and recovery
+workflow, physical-drive installation matrix, and production hardware support
+remain incomplete.
 
 ## Product requirement
 
@@ -202,12 +203,25 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   session. The physical NVMe write path has CI-only disposable-disk coverage;
   physical-drive installation has not been tested. The desktop does not yet
   invoke the guarded GPT or FAT32 adapters.
-- The graphical preview is not yet a complete installer. System-image
-  packaging and deployment, NXFS formatting through the guarded installer
-  session, Limine target-disk installation, first boot, and recovery remain
-  unimplemented.
+- The graphical preview is not yet a complete installer. It supports
+  keyboard-based target selection and firmware-mode planning, and displays
+  boot-source, mounted-state, stable-identity, and write-path eligibility.
+  It deliberately does not start destructive operations.
+- `installer/installer_journal.c` provides a host-tested, dual-sector
+  recovery-record primitive. It alternates journal sectors, stores a sequence,
+  phase, target identity, geometry, firmware mode, progress count, and disk
+  GUID, and verifies each flushed update by reading it back. A torn update
+  leaves the previous valid record recoverable. Tests cover 512-byte and
+  4096-byte sectors, corrupt records, write/flush failures, identity changes,
+  and monotonic sequence enforcement. This journal is not yet assigned a
+  dedicated on-disk partition or wired into the installer transaction.
+- Installed-disk UEFI and legacy BIOS boot, plus live ISO UEFI and legacy BIOS
+  boot, pass the current QEMU CI workflow. These tests use disposable virtual
+  media and do not establish physical hardware compatibility.
+- A complete root filesystem/userland image, durable journal partition layout,
+  graphical confirmation/progress/recovery flow, and physical hardware install
+  validation are still outstanding.
 
-The partition planner is an implemented and tested foundation, not a usable
-installer. Disk-writing remains disabled in the distributable ISO until the
-GPT writer, write authorization, crash recovery, and complete install/boot
-path have passed their dedicated disposable-disk tests.
+The installer is not release-ready. The desktop remains non-destructive and
+disk-writing is not exposed in the distributable ISO. Do not treat the tested
+storage adapters or journal primitive as a completed end-to-end installer.

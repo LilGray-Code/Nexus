@@ -58,8 +58,8 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
 
     /*
      * Boot-keyboard modifier bits are separate from the six-key array.
-     * Forward both make and break codes for Shift so the desktop can maintain
-     * the correct modifier state for USB and PS/2 keyboards alike.
+     * Forward both make and break codes for Shift so USB and PS/2 input share
+     * the same Set-1 modifier state in the desktop.
      */
     const uint8_t old_modifiers =
         have_previous_report ? previous_report[0] : 0U;
@@ -78,6 +78,17 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
         uint8_t code = shift_modifiers[i].set1;
         if ((report[0] & mask) == 0U) code |= 0x80U;
         if (count < capacity) scancodes[count++] = code;
+    }
+
+    /* Report releases before new makes, matching normal Set-1 transitions. */
+    if (have_previous_report) {
+        for (size_t i = 2U; i < 8U; ++i) {
+            const uint8_t usage = previous_report[i];
+            if (usage == 0U || report_has_usage(report, usage)) continue;
+            const uint8_t code = usage_to_set1(usage);
+            if (code == 0U || count >= capacity) continue;
+            scancodes[count++] = (uint8_t)(code | 0x80U);
+        }
     }
 
     for (size_t i = 2U; i < 8U; ++i) {

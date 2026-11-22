@@ -19,6 +19,18 @@ static bool test_read_second(void *context, uint64_t lba, uint32_t count,
     return true;
 }
 
+
+static bool test_read_boot_mbr(void *context, uint64_t lba, uint32_t count,
+                               void *buffer) {
+    (void)context; (void)lba; (void)count;
+    uint8_t *sector = buffer;
+    memset(sector, 0, 512U);
+    sector[440] = 0x78U; sector[441] = 0x56U;
+    sector[442] = 0x34U; sector[443] = 0x12U;
+    sector[510] = 0x55U; sector[511] = 0xAAU;
+    return true;
+}
+
 static bool test_write(void *context, uint64_t lba, uint32_t count,
                        const void *buffer) {
     (void)context; (void)lba; (void)count; (void)buffer;
@@ -114,5 +126,37 @@ int main(void) {
     assert(!blockdev_install_session_begin(install_registered,
         "NVME-SERIAL-003", "ERASE"));
     assert(write_calls == 0U && flush_calls == 0U);
+
+    /* The installer UI can distinguish unresolved provenance, the live boot
+     * disk, mounted targets, and eligible-but-still-locked candidates. */
+    blockdev_init();
+    struct nexus_block_device boot_disk = make_device("disk0","NVME-BOOT-001");
+    boot_disk.read = test_read_boot_mbr;
+    boot_disk.flags = NEXUS_BLOCKDEV_READ_ONLY | NEXUS_BLOCKDEV_INSTALL_CAPABLE;
+    boot_disk.write = test_write;
+    boot_disk.flush = test_flush;
+    assert(blockdev_register(&boot_disk));
+    const struct nexus_block_device *boot_registered = blockdev_at(0U);
+    assert(boot_registered != NULL);
+    assert(!blockdev_boot_media_detection_complete());
+    assert(!blockdev_is_boot_media(boot_registered));
+    assert(blockdev_set_boot_media_from_mbr_disk_id(0x12345678U));
+    assert(blockdev_boot_media_detection_complete());
+    assert(blockdev_is_boot_media(boot_registered));
+    assert(!blockdev_is_mounted(boot_registered));
+    assert(blockdev_set_mounted(boot_registered,true));
+    assert(blockdev_is_mounted(boot_registered));
+    assert(blockdev_set_mounted(boot_registered,false));
+    assert(!blockdev_is_mounted(boot_registered));
+
+    blockdev_init();
+    struct nexus_block_device nonboot_disk = make_device("disk1","NVME-DATA-001");
+    nonboot_disk.flags = NEXUS_BLOCKDEV_READ_ONLY | NEXUS_BLOCKDEV_INSTALL_CAPABLE;
+    nonboot_disk.write = test_write;
+    nonboot_disk.flush = test_flush;
+    assert(blockdev_register(&nonboot_disk));
+    assert(blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
+    assert(blockdev_boot_media_detection_complete());
+    assert(!blockdev_is_boot_media(blockdev_at(0U)));
     return 0;
 }

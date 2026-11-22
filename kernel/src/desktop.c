@@ -120,6 +120,23 @@ static void installer_refresh_plan(void) {
         &installer_plan);
 }
 
+
+static const char *installer_target_status(
+    const struct nexus_block_device *device) {
+    if (device == NULL) return "BLOCKED: NO DRIVE SELECTED";
+    if (!blockdev_boot_media_detection_complete())
+        return "BLOCKED: BOOT SOURCE IDENTITY UNKNOWN";
+    if (blockdev_is_boot_media(device))
+        return "BLOCKED: THIS IS THE BOOT DRIVE";
+    if (blockdev_is_mounted(device))
+        return "BLOCKED: DRIVE IS CURRENTLY MOUNTED";
+    if (!blockdev_identity_is_unique(device))
+        return "BLOCKED: DRIVE IDENTITY IS NOT UNIQUE";
+    if (!blockdev_install_write_supported(device))
+        return "BLOCKED: GUARDED WRITE PATH NOT SUPPORTED";
+    return "SAFE CANDIDATE - INSTALLATION STILL LOCKED";
+}
+
 static void draw_shell(void) {
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
@@ -202,7 +219,7 @@ static void draw_shell(void) {
                            "F1 FILES F2 BROWSER F3 SETTINGS F4 TERMINAL F5 INSTALL",
                            1, 170, 191, 211);
     } else if (active_view == DESKTOP_INSTALLER) {
-        graphics_draw_text(text_x, text_y, "NEXUS INSTALLER PREVIEW",
+        graphics_draw_text(text_x, text_y, "NEXUS INSTALLER - DRIVE SELECTION",
                            2, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 38U,
                            "NO DISK WRITES - INSTALLATION IS NOT ENABLED",
@@ -290,10 +307,27 @@ static void draw_shell(void) {
                                        1, 239, 177, 119);
                 }
                 graphics_draw_text(text_x, text_y + 354U,
-                                   "UP/DOWN DRIVE  F1 UEFI  F2 BIOS  F3 DUAL",
-                                   1, 170, 191, 211);
+                                   installer_target_status(device), 1,
+                                   blockdev_boot_media_detection_complete() &&
+                                   !blockdev_is_boot_media(device) &&
+                                   !blockdev_is_mounted(device) &&
+                                   blockdev_identity_is_unique(device) &&
+                                   blockdev_install_write_supported(device)
+                                       ? 108 : 239,
+                                   blockdev_boot_media_detection_complete() &&
+                                   !blockdev_is_boot_media(device) &&
+                                   !blockdev_is_mounted(device) &&
+                                   blockdev_identity_is_unique(device) &&
+                                   blockdev_install_write_supported(device)
+                                       ? 216 : 177,
+                                   blockdev_boot_media_detection_complete() &&
+                                   !blockdev_is_boot_media(device) &&
+                                   !blockdev_is_mounted(device) &&
+                                   blockdev_identity_is_unique(device) &&
+                                   blockdev_install_write_supported(device)
+                                       ? 229 : 119);
                 graphics_draw_text(text_x, text_y + 378U,
-                                   "READ ONLY PREVIEW - INSTALLATION NOT ENABLED",
+                                   "UP/DOWN DRIVE  F1 UEFI  F2 BIOS  F3 DUAL",
                                    1, 170, 191, 211);
             }
         }

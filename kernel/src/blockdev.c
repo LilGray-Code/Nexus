@@ -249,6 +249,19 @@ static bool blockdev_is_registered(const struct nexus_block_device *device) {
     return false;
 }
 
+bool blockdev_boot_media_detection_complete(void) {
+    return boot_media_detection_complete;
+}
+
+bool blockdev_is_boot_media(const struct nexus_block_device *device) {
+    return blockdev_is_registered(device) && device == boot_media_device;
+}
+
+bool blockdev_is_mounted(const struct nexus_block_device *device) {
+    const size_t index = blockdev_index(device);
+    return index != NEXUS_BLOCKDEV_MAX_DEVICES && mounted_devices[index];
+}
+
 static bool blockdev_string_equal(const char *left, size_t left_capacity,
                                   const char *right, size_t right_capacity) {
     if (left == NULL || right == NULL) return false;

@@ -68,6 +68,9 @@ bool blockdev_set_boot_media_from_gpt_disk_guid(const uint8_t disk_guid[16]);
 bool blockdev_set_boot_media_from_mbr_disk_id(uint32_t disk_id);
 bool blockdev_set_boot_media_external(uint32_t source_kind);
 bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted);
+bool blockdev_boot_media_detection_complete(void);
+bool blockdev_is_boot_media(const struct nexus_block_device *device);
+bool blockdev_is_mounted(const struct nexus_block_device *device);
 /* Opens a destructive-write session only when kernel-owned safety state allows it. */
 bool blockdev_install_session_begin(const struct nexus_block_device *device,
                                     const char *typed_stable_id,

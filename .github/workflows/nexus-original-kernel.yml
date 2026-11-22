@@ -134,6 +134,14 @@ jobs:
             -o /tmp/nexus-pci-bar-test
           /tmp/nexus-pci-bar-test
 
+      - name: Test generic USB bulk interface descriptor discovery
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_desc.c \
+            kernel/tests/usb_desc_test.c \
+            -o /tmp/nexus-usb-desc-test
+          /tmp/nexus-usb-desc-test
+
       - name: Test USB HID boot-keyboard decoder
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

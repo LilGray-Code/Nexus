@@ -155,6 +155,63 @@ static void format_labeled_u64(const char *label, uint64_t value,
     output[length] = '\0';
 }
 
+/* Draw the Nexus orb directly into the framebuffer. The same mark is
+ * used by the boot splash, taskbar, launcher and first-party app chrome so
+ * the product identity does not depend on a filesystem image decoder. */
+static void desktop_draw_logo(uint64_t x, uint64_t y, uint64_t size) {
+    if (size < 8U) return;
+    const int64_t center = (int64_t)(size / 2U);
+    const int64_t radius = (int64_t)(size * 43U / 100U);
+    const int64_t glow_radius = radius + (int64_t)(size / 10U);
+    for (int64_t py = -glow_radius; py <= glow_radius; ++py) {
+        for (int64_t px = -glow_radius; px <= glow_radius; ++px) {
+            const uint64_t d2 = (uint64_t)(px * px + py * py);
+            const uint64_t r2 = (uint64_t)(radius * radius);
+            if (d2 > (uint64_t)(glow_radius * glow_radius)) continue;
+            uint8_t red, green, blue;
+            if (d2 > r2) {
+                red = 25U; green = 10U; blue = 68U;
+            } else {
+                const uint64_t edge = d2 * 255U / (r2 == 0U ? 1U : r2);
+                red = (uint8_t)(96U + (edge * 98U / 255U));
+                green = (uint8_t)(35U + (edge * 116U / 255U));
+                blue = (uint8_t)(255U - (edge * 4U / 255U));
+                if (py > radius / 2) {
+                    const uint8_t lift = (uint8_t)((uint64_t)(py - radius / 2) *
+                        42U / (uint64_t)(radius + 1));
+                    red = (uint8_t)(red + lift);
+                    green = (uint8_t)(green + lift);
+                    blue = (uint8_t)(blue > lift ? blue : 255U);
+                }
+            }
+            const int64_t sx = (int64_t)x + center + px;
+            const int64_t sy = (int64_t)y + center + py;
+            if (sx >= 0 && sy >= 0)
+                (void)graphics_write_pixel((uint64_t)sx, (uint64_t)sy,
+                    ((uint32_t)red << 16) | ((uint32_t)green << 8) | blue);
+        }
+    }
+    const uint64_t eye_width = size / 8U > 2U ? size / 8U : 2U;
+    const uint64_t eye_height = size * 23U / 100U;
+    const uint64_t eye_y = y + size * 34U / 100U;
+    const uint64_t eye_left = x + size * 24U / 100U;
+    const uint64_t eye_right = x + size * 59U / 100U;
+    graphics_fill_rect(eye_left, eye_y, eye_width, eye_height, 255U, 255U, 255U);
+    graphics_fill_rect(eye_right, eye_y, eye_width, eye_height, 255U, 255U, 255U);
+    /* Soft rounded caps retain the character of the supplied reference. */
+    for (uint64_t cap = 0U; cap < eye_width / 2U; ++cap) {
+        const uint64_t inset = eye_width / 2U - cap;
+        graphics_fill_rect(eye_left + inset, eye_y + cap,
+                           eye_width - 2U * inset, 1U, 255U, 255U, 255U);
+        graphics_fill_rect(eye_right + inset, eye_y + cap,
+                           eye_width - 2U * inset, 1U, 255U, 255U, 255U);
+        graphics_fill_rect(eye_left + inset, eye_y + eye_height - cap - 1U,
+                           eye_width - 2U * inset, 1U, 255U, 255U, 255U);
+        graphics_fill_rect(eye_right + inset, eye_y + eye_height - cap - 1U,
+                           eye_width - 2U * inset, 1U, 255U, 255U, 255U);
+    }
+}
+
 static void format_ipv4_address(const uint8_t address[4], char output[16]) {
     size_t length = 0U;
     for (size_t part = 0; part < 4U; ++part) {
@@ -313,8 +370,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     const uint64_t button_h = bottom_bar > 14U ? bottom_bar - 14U : 22U;
     graphics_fill_rect(12U, button_y, 88U, button_h, 28U, 57U, 88U);
     graphics_draw_rect(12U, button_y, 88U, button_h, 57U, 112U, 151U);
-    graphics_fill_rect(22U, button_y + 7U, 22U, 22U, 37U, 180U, 204U);
-    graphics_draw_text(27U, button_y + 14U, "N", 1U, 8U, 25U, 43U);
+    desktop_draw_logo(22U, button_y + 7U, 22U);
     graphics_draw_text(51U, button_y + button_h / 2U - 4U,
                        "START", 1U, 239U, 247U, 255U);
 
@@ -378,10 +434,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                        menu_width, menu_height, 66U, 111U, 148U);
     graphics_fill_rect(menu_x, menu_y, menu_width, 42U,
                        28U, 47U, 72U);
-    graphics_fill_rect(menu_x + 14U, menu_y + 11U, 20U, 20U,
-                       37U, 180U, 204U);
-    graphics_draw_text(menu_x + 20U, menu_y + 17U, "N", 1U,
-                       8U, 25U, 43U);
+    desktop_draw_logo(menu_x + 14U, menu_y + 11U, 20U);
     graphics_draw_text(menu_x + 44U, menu_y + 17U,
                        "NEXUS APP LAUNCHER", 1U,
                        239U, 247U, 255U);
@@ -437,10 +490,7 @@ static void desktop_draw_startup_animation(void) {
                        12U, 25U, 45U);
     graphics_draw_rect(panel_x, title_y - 24U, panel_width, 176U,
                        39U, 111U, 143U);
-    graphics_fill_rect(center_x - 18U, title_y - 5U, 36U, 36U,
-                       30U, 154U, 184U);
-    graphics_draw_text(center_x - 6U, title_y + 9U, "N", 1U,
-                       7U, 23U, 39U);
+    desktop_draw_logo(center_x - 32U, title_y - 22U, 64U);
     graphics_draw_text(center_x - 64U, title_y + 48U,
                        "NEXUS", 2U, 239U, 247U, 255U);
     graphics_draw_text(center_x - 88U, title_y + 78U,

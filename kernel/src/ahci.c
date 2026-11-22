@@ -586,13 +586,7 @@ static bool ahci_prepare_port(const struct nexus_pci_device *pci_device,
     serial_write_hex(registered->block_count);
     serial_write("\r\n");
 
-#ifdef NEXUS_STORAGE_SELFTEST
-    if (!ahci_read_selftest(registered)) {
-        state->failed = true;
-        serial_write("AHCI: disposable SATA read self-test failed\r\n");
-        return false;
-    }
-#endif
+
     return true;
 }
 
@@ -646,4 +640,27 @@ bool ahci_init_controller(const struct nexus_pci_device *device) {
     serial_write("\r\n");
     if (detected != 0U) serial_write("NEXUS AHCI BLOCK DEVICE READY\r\n");
     return detected != 0U;
+}
+
+bool ahci_storage_selftest(void) {
+#ifdef NEXUS_STORAGE_SELFTEST
+    if (!blockdev_boot_media_detection_complete()) {
+        serial_write("AHCI: refusing write self-test before boot-media identification\\r\\n");
+        return false;
+    }
+    for (size_t port = 0U; port < registered_port_count; ++port) {
+        struct ahci_port_state *state = &registered_ports[port];
+        for (size_t i = 0U; i < blockdev_count(); ++i) {
+            const struct nexus_block_device *device = blockdev_at(i);
+            if (device == NULL || device->context != state ||
+                device->transport != NEXUS_BLOCKDEV_TRANSPORT_AHCI) continue;
+            if (!ahci_read_selftest(device)) {
+                state->failed = true;
+                serial_write("AHCI: disposable SATA read/write self-test failed\\r\\n");
+                return false;
+            }
+        }
+    }
+#endif
+    return true;
 }

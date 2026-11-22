@@ -21,39 +21,44 @@ cooperative scheduler foundation, ring-3 ELF execution, read-only GPT/FAT32
 storage and VFS, volatile RAM filesystem, Intel E1000 networking, DHCP, DNS,
 and an early single-connection TCP/plain-HTTP client.
 
-The desktop now includes an **Install F5** graphical wizard with target
-selection, firmware-aware partition preview, exact disk-ID confirmation, and a
-separate typed `ERASE` confirmation. A kernel-side runtime sequences GPT
-creation, EFI/NXFS formatting, system and boot payload deployment, optional
-BIOS boot-stage installation, and recovery-journal updates. Destructive calls
-remain compile-time locked in the normal kernel build until the new runtime
-tests, full kernel build, and QEMU install/reboot/recovery checks pass. The
-current target write backend is NVMe; AHCI/SATA and USB mass-storage writes are
-not implemented.
+The desktop includes an **Install F5** graphical wizard with disk
+selection, UEFI/dual-firmware planning, exact stable-ID confirmation, and a
+separate typed `ERASE` confirmation. The kernel runtime creates GPT, formats
+the EFI, NXFS system, and NXFS data partitions, deploys the system and boot
+payloads, installs the optional BIOS boot stage, and journals each completed
+phase. Interrupted installs resume from the last verified journal phase.
 
-This is still an early prototype, not a complete desktop OS. Durable installable
-filesystem hardening, a full installer wizard, system-image deployment,
-target-disk BIOS stage-1 installation, first boot, recovery/update flows, modern
-browser/TLS, broad USB/Wi-Fi/audio/GPU drivers, power management, and release
-hardening remain incomplete.
+The CI release ISO is built with `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES`
+after the host tests, disposable-disk integration test, keyboard-driven QEMU
+installer test, installed-disk UEFI/BIOS boot tests, and final ISO boot check
+pass. The supported target write backend is currently NVMe only; AHCI/SATA and
+USB mass-storage installation are not implemented.
+
+This is an **installable prototype**, not a finished general-purpose desktop
+OS. The installed system payload is still a minimal kernel, manifest, and
+README rather than a complete userland. The data partition is formatted, but
+normal persistent user-file writes and the file-management UI still need
+completion. Physical NVMe hardware validation, broader GPU/audio/Wi-Fi/USB
+drivers, power management, updates, and production recovery hardening remain
+outstanding.
 
 ## First-party graphical installer
 
-Nexus will have its own graphical installer, running directly in the Nexus live
-environment. It will not launch or depend on another distribution's installer
-or package manager. The current UI is only a read-only preview; the actual
-installer engine specification, GPT planner, metadata serializer, guarded
-transaction, safety invariants, and implementation gates are in
-[installer/README.md](installer/README.md).
+Nexus has its own graphical installer, running directly in the Nexus live
+environment. It does not launch or depend on another distribution's installer
+or package manager. The wizard invokes the guarded installer runtime; the
+implementation, safety invariants, test gates, and remaining limitations are
+documented in [installer/README.md](installer/README.md).
 
 The GPT transaction and kernel storage adapters have host-side tests
 against disposable in-memory block devices. Boot-medium provenance is resolved
 from Limine's executable-file handoff by matching validated GPT partition GUID,
 GPT disk GUID, or MBR disk ID; ambiguous or unknown identity fails closed.
-The new installer runtime has a separate host test suite and build workflow,
-but those new checks must be observed passing before the compile-time write
-lock can be removed. The installed NXFS payload is still a minimal kernel,
-manifest, and README rather than a complete general-purpose userland.
+The installer runtime, storage adapters, recovery path, both kernel
+build variants, and QEMU install/boot matrix passed GitHub Actions run
+[44969951849](https://github.com/LilGray-Code/Nexus/actions/runs/44969951849).
+The resulting ISO is an installable NVMe-targeted prototype, not a claim of
+physical-hardware certification or a complete general-purpose userland.
 
 ## Build and test
 

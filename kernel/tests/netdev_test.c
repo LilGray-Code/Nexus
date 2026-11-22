@@ -46,12 +46,16 @@ int main(void) {
     struct fake_device device = {
         .mac = {0x02U, 0x11U, 0x22U, 0x33U, 0x44U, 0x55U}
     };
+    struct fake_device second = {
+        .mac = {0x02U, 0xAAU, 0xBBU, 0xCCU, 0xDDU, 0xEEU}
+    };
     char mutable_name[] = "nexus0";
     uint8_t frame[NEXUS_NETDEV_MAX_FRAME_SIZE] = {0};
     uint8_t mac[6] = {0};
     size_t length = 123U;
 
     assert(!netdev_ready());
+    assert(netdev_device_count() == 0U);
     assert(netdev_name() == NULL);
     assert(!netdev_register(NULL, &ops, &device));
     assert(!netdev_register("", &ops, &device));
@@ -61,7 +65,19 @@ int main(void) {
     mutable_name[0] = 'X';
     assert(netdev_ready());
     assert(strcmp(netdev_name(), "nexus0") == 0);
-    assert(!netdev_register("second", &ops, &device));
+    assert(netdev_register("wlan0", &ops, &second));
+    assert(netdev_device_count() == 2U);
+    assert(strcmp(netdev_device_name_at(0U), "nexus0") == 0);
+    assert(strcmp(netdev_device_name_at(1U), "wlan0") == 0);
+    assert(netdev_device_name_at(2U) == NULL);
+    assert(!netdev_register("wlan0", &ops, &second));
+    assert(!netdev_set_default(2U));
+    assert(netdev_set_default(1U));
+    assert(netdev_default_index() == 1U);
+    assert(strcmp(netdev_name(), "wlan0") == 0);
+    assert(netdev_get_mac_at(1U, mac));
+    assert(memcmp(mac, second.mac, sizeof(mac)) == 0);
+    assert(netdev_set_default(0U));
 
     assert(!netdev_get_mac(NULL));
     assert(netdev_get_mac(mac));
@@ -75,6 +91,8 @@ int main(void) {
     assert(netdev_send_frame(frame, sizeof(frame)));
     assert(device.sent_length == sizeof(frame));
 
+    assert(!netdev_send_frame_at(2U, frame, 14U));
+    assert(!netdev_receive_frame_at(2U, frame, sizeof(frame), &length));
     assert(!netdev_receive_frame(NULL, sizeof(frame), &length));
     assert(length == 0U);
     length = 123U;

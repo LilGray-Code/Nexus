@@ -53,4 +53,12 @@ enum nexus_installer_runtime_result nexus_installer_runtime_apply(
     nexus_installer_progress_fn progress,
     void *progress_context);
 
+/* Resumes a previously journaled installation without rewriting its GPT. */
+enum nexus_installer_runtime_result nexus_installer_runtime_recover(
+    const struct nexus_block_device *device,
+    const char *typed_stable_id,
+    const char *typed_erase_phrase,
+    nexus_installer_progress_fn progress,
+    void *progress_context);
+
 #endif

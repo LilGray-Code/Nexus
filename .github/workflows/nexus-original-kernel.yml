@@ -752,16 +752,17 @@ jobs:
 
           key("f1")
           key("n")
-          for char in "persist":
+          for char in "nexus-long-persistent-note":
               key(char)
           key("ret")
-          for char in "nexus-data-saved":
+          content = "nexus-data-saved" + ("x" * 270)
+          for char in content:
               key(char)
           key("f10")
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
-              if "FILES: SAVED PERSISTENT NXFS PERSIST" in log:
+              if "FILES: entry NEXUS-LONG-PERSISTENT-NOTE size=286" in log:
                   break
               if "FILES: SAVE FAILED" in log or "FILES: SAVED VOLATILE RAM" in log:
                   print(log)
@@ -823,7 +824,7 @@ jobs:
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
-              if "FILES: entry PERSIST" in log:
+              if "FILES: entry NEXUS-LONG-PERSISTENT-NOTE" in log:
                   break
               time.sleep(0.5)
           else:
@@ -832,8 +833,8 @@ jobs:
           sock.close()
           PY
           cat nexus-files-serial.log nexus-files-reboot-serial.log
-          grep -q "FILES: SAVED PERSISTENT NXFS PERSIST" nexus-files-serial.log
-          grep -q "FILES: entry PERSIST" nexus-files-reboot-serial.log
+          grep -q "FILES: SAVED PERSISTENT NXFS NEXUS-LONG-PERSISTENT-NOTE" nexus-files-serial.log
+          grep -q "FILES: entry NEXUS-LONG-PERSISTENT-NOTE size=286" nexus-files-reboot-serial.log
           kill "$QEMU_PID" 2>/dev/null || true
           wait "$QEMU_PID" 2>/dev/null || true
           trap - EXIT
@@ -892,7 +893,7 @@ jobs:
 
           key("f1")
           key("n")
-          for char in "persist":
+          for char in "nexus-long-persistent-note":
               key(char)
           key("ret")
           for char in "nexus-data-saved":
@@ -901,7 +902,7 @@ jobs:
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
-              if "FILES: SAVED PERSISTENT NXFS PERSIST" in log:
+              if "FILES: entry NEXUS-LONG-PERSISTENT-NOTE size=16" in log:
                   break
               if "FILES: SAVE FAILED" in log or "FILES: SAVED VOLATILE RAM" in log:
                   print(log)
@@ -962,7 +963,7 @@ jobs:
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
-              if "FILES: entry PERSIST" in log:
+              if "FILES: entry NEXUS-LONG-PERSISTENT-NOTE" in log:
                   break
               time.sleep(0.5)
           else:
@@ -971,8 +972,8 @@ jobs:
           sock.close()
           PY
           cat nexus-sata-files-serial.log nexus-sata-files-reboot-serial.log
-          grep -q "FILES: SAVED PERSISTENT NXFS PERSIST" nexus-sata-files-serial.log
-          grep -q "FILES: entry PERSIST" nexus-sata-files-reboot-serial.log
+          grep -q "FILES: SAVED PERSISTENT NXFS NEXUS-LONG-PERSISTENT-NOTE" nexus-sata-files-serial.log
+          grep -q "FILES: entry NEXUS-LONG-PERSISTENT-NOTE size=16" nexus-sata-files-reboot-serial.log
           kill "$QEMU_PID" 2>/dev/null || true
           wait "$QEMU_PID" 2>/dev/null || true
           trap - EXIT

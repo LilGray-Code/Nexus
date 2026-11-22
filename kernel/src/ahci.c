@@ -383,17 +383,17 @@ static bool ahci_prepare_port(const struct nexus_pci_device *pci_device,
     port[0x30U / 4U] = UINT32_MAX;
     port[0x14U / 4U] = 0U;
 
-    if (!ahci_allocate_dma_page(&state->command_list_physical,
-                                (volatile uint8_t **)&state->command_list) ||
-        !ahci_allocate_dma_page(&state->received_fis_physical,
-                                &state->received_fis) ||
-        !ahci_allocate_dma_page(&state->command_table_physical,
-                                (volatile uint8_t **)&state->command_table) ||
-        !ahci_allocate_dma_page(&state->dma_buffer_physical,
-                                &state->dma_buffer)) {
-        serial_write("AHCI: DMA32 allocations failed; SATA port skipped\r\n");
+    volatile uint8_t *dma_page = NULL;
+    if (!ahci_allocate_dma_page(&state->command_list_physical, &dma_page))
         return false;
-    }
+    state->command_list = (volatile struct ahci_command_header *)dma_page;
+    if (!ahci_allocate_dma_page(&state->received_fis_physical,
+                                &state->received_fis)) return false;
+    if (!ahci_allocate_dma_page(&state->command_table_physical, &dma_page))
+        return false;
+    state->command_table = (volatile struct ahci_command_table *)dma_page;
+    if (!ahci_allocate_dma_page(&state->dma_buffer_physical,
+                                &state->dma_buffer)) return false;
 
     port[0x00U / 4U] = (uint32_t)state->command_list_physical;
     port[0x04U / 4U] = 0U;
@@ -410,26 +410,23 @@ static bool ahci_prepare_port(const struct nexus_pci_device *pci_device,
         return false;
     }
 
-    char serial_copy[21];
-    for (size_t i = 0U; i < sizeof(serial_copy); ++i)
-        serial_copy[i] = '\0';
-    size_t id_length = 0U;
+    size_t serial_length = 0U;
+    while (serial_length < 20U &&
+           state->stable_id[serial_length] != '\0') ++serial_length;
+    if (serial_length > sizeof(state->stable_id) - 7U)
+        serial_length = sizeof(state->stable_id) - 7U;
+    for (size_t i = serial_length; i > 0U; --i)
+        state->stable_id[i + 4U] = state->stable_id[i - 1U];
     const char prefix[] = "SATA-";
     for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
-        state->stable_id[id_length++] = prefix[i];
-    if (state->stable_id[0] == 'S' && state->stable_id[5] == '\0') {
+        state->stable_id[i] = prefix[i];
+    if (serial_length == 0U) {
         static const char unknown[] = "UNKNOWN";
-        for (size_t i = 0U; i < sizeof(unknown) - 1U; ++i)
-            state->stable_id[id_length++] = unknown[i];
+        for (size_t i = 0U; i < sizeof(unknown); ++i)
+            state->stable_id[5U + i] = unknown[i];
     } else {
-        size_t serial_length = 0U;
-        while (state->stable_id[serial_length] != '\0' &&
-               serial_length < 20U) ++serial_length;
-        for (size_t i = 0U; i < serial_length &&
-             id_length < sizeof(state->stable_id) - 1U; ++i)
-            state->stable_id[id_length++] = state->stable_id[i];
+        state->stable_id[5U + serial_length] = '\0';
     }
-    state->stable_id[id_length] = '\0';
 
     if (state->model[0] == '\0') {
         static const char fallback[] = "ATA disk";

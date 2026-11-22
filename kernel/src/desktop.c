@@ -16,6 +16,7 @@
 #include "timer.h"
 #include "partition_plan.h"
 #include "installer_runtime.h"
+#include "browser_url.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -2016,67 +2017,81 @@ static bool browser_append_text(char *buffer, size_t capacity,
 static void browser_navigate(void) {
     browser_clear_page();
     if (browser_address_length == 0U) {
-        browser_set_status("Enter a host or host/path first");
+        browser_set_status("Enter a host or full URL first");
         return;
     }
 
-    char host[64];
-    char path[96];
-    size_t host_length = 0U;
-    size_t path_length = 0U;
-    bool in_path = false;
-    path[path_length++] = '/';
-    for (size_t i = 0; i < browser_address_length; ++i) {
-        const char ch = browser_address[i];
-        if (!in_path && ch == '/') {
-            in_path = true;
-            path_length = 0U;
-            path[path_length++] = '/';
-            continue;
-        }
-        if (!in_path) {
-            if (host_length >= sizeof(host) - 1U) {
-                browser_set_status("Host name is too long");
-                return;
-            }
-            host[host_length++] = ch;
-        } else {
-            if (path_length >= sizeof(path) - 1U ||
-                ch < 0x21 || ch > 0x7E) {
-                browser_set_status("Invalid or overlong URL path");
-                return;
-            }
-            path[path_length++] = ch;
-        }
+    /* Accept a bare host for convenience, but parse all navigation through
+     * the shared strict URL parser. Never reinterpret an HTTPS URL as HTTP. */
+    char input[sizeof(browser_address) + 8U];
+    size_t input_length = 0U;
+    const bool has_http_scheme =
+        browser_address_length >= 7U &&
+        browser_address[0] == 'h' && browser_address[1] == 't' &&
+        browser_address[2] == 't' && browser_address[3] == 'p' &&
+        browser_address[4] == ':' && browser_address[5] == '/' &&
+        browser_address[6] == '/';
+    const bool has_https_scheme =
+        browser_address_length >= 8U &&
+        browser_address[0] == 'h' && browser_address[1] == 't' &&
+        browser_address[2] == 't' && browser_address[3] == 'p' &&
+        browser_address[4] == 's' && browser_address[5] == ':' &&
+        browser_address[6] == '/' && browser_address[7] == '/';
+    if (!has_http_scheme && !has_https_scheme) {
+        static const char prefix[] = "http://";
+        for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
+            input[input_length++] = prefix[i];
     }
-    if (host_length == 0U) {
-        browser_set_status("Enter a host name");
+    if (input_length + browser_address_length >= sizeof(input)) {
+        browser_set_status("Address is too long");
         return;
     }
-    host[host_length] = '\0';
-    path[path_length] = '\0';
+    for (size_t i = 0U; i < browser_address_length; ++i)
+        input[input_length++] = browser_address[i];
+    input[input_length] = '\0';
+
+    struct nexus_browser_url url;
+    if (!nexus_browser_url_parse(input, &url)) {
+        browser_set_status("Invalid URL; use http://host/path");
+        return;
+    }
+    if (url.scheme == NEXUS_BROWSER_SCHEME_HTTPS) {
+        browser_set_status("HTTPS unavailable: TLS is not implemented");
+        return;
+    }
 
     browser_set_status("Resolving host...");
     uint8_t address[4];
-    if (!net_dns_resolve(host, address, 600U)) {
+    if (!net_dns_resolve(url.host, address, 600U)) {
         browser_set_status("DNS failed; check DHCP/network");
         return;
     }
     browser_set_status("Opening TCP connection...");
-    if (!net_tcp_connect(address, 80U, 800U)) {
-        browser_set_status("TCP connection to port 80 failed");
+    if (!net_tcp_connect(address, url.port, 800U)) {
+        browser_set_status("TCP connection failed");
         return;
     }
 
-    char request[256];
+    char request[384];
     size_t request_length = 0U;
     bool request_ok =
         browser_append_text(request, sizeof(request), &request_length,
                             "GET ") &&
-        browser_append_text(request, sizeof(request), &request_length, path) &&
+        browser_append_text(request, sizeof(request), &request_length,
+                            url.path) &&
         browser_append_text(request, sizeof(request), &request_length,
                             " HTTP/1.0\r\nHost: ") &&
-        browser_append_text(request, sizeof(request), &request_length, host) &&
+        browser_append_text(request, sizeof(request), &request_length,
+                            url.host);
+    if (request_ok && url.explicit_port) {
+        char port_text[21];
+        format_u64(url.port, port_text);
+        request_ok = browser_append_text(request, sizeof(request),
+                                         &request_length, ":") &&
+                     browser_append_text(request, sizeof(request),
+                                         &request_length, port_text);
+    }
+    request_ok = request_ok &&
         browser_append_text(request, sizeof(request), &request_length,
                             "\r\nConnection: close\r\nUser-Agent: Nexus/0.1\r\n\r\n");
     if (!request_ok || !net_tcp_send(request, (uint16_t)request_length)) {

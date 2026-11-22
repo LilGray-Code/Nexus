@@ -741,6 +741,9 @@ static void refresh_files_listing(void) {
     for (size_t index = 0; index < vfs_root_entry_count(); ++index) {
         struct nexus_vfs_dirent entry;
         if (!vfs_root_entry(index, &entry)) continue;
+        serial_write("FILES: entry ");
+        serial_write(entry.name);
+        serial_write("\r\n");
         if (files_listing_count < 6U) {
             size_t length = 0U;
             while (length < sizeof(files_listing[0]) - 1U &&
@@ -826,6 +829,25 @@ static void files_editor_begin_selected(void) {
     files_editor_state = FILES_EDITOR_CONTENT;
 }
 
+static bool files_editor_name_exists(void) {
+    for (size_t index = 0U; index < vfs_root_entry_count(); ++index) {
+        struct nexus_vfs_dirent entry;
+        if (!vfs_root_entry(index, &entry)) continue;
+        size_t i = 0U;
+        bool equal = true;
+        while (files_edit_name[i] != '\0' || entry.name[i] != '\0') {
+            char a = files_edit_name[i], b = entry.name[i];
+            if (a >= 'a' && a <= 'z') a = (char)(a - 'a' + 'A');
+            if (b >= 'a' && b <= 'z') b = (char)(b - 'a' + 'A');
+            if (a != b) { equal = false; break; }
+            ++i;
+            if (i >= NEXUS_VFS_NAME_MAX) { equal = false; break; }
+        }
+        if (equal) return true;
+    }
+    return false;
+}
+
 static void files_editor_handle_key(const struct nexus_input_event *event) {
     if ((event->scancode & 0x80U) != 0U) return;
     if (event->scancode == 0x01U) {
@@ -843,6 +865,15 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                     files_edit_status[i] = message[i];
                     if (message[i] == '\0') break;
                 }
+            } else if (files_editor_name_exists()) {
+                const char *message = "FILE EXISTS - PRESS E TO EDIT";
+                size_t i = 0U;
+                while (message[i] != '\0' &&
+                       i < sizeof(files_edit_status) - 1U) {
+                    files_edit_status[i] = message[i];
+                    ++i;
+                }
+                files_edit_status[i] = '\0';
             } else {
                 files_editor_state = FILES_EDITOR_CONTENT;
                 files_edit_status[0] = '\0';
@@ -851,7 +882,9 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
             const char ch = terminal_scancode_char(event->scancode);
             if (ch != '\0' &&
                 files_edit_name_length < sizeof(files_edit_name) - 1U) {
-                files_edit_name[files_edit_name_length++] = ch;
+                const char normalized = ch >= 'a' && ch <= 'z'
+                    ? (char)(ch - 'a' + 'A') : ch;
+                files_edit_name[files_edit_name_length++] = normalized;
                 files_edit_name[files_edit_name_length] = '\0';
             }
         }
@@ -871,8 +904,17 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         }
         files_edit_status[i] = '\0';
         if (saved) {
+            serial_write(vfs_nxfs_writable()
+                ? "FILES: SAVED PERSISTENT NXFS "
+                : "FILES: SAVED VOLATILE RAM ");
+            serial_write(files_edit_name);
+            serial_write("\r\n");
             files_editor_state = FILES_EDITOR_CLOSED;
             refresh_files_listing();
+        } else {
+            serial_write("FILES: SAVE FAILED ");
+            serial_write(files_edit_name);
+            serial_write("\r\n");
         }
     } else if (event->scancode == 0x0EU) {
         if (files_edit_content_length != 0U)

@@ -479,6 +479,7 @@ bool nxfs_format_install(const struct nexus_block_device *device,
 
 bool nxfs_mount(const struct nexus_block_device *device,
                 const struct nexus_gpt_partition *partition) {
+    blockdev_nexus_data_write_disable(nxfs_device);
     nxfs_mounted = false;
     nxfs_busy = false;
     nxfs_device = NULL;
@@ -553,6 +554,10 @@ bool nxfs_mount(const struct nexus_block_device *device,
         nxfs_entries[override_slot] = override_entry;
     }
     nxfs_mounted = true;
+    /* A read-only release driver becomes writable only for the dedicated
+     * data partition, and only when this disk is the identified boot medium. */
+    (void)blockdev_nexus_data_write_enable(device, partition->first_lba,
+                                           partition->last_lba);
     return true;
 }
 
@@ -564,8 +569,11 @@ bool nxfs_is_writable(void) {
     if (nxfs_device == NULL) return false;
     if (nxfs_install_authorized && nxfs_install_device == nxfs_device)
         return true;
-    return (nxfs_device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U &&
-        (nxfs_device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U;
+    if ((nxfs_device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U &&
+        (nxfs_device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U)
+        return true;
+    return blockdev_nexus_data_write_is_enabled(nxfs_device,
+        nxfs_partition.first_lba, nxfs_partition.last_lba);
 }
 
 size_t nxfs_entry_count(void) {
@@ -802,6 +810,7 @@ void nxfs_unmount(void) {
     /* Installer write sessions own their mount lifecycle and cannot be
      * interrupted by the ordinary desktop unmount path. */
     if (nxfs_install_authorized) return;
+    blockdev_nexus_data_write_disable(nxfs_device);
     nxfs_mounted = false;
     nxfs_busy = false;
     nxfs_device = NULL;

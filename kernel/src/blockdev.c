@@ -13,12 +13,32 @@ static char install_session_id[NEXUS_BLOCKDEV_ID_MAX];
 static char install_session_model[NEXUS_BLOCKDEV_MODEL_MAX];
 static uint64_t install_session_block_count;
 static uint32_t install_session_block_size;
+static const struct nexus_block_device *nexus_data_write_device;
+static uint64_t nexus_data_write_first_lba;
+static uint64_t nexus_data_write_last_lba;
+static const uint8_t nexus_nxfs_type_guid[16] = {
+    0x46U, 0x53U, 0x58U, 0x4EU, 0x01U, 0x00U, 0x58U, 0x4EU,
+    0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x46U, 0x53U
+};
+static const uint8_t nexus_recovery_type_guid[16] = {
+    0x4EU, 0x58U, 0x52U, 0x43U, 0x01U, 0x00U, 0x58U, 0x4EU,
+    0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x52U, 0x43U
+};
+
+static bool guid_equal(const uint8_t a[16], const uint8_t b[16]) {
+    for (size_t i = 0U; i < 16U; ++i)
+        if (a[i] != b[i]) return false;
+    return true;
+}
 
 void blockdev_init(void) {
     blockdev_install_session_end();
     registered_count = 0;
     boot_media_device = NULL;
     boot_media_detection_complete = false;
+    nexus_data_write_device = NULL;
+    nexus_data_write_first_lba = 0U;
+    nexus_data_write_last_lba = 0U;
     for (size_t i = 0; i < NEXUS_BLOCKDEV_MAX_DEVICES; ++i) {
         devices[i] = (struct nexus_block_device){0};
         mounted_devices[i] = false;
@@ -103,15 +123,29 @@ bool blockdev_read(const struct nexus_block_device *device,
 }
 
 
+static bool nexus_data_write_range_matches(
+    const struct nexus_block_device *device, uint64_t lba,
+    uint32_t block_count) {
+    return device != NULL && block_count != 0U &&
+        nexus_data_write_device == device &&
+        lba >= nexus_data_write_first_lba &&
+        lba <= nexus_data_write_last_lba &&
+        (uint64_t)block_count <= nexus_data_write_last_lba - lba + 1U &&
+        boot_media_detection_complete && boot_media_device == device;
+}
+
 bool blockdev_write(const struct nexus_block_device *device,
                     uint64_t lba, uint32_t block_count, const void *buffer) {
     if (device == NULL || buffer == NULL || block_count == 0U ||
-        device->write == NULL ||
-        (device->flags & NEXUS_BLOCKDEV_WRITABLE) == 0U ||
-        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) != 0U ||
-        lba >= device->block_count ||
+        device->write == NULL || lba >= device->block_count ||
         (uint64_t)block_count > device->block_count - lba ||
         block_count > device->max_blocks_per_request) return false;
+    const bool ordinary_write =
+        (device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U &&
+        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U;
+    if (!ordinary_write &&
+        !nexus_data_write_range_matches(device, lba, block_count))
+        return false;
 
     for (size_t i = 0U; i < registered_count; ++i) {
         if (&devices[i] == device)
@@ -121,16 +155,20 @@ bool blockdev_write(const struct nexus_block_device *device,
 }
 
 bool blockdev_flush(const struct nexus_block_device *device) {
-    if (device == NULL || device->flush == NULL ||
-        (device->flags & NEXUS_BLOCKDEV_WRITABLE) == 0U ||
-        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) != 0U) return false;
+    if (device == NULL || device->flush == NULL) return false;
+    const bool ordinary_write =
+        (device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U &&
+        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U;
+    if (!ordinary_write &&
+        (nexus_data_write_device != device ||
+         !boot_media_detection_complete || boot_media_device != device))
+        return false;
 
     for (size_t i = 0U; i < registered_count; ++i) {
         if (&devices[i] == device) return device->flush(device->context);
     }
     return false;
 }
-
 
 static size_t blockdev_index(const struct nexus_block_device *device) {
     if (device == NULL) return NEXUS_BLOCKDEV_MAX_DEVICES;
@@ -260,6 +298,56 @@ bool blockdev_is_boot_media(const struct nexus_block_device *device) {
 bool blockdev_is_mounted(const struct nexus_block_device *device) {
     const size_t index = blockdev_index(device);
     return index != NEXUS_BLOCKDEV_MAX_DEVICES && mounted_devices[index];
+}
+
+bool blockdev_nexus_data_write_enable(
+    const struct nexus_block_device *device,
+    uint64_t first_lba, uint64_t last_lba) {
+    if (!blockdev_is_registered(device) || device->write == NULL ||
+        device->flush == NULL ||
+        (device->flags & NEXUS_BLOCKDEV_INSTALL_CAPABLE) == 0U ||
+        (device->flags & NEXUS_BLOCKDEV_READ_ONLY) == 0U ||
+        (device->flags & NEXUS_BLOCKDEV_WRITABLE) != 0U ||
+        !boot_media_detection_complete || boot_media_device != device ||
+        install_session_device != NULL ||
+        first_lba > last_lba || last_lba >= device->block_count ||
+        !gpt_scan_device(device)) return false;
+
+    size_t matches = 0U;
+    for (size_t i = 1U; i < gpt_partition_count(); ++i) {
+        const struct nexus_gpt_partition *part = gpt_partition_at(i);
+        const struct nexus_gpt_partition *previous = gpt_partition_at(i - 1U);
+        if (part == NULL || previous == NULL ||
+            part->first_lba != first_lba || part->last_lba != last_lba ||
+            !guid_equal(part->type_guid, nexus_nxfs_type_guid) ||
+            !guid_equal(previous->type_guid, nexus_recovery_type_guid))
+            continue;
+        ++matches;
+    }
+    if (matches != 1U) return false;
+
+    nexus_data_write_device = device;
+    nexus_data_write_first_lba = first_lba;
+    nexus_data_write_last_lba = last_lba;
+    return true;
+}
+
+void blockdev_nexus_data_write_disable(
+    const struct nexus_block_device *device) {
+    if (device == NULL || nexus_data_write_device == device) {
+        nexus_data_write_device = NULL;
+        nexus_data_write_first_lba = 0U;
+        nexus_data_write_last_lba = 0U;
+    }
+}
+
+bool blockdev_nexus_data_write_is_enabled(
+    const struct nexus_block_device *device,
+    uint64_t first_lba, uint64_t last_lba) {
+    return device != NULL && nexus_data_write_device == device &&
+        nexus_data_write_first_lba == first_lba &&
+        nexus_data_write_last_lba == last_lba &&
+        boot_media_detection_complete && boot_media_device == device;
 }
 
 static bool blockdev_string_equal(const char *left, size_t left_capacity,

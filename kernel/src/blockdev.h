@@ -71,6 +71,17 @@ bool blockdev_set_mounted(const struct nexus_block_device *device, bool mounted)
 bool blockdev_boot_media_detection_complete(void);
 bool blockdev_is_boot_media(const struct nexus_block_device *device);
 bool blockdev_is_mounted(const struct nexus_block_device *device);
+/* Ordinary filesystem writes are authorized only for the validated Nexus data
+ * partition on the positively identified boot disk. This never grants access
+ * to GPT, ESP, system, recovery, or other partitions. */
+bool blockdev_nexus_data_write_enable(
+    const struct nexus_block_device *device,
+    uint64_t first_lba, uint64_t last_lba);
+void blockdev_nexus_data_write_disable(
+    const struct nexus_block_device *device);
+bool blockdev_nexus_data_write_is_enabled(
+    const struct nexus_block_device *device,
+    uint64_t first_lba, uint64_t last_lba);
 /* Opens a destructive-write session only when kernel-owned safety state allows it. */
 bool blockdev_install_session_begin(const struct nexus_block_device *device,
                                     const char *typed_stable_id,

@@ -8,7 +8,7 @@
 #include "blockdev.h"
 #include "gpt.h"
 
-#define NEXUS_VFS_NAME_MAX 13U
+#define NEXUS_VFS_NAME_MAX 32U /* 31 printable characters plus NUL */
 #define NEXUS_VFS_READ_CHUNK 4096U
 #define NEXUS_VFS_RAM_MAX_FILES 16U
 #define NEXUS_VFS_RAM_MAX_FILE_SIZE 4096U

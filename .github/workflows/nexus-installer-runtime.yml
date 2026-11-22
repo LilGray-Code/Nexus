@@ -38,5 +38,7 @@ jobs:
             kernel/src/gpt.c kernel/src/nxfs.c kernel/src/serial.c \
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test
-      - name: Build the freestanding kernel with warnings as errors
+      - name: Build the default write-locked freestanding kernel
         run: make -C kernel clean all
+      - name: Compile the guarded installer-enabled kernel variant
+        run: make -C kernel clean all EXTRA_CFLAGS=-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES

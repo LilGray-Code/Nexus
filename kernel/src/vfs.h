@@ -22,6 +22,7 @@ struct nexus_vfs_dirent {
     char name[NEXUS_VFS_NAME_MAX];
     enum nexus_vfs_node_type type;
     uint32_t size;
+    uint32_t first_cluster;
 };
 
 struct nexus_vfs_file {
@@ -41,6 +42,9 @@ bool vfs_nxfs_writable(void);
 bool vfs_save_ram_file_to_nxfs(const char *name);
 bool vfs_write_file(const char *name, const void *data, size_t length);
 bool vfs_root_mounted(void);
+bool vfs_enter_directory(const char *name);
+bool vfs_parent_directory(void);
+size_t vfs_directory_depth(void);
 bool vfs_has_filesystem(void);
 bool vfs_ramfs_create(const char *name);
 bool vfs_ramfs_write(const char *name, const void *data, size_t length);

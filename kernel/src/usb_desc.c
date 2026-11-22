@@ -52,6 +52,8 @@ bool nexus_usb_find_bulk_interface(
             const uint16_t packet = (uint16_t)(
                 configuration[offset + 4U] |
                 ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
+            /* Bulk wMaxPacketSize reserves bits 11..15. */
+            if ((configuration[offset + 5U] & 0xF8U) != 0U) return false;
             const uint8_t endpoint_number = address & 0x0FU;
             const bool valid_packet = packet == 8U || packet == 16U ||
                 packet == 32U || packet == 64U || packet == 512U ||

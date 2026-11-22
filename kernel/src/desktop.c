@@ -66,6 +66,7 @@ static char files_edit_name[NEXUS_VFS_NAME_MAX];
 static char files_edit_content[NEXUS_FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
+static size_t files_edit_cursor;
 static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
@@ -440,20 +441,33 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 48U, text_y + 82U, files_edit_name,
                                1, 119, 229, 211);
             if (files_editor_state == FILES_EDITOR_CONTENT) {
-                const size_t last_line = files_edit_content_length == 0U
-                    ? 0U : (files_edit_content_length - 1U) / 64U;
-                const size_t first_line = last_line >= 3U ? last_line - 3U : 0U;
+                const size_t cursor_line = files_edit_cursor / 64U;
+                const size_t first_line = cursor_line >= 3U
+                    ? cursor_line - 3U : 0U;
                 const size_t view_start = first_line * 64U;
                 for (size_t line = 0U; line < 4U; ++line) {
-                    char display[65];
+                    char display[66];
                     const size_t offset = view_start + line * 64U;
                     size_t amount = 0U;
                     while (amount < 64U &&
                            offset + amount < files_edit_content_length) {
-                        display[amount] = files_edit_content[offset + amount];
+                        const char ch = files_edit_content[offset + amount];
+                        display[amount] = ch == '\n' ? ' ' : ch;
                         ++amount;
                     }
-                    display[amount] = '\0';
+                    size_t display_length = amount;
+                    const bool caret_here = files_edit_cursor >= offset &&
+                        files_edit_cursor <= offset + amount &&
+                        (files_edit_cursor < offset + amount ||
+                         files_edit_cursor == files_edit_content_length);
+                    if (caret_here) {
+                        const size_t caret = files_edit_cursor - offset;
+                        for (size_t i = display_length; i > caret; --i)
+                            display[i] = display[i - 1U];
+                        display[caret] = '|';
+                        ++display_length;
+                    }
+                    display[display_length] = '\0';
                     graphics_draw_text(text_x, text_y + 124U + line * 28U,
                                        display, 1, 239, 249, 255);
                 }
@@ -480,7 +494,9 @@ static void draw_shell(void) {
                            "STORAGE DEVICE DISCOVERY IS ACTIVE",
                            1, 108, 216, 229);
         graphics_draw_text(text_x, text_y + 78U,
-                           "DISKS ARE CURRENTLY READ ONLY",
+                           vfs_nxfs_writable()
+                               ? "NEXUS DATA VOLUME IS PERSISTENT AND WRITABLE"
+                               : "READ-ONLY VOLUME - RAM SAVES ARE VOLATILE",
                            1, 233, 243, 252);
         if (!files_scanned) {
             graphics_draw_text(text_x, text_y + 108U,
@@ -820,6 +836,7 @@ static void files_editor_begin_new(void) {
     files_edit_content[0] = '\0';
     files_edit_name_length = 0U;
     files_edit_content_length = 0U;
+    files_edit_cursor = 0U;
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_NAME;
 }
@@ -854,6 +871,7 @@ static void files_editor_begin_selected(void) {
            files_edit_name[files_edit_name_length] != '\0')
         ++files_edit_name_length;
     files_edit_content_length = bytes_read;
+    files_edit_cursor = files_edit_content_length;
     files_edit_content[files_edit_content_length] = '\0';
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
@@ -946,19 +964,52 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
             serial_write(files_edit_name);
             serial_write("\r\n");
         }
+    } else if (event->scancode == 0x4BU) {
+        if (files_edit_cursor > 0U) --files_edit_cursor;
+    } else if (event->scancode == 0x4DU) {
+        if (files_edit_cursor < files_edit_content_length)
+            ++files_edit_cursor;
+    } else if (event->scancode == 0x47U) {
+        while (files_edit_cursor > 0U &&
+               files_edit_content[files_edit_cursor - 1U] != '\n')
+            --files_edit_cursor;
+    } else if (event->scancode == 0x4FU) {
+        while (files_edit_cursor < files_edit_content_length &&
+               files_edit_content[files_edit_cursor] != '\n')
+            ++files_edit_cursor;
     } else if (event->scancode == 0x0EU) {
-        if (files_edit_content_length != 0U)
-            files_edit_content[--files_edit_content_length] = '\0';
+        if (files_edit_cursor > 0U) {
+            for (size_t i = files_edit_cursor - 1U;
+                 i < files_edit_content_length; ++i)
+                files_edit_content[i] = files_edit_content[i + 1U];
+            --files_edit_content_length;
+            --files_edit_cursor;
+        }
+    } else if (event->scancode == 0x53U) {
+        if (files_edit_cursor < files_edit_content_length) {
+            for (size_t i = files_edit_cursor;
+                 i < files_edit_content_length; ++i)
+                files_edit_content[i] = files_edit_content[i + 1U];
+            --files_edit_content_length;
+        }
     } else if (event->scancode == 0x1CU) {
-        if (files_edit_content_length + 1U < sizeof(files_edit_content)) {
-            files_edit_content[files_edit_content_length++] = '\n';
+        if (files_edit_content_length < NEXUS_FILES_EDITOR_MAX_BYTES) {
+            for (size_t i = files_edit_content_length;
+                 i > files_edit_cursor; --i)
+                files_edit_content[i] = files_edit_content[i - 1U];
+            files_edit_content[files_edit_cursor++] = '\n';
+            ++files_edit_content_length;
             files_edit_content[files_edit_content_length] = '\0';
         }
     } else {
         const char ch = terminal_scancode_char(event->scancode);
         if (ch >= 0x20 && ch <= 0x7E &&
-            files_edit_content_length + 1U < sizeof(files_edit_content)) {
-            files_edit_content[files_edit_content_length++] = ch;
+            files_edit_content_length < NEXUS_FILES_EDITOR_MAX_BYTES) {
+            for (size_t i = files_edit_content_length;
+                 i > files_edit_cursor; --i)
+                files_edit_content[i] = files_edit_content[i - 1U];
+            files_edit_content[files_edit_cursor++] = ch;
+            ++files_edit_content_length;
             files_edit_content[files_edit_content_length] = '\0';
         }
     }

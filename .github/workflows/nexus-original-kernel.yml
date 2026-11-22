@@ -417,7 +417,9 @@ jobs:
           while time.time() < deadline:
               if os.path.exists(log_path):
                   log = open(log_path, encoding="utf-8", errors="replace").read()
-                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS DESKTOP FRAMEBUFFER READY" in log:
+                  if ("NEXUS K0 BOOT COMPLETE" in log and
+                      "NEXUS DESKTOP FRAMEBUFFER READY" in log and
+                      "NEXUS NVME BLOCK DEVICE READY" in log):
                       break
               time.sleep(1)
           else:
@@ -463,6 +465,7 @@ jobs:
                   break
               time.sleep(0.2)
           if stable_id is None:
+              print(log)
               raise SystemExit("Installer did not expose the selected disk's stable ID")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
           key("ret")

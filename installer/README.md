@@ -237,9 +237,10 @@ The runtime call is deliberately compile-time locked in the normal kernel
 build. `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES` is not defined by the
 release Makefile. A host-side runtime test and a dedicated GitHub Actions build
 gate have been added, but their results must be checked before the lock is
-removed. The runtime does not yet format the separate data partition, and the
-system payload is still only the kernel ELF, SYSTEM.MAN, and README.TXT—not a
-complete general-purpose userland or root filesystem.
+removed. The runtime formats the separate NXFS data partition as well, and the desktop
+file-browser scan can mount the final data volume for persistent user files.
+The system payload is still only the kernel ELF, SYSTEM.MAN, and README.TXT—not
+a complete general-purpose userland or root filesystem.
 
 The installer is not release-ready. Do not enable the compile-time write gate
 until the new host transaction tests, the full freestanding kernel build, and

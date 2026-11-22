@@ -103,6 +103,26 @@ void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
     }
 }
 
+bool graphics_read_pixel(uint64_t x, uint64_t y, uint32_t *pixel) {
+    if (!initialized || pixel == NULL || x >= active_surface.width ||
+        y >= active_surface.height) return false;
+    const volatile uint32_t *address = (const volatile uint32_t *)(uintptr_t)
+        ((const volatile uint8_t *)active_surface.address +
+         y * active_surface.pitch + x * 4U);
+    *pixel = *address;
+    return true;
+}
+
+bool graphics_write_pixel(uint64_t x, uint64_t y, uint32_t pixel) {
+    if (!initialized || x >= active_surface.width ||
+        y >= active_surface.height) return false;
+    volatile uint32_t *address = (volatile uint32_t *)(uintptr_t)
+        ((volatile uint8_t *)active_surface.address +
+         y * active_surface.pitch + x * 4U);
+    *address = pixel;
+    return true;
+}
+
 void graphics_clear(uint8_t red, uint8_t green, uint8_t blue) {
     graphics_fill_rect(0, 0, graphics_width(), graphics_height(),
                        red, green, blue);

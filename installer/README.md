@@ -225,10 +225,25 @@ No gate may be marked complete from compilation alone. Each exit requires captur
   graphical confirmation/progress/recovery flow, and physical hardware install
   validation are still outstanding.
 
-The installer can deploy a minimal NXFS system volume containing the kernel ELF,
-SYSTEM.MAN, and README.TXT. This is an initial payload, not a complete userland
-or general-purpose root filesystem.
+The installer now has a kernel-side transaction orchestrator in
+`kernel/src/installer_runtime.c`. It sequences GPT creation and verification,
+EFI FAT32 formatting, NXFS system formatting, kernel/manifest deployment,
+UEFI boot-file deployment, optional BIOS boot-stage installation, and durable
+journal phase updates. Legacy-BIOS installs use the dual partition layout so
+Limine's configuration remains available on FAT32. The graphical wizard now
+collects the exact selected disk ID and a separate typed `ERASE` confirmation.
 
-The installer is not release-ready. The desktop remains non-destructive and
-disk-writing is not exposed in the distributable ISO. Do not treat the tested
-storage adapters or journal primitive as a completed end-to-end installer.
+The runtime call is deliberately compile-time locked in the normal kernel
+build. `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES` is not defined by the
+release Makefile. A host-side runtime test and a dedicated GitHub Actions build
+gate have been added, but their results must be checked before the lock is
+removed. The runtime does not yet format the separate data partition, and the
+system payload is still only the kernel ELF, SYSTEM.MAN, and README.TXT—not a
+complete general-purpose userland or root filesystem.
+
+The installer is not release-ready. Do not enable the compile-time write gate
+until the new host transaction tests, the full freestanding kernel build, and
+the QEMU install/reboot/recovery matrix all pass. Physical NVMe installation
+and recovery still require validation; AHCI/SATA and USB mass-storage writes
+are not implemented. Do not treat the tested individual storage adapters or
+journal primitive as proof of a finished end-to-end installer.

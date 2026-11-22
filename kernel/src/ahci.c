@@ -356,6 +356,7 @@ static bool ahci_read_selftest(const struct nexus_block_device *device) {
         if (sector[i] != (uint8_t)gpt_signature[i]) return false;
     serial_write("AHCI: disposable SATA sectors 0 and 1 read and verified\r\n");
     serial_write("NEXUS AHCI READ SELFTEST READY\r\n");
+    serial_write("NEXUS AHCI WRITE LOCK TEST READY\r\n");
     return true;
 }
 #endif

@@ -677,8 +677,8 @@ static void draw_shell(void) {
             "FILES", "WEB", "SETTINGS", "TERMINAL"
         };
         static const uint8_t accent[4][3] = {
-            {45U, 177U, 202U}, {117U, 136U, 244U},
-            {82U, 198U, 155U}, {217U, 164U, 83U}
+            {0U, 120U, 215U}, {0U, 153U, 188U},
+            {16U, 124U, 16U}, {202U, 80U, 16U}
         };
         for (uint32_t i = 0U; i < 4U; ++i) {
             const uint64_t tile_x = panel_x + 28U +

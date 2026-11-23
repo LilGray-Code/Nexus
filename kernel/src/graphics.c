@@ -248,6 +248,82 @@ static const struct glyph *find_glyph(char character) {
     return &font[sizeof(font) / sizeof(font[0]) - 1U];
 }
 
+
+static bool glyph_sample(const struct glyph *glyph, int32_t x, int32_t y) {
+    if (x < 0 || x >= 5 || y < 0 || y >= 7) return false;
+    return (glyph->rows[(uint32_t)y] &
+            (1U << (4U - (uint32_t)x))) != 0U;
+}
+
+static uint8_t unpack_channel(uint32_t pixel, uint8_t size, uint8_t shift) {
+    const uint32_t maximum = (1U << size) - 1U;
+    const uint32_t value = (pixel >> shift) & maximum;
+    return (uint8_t)(value * 255U / maximum);
+}
+
+static uint8_t blend_channel(uint8_t foreground, uint8_t background,
+                             uint32_t coverage) {
+    return (uint8_t)(((uint32_t)foreground * coverage +
+        (uint32_t)background * (255U - coverage) + 127U) / 255U);
+}
+
+/* Bilinear coverage rendering for large UI text. It keeps the compact
+ * built-in font but smooths its edges at display scale instead of enlarging
+ * each source bit into a visibly square block. */
+void graphics_draw_text_smooth(uint64_t x, uint64_t y, const char *text,
+                               uint32_t scale, uint8_t red, uint8_t green,
+                               uint8_t blue) {
+    if (!initialized || text == NULL || scale < 2U || scale > 4U) return;
+    const uint32_t step = scale;
+    const uint32_t foreground = pack_rgb(red, green, blue);
+    const uint8_t fr = red, fg = green, fb = blue;
+    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+
+    for (size_t index = 0U; text[index] != '\\0'; ++index) {
+        const struct glyph *glyph = find_glyph(text[index]);
+        const uint64_t origin_x = x + (uint64_t)index * 6U * step;
+        for (uint32_t py = 0U; py < 7U * step; ++py) {
+            const uint64_t screen_y = y + py;
+            if (screen_y >= active_surface.height) continue;
+            const int32_t source_y = (int32_t)(py / step);
+            const uint32_t sub_y = py % step;
+            const uint32_t wy1 = (sub_y * 255U + step / 2U) / step;
+            const uint32_t wy0 = 255U - wy1;
+            for (uint32_t px = 0U; px < 5U * step; ++px) {
+                const uint64_t screen_x = origin_x + px;
+                if (screen_x >= active_surface.width) continue;
+                const int32_t source_x = (int32_t)(px / step);
+                const uint32_t sub_x = px % step;
+                const uint32_t wx1 = (sub_x * 255U + step / 2U) / step;
+                const uint32_t wx0 = 255U - wx1;
+                const uint32_t c00 = glyph_sample(glyph, source_x, source_y) ? 255U : 0U;
+                const uint32_t c10 = glyph_sample(glyph, source_x + 1, source_y) ? 255U : 0U;
+                const uint32_t c01 = glyph_sample(glyph, source_x, source_y + 1) ? 255U : 0U;
+                const uint32_t c11 = glyph_sample(glyph, source_x + 1, source_y + 1) ? 255U : 0U;
+                const uint32_t top = (c00 * wx0 + c10 * wx1) / 255U;
+                const uint32_t bottom = (c01 * wx0 + c11 * wx1) / 255U;
+                const uint32_t coverage = (top * wy0 + bottom * wy1) / 255U;
+                if (coverage == 0U) continue;
+                volatile uint32_t *address = (volatile uint32_t *)(uintptr_t)
+                    (base + screen_y * active_surface.pitch + screen_x * 4U);
+                const uint32_t background = *address;
+                const uint8_t br = unpack_channel(background,
+                    active_surface.red_mask_size, active_surface.red_mask_shift);
+                const uint8_t bg = unpack_channel(background,
+                    active_surface.green_mask_size, active_surface.green_mask_shift);
+                const uint8_t bb = unpack_channel(background,
+                    active_surface.blue_mask_size, active_surface.blue_mask_shift);
+                *address = pack_rgb(
+                    blend_channel(fr, br, coverage),
+                    blend_channel(fg, bg, coverage),
+                    blend_channel(fb, bb, coverage));
+            }
+        }
+        (void)foreground;
+    }
+}
+
+
 void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
                         uint32_t scale, uint8_t red, uint8_t green,
                         uint8_t blue) {

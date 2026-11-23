@@ -3726,6 +3726,7 @@ static void browser_append_page_char(char value) {
 
 static void browser_render_body(const uint8_t *data, size_t length) {
     browser_clear_page();
+    browser_has_page = true;
     if (data == NULL) return;
 
     size_t body = 0U;
@@ -3946,8 +3947,6 @@ static void browser_navigate(void) {
         browser_set_status("Invalid HTTP body offset");
         return;
     }
-    browser_has_page = true;
-    browser_has_page = true;
     browser_render_body(response + parsed.body_offset,
                         response_length - parsed.body_offset);
     if (parsed.status_code >= 200U && parsed.status_code < 300U) {

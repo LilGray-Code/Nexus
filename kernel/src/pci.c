@@ -16,6 +16,7 @@ static uint32_t discovered_device_count;
 static uint32_t storage_device_count;
 static uint32_t display_device_count;
 static uint32_t network_device_count;
+static uint32_t wireless_device_count;
 
 static inline void outl(uint16_t port, uint32_t value) {
     __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port));
@@ -65,7 +66,8 @@ static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
     ++discovered_device_count;
     if (class_code == 0x01) ++storage_device_count;
     if (class_code == 0x03) ++display_device_count;
-    if (class_code == 0x02) ++network_device_count;
+    if (class_code == 0x02U) ++network_device_count;
+    if (class_code == 0x0DU) ++wireless_device_count;
 
     if (stored_device_count < NEXUS_PCI_MAX_STORED_DEVICES) {
         struct nexus_pci_device *saved =
@@ -134,6 +136,7 @@ bool pci_init(void) {
     storage_device_count = 0;
     display_device_count = 0;
     network_device_count = 0;
+    wireless_device_count = 0;
 
     serial_write("PCI: read-only configuration mechanism #1 scan started\r\n");
 
@@ -212,6 +215,10 @@ uint32_t pci_device_count(void) {
 
 uint32_t pci_discovered_device_count(void) {
     return discovered_device_count;
+}
+
+uint32_t pci_wireless_device_count(void) {
+    return wireless_device_count;
 }
 
 const struct nexus_pci_device *pci_device_at(uint32_t index) {

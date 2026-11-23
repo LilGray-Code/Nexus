@@ -655,6 +655,36 @@ bool vfs_ramfs_selftest(void) {
         return false;
     }
 
+    /* Move must preserve bytes, remove the old name, and reject self-moves. */
+    static const char move_source[] = "NXMOVE-SOURCE.TST";
+    static const char move_destination[] = "NXMOVE-DEST.TST";
+    static const char move_payload[] = "verified move payload";
+    if (!vfs_write_file(move_source, move_payload,
+                        sizeof(move_payload) - 1U) ||
+        vfs_move_file(move_source, move_source) ||
+        !vfs_move_file(move_source, move_destination) ||
+        vfs_open_readonly(move_source, &file) ||
+        !vfs_open_readonly(move_destination, &file)) {
+        (void)vfs_remove_file(move_source);
+        (void)vfs_remove_file(move_destination);
+        return false;
+    }
+    bytes_read = 0U;
+    const bool move_read_ok = vfs_read(&file, buffer, sizeof(buffer),
+                                       &bytes_read);
+    vfs_close(&file);
+    if (!move_read_ok || bytes_read != sizeof(move_payload) - 1U) {
+        (void)vfs_remove_file(move_destination);
+        return false;
+    }
+    for (size_t i = 0U; i < bytes_read; ++i) {
+        if (buffer[i] != (uint8_t)move_payload[i]) {
+            (void)vfs_remove_file(move_destination);
+            return false;
+        }
+    }
+    if (!vfs_remove_file(move_destination)) return false;
+
     /* Exercise names longer than the legacy 8.3 limit on both NXFS and RAMFS. */
     if (!vfs_write_file(long_name, long_payload, sizeof(long_payload) - 1U) ||
         !vfs_open_readonly("nexus-long-file-name-roundtrip", &file)) {

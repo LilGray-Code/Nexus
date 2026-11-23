@@ -1979,8 +1979,16 @@ static void desktop_draw_window_surface(enum desktop_view view,
             graphics_draw_text(text_x, text_y, "NEXUS INSTALLER - DRIVE SELECTION",
                                2, 239, 249, 255);
             graphics_draw_text(text_x, text_y + 28U,
-                               "READ-ONLY DISCOVERY - SELECT A TARGET",
-                               1, 108, 216, 229);
+                               "WELCOME TO NEXUS  /  CHOOSE WHERE TO INSTALL",
+                               1, 157, 137, 255);
+            graphics_fill_round_rect(text_x - 12U, text_y + 44U,
+                                      548U, 120U, 12U,
+                                      23U, 30U, 52U);
+            graphics_draw_round_rect(text_x - 12U, text_y + 44U,
+                                     548U, 120U, 12U,
+                                     91U, 77U, 145U);
+            graphics_fill_rect(text_x - 12U, text_y + 44U,
+                               548U, 3U, 153U, 104U, 255U);
             const size_t device_count = blockdev_count();
             if (device_count == 0U) {
                 graphics_draw_text(text_x, text_y + 88U,

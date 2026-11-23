@@ -412,6 +412,7 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
 }
 
 static bool settings_persisted;
+static void desktop_open_app(size_t app_index);
 
 /* Settings are stored as a tiny versioned record on the writable NXFS Data
  * volume. A checksum and strict range checks keep corrupt or old records
@@ -741,8 +742,9 @@ static void desktop_update_window_drag(void) {
     } else if (desktop_window_drag_mode == DESKTOP_WINDOW_DRAG_RESIZE) {
         int64_t width = pointer_x - info.x;
         int64_t height = pointer_y - (int64_t)top - info.y;
-        uint64_t work_height = 0U;
-        desktop_window_work_area(NULL, NULL, (uint32_t *)&work_height);
+        uint32_t work_height_value = 0U;
+        desktop_window_work_area(NULL, NULL, &work_height_value);
+        const uint64_t work_height = work_height_value;
         const uint64_t min_width = screen_width < 560U ? screen_width : 560U;
         const uint64_t min_height = work_height < 440U ? work_height : 440U;
         if (width < (int64_t)min_width) width = (int64_t)min_width;

@@ -17,6 +17,7 @@
 #include "partition_plan.h"
 #include "installer_runtime.h"
 #include "browser_url.h"
+#include "browser_html.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -2093,7 +2094,7 @@ static void browser_render_body(const uint8_t *data, size_t length) {
     if (data == NULL) return;
 
     size_t body = 0U;
-    for (size_t i = 0; i + 3U < length; ++i) {
+    for (size_t i = 0U; i + 3U < length; ++i) {
         if (data[i] == '\r' && data[i + 1U] == '\n' &&
             data[i + 2U] == '\r' && data[i + 3U] == '\n') {
             body = i + 4U;
@@ -2101,36 +2102,14 @@ static void browser_render_body(const uint8_t *data, size_t length) {
         }
     }
 
-    bool in_tag = false;
-    bool in_entity = false;
-    for (size_t i = body; i < length; ++i) {
-        const char ch = (char)data[i];
-        if (in_tag) {
-            if (ch == '>') {
-                in_tag = false;
-                browser_append_page_char(' ');
-            }
-            continue;
-        }
-        if (in_entity) {
-            if (ch == ';') {
-                in_entity = false;
-                browser_append_page_char(' ');
-            }
-            continue;
-        }
-        if (ch == '<') {
-            in_tag = true;
-            continue;
-        }
-        if (ch == '&') {
-            in_entity = true;
-            continue;
-        }
-        browser_append_page_char(ch);
+    char text[NEXUS_BROWSER_LINE_COUNT * NEXUS_BROWSER_LINE_WIDTH];
+    (void)nexus_browser_html_to_text(data + body, length - body,
+                                     text, sizeof(text));
+    for (size_t i = 0U; text[i] != '\0'; ++i) {
+        browser_append_page_char(text[i]);
         if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT &&
-            i + 1U < length) {
-            char *last = browser_lines[NEXUS_BROWSER_LINE_COUNT - 1U];
+            i + 1U < sizeof(text) && text[i + 1U] != '\0') {
+            const char *last = browser_lines[NEXUS_BROWSER_LINE_COUNT - 1U];
             if (last[NEXUS_BROWSER_LINE_WIDTH - 2U] != '\0') break;
         }
     }

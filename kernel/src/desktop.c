@@ -1247,7 +1247,7 @@ static void draw_shell(void) {
                     files_delete_name, 1U, 239U, 249U, 255U);
             }
             static const char *const actions[4] = {
-                "NEW FILE", "OPEN / EDIT", "DELETE", "REFRESH"
+                "NEW FILE", "OPEN / EDIT", "DELETE", "UP / REFRESH"
             };
             static const uint8_t action_colors[4][3] = {
                 {37U, 139U, 165U}, {60U, 116U, 170U},
@@ -3389,8 +3389,17 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 } else if (action == 2U) {
                     files_request_delete_selected();
                 } else if (action == 3U) {
-                    refresh_files_listing();
-                    serial_write("FILES: listing refreshed by mouse\r\n");
+                    if (vfs_directory_depth() != 0U) {
+                        if (vfs_parent_directory()) {
+                            files_preview[0] = '\0';
+                            files_first_name[0] = '\0';
+                            refresh_files_listing();
+                            serial_write("FILES: parent directory opened by mouse\r\n");
+                        }
+                    } else {
+                        refresh_files_listing();
+                        serial_write("FILES: listing refreshed by mouse\r\n");
+                    }
                 }
                 draw_shell();
                 draw_pointer();

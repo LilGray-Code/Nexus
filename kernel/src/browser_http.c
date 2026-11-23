@@ -30,9 +30,97 @@ static bool copy_header_value(char *destination, size_t capacity,
     if (length >= capacity) return false;
     for (size_t i = 0U; i < length; ++i) {
         if (source[i] < 0x20U && source[i] != '\t') return false;
+        if (source[i] > 0x7EU) return false;
         destination[i] = (char)source[i];
     }
     destination[length] = '\0';
+    return true;
+}
+
+static bool parse_content_length(const uint8_t *source, size_t length,
+                                 struct nexus_browser_http_response *parsed) {
+    while (length > 0U && (*source == ' ' || *source == '\t')) {
+        ++source;
+        --length;
+    }
+    while (length > 0U &&
+           (source[length - 1U] == ' ' || source[length - 1U] == '\t')) {
+        --length;
+    }
+    if (length == 0U) return false;
+
+    uint32_t value = 0U;
+    for (size_t i = 0U; i < length; ++i) {
+        if (source[i] < '0' || source[i] > '9') return false;
+        const uint32_t digit = (uint32_t)(source[i] - '0');
+        if (value > (UINT32_MAX - digit) / 10U) return false;
+        value = value * 10U + digit;
+    }
+    if (parsed->has_content_length && parsed->content_length != value)
+        return false;
+    parsed->content_length = value;
+    parsed->has_content_length = true;
+    return true;
+}
+
+/* Extract the simple filename= parameter. RFC 5987 filename* is intentionally
+ * left to the caller's fallback name because Nexus stores ASCII names only. */
+static bool parse_content_disposition(const uint8_t *source, size_t length,
+                                      char *filename, size_t capacity) {
+    size_t cursor = 0U;
+    while (cursor < length) {
+        while (cursor < length &&
+               (source[cursor] == ';' || source[cursor] == ' ' ||
+                source[cursor] == '\t')) ++cursor;
+        const size_t key_start = cursor;
+        while (cursor < length && source[cursor] != '=' &&
+               source[cursor] != ';') ++cursor;
+        size_t key_end = cursor;
+        while (key_end > key_start &&
+               (source[key_end - 1U] == ' ' ||
+                source[key_end - 1U] == '\t')) --key_end;
+        if (cursor >= length || source[cursor] != '=') {
+            if (cursor < length) ++cursor;
+            continue;
+        }
+        ++cursor;
+        while (cursor < length &&
+               (source[cursor] == ' ' || source[cursor] == '\t')) ++cursor;
+
+        const bool quoted = cursor < length && source[cursor] == '"';
+        if (quoted) ++cursor;
+        const size_t value_start = cursor;
+        while (cursor < length) {
+            if (quoted) {
+                if (source[cursor] == '"') break;
+                if (source[cursor] == '\\' && cursor + 1U < length)
+                    cursor += 2U;
+                else
+                    ++cursor;
+            } else if (source[cursor] == ';') {
+                break;
+            } else {
+                ++cursor;
+            }
+        }
+        const size_t value_end = cursor;
+        if (quoted && cursor < length && source[cursor] == '"') ++cursor;
+        while (cursor < length && source[cursor] != ';') ++cursor;
+
+        if (equal_ascii_ci(source + key_start, key_end - key_start,
+                           "filename")) {
+            size_t used = 0U;
+            for (size_t i = value_start; i < value_end; ++i) {
+                uint8_t c = source[i];
+                if (c == '\\' && quoted && i + 1U < value_end) c = source[++i];
+                if (c < 0x20U || c > 0x7EU) return false;
+                if (used + 1U >= capacity) return false;
+                filename[used++] = (char)c;
+            }
+            filename[used] = '\0';
+            return true;
+        }
+    }
     return true;
 }
 
@@ -98,6 +186,26 @@ bool nexus_browser_http_parse(const uint8_t *response, size_t response_length,
             if (!copy_header_value(parsed->content_type,
                                    sizeof(parsed->content_type),
                                    value, value_length)) return false;
+        } else if (equal_ascii_ci(response + cursor, colon - cursor,
+                                  "content-length")) {
+            if (!parse_content_length(value, value_length, parsed))
+                return false;
+        } else if (equal_ascii_ci(response + cursor, colon - cursor,
+                                  "transfer-encoding")) {
+            uint8_t encoding[32];
+            if (!copy_header_value((char *)encoding, sizeof(encoding),
+                                   value, value_length)) return false;
+            parsed->chunked_transfer =
+                equal_ascii_ci(encoding, (size_t)0, "") ? false :
+                equal_ascii_ci(encoding,
+                               value_length > 0U ? value_length : 0U,
+                               "chunked");
+        } else if (equal_ascii_ci(response + cursor, colon - cursor,
+                                  "content-disposition")) {
+            if (!parse_content_disposition(value, value_length,
+                                           parsed->filename,
+                                           sizeof(parsed->filename)))
+                return false;
         }
         cursor = end + 2U;
     }

@@ -4049,9 +4049,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else if (event->scancode == 0x0EU) {
             size_t length=0U;
             while(length<sizeof(launcher_search)-1U &&
-                  launcher_search[length]!='\\0') ++length;
+                  launcher_search[length]!='\0') ++length;
             if(length!=0U) {
-                launcher_search[length-1U]='\\0';
+                launcher_search[length-1U]='\0';
                 launcher_selected_index=0U;
                 desktop_launcher_refresh();
             }
@@ -4061,11 +4061,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const char ch=terminal_scancode_char(event->scancode);
             size_t length=0U;
             while(length<sizeof(launcher_search)-1U &&
-                  launcher_search[length]!='\\0') ++length;
+                  launcher_search[length]!='\0') ++length;
             if(ch>=0x20 && ch<=0x7E &&
                length<sizeof(launcher_search)-1U) {
                 launcher_search[length]=ch;
-                launcher_search[length+1U]='\\0';
+                launcher_search[length+1U]='\0';
                 launcher_selected_index=0U;
                 desktop_launcher_refresh();
                 changed=true;

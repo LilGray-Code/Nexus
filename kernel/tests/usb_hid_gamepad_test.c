@@ -53,6 +53,25 @@ static void test_signed_axes_and_report_id(void) {
                                             sizeof(wrong_id), &state));
 }
 
+static void test_rejects_invalid_gamepad_logical_ranges(void) {
+    const uint8_t invalid_axis_range[] = {
+        0x05,0x01, 0x09,0x05, 0xA1,0x01,
+        0x15,0x0A, 0x25,0x01, 0x75,0x08, 0x95,0x01,
+        0x09,0x30, 0x81,0x02, 0xC0
+    };
+    struct nexus_hid_gamepad_layout layout = {0};
+    assert(!nexus_hid_gamepad_parse_descriptor(
+        invalid_axis_range, sizeof(invalid_axis_range), &layout));
+
+    const uint8_t invalid_hat_range[] = {
+        0x05,0x01, 0x09,0x05, 0xA1,0x01,
+        0x15,0x07, 0x25,0x01, 0x75,0x04, 0x95,0x01,
+        0x09,0x39, 0x81,0x02, 0xC0
+    };
+    assert(!nexus_hid_gamepad_parse_descriptor(
+        invalid_hat_range, sizeof(invalid_hat_range), &layout));
+}
+
 static void test_rejects_truncated_and_oversized_descriptors(void) {
     struct nexus_hid_gamepad_layout layout = {0};
     const uint8_t truncated[] = {0x05U};
@@ -79,6 +98,7 @@ static void test_decode_rejects_bad_length_without_mutating_state(void) {
 int main(void) {
     test_standard_gamepad();
     test_signed_axes_and_report_id();
+    test_rejects_invalid_gamepad_logical_ranges();
     test_rejects_truncated_and_oversized_descriptors();
     test_decode_rejects_bad_length_without_mutating_state();
     puts("NEXUS USB HID GAMEPAD PARSER TESTS PASSED");

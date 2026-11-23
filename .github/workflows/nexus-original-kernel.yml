@@ -101,6 +101,11 @@ jobs:
             kernel/tests/browser_url_test.c \
             -o /tmp/nexus-browser-url-test
           /tmp/nexus-browser-url-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_html.c \
+            kernel/tests/browser_html_test.c \
+            -o /tmp/nexus-browser-html-test
+          /tmp/nexus-browser-html-test
 
       - name: Test generic network-device frame boundary
         run: |

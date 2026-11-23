@@ -290,23 +290,18 @@ bool vfs_write_file(const char *name, const void *data, size_t length) {
 bool vfs_copy_file(const char *source_name,
                     const char *destination_name) {
     if (source_name == NULL || destination_name == NULL ||
-        source_name[0] == '\0' || destination_name[0] == '\0')
-        return false;
+        source_name[0] == '\0' || destination_name[0] == '\0' ||
+        directory_depth != 0U) return false;
 
-    /* Never silently replace an existing Nexus-owned destination. A file
-     * copied out of a nested read-only folder may keep its original name. */
-    if (ramfs_find(destination_name) != NULL) return false;
-    if (nxfs_root_mounted) {
-        for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
-            const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
-            if (entry != NULL && name_equal(entry->name, destination_name))
-                return false;
-        }
+    /* Do not shadow any visible root entry, including read-only FAT32. */
+    for (size_t i = 0U; i < vfs_root_entry_count(); ++i) {
+        struct nexus_vfs_dirent existing;
+        if (vfs_root_entry(i, &existing) &&
+            name_equal(existing.name, destination_name)) return false;
     }
 
     struct nexus_vfs_file source;
     if (!vfs_open_readonly(source_name, &source)) return false;
-
     uint32_t size = 0U;
     if (!vfs_file_size(&source, &size) ||
         size > NEXUS_NXFS_MAX_FILE_BYTES) {
@@ -333,8 +328,6 @@ bool vfs_copy_file(const char *source_name,
         return false;
     }
 
-    /* Copying from a nested FAT32 folder writes only to the Nexus root
-     * volume. FAT32 remains read-only and never receives copy writes. */
     bool write_ok = false;
     if (nxfs_root_mounted && nxfs_is_writable()) {
         write_ok = nxfs_write_file(destination_name, vfs_copy_buffer, size);
@@ -354,18 +347,61 @@ bool vfs_move_file(const char *source_name,
                    const char *destination_name) {
     if (source_name == NULL || destination_name == NULL ||
         source_name[0] == '\0' || destination_name[0] == '\0' ||
-        name_equal(source_name, destination_name)) return false;
+        directory_depth != 0U || name_equal(source_name, destination_name))
+        return false;
 
     struct nexus_vfs_file source;
     if (!vfs_open_readonly(source_name, &source)) return false;
     const bool writable_source = source.ram_file || source.nxfs_file;
+    uint32_t source_size = 0U;
+    const bool source_size_ok = vfs_file_size(&source, &source_size);
     vfs_close(&source);
-    if (!writable_source) return false;
+    if (!writable_source || !source_size_ok) return false;
 
     if (!vfs_copy_file(source_name, destination_name)) return false;
+
+    /* Read both files back and compare before deleting the original. */
+    struct nexus_vfs_file verify_source, verify_destination;
+    bool verified = vfs_open_readonly(source_name, &verify_source);
+    if (verified) {
+        verified = vfs_open_readonly(destination_name, &verify_destination);
+        if (!verified) vfs_close(&verify_source);
+    }
+    if (verified) {
+        uint32_t destination_size = 0U;
+        verified = vfs_file_size(&verify_destination, &destination_size) &&
+                   destination_size == source_size;
+        uint8_t compare_buffer[NEXUS_VFS_READ_CHUNK];
+        uint32_t compared = 0U;
+        while (verified && compared < source_size) {
+            size_t amount = (size_t)(source_size - compared);
+            if (amount > sizeof(compare_buffer)) amount = sizeof(compare_buffer);
+            size_t source_read = 0U, destination_read = 0U;
+            if (!vfs_read(&verify_source, vfs_copy_buffer, amount,
+                          &source_read) ||
+                !vfs_read(&verify_destination, compare_buffer, amount,
+                          &destination_read) ||
+                source_read != amount || destination_read != amount) {
+                verified = false;
+                break;
+            }
+            for (size_t i = 0U; i < amount; ++i) {
+                if (vfs_copy_buffer[i] != compare_buffer[i]) {
+                    verified = false;
+                    break;
+                }
+            }
+            compared += (uint32_t)amount;
+        }
+        vfs_close(&verify_source);
+        vfs_close(&verify_destination);
+    }
+    if (!verified) {
+        (void)vfs_remove_file(destination_name);
+        return false;
+    }
     if (vfs_remove_file(source_name)) return true;
 
-    /* Preserve the source if deletion fails; best-effort rollback the copy. */
     (void)vfs_remove_file(destination_name);
     return false;
 }

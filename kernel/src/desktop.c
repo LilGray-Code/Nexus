@@ -3864,6 +3864,7 @@ static bool browser_input_looks_like_host(const char *value, size_t length) {
 
 static void browser_show_notice(const char *line_one, const char *line_two) {
     browser_clear_page();
+    browser_source_count = 0U;
     browser_has_page = true;
     if (line_one != NULL) {
         for (size_t i = 0U; line_one[i] != '\0'; ++i)

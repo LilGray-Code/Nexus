@@ -42,7 +42,7 @@ A conservative exact-ID lookup currently names these common families:
 | PCI | 14C3:7602 | MediaTek MT7602E |
 | PCI | 14C3:7603 | MediaTek MT7603E |
 | PCI | 14C3:7610 | MediaTek MT7610E |
-| PCI | 14C3:7611 | MediaTek MT7611E |
+| PCI | 14C3:7611 | MediaTek MT7615 / MT7663 family |
 | PCI | 14C3:7612 | MediaTek MT7612E |
 | PCI | 14C3:7662 | MediaTek MT7662E |
 | PCI | 14C3:0608 | MediaTek MT7921K / RZ608 |

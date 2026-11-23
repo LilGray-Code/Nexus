@@ -17,6 +17,23 @@ static void check(const char *html, const char *expected) {
     assert(strcmp(output, expected) == 0);
 }
 
+
+static void test_extract_absolute_source_links(void) {
+    static const char html[] =
+        "<a href='http://source.example/one'>One</a>"
+        "<a class=\"primary\" href=\"https://source.example/two\">Two</a>"
+        "<a href='/relative/path'>Relative</a>"
+        "<a href='javascript:alert(1)'>Script</a>"
+        "<a href='https://source.example/two'>Duplicate</a>";
+    char links[4][NEXUS_BROWSER_HTML_LINK_MAX] = {{0}};
+    const size_t count = nexus_browser_html_extract_links(
+        (const uint8_t *)html, sizeof(html) - 1U, links, 4U);
+    assert(count == 2U);
+    assert(strcmp(links[0], "http://source.example/one") == 0);
+    assert(strcmp(links[1], "https://source.example/two") == 0);
+    assert(nexus_browser_html_extract_links(NULL, 0U, links, 4U) == 0U);
+}
+
 int main(void) {
     check("<html><head><title>Title</title><style>hidden css</style></head>"
           "<body><h1>Hello&nbsp;world</h1><script>bad()</script>"

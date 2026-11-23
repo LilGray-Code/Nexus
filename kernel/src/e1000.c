@@ -25,6 +25,7 @@
 #define E1000_TX_WAIT_LIMIT 1000000U
 
 #define E1000_REG_CTRL   0x0000U
+#define E1000_REG_STATUS 0x0008U
 #define E1000_REG_ICR    0x00C0U
 #define E1000_REG_IMC    0x00D8U
 #define E1000_REG_RCTL   0x0100U
@@ -282,6 +283,14 @@ static bool e1000_netdev_receive(void *context, void *buffer, size_t capacity,
     return e1000_receive_frame(buffer, capacity, length);
 }
 
+static bool e1000_netdev_link_up(void *context) {
+    (void)context;
+    uint32_t status = 0U;
+    /* Intel 8254x STATUS.LU (bit 1) reports physical link establishment. */
+    return state.ready && register_read(E1000_REG_STATUS, &status) &&
+           (status & (1U << 1)) != 0U;
+}
+
 bool e1000_init(void) {
     state = (struct e1000_state){0};
     const struct nexus_pci_device *device = NULL;
@@ -362,7 +371,8 @@ bool e1000_init(void) {
     state.ready = true;
     static const struct nexus_netdev_ops netdev_ops = {
         .send_frame = e1000_netdev_send,
-        .receive_frame = e1000_netdev_receive
+        .receive_frame = e1000_netdev_receive,
+        .link_up = e1000_netdev_link_up
     };
     if (!netdev_register("e1000", state.mac, E1000_BUFFER_SIZE,
                          &netdev_ops, NULL)) {

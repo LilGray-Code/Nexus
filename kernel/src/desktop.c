@@ -1102,7 +1102,7 @@ static uint64_t desktop_workspace_overview_x(void) {
 
 static void desktop_draw_workspace_switcher(uint64_t top_bar) {
     if (screen_width < 500U) return;
-    graphics_draw_text(122U, top_bar / 2U - 4U, "DESKTOPS",
+    graphics_draw_text(122U, top_bar / 2U - 4U, "DESKS",
                        1U, 139U, 184U, 210U);
     const uint8_t active = nexus_wm_active_workspace();
     for (uint8_t workspace = 0U;
@@ -2650,8 +2650,7 @@ static void draw_shell(void) {
     desktop_draw_logo(18U, (top_bar - 22U) / 2U, 22U);
     graphics_draw_text(54U, top_bar / 2U - 4U,
                        "NEXUS OS", 1U, 245U, 249U, 255U);
-    graphics_draw_text(122U, top_bar / 2U - 4U,
-                       "WORKSPACE 01", 1U, 111U, 207U, 231U);
+    desktop_draw_workspace_switcher(top_bar);
     char top_uptime[21];
     format_u64(timer_ticks() / 100U, top_uptime);
     const uint64_t status_x = width > 270U ? width - 176U : 8U;
@@ -4862,6 +4861,71 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (key_released) return;
+
+    if (workspace_overview_open && active_view != DESKTOP_INSTALLER) {
+        if (key_code == 0x01U) {
+            workspace_overview_open = false;
+        } else if (key_code == 0x4BU || key_code == 0x48U) {
+            workspace_overview_selected =
+                (uint8_t)((workspace_overview_selected +
+                    NEXUS_WM_MAX_WORKSPACES - 1U) %
+                    NEXUS_WM_MAX_WORKSPACES);
+        } else if (key_code == 0x4DU || key_code == 0x50U) {
+            workspace_overview_selected =
+                (uint8_t)((workspace_overview_selected + 1U) %
+                          NEXUS_WM_MAX_WORKSPACES);
+        } else if (key_code >= 0x02U && key_code <= 0x05U) {
+            desktop_switch_workspace((uint8_t)(key_code - 0x02U));
+        } else if (key_code == 0x1CU) {
+            desktop_switch_workspace(workspace_overview_selected);
+        }
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+
+    /* Ctrl+Alt+Tab opens Task View, like the Windows workspace overview. */
+    if (keyboard_ctrl && keyboard_alt && key_code == 0x0FU &&
+        active_view != DESKTOP_INSTALLER && desktop_window_manager_ready) {
+        workspace_overview_open = true;
+        workspace_overview_selected = nexus_wm_active_workspace();
+        start_menu_open = false;
+        desktop_launcher_reset();
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (keyboard_ctrl && keyboard_alt && key_code == 0x49U &&
+        active_view != DESKTOP_INSTALLER && desktop_window_manager_ready) {
+        desktop_cycle_workspace(-1);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (keyboard_ctrl && keyboard_alt && key_code == 0x51U &&
+        active_view != DESKTOP_INSTALLER && desktop_window_manager_ready) {
+        desktop_cycle_workspace(1);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (keyboard_ctrl && (keyboard_left_shift || keyboard_right_shift) &&
+        !keyboard_alt && key_code == 0x49U &&
+        active_view != DESKTOP_INSTALLER && desktop_window_manager_ready) {
+        desktop_move_focused_workspace(-1);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (keyboard_ctrl && (keyboard_left_shift || keyboard_right_shift) &&
+        !keyboard_alt && key_code == 0x51U &&
+        active_view != DESKTOP_INSTALLER && desktop_window_manager_ready) {
+        desktop_move_focused_workspace(1);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+
     /* Global shortcuts run before app text entry, so modifiers never leak
      * shortcut letters into documents, search fields or terminal commands. */
     if (keyboard_ctrl && keyboard_alt &&
@@ -4983,6 +5047,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 struct nexus_window_info info;
                 if (nexus_wm_z_order(next_position, &next) &&
                     next != current && nexus_wm_get(next, &info) &&
+                    info.workspace == nexus_wm_active_workspace() &&
                     info.application_id >= (uint32_t)DESKTOP_FILES &&
                     info.application_id <= (uint32_t)DESKTOP_CALCULATOR) {
                     (void)nexus_wm_restore(next);

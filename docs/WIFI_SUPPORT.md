@@ -52,8 +52,12 @@ A conservative exact-ID lookup currently names these common families:
 | PCI | 14C3:7902 | MediaTek MT7902 |
 | PCI | 14C3:7925 | MediaTek MT7925 |
 | PCI | 10EC:B821 / C821 | Realtek RTL8821CE |
-| PCI | 10EC:C822 | Realtek RTL8822CE |
-| PCI | 10EC:B852 | Realtek RTL8852BE |
+| PCI | 10EC:B822 | Realtek RTL8822BE |
+| PCI | 10EC:C822 / C82F | Realtek RTL8822CE |
+| PCI | 10EC:B851 | Realtek RTL8851BE |
+| PCI | 10EC:B852 / B85B | Realtek RTL8852BE |
+| PCI | 10EC:C852 | Realtek RTL8852CE |
+| PCI | 10EC:D723 | Realtek RTL8723DE |
 | PCI | 168C:003C | Qualcomm Atheros QCA988x |
 | PCI | 168C:003E | Qualcomm Atheros QCA6174 |
 | PCI | 168C:0040 | Qualcomm Atheros QCA9980 / QCA9990 |

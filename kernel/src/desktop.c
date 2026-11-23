@@ -1562,8 +1562,16 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         installer_log_selected_target();
     }
     mouse_left_was_down = false;
+    files_last_click_valid = false;
+    keyboard_left_shift = false;
+    keyboard_right_shift = false;
+    keyboard_alt = false;
+    keyboard_caps_lock = false;
+    keyboard_caps_lock_down = false;
+    pointer_under_valid = false;
     start_menu_open = false;
     window_maximized = false;
+    window_animation_offset = 0U;
     settings_persisted = false;
     if (!installer_environment) desktop_load_settings();
     desktop_draw_startup_animation();

@@ -883,13 +883,13 @@ static void draw_shell(void) {
         if (tile_width > 130U) tile_width = 130U;
         static const char *const labels[7] = {
             "FILES", "BROWSER", "SETTINGS", "TERMINAL",
-            "MONITOR", "GAMES", "CALC"
+            "MONITOR", "CONTROL", "CALC"
         };
         static const uint8_t accent[7][3] = {
-            {0U, 120U, 215U}, {0U, 153U, 188U},
-            {16U, 124U, 16U}, {202U, 80U, 16U},
-            {104U, 33U, 122U}, {39U, 154U, 104U},
-            {67U, 126U, 193U}
+            {71U, 153U, 232U}, {45U, 185U, 202U},
+            {133U, 117U, 230U}, {224U, 151U, 93U},
+            {66U, 188U, 151U}, {151U, 117U, 224U},
+            {85U, 157U, 215U}
         };
         /* Seven compact first-party launch tiles share mouse hit geometry. */
         for (uint32_t i = 0U; i < 7U; ++i) {
@@ -1825,7 +1825,6 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     settings_persisted = false;
     if (!installer_environment) desktop_load_settings();
     calculator_clear();
-    snake_next_tick = timer_ticks() + 12U;
     desktop_draw_startup_animation();
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);

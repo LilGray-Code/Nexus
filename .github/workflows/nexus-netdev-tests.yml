@@ -1,0 +1,32 @@
+name: Nexus network-device tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/netdev.c"
+      - "kernel/src/netdev.h"
+      - "kernel/tests/netdev_test.c"
+      - ".github/workflows/nexus-netdev-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/netdev.c"
+      - "kernel/src/netdev.h"
+      - "kernel/tests/netdev_test.c"
+      - ".github/workflows/nexus-netdev-tests.yml"
+
+jobs:
+  netdev-host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile network-device tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/netdev.c kernel/tests/netdev_test.c \
+            -o /tmp/nexus-netdev-test
+      - name: Run network-device tests
+        run: /tmp/nexus-netdev-test

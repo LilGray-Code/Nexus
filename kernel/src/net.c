@@ -257,6 +257,14 @@ static void receive_ipv4(const uint8_t *ip, size_t length) {
         total_length < header_length || total_length > length ||
         checksum(ip, header_length) != 0U) return;
 
+    /*
+     * Fragment reassembly is not implemented yet. Never pass a partial
+     * datagram to UDP/TCP: reject the reserved flag, MF, and non-zero
+     * fragment offsets while allowing the Don't Fragment flag.
+     */
+    const uint16_t fragment_field = read_be16(ip + 6U);
+    if ((fragment_field & 0xBFFFU) != 0U) return;
+
     const uint8_t *transport = ip + header_length;
     const size_t transport_length = total_length - header_length;
     if (ip[9] == IP_PROTOCOL_UDP) {

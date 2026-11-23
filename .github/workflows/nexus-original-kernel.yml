@@ -106,6 +106,10 @@ jobs:
             kernel/tests/browser_html_test.c \
             -o /tmp/nexus-browser-html-test
           /tmp/nexus-browser-html-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/sha256.c kernel/tests/sha256_test.c \
+            -o /tmp/nexus-sha256-test
+          /tmp/nexus-sha256-test
 
       - name: Test generic network-device frame boundary
         run: |

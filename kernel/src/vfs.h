@@ -47,6 +47,7 @@ bool vfs_nxfs_mounted(void);
 bool vfs_nxfs_writable(void);
 bool vfs_save_ram_file_to_nxfs(const char *name);
 bool vfs_write_file(const char *name, const void *data, size_t length);
+bool vfs_copy_file(const char *source_name, const char *destination_name);
 bool vfs_root_mounted(void);
 bool vfs_enter_directory(const char *name);
 bool vfs_parent_directory(void);

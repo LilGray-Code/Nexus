@@ -130,7 +130,7 @@ enum nexus_installer_error nexus_installer_finish_apply(
     if (context == NULL || context->state != NEXUS_INSTALLER_APPLYING)
         return NEXUS_INSTALLER_ERROR_STATE;
     context->state = success ? NEXUS_INSTALLER_COMPLETE
-                             : NEXUS_INSTALLER_RECOVERY_REQUIRED;
+                             : NEXUS_INSTALLER_FAILED;
     return NEXUS_INSTALLER_ERROR_NONE;
 }
 

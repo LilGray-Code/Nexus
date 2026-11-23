@@ -126,6 +126,10 @@ the latest run attached to the current branch.
   dynamic userspace, graphics and system interfaces Chrome depends on.
 - The E1000/DHCP stack is exercised with emulated networking in QEMU; actual
   public-internet access on physical hardware has not yet been validated.
+- Game downloads and third-party launchers are not supported yet. Nexus has no
+  secure HTTPS/TLS transport, streaming download manager, or general-purpose
+  application runtime. Steam and Epic Games launchers cannot currently be
+  installed or run; see the [Nexus Gaming roadmap](docs/NEXUS_GAMING.md).
 - File management remains bounded: Nexus's writable NXFS namespace is
   root-level, FAT32 subdirectories are read-only, and writable folder
   creation plus volume-to-volume management remain incomplete. The Files

@@ -540,8 +540,11 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
     const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
     const uint64_t menu_height = 324U;
     const uint64_t menu_x = 8U;
-    uint64_t menu_y = screen_height - bottom_bar - menu_height + 2U;
+    const uint64_t menu_bottom =
+        screen_height > bottom_bar ? screen_height - bottom_bar : 0U;
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
+    uint64_t menu_y = menu_bottom > menu_height
+        ? menu_bottom - menu_height + 2U : top_limit;
     if (menu_y < top_limit) menu_y = top_limit;
 
     graphics_fill_round_rect(menu_x + 5U, menu_y + 7U,
@@ -798,24 +801,22 @@ static void draw_shell(void) {
                            1U, 111U, 207U, 231U);
 
         const uint64_t tile_y = text_y + 76U;
-        uint64_t tile_width = (panel_width - 90U) / 4U;
-        if (tile_width > 190U) tile_width = 190U;
-        static const char *const labels[5] = {
-            "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR"
+        uint64_t tile_width = (panel_width > 100U
+            ? panel_width - 100U : 24U) / 6U;
+        if (tile_width > 160U) tile_width = 160U;
+        static const char *const labels[6] = {
+            "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR", "GAMES"
         };
-        static const uint8_t accent[5][3] = {
+        static const uint8_t accent[6][3] = {
             {0U, 120U, 215U}, {0U, 153U, 188U},
             {16U, 124U, 16U}, {202U, 80U, 16U},
-            {104U, 33U, 122U}
+            {104U, 33U, 122U}, {39U, 154U, 104U}
         };
-        /* Keep the launcher geometry identical to the mouse hit targets:
-         * five equal-width app tiles fit the home panel at every supported
-         * framebuffer width, including the System Monitor shortcut. */
-        tile_width = (panel_width - 100U) / 5U;
-        if (tile_width > 190U) tile_width = 190U;
-        for (uint32_t i = 0U; i < 5U; ++i) {
+        /* Six compact first-party launch tiles share one layout with the
+         * mouse hit targets, including the native Snake arcade app. */
+        for (uint32_t i = 0U; i < 6U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
-                                    (uint64_t)i * (tile_width + 10U);
+                                    (uint64_t)i * (tile_width + 8U);
             graphics_fill_round_rect(tile_x, tile_y, tile_width, 74U,
                                       11U, 25U, 45U, 70U);
             graphics_draw_round_rect(tile_x, tile_y, tile_width, 74U,
@@ -3410,8 +3411,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
                 const uint64_t menu_height = 324U;
                 const uint64_t menu_x = 8U;
-                uint64_t menu_y = taskbar_top - menu_height + 2U;
                 const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
+                uint64_t menu_y = taskbar_top > menu_height
+                    ? taskbar_top - menu_height + 2U : top_limit;
                 if (menu_y < top_limit) menu_y = top_limit;
                 const uint64_t row_top = menu_y + 58U;
                 const uint64_t row_step = 37U;
@@ -3644,11 +3646,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t px = (screen_width - pw) / 2U;
             const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
             const uint64_t ty = py + 82U + 76U;
-            uint64_t tw = (pw - 100U) / 5U;
-            if (tw > 190U) tw = 190U;
+            uint64_t tw = (pw > 100U ? pw - 100U : 24U) / 6U;
+            if (tw > 160U) tw = 160U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (size_t app = 0U; app < 5U; ++app) {
-                    const uint64_t tx = px + 28U + (uint64_t)app * (tw + 10U);
+                for (size_t app = 0U; app < 6U; ++app) {
+                    const uint64_t tx = px + 28U + (uint64_t)app * (tw + 8U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {
                         desktop_open_app(app);

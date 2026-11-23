@@ -343,6 +343,24 @@ bool vfs_copy_file(const char *source_name,
  * the destination through the normal VFS path before deleting the source.
  * Read-only FAT32 entries can be copied out, but never moved or deleted.
  */
+static bool vfs_move_source_has_shadow(const char *name) {
+    if (name == NULL) return true;
+    /* Removing a writable overlay must not reveal a lower-layer same name. */
+    if (ramfs_find(name) != NULL && nxfs_root_mounted) {
+        for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+            const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+            if (entry != NULL && name_equal(entry->name, name)) return true;
+        }
+    }
+    if (root_mounted) {
+        for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
+            const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
+            if (entry != NULL && name_equal(entry->name, name)) return true;
+        }
+    }
+    return false;
+}
+
 bool vfs_move_file(const char *source_name,
                    const char *destination_name) {
     if (source_name == NULL || destination_name == NULL ||
@@ -356,7 +374,8 @@ bool vfs_move_file(const char *source_name,
     uint32_t source_size = 0U;
     const bool source_size_ok = vfs_file_size(&source, &source_size);
     vfs_close(&source);
-    if (!writable_source || !source_size_ok) return false;
+    if (!writable_source || !source_size_ok ||
+        vfs_move_source_has_shadow(source_name)) return false;
 
     if (!vfs_copy_file(source_name, destination_name)) return false;
 

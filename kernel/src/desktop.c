@@ -1568,27 +1568,45 @@ static void draw_shell(void) {
                 graphics_draw_text(text_x, text_y + 360U,
                     files_delete_name, 1U, 239U, 249U, 255U);
             }
-            static const char *const actions[4] = {
-                "NEW FILE", "OPEN / EDIT", "DELETE", "UP / REFRESH"
+            static const char *const wide_actions[6] = {
+                "NEW", "OPEN", "COPY", "RENAME", "DELETE", "UP / REFRESH"
             };
-            static const uint8_t action_colors[4][3] = {
+            static const char *const compact_actions[4] = {
+                "NEW", "OPEN", "DELETE", "UP"
+            };
+            static const uint8_t action_colors[6][3] = {
                 {37U, 139U, 165U}, {60U, 116U, 170U},
+                {81U, 135U, 170U}, {128U, 111U, 184U},
                 {153U, 69U, 78U}, {67U, 133U, 111U}
             };
-            for (size_t action = 0U; action < 4U; ++action) {
-                const uint64_t action_x = text_x + (uint64_t)action * 100U;
-                graphics_fill_rect(action_x, text_y + 270U, 92U, 25U,
-                                   29U, 47U, 69U);
-                graphics_draw_rect(action_x, text_y + 270U, 92U, 25U,
-                                   action_colors[action][0],
-                                   action_colors[action][1],
-                                   action_colors[action][2]);
-                graphics_fill_rect(action_x, text_y + 270U, 3U, 25U,
-                                   action_colors[action][0],
-                                   action_colors[action][1],
-                                   action_colors[action][2]);
+            const size_t action_count = panel_width >= 560U ? 6U : 4U;
+            const uint64_t action_gap = 6U;
+            const uint64_t action_width =
+                (panel_width - 64U - (action_count - 1U) * action_gap) /
+                action_count;
+            for (size_t action = 0U; action < action_count; ++action) {
+                const uint64_t action_x = text_x +
+                    (uint64_t)action * (action_width + action_gap);
+                const uint8_t color_index = action_count == 6U
+                    ? (uint8_t)action
+                    : (uint8_t)(action < 2U ? action : action + 2U);
+                const char *label = action_count == 6U
+                    ? wide_actions[action] : compact_actions[action];
+                graphics_fill_round_rect(action_x, text_y + 270U,
+                                         action_width, 25U, 6U,
+                                         25U, 44U, 65U);
+                graphics_draw_round_rect(action_x, text_y + 270U,
+                                         action_width, 25U, 6U,
+                                         action_colors[color_index][0],
+                                         action_colors[color_index][1],
+                                         action_colors[color_index][2]);
+                graphics_fill_round_rect(action_x + 1U, text_y + 276U,
+                                         3U, 13U, 1U,
+                                         action_colors[color_index][0],
+                                         action_colors[color_index][1],
+                                         action_colors[color_index][2]);
                 graphics_draw_text(action_x + 9U, text_y + 279U,
-                                   actions[action], 1U, 234U, 244U, 252U);
+                                   label, 1U, 238U, 246U, 252U);
             }
             char files_path_display[128];
             if (vfs_current_path(files_path_display,

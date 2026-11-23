@@ -14,6 +14,12 @@ int main(void) {
     assert(name != NULL && strcmp(name, "MediaTek MT7902") == 0);
     name = wifi_pci_chipset_name(0x10ECU, 0xC821U);
     assert(name != NULL && strcmp(name, "Realtek RTL8821CE") == 0);
+    name = wifi_pci_chipset_name(0x10ECU, 0xB822U);
+    assert(name != NULL && strcmp(name, "Realtek RTL8822BE") == 0);
+    name = wifi_pci_chipset_name(0x10ECU, 0xB851U);
+    assert(name != NULL && strcmp(name, "Realtek RTL8851BE") == 0);
+    name = wifi_pci_chipset_name(0x10ECU, 0xC852U);
+    assert(name != NULL && strcmp(name, "Realtek RTL8852CE") == 0);
     name = wifi_pci_chipset_name(0x168CU, 0x003EU);
     assert(name != NULL && strcmp(name, "Qualcomm Atheros QCA6174") == 0);
     name = wifi_pci_chipset_name(0x168CU, 0x0041U);

@@ -32,6 +32,30 @@ static bool html_append(char *out, size_t capacity, size_t *used,
     return true;
 }
 
+static bool html_append_break(char *out, size_t capacity, size_t *used) {
+    if (*used == 0U || out[*used - 1U] == '\n') return true;
+    if (*used + 1U >= capacity) return false;
+    out[(*used)++] = '\n';
+    return true;
+}
+
+static bool html_is_block_tag(const uint8_t *name, size_t length) {
+    static const char *const tags[] = {
+        "address", "article", "blockquote", "div", "dl", "dt", "dd",
+        "fieldset", "figcaption", "figure", "footer", "form", "h1",
+        "h2", "h3", "h4", "h5", "h6", "header", "hr", "main",
+        "nav", "ol", "p", "pre", "section", "table", "tbody",
+        "td", "tfoot", "th", "thead", "tr", "ul"
+    };
+    for (size_t i = 0U; i < sizeof(tags) / sizeof(tags[0]); ++i) {
+        size_t n = 0U;
+        while (tags[i][n] != '\0') ++n;
+        if (n == length && html_equal_ci(name, length, tags[i]))
+            return true;
+    }
+    return false;
+}
+
 static size_t html_decode_entity(const uint8_t *data, size_t length,
                                  uint8_t *decoded) {
     if (length == 0U) return 0U;
@@ -99,6 +123,9 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             size_t tag_start = i + 1U;
             while (tag_start < length && html_space(html[tag_start]))
                 ++tag_start;
+            const bool closing_tag =
+                tag_start < length && html[tag_start] == '/';
+            if (closing_tag) ++tag_start;
             size_t name_length = 0U;
             while (tag_start + name_length < length) {
                 uint8_t c = html[tag_start + name_length];
@@ -113,6 +140,20 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             const bool is_style = name_length == 5U &&
                 html_equal_ci(html + tag_start, name_length, "style");
             const bool hidden = is_script || is_style;
+            const bool block = html_is_block_tag(html + tag_start,
+                                                  name_length) ||
+                (name_length == 2U &&
+                 html_equal_ci(html + tag_start, name_length, "li")) ||
+                (name_length == 2U &&
+                 html_equal_ci(html + tag_start, name_length, "br"));
+            if (block && !html_append_break(output, capacity, &used))
+                break;
+            if (!closing_tag && name_length == 2U &&
+                html_equal_ci(html + tag_start, name_length, "li")) {
+                if (used + 2U >= capacity) break;
+                output[used++] = '-';
+                output[used++] = ' ';
+            }
             i = tag_start + name_length;
             while (i < length && html[i] != '>') ++i;
             if (i < length) ++i;
@@ -134,7 +175,9 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
                     if (i < length) ++i;
                 } else i = length;
             }
-            pending_space = used != 0U;
+            if (block && !html_append_break(output, capacity, &used))
+                break;
+            pending_space = false;
             continue;
         }
         if (html[i] == '&') {

@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "browser_html.h"
 
 static bool html_equal_ci(const uint8_t *data, size_t length,

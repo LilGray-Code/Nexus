@@ -84,11 +84,13 @@ enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
     FILES_EDITOR_CONTENT,
-    FILES_EDITOR_RENAME
+    FILES_EDITOR_RENAME,
+    FILES_EDITOR_COPY
 };
 static enum files_editor_state files_editor_state;
 static char files_edit_name[NEXUS_VFS_NAME_MAX];
 static char files_rename_source[NEXUS_VFS_NAME_MAX];
+static char files_copy_source[NEXUS_VFS_NAME_MAX];
 static char files_edit_content[FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
@@ -1120,7 +1122,9 @@ static void draw_shell(void) {
                     ? "NEW FILE - ENTER A NAME"
                     : files_editor_state == FILES_EDITOR_RENAME
                         ? "RENAME FILE - ENTER A NEW NAME"
-                        : "TEXT EDITOR - 1MB LIMIT",
+                        : files_editor_state == FILES_EDITOR_COPY
+                            ? "COPY FILE - ENTER DESTINATION NAME"
+                            : "TEXT EDITOR - 1MB LIMIT",
                 1, 108, 216, 229);
             graphics_draw_text(text_x, text_y + 82U, "NAME:",
                                1, 233, 243, 252);
@@ -1149,12 +1153,15 @@ static void draw_shell(void) {
                 graphics_draw_text(text_x, text_y + 292U,
                     "PGUP/PGDN SCROLL  HOME/END  F10 SAVE  ENTER NEW LINE",
                     1, 170, 191, 211);
-            } else if (files_editor_state == FILES_EDITOR_RENAME) {
+            } else if (files_editor_state == FILES_EDITOR_RENAME ||
+                       files_editor_state == FILES_EDITOR_COPY) {
                 graphics_draw_text(text_x, text_y + 124U,
                     "UP TO 31 CHARS: LETTERS, NUMBERS, _ - AND ONE DOT",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 156U,
-                    "ENTER RENAME  ESC CANCEL",
+                    files_editor_state == FILES_EDITOR_RENAME
+                        ? "ENTER RENAME  ESC CANCEL"
+                        : "ENTER COPY  ESC CANCEL",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
@@ -1301,7 +1308,7 @@ static void draw_shell(void) {
                                    1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  ENTER OPEN  R RENAME  / SEARCH",
+                               "UP/DOWN SELECT  ENTER OPEN  C COPY  R RENAME / SEARCH",
                                1, 170, 191, 211);
             if (files_search_active) {
                 graphics_draw_text(text_x, text_y + 414U,
@@ -1902,6 +1909,27 @@ static void files_editor_begin_rename(void) {
     files_editor_state = FILES_EDITOR_RENAME;
 }
 
+static void files_editor_begin_copy(void) {
+    struct nexus_vfs_dirent selected;
+    if (files_selected_index >= files_listing_count ||
+        !vfs_root_entry(files_selected_index, &selected) ||
+        selected.type != NEXUS_VFS_FILE) {
+        files_editor_set_status("SELECT A FILE TO COPY");
+        return;
+    }
+    size_t length = 0U;
+    while (length < NEXUS_VFS_NAME_MAX - 1U &&
+           selected.name[length] != '\0') {
+        files_copy_source[length] = selected.name[length];
+        ++length;
+    }
+    files_copy_source[length] = '\0';
+    files_edit_name[0] = '\0';
+    files_edit_name_length = 0U;
+    files_edit_status[0] = '\0';
+    files_editor_state = FILES_EDITOR_COPY;
+}
+
 static void files_editor_begin_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
@@ -2020,7 +2048,8 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         return;
     }
     if (files_editor_state == FILES_EDITOR_NAME ||
-        files_editor_state == FILES_EDITOR_RENAME) {
+        files_editor_state == FILES_EDITOR_RENAME ||
+        files_editor_state == FILES_EDITOR_COPY) {
         if (event->scancode == 0x0EU) {
             if (files_edit_name_length != 0U)
                 files_edit_name[--files_edit_name_length] = '\0';
@@ -2048,6 +2077,21 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                     refresh_files_listing();
                 } else {
                     files_editor_set_status("RENAME FAILED - SOURCE PRESERVED");
+                }
+            } else if (files_editor_state == FILES_EDITOR_COPY) {
+                if (files_editor_name_exists()) {
+                    files_editor_set_status("DESTINATION ALREADY EXISTS");
+                } else if (vfs_copy_file(files_copy_source, files_edit_name)) {
+                    serial_write("FILES: copied ");
+                    serial_write(files_copy_source);
+                    serial_write(" to ");
+                    serial_write(files_edit_name);
+                    serial_write("\r\n");
+                    files_editor_state = FILES_EDITOR_CLOSED;
+                    files_copy_source[0] = '\0';
+                    refresh_files_listing();
+                } else {
+                    files_editor_set_status("COPY FAILED - SOURCE UNCHANGED");
                 }
             } else if (files_editor_name_exists()) {
                 const char *message = "FILE EXISTS - PRESS E TO EDIT";
@@ -3755,6 +3799,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x13U) {
             files_editor_begin_rename();
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x2EU) {
+            files_editor_begin_copy();
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x48U && files_listing_count > 0U) {

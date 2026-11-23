@@ -7,6 +7,8 @@
 #include "process.h"
 #include "net.h"
 #include "netdev.h"
+#include "pci.h"
+#include "usb_desc.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -2648,9 +2650,17 @@ static void desktop_draw_window_surface(enum desktop_view view,
                                "STORAGE: NO FILESYSTEM MOUNTED",
                                1, 239, 177, 119);
         }
-        graphics_draw_text(text_x, text_y + 282U,
-                           "DISK WRITES ARE DISABLED IN THIS BUILD",
+        graphics_draw_text(text_x, text_y + 258U,
+                           "WI-FI CHIPSET DRIVER: NOT INSTALLED",
                            1, 239, 177, 119);
+        format_labeled_u64("PCI WLAN CANDIDATES: ",
+                           pci_wireless_lan_candidate_count(), line);
+        graphics_draw_text(text_x, text_y + 282U, line,
+                           1, 233, 243, 252);
+        format_labeled_u64("USB DEVICES ENUMERATED: ",
+                           usb_inventory_count(), line);
+        graphics_draw_text(text_x, text_y + 306U, line,
+                           1, 233, 243, 252);
         graphics_draw_text(text_x, text_y + 330U,
                            "ESC RETURNS HOME - STATUS REFRESHES ON INPUT",
                            1, 170, 191, 211);

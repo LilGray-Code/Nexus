@@ -190,7 +190,8 @@ static char installer_status_text[96] = "Select a supported target disk";
 
 #define NEXUS_BROWSER_LINE_COUNT 9U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
-static char browser_address[192];
+#define NEXUS_BROWSER_SOURCE_COUNT 5U
+static char browser_address[NEXUS_BROWSER_HTML_LINK_MAX];
 static size_t browser_address_length;
 static char browser_status[80] = "Search the web or enter an HTTP address";
 static bool browser_search_mode;
@@ -199,6 +200,9 @@ static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 static char browser_current_url[NEXUS_BROWSER_SEARCH_URL_MAX];
 static bool browser_download_pending;
+static char browser_sources[NEXUS_BROWSER_SOURCE_COUNT]
+                          [NEXUS_BROWSER_HTML_LINK_MAX];
+static size_t browser_source_count;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -2520,6 +2524,27 @@ static void desktop_draw_window_surface(enum desktop_view view,
                 graphics_draw_text(panel_x + 44U, row_y + 12U,
                     browser_lines[row], 1U, 37U, 57U, 75U);
             }
+            for (size_t source = 0U; source < browser_source_count; ++source) {
+                const size_t row = browser_line_count + source;
+                const uint64_t row_y = content_y + 48U + row * 20U;
+                if (row_y + 16U >= content_y + content_height) break;
+                graphics_fill_round_rect(panel_x + 32U, row_y,
+                    panel_width - 64U, 18U, 4U,
+                    228U, 239U, 248U);
+                char source_line[NEXUS_BROWSER_LINE_WIDTH] = {0};
+                static const char prefix[] = "ALT+";
+                size_t used = 0U;
+                for (size_t n = 0U; n < sizeof(prefix) - 1U; ++n)
+                    source_line[used++] = prefix[n];
+                source_line[used++] = (char)('1' + source);
+                source_line[used++] = ' ';
+                for (size_t n = 0U; browser_sources[source][n] != '\0' &&
+                     used + 1U < sizeof(source_line); ++n)
+                    source_line[used++] = browser_sources[source][n];
+                source_line[used] = '\0';
+                graphics_draw_text(panel_x + 44U, row_y + 12U,
+                    source_line, 1U, 31U, 104U, 166U);
+            }
         }
         graphics_fill_round_rect(panel_x + 18U,
             panel_y + panel_height - 34U, panel_width - 36U, 22U,
@@ -3839,6 +3864,7 @@ static void browser_navigate(void) {
     browser_search_mode = false;
     browser_download_pending = false;
     browser_current_url[0] = '\0';
+    browser_source_count = 0U;
     if (browser_address_length == 0U) {
         browser_set_status("Enter a search query or web address");
         return;
@@ -3988,6 +4014,10 @@ static void browser_navigate(void) {
     browser_render_body(response + parsed.body_offset,
                         response_length - parsed.body_offset);
     if (parsed.status_code >= 200U && parsed.status_code < 300U) {
+        browser_source_count = nexus_browser_html_extract_links(
+            response + parsed.body_offset,
+            response_length - parsed.body_offset,
+            browser_sources, NEXUS_BROWSER_SOURCE_COUNT);
         size_t url_length = 0U;
         while (input[url_length] != '\0' &&
                url_length + 1U < sizeof(browser_current_url)) {
@@ -5534,6 +5564,24 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
+        if (keyboard_alt && event->scancode >= 0x02U &&
+            event->scancode <= 0x06U) {
+            const size_t source = (size_t)(event->scancode - 0x02U);
+            if (source < browser_source_count) {
+                size_t length = 0U;
+                while (browser_sources[source][length] != '\0' &&
+                       length + 1U < sizeof(browser_address)) {
+                    browser_address[length] = browser_sources[source][length];
+                    ++length;
+                }
+                browser_address[length] = '\0';
+                browser_address_length = length;
+                browser_navigate();
+            } else {
+                browser_set_status("No source link at that shortcut");
+            }
+            draw_shell(); draw_pointer(); return;
+        }
         if (browser_download_pending) {
             if (event->scancode == 0x01U) {
                 browser_download_pending = false;

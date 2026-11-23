@@ -42,12 +42,10 @@ installer_flags="${EXTRA_CFLAGS:-}"
 rm -rf build/os build/installer
 # The installed OS is compiled as its own image with installer mode disabled
 # and without the destructive installer-write capability.
-make -C kernel clean all OUT=../build/os \\
-  EXTRA_CFLAGS="-DNEXUS_INSTALLED_OS_BUILD"
+make -C kernel clean all OUT=../build/os EXTRA_CFLAGS="-DNEXUS_INSTALLED_OS_BUILD"
 # The live-media installer is a different kernel image. Its optional destructive
 # write gate is applied only to this image, never to the installed OS kernel.
-make -C kernel clean all OUT=../build/installer \\
-  EXTRA_CFLAGS="-DNEXUS_INSTALLER_BUILD ${installer_flags}"
+make -C kernel clean all OUT=../build/installer EXTRA_CFLAGS="-DNEXUS_INSTALLER_BUILD ${installer_flags}"
 cp build/os/nexus-kernel.elf build/nexus-kernel.elf
 cp build/installer/nexus-kernel.elf build/nexus-installer.elf
 

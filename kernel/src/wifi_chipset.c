@@ -16,7 +16,7 @@ static const struct wifi_chipset_id pci_chipsets[] = {
     {0x14C3U, 0x7602U, "MediaTek MT7602E"},
     {0x14C3U, 0x7603U, "MediaTek MT7603E"},
     {0x14C3U, 0x7610U, "MediaTek MT7610E"},
-    {0x14C3U, 0x7611U, "MediaTek MT7611E"},
+    {0x14C3U, 0x7611U, "MediaTek MT7615 / MT7663 family"},
     {0x14C3U, 0x7612U, "MediaTek MT7612E"},
     {0x14C3U, 0x7662U, "MediaTek MT7662E"},
     {0x14C3U, 0x0608U, "MediaTek MT7921K / RZ608"},

@@ -9,6 +9,7 @@
 #include "netdev.h"
 #include "pci.h"
 #include "usb_desc.h"
+#include "wifi_chipset.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -2661,7 +2662,43 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            nexus_usb_inventory_count(), line);
         graphics_draw_text(text_x, text_y + 306U, line,
                            1, 233, 243, 252);
-        graphics_draw_text(text_x, text_y + 330U,
+        size_t inventory_row = 0U;
+        for (uint32_t i = 0U; i < pci_device_count() &&
+             inventory_row < 3U; ++i) {
+            const struct nexus_pci_device *device = pci_device_at(i);
+            if (!pci_is_wireless_lan_candidate(device)) continue;
+            const char *chipset = wifi_pci_chipset_name(
+                device->vendor_id, device->device_id);
+            graphics_draw_text(text_x, text_y + 354U + inventory_row * 20U,
+                "PCI WI-FI CANDIDATE:", 1U, 133U, 188U, 211U);
+            graphics_draw_text(text_x + 150U,
+                text_y + 354U + inventory_row * 20U,
+                chipset != NULL ? chipset : "UNKNOWN CHIPSET (SEE LOG)",
+                1U, 233U, 243U, 252U);
+            ++inventory_row;
+        }
+        for (size_t i = 0U; i < nexus_usb_inventory_count() &&
+             inventory_row < 3U; ++i) {
+            struct nexus_usb_device_info usb = {0};
+            if (!nexus_usb_inventory_get(i, &usb)) continue;
+            const char *chipset = wifi_usb_chipset_name(
+                usb.vendor_id, usb.product_id);
+            if (chipset == NULL && !usb.has_vendor_specific_interface)
+                continue;
+            graphics_draw_text(text_x, text_y + 354U + inventory_row * 20U,
+                "USB WI-FI / VENDOR DEVICE:", 1U, 133U, 188U, 211U);
+            graphics_draw_text(text_x + 190U,
+                text_y + 354U + inventory_row * 20U,
+                chipset != NULL ? chipset : "UNMATCHED VID:PID (SEE LOG)",
+                1U, 233U, 243U, 252U);
+            ++inventory_row;
+        }
+        if (inventory_row == 0U) {
+            graphics_draw_text(text_x, text_y + 354U,
+                "NO WI-FI ADAPTER CANDIDATE FOUND",
+                1U, 170U, 191U, 211U);
+        }
+        graphics_draw_text(text_x, text_y + 414U,
                            "ESC RETURNS HOME - STATUS REFRESHES ON INPUT",
                            1, 170, 191, 211);
     }

@@ -279,6 +279,10 @@ void kmain(void) {
             serial_write("WARNING: E1000 ARP probe transmit did not complete\r\n");
         }
     }
+    if (netdev_ready()) {
+        serial_write("NETWORK LINK: ");
+        serial_write(netdev_link_up() ? "UP\\r\\n" : "DOWN OR UNKNOWN\\r\\n");
+    }
 
 
     if (!ioapic_probe()) {

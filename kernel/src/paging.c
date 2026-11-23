@@ -194,6 +194,7 @@ static bool destroy_user_page_table(uint64_t table_physical,
 static bool validate_user_page_table(uint64_t table_physical,
                                      unsigned int level) {
     if (level == 0U) return false;
+    if (!memory_page_is_allocated(table_physical)) return false;
     volatile uint64_t *table =
         (volatile uint64_t *)memory_phys_to_virt(table_physical);
     if (table == NULL) return false;
@@ -202,17 +203,19 @@ static bool validate_user_page_table(uint64_t table_physical,
         const uint64_t entry = table[i];
         if ((entry & PAGE_PRESENT) == 0U) continue;
         if ((entry & PAGE_USER) == 0U) return false;
+        const uint64_t child_or_leaf = entry & PAGE_ADDRESS_MASK;
+        if (!memory_page_is_allocated(child_or_leaf)) return false;
         if (level > 1U) {
-            if ((entry & PAGE_LARGE) != 0U) return false;
-            if (!validate_user_page_table(entry & PAGE_ADDRESS_MASK,
-                                          level - 1U)) return false;
+            if ((entry & PAGE_LARGE) != 0U ||
+                !validate_user_page_table(child_or_leaf, level - 1U))
+                return false;
         }
     }
     return true;
 }
 
 bool paging_destroy_user_address_space(uint64_t root_physical) {
-    if ((root_physical & 0xFFFULL) != 0U) return false;
+    if (!memory_page_is_allocated(root_physical)) return false;
 
     uint64_t cr3, cr4;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
@@ -374,9 +377,9 @@ bool paging_user_address_space_selftest(void) {
 /* Map one previously-unmapped 4 KiB page into a user address space. */
 bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
                           uint64_t page_physical, bool writable, bool executable) {
-    if ((root_physical & 0xFFFULL) != 0U ||
+    if (!memory_page_is_allocated(root_physical) ||
+        !memory_page_is_allocated(page_physical) ||
         (virtual_address & 0xFFFULL) != 0U ||
-        (page_physical & 0xFFFULL) != 0U ||
         (page_physical & ~PAGE_ADDRESS_MASK) != 0U) {
         return false;
     }

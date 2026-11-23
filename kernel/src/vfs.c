@@ -616,5 +616,34 @@ bool vfs_ramfs_selftest(void) {
         vfs_close(&file);
         if (!vfs_remove_file(shadow_name)) return false;
     }
+
+    /*
+     * An open persistent handle must not silently switch to a replacement
+     * generation when another operation overwrites the same pathname.
+     */
+    if (vfs_nxfs_writable()) {
+        static const char snapshot_name[] = "NXFS-HANDLE-SNAPSHOT.TST";
+        static const char first_data[] = "first generation";
+        static const char second_data[] = "second generation";
+        struct nexus_vfs_file snapshot_file;
+        uint8_t snapshot_buffer[32];
+        size_t snapshot_read = 0U;
+        if (!vfs_write_file(snapshot_name, first_data,
+                            sizeof(first_data) - 1U) ||
+            !vfs_open_readonly(snapshot_name, &snapshot_file) ||
+            !snapshot_file.nxfs_file ||
+            !vfs_write_file(snapshot_name, second_data,
+                            sizeof(second_data) - 1U)) {
+            (void)vfs_remove_file(snapshot_name);
+            return false;
+        }
+        const bool stale_read_rejected =
+            !vfs_read(&snapshot_file, snapshot_buffer,
+                      sizeof(snapshot_buffer), &snapshot_read) &&
+            snapshot_read == 0U;
+        vfs_close(&snapshot_file);
+        if (!stale_read_rejected || !vfs_remove_file(snapshot_name))
+            return false;
+    }
     return true;
 }

@@ -508,7 +508,7 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
         partitions[i] = *part;
     }
 
-    struct nexus_gpt_partition esp, system, data, bios;
+    struct nexus_gpt_partition system, data, bios;
     if (!find_partition_kind(&plan, partitions, NEXUS_PARTITION_ESP, &esp) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_SYSTEM, &system) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_DATA, &data))

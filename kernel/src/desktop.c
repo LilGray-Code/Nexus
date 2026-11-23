@@ -921,11 +921,16 @@ static void draw_shell(void) {
 
         struct nexus_net_info info;
         if (net_get_info(&info) && info.interface_ready) {
+            const char *network_status = !info.link_up
+                ? "NETWORK: ETHERNET / LINK DOWN"
+                : (info.ipv4_configured
+                    ? "NETWORK: ETHERNET / CONNECTED"
+                    : "NETWORK: ETHERNET / DHCP WAITING");
             graphics_draw_text(text_x, text_y + 126U,
-                               info.ipv4_configured
-                                   ? "NETWORK: ETHERNET / DHCP BOUND"
-                                   : "NETWORK: ETHERNET / DHCP WAITING",
-                               1, 108, 216, 229);
+                               network_status, 1,
+                               info.link_up ? 108U : 239U,
+                               info.link_up ? 216U : 177U,
+                               info.link_up ? 229U : 119U);
             if (info.ipv4_configured) {
                 char address[16];
                 format_ipv4_address(info.ipv4, address);

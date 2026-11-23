@@ -2322,7 +2322,7 @@ static void browser_navigate(void) {
 
 static void terminal_append(const char *text, size_t *used) {
     if (text == NULL || used == NULL) return;
-    while (*text != '\\0' && *used < sizeof(terminal_output) - 1U)
+    while (*text != '\0' && *used < sizeof(terminal_output) - 1U)
         terminal_output[(*used)++] = *text++;
 }
 
@@ -2349,7 +2349,7 @@ static void terminal_execute(void) {
         size_t i=0; while(s[i]!='\0' && i<sizeof(terminal_output)-1U){terminal_output[i]=s[i];++i;} terminal_output[i]='\0';
     } else if (terminal_input[0]=='i' && terminal_input[1]=='n' &&
                 terminal_input[2]=='f' && terminal_input[3]=='o' &&
-                terminal_input[4]=='\\0') {
+                terminal_input[4]=='\0') {
         size_t out = 0U;
         terminal_append("NEXUS x86-64 | uptime ", &out);
         terminal_append_number(timer_ticks() / 100U, &out);
@@ -2370,7 +2370,7 @@ static void terminal_execute(void) {
         terminal_append(vfs_nxfs_mounted()
             ? (vfs_nxfs_writable() ? "writable" : "read-only")
             : "not mounted", &out);
-        terminal_output[out] = '\\0';
+        terminal_output[out] = '\0';
     } else if (terminal_input[0]=='m' && terminal_input[1]=='e' &&
                terminal_input[2]=='m' && terminal_input[3]=='\0') {
         const char *label = "free bytes: ";
@@ -2674,21 +2674,21 @@ static void terminal_execute(void) {
         }
         terminal_output[out] = '\0';
     } else if (terminal_input[0]=='p' && terminal_input[1]=='w' &&
-               terminal_input[2]=='d' && terminal_input[3]=='\\0') {
+               terminal_input[2]=='d' && terminal_input[3]=='\0') {
         if (!vfs_root_mounted()) scan_files_once();
         if (!vfs_current_path(terminal_output, sizeof(terminal_output))) {
             size_t out = 0U;
             terminal_append("no FAT32 directory is mounted", &out);
-            terminal_output[out] = '\\0';
+            terminal_output[out] = '\0';
         }
     } else if (terminal_input[0]=='c' && terminal_input[1]=='d' &&
-               terminal_input[2]==' ' && terminal_input[3]!='\\0') {
+               terminal_input[2]==' ' && terminal_input[3]!='\0') {
         if (!vfs_root_mounted()) scan_files_once();
         const char *target = terminal_input + 3;
         size_t out = 0U;
         if (!vfs_root_mounted()) {
             terminal_append("no FAT32 directory is mounted", &out);
-        } else if (target[0]=='.' && target[1]=='.' && target[2]=='\\0') {
+        } else if (target[0]=='.' && target[1]=='.' && target[2]=='\0') {
             if (!vfs_parent_directory()) {
                 terminal_append("already at root", &out);
             } else {
@@ -2705,9 +2705,9 @@ static void terminal_execute(void) {
             if (vfs_current_path(path, sizeof(path)))
                 terminal_append(path, &out);
         }
-        terminal_output[out] = '\\0';
+        terminal_output[out] = '\0';
     } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
-               terminal_input[2]=='\\0') {
+               terminal_input[2]=='\0') {
         if (!vfs_has_filesystem()) scan_files_once();
         size_t out = 0U;
         const size_t entries = vfs_root_entry_count();
@@ -2734,7 +2734,7 @@ static void terminal_execute(void) {
                 }
             }
         }
-        terminal_output[out] = '\\0';
+        terminal_output[out] = '\0';
     } else if (terminal_input[0]=='p' && terminal_input[1]=='s' &&
                terminal_input[2]=='\0') {
         size_t out = 0U;

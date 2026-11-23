@@ -19,6 +19,13 @@ This is not a claim that every Intel Ethernet controller is compatible. Other PC
 
 The kernel can register up to eight network interfaces. Settings exposes the currently registered adapter and the **5** key cycles to the next registered interface. Switching resets the current TCP session and restarts DHCP on the selected adapter. If initialization fails, the previous default adapter is restored.
 
+A Wi-Fi driver can use the optional Ethernet-frame bridge in `wifi.h` to
+register as **wlan0** in this same selector. It must provide all three frame
+callbacks (MAC address, send, receive); partial callback sets are rejected.
+The native radio driver remains responsible for 802.11 scan/association,
+authentication, encryption and radio-to-Ethernet bridging. No production
+chipset driver currently registers this interface.
+
 A device appears in this selector only after its hardware driver has initialized and registered successfully. This selector does not install a missing hardware driver.
 
 ## Wi-Fi status

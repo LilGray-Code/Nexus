@@ -775,8 +775,6 @@ static void desktop_draw_window_surface(enum desktop_view view,
     const bool saved_maximized = window_maximized;
     active_view = view;
     window_maximized = maximized;
-    const uint64_t width = screen_width;
-    const uint64_t height = screen_height;
     const uint64_t panel_x = window_x;
     const uint64_t panel_y = window_y +
         (animate ? window_animation_offset : 0U);

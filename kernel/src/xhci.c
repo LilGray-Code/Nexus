@@ -8,6 +8,7 @@
 #include "usb_hid.h"
 #include "usb_hid_gamepad.h"
 #include "usb_desc.h"
+#include "wifi_chipset.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -1147,6 +1148,13 @@ static void xhci_report_usb_inventory(void) {
         serial_write_hex(info.device_subclass);
         serial_write("/");
         serial_write_hex(info.device_protocol);
+        const char *wifi_chipset = wifi_usb_chipset_name(
+            info.vendor_id, info.product_id);
+        if (wifi_chipset != NULL) {
+            serial_write(" Wi-Fi chipset=");
+            serial_write(wifi_chipset);
+            serial_write("; native driver not installed");
+        }
 
         switch (info.network_kind) {
             case NEXUS_USB_NETWORK_CDC_ECM:

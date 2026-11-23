@@ -397,17 +397,21 @@ static void desktop_open_app(size_t app_index) {
 
 static void desktop_draw_taskbar(uint64_t bottom_bar) {
     const uint64_t y = screen_height - bottom_bar;
-    /* Windows-style dark taskbar with a bright blue active-window marker. */
-    graphics_fill_rect(0U, y, screen_width, bottom_bar, 28U, 30U, 34U);
-    graphics_fill_rect(0U, y, screen_width, 2U, 0U, 120U, 215U);
-    graphics_fill_rect(0U, y + 2U, screen_width, 1U, 18U, 20U, 24U);
+    /* Floating, glass-dark dock with a subtle cool edge. */
+    graphics_fill_round_rect(10U, y + 4U, screen_width - 20U,
+                             bottom_bar - 8U, 13U, 13U, 20U, 35U);
+    graphics_draw_round_rect(10U, y + 4U, screen_width - 20U,
+                             bottom_bar - 8U, 13U, 58U, 82U, 112U);
+    graphics_fill_round_rect(18U, y + 7U, screen_width - 36U, 2U,
+                             1U, 49U, 104U, 157U);
 
     const uint64_t button_y = y + 2U;
     const uint64_t button_h = bottom_bar - 2U;
-    graphics_fill_rect(0U, button_y, 52U, button_h,
-                       start_menu_open ? 0U : 28U,
-                       start_menu_open ? 96U : 30U,
-                       start_menu_open ? 172U : 34U);
+    graphics_fill_round_rect(14U, button_y + 4U, 38U,
+                             button_h > 8U ? button_h - 8U : button_h,
+                             9U, start_menu_open ? 27U : 20U,
+                             start_menu_open ? 91U : 38U,
+                             start_menu_open ? 150U : 61U);
     desktop_draw_logo(15U, button_y + (button_h > 24U ? 11U : 4U), 22U);
 
     static const char *const labels[5] = {
@@ -423,16 +427,17 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         const uint64_t x = 56U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 96U) break;
         const bool selected = active_view == desktop_view_for_app(i);
-        graphics_fill_rect(x, button_y, tab_width, button_h,
-                           selected ? 47U : 28U,
-                           selected ? 50U : 30U,
-                           selected ? 56U : 34U);
-        if (selected)
-            graphics_fill_rect(x, y + bottom_bar - 3U, tab_width, 3U,
-                               0U, 120U, 215U);
-        graphics_fill_rect(x + 9U, button_y + 12U, 4U,
-                           button_h > 26U ? button_h - 24U : 8U,
-                           accents[i][0], accents[i][1], accents[i][2]);
+        if (selected) {
+            graphics_fill_round_rect(x, button_y + 4U, tab_width,
+                                     button_h > 8U ? button_h - 8U : button_h,
+                                     9U, 35U, 59U, 91U);
+            graphics_draw_round_rect(x, button_y + 4U, tab_width,
+                                     button_h > 8U ? button_h - 8U : button_h,
+                                     9U, 72U, 126U, 174U);
+        }
+        graphics_fill_round_rect(x + 9U, button_y + 11U, 5U,
+                                 button_h > 24U ? button_h - 22U : 8U, 2U,
+                                 accents[i][0], accents[i][1], accents[i][2]);
         graphics_draw_text(x + 20U, button_y + button_h / 2U - 4U,
                            labels[i], 1U, 235U, 238U, 242U);
     }
@@ -457,12 +462,12 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
     if (menu_y < top_limit) menu_y = top_limit;
 
-    graphics_fill_rect(menu_x + 5U, menu_y + 6U,
-                       menu_width, menu_height, 3U, 5U, 9U);
-    graphics_fill_rect(menu_x, menu_y,
-                       menu_width, menu_height, 32U, 35U, 40U);
-    graphics_draw_rect(menu_x, menu_y,
-                       menu_width, menu_height, 61U, 65U, 72U);
+    graphics_fill_round_rect(menu_x + 5U, menu_y + 7U,
+                              menu_width, menu_height, 16U, 2U, 5U, 15U);
+    graphics_fill_gradient_rect(menu_x, menu_y, menu_width, menu_height,
+                                 24U, 37U, 58U, 13U, 22U, 39U);
+    graphics_draw_round_rect(menu_x, menu_y, menu_width, menu_height,
+                             16U, 71U, 101U, 137U);
     /* Narrow left rail and header reproduce the Windows 10 Start layout. */
     graphics_fill_rect(menu_x, menu_y, 42U, menu_height, 24U, 27U, 31U);
     graphics_fill_rect(menu_x, menu_y, menu_width, 38U, 27U, 30U, 35U);
@@ -484,10 +489,11 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
     const uint64_t row_step = 37U;
     for (size_t i = 0U; i < 5U; ++i) {
         const uint64_t row_y = row_top + (uint64_t)i * row_step;
-        graphics_fill_rect(menu_x + 49U, row_y, menu_width - 58U,
-                           32U, 32U, 35U, 40U);
-        graphics_fill_rect(menu_x + 57U, row_y + 7U,
-                           18U, 18U, accents[i][0], accents[i][1], accents[i][2]);
+        graphics_fill_round_rect(menu_x + 49U, row_y, menu_width - 58U,
+                                  32U, 7U, 25U, 42U, 65U);
+        graphics_fill_round_rect(menu_x + 57U, row_y + 7U,
+                                 18U, 18U, 5U,
+                                 accents[i][0], accents[i][1], accents[i][2]);
         graphics_draw_text(menu_x + 85U, row_y + 12U,
                            names[i], 1U, 238U, 240U, 244U);
     }
@@ -504,14 +510,16 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
             const uint64_t row = i / 2U;
             const uint64_t x = tile_x + col * 63U;
             const uint64_t y = menu_y + 64U + row * 64U;
-            graphics_fill_rect(x, y, 58U, 57U,
-                               accents[i][0], accents[i][1], accents[i][2]);
+            graphics_fill_round_rect(x, y, 58U, 57U, 10U,
+                                     accents[i][0], accents[i][1], accents[i][2]);
+            graphics_draw_round_rect(x, y, 58U, 57U, 10U,
+                                     150U, 192U, 220U);
             graphics_draw_text(x + 7U, y + 25U, tile_names[i], 1U,
                                255U, 255U, 255U);
         }
     }
-    graphics_fill_rect(menu_x + 42U, menu_y + menu_height - 25U,
-                       menu_width - 42U, 25U, 26U, 29U, 34U);
+    graphics_fill_round_rect(menu_x + 47U, menu_y + menu_height - 29U,
+                              menu_width - 58U, 22U, 7U, 18U, 31U, 49U);
     graphics_draw_text(menu_x + 54U, menu_y + menu_height - 16U,
                        "1-5 OPEN APPS     ESC CLOSE", 1U,
                        160U, 165U, 174U);
@@ -580,50 +588,48 @@ static void draw_shell(void) {
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
 
-    /* Blue, window-inspired wallpaper is the default; alternate palettes
-     * remain selectable from Settings. */
-    const uint8_t base_r = settings_theme == 1U ? 3U : (settings_theme == 2U ? 54U : 7U);
-    const uint8_t base_g = settings_theme == 1U ? 34U : (settings_theme == 2U ? 25U : 55U);
-    const uint8_t base_b = settings_theme == 1U ? 68U : (settings_theme == 2U ? 27U : 104U);
-    /* Avoid one framebuffer operation per scanline. The old gradient loop
-     * issued hundreds of thousands of tiny drawing calls on high resolutions.
-     * A solid base plus a few broad wallpaper bands is much cheaper to repaint. */
-    graphics_fill_rect(0U, 0U, width, height, base_r, base_g, base_b);
-    if (settings_wallpaper != 2U && height > 8U) {
-        const uint64_t band_height = height / 3U;
-        graphics_fill_rect(0U, height / 3U, width, band_height,
-                           (uint8_t)(base_r + 2U),
-                           (uint8_t)(base_g + 4U),
-                           (uint8_t)(base_b + 8U));
-        graphics_fill_rect(0U, (height * 2U) / 3U, width,
-                           height - (height * 2U) / 3U,
-                           (uint8_t)(base_r + 4U),
-                           (uint8_t)(base_g + 8U),
-                           (uint8_t)(base_b + 15U));
-    }
-    /* Wallpaper selection changes the actual framebuffer composition. */
-    if (settings_wallpaper != 2U) {
-        const uint8_t wr = settings_theme == 2U ? 96U : (settings_theme == 1U ? 5U : 12U);
-        const uint8_t wg = settings_theme == 1U ? 66U : (settings_theme == 2U ? 43U : 88U);
-        const uint8_t wb = settings_theme == 2U ? 48U : (settings_theme == 1U ? 100U : 166U);
-        if (settings_wallpaper == 0U) {
-            graphics_fill_rect(width / 2U, 0U, width / 2U, height, wr, wg, wb);
-            graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
-                               (uint8_t)(wr + 1U), (uint8_t)(wg + 5U), (uint8_t)(wb + 9U));
-            graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
-                               (uint8_t)(wr + 3U), (uint8_t)(wg + 9U), (uint8_t)(wb + 14U));
-            for (uint64_t band = 0U; band < 5U; ++band) {
-                const uint64_t x = width / 2U + band * (width / 14U);
-                if (x < width) graphics_fill_rect(x, top_bar, 1U, height - top_bar,
-                    (uint8_t)(wr + 5U), (uint8_t)(wg + 16U + band), (uint8_t)(wb + 21U + band));
-            }
+    /* Nexus Aurora wallpaper: a deep vertical gradient with restrained
+     * geometric light ribbons. All effects are native framebuffer drawing. */
+    const uint8_t base_r = settings_theme == 1U ? 2U : (settings_theme == 2U ? 35U : 5U);
+    const uint8_t base_g = settings_theme == 1U ? 24U : (settings_theme == 2U ? 12U : 13U);
+    const uint8_t base_b = settings_theme == 1U ? 43U : (settings_theme == 2U ? 31U : 38U);
+    const uint8_t end_r = settings_theme == 1U ? 5U : (settings_theme == 2U ? 105U : 18U);
+    const uint8_t end_g = settings_theme == 1U ? 83U : (settings_theme == 2U ? 34U : 51U);
+    const uint8_t end_b = settings_theme == 1U ? 100U : (settings_theme == 2U ? 45U : 103U);
+    if (settings_wallpaper == 2U) {
+        graphics_fill_rect(0U, 0U, width, height, base_r, base_g, base_b);
+    } else {
+        graphics_fill_gradient_rect(0U, 0U, width, height,
+                                    base_r, base_g, base_b,
+                                    end_r, end_g, end_b);
+        if (settings_wallpaper == 0U && width > 180U && height > 180U) {
+            const uint64_t ribbon_w = width / 3U;
+            const uint64_t ribbon_h = height / 7U > 34U ? height / 7U : 34U;
+            const uint64_t ribbon_x = width - ribbon_w - width / 18U;
+            const uint64_t ribbon_y = height / 5U;
+            graphics_fill_round_rect(ribbon_x, ribbon_y, ribbon_w,
+                                     ribbon_h, ribbon_h / 2U,
+                                     settings_theme == 2U ? 100U : 13U,
+                                     settings_theme == 2U ? 38U : 76U,
+                                     settings_theme == 2U ? 49U : 129U);
+            graphics_fill_round_rect(width / 12U, height * 3U / 5U,
+                                     width / 3U, ribbon_h, ribbon_h / 2U,
+                                     settings_theme == 2U ? 88U : 8U,
+                                     settings_theme == 2U ? 28U : 62U,
+                                     settings_theme == 2U ? 43U : 108U);
+            graphics_draw_round_rect(ribbon_x, ribbon_y, ribbon_w,
+                                     ribbon_h, ribbon_h / 2U,
+                                     settings_theme == 2U ? 170U : 61U,
+                                     settings_theme == 2U ? 83U : 151U,
+                                     settings_theme == 2U ? 76U : 198U);
         }
     }
-    graphics_fill_rect(0U, 0U, width, top_bar, 27U, 30U, 35U);
+    graphics_fill_gradient_rect(0U, 0U, width, top_bar,
+                                11U, 19U, 35U, 18U, 30U, 49U);
     graphics_fill_rect(0U, top_bar - 2U, width, 2U,
-                       settings_theme == 0U ? 0U : (settings_theme == 1U ? 0U : 202U),
-                       settings_theme == 0U ? 120U : (settings_theme == 1U ? 153U : 80U),
-                       settings_theme == 0U ? 215U : (settings_theme == 1U ? 188U : 16U));
+                        settings_theme == 0U ? 65U : (settings_theme == 1U ? 35U : 204U),
+                        settings_theme == 0U ? 150U : (settings_theme == 1U ? 194U : 104U),
+                        settings_theme == 0U ? 232U : (settings_theme == 1U ? 207U : 57U));
     /* Keep the shell identity consistent with the boot splash, launcher,
      * taskbar and first-party app chrome. The top bar is at least 34 px tall,
      * so the 22 px mark remains vertically centered on supported modes. */
@@ -659,19 +665,21 @@ static void draw_shell(void) {
         : top_bar + (height - top_bar - bottom_bar - panel_height) / 2U;
     const uint64_t panel_y = panel_base_y + window_animation_offset;
 
-    graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
-                       panel_height, 1U, 4U, 13U);
-    graphics_fill_rect(panel_x, panel_y, panel_width, panel_height,
-                       27U, 31U, 38U);
-    graphics_draw_rect(panel_x, panel_y, panel_width, panel_height,
-                       80U, 86U, 95U);
-    /* Saturated blue title bars and compact controls echo Windows 10 windows. */
-    graphics_fill_rect(panel_x, panel_y, panel_width, 40U,
-                       0U, 120U, 215U);
-    graphics_fill_rect(panel_x, panel_y + 39U, panel_width, 1U,
-                       0U, 93U, 172U);
-    graphics_fill_rect(panel_x + 9U, panel_y + 12U, 16U, 16U,
-                       255U, 255U, 255U);
+    graphics_fill_round_rect(panel_x + 7U, panel_y + 10U, panel_width,
+                              panel_height, 17U, 1U, 5U, 17U);
+    graphics_fill_gradient_rect(panel_x, panel_y, panel_width, panel_height,
+                                28U, 43U, 63U, 16U, 28U, 45U);
+    graphics_draw_round_rect(panel_x, panel_y, panel_width, panel_height,
+                              17U, 91U, 123U, 157U);
+    /* Indigo-to-cyan title surface with a softly rounded top edge. */
+    graphics_fill_round_rect(panel_x + 1U, panel_y + 1U,
+                             panel_width - 2U, 42U, 15U,
+                             29U, 91U, 166U);
+    graphics_fill_gradient_rect(panel_x + 1U, panel_y + 15U,
+                                panel_width - 2U, 27U,
+                                29U, 91U, 166U, 24U, 69U, 132U);
+    graphics_fill_rect(panel_x + 1U, panel_y + 40U,
+                       panel_width - 2U, 3U, 24U, 69U, 132U);
 
     const char *window_title = "NEXUS DESKTOP";
     if (active_view == DESKTOP_FILES) window_title = "FILES";

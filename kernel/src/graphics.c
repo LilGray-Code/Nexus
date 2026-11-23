@@ -145,6 +145,98 @@ void graphics_draw_rect(uint64_t x, uint64_t y, uint64_t width,
                                       red, green, blue);
 }
 
+/* High-quality shell primitives. Gradient rows are written in one bounded
+ * pass rather than issuing a framebuffer operation for every pixel. */
+void graphics_fill_gradient_rect(uint64_t x, uint64_t y,
+                                 uint64_t width, uint64_t height,
+                                 uint8_t top_red, uint8_t top_green,
+                                 uint8_t top_blue, uint8_t bottom_red,
+                                 uint8_t bottom_green, uint8_t bottom_blue) {
+    if (!initialized || width == 0U || height == 0U ||
+        x >= active_surface.width || y >= active_surface.height) return;
+    if (width > active_surface.width - x) width = active_surface.width - x;
+    if (height > active_surface.height - y) height = active_surface.height - y;
+    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+    const uint64_t denominator = height > 1U ? height - 1U : 1U;
+    for (uint64_t row = 0U; row < height; ++row) {
+        const uint64_t rr = (uint64_t)top_red * (denominator - (row < denominator ? row : denominator)) +
+                            (uint64_t)bottom_red * (row < denominator ? row : denominator);
+        const uint64_t gg = (uint64_t)top_green * (denominator - (row < denominator ? row : denominator)) +
+                            (uint64_t)bottom_green * (row < denominator ? row : denominator);
+        const uint64_t bb = (uint64_t)top_blue * (denominator - (row < denominator ? row : denominator)) +
+                            (uint64_t)bottom_blue * (row < denominator ? row : denominator);
+        const uint32_t color = pack_rgb((uint8_t)(rr / denominator),
+                                        (uint8_t)(gg / denominator),
+                                        (uint8_t)(bb / denominator));
+        volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
+            (base + (y + row) * active_surface.pitch + x * 4U);
+        for (uint64_t column = 0U; column < width; ++column)
+            pixels[column] = color;
+    }
+}
+
+static uint64_t round_rect_inset(uint64_t row, uint64_t height,
+                                 uint64_t radius) {
+    uint64_t distance = 0U;
+    if (row < radius) distance = radius - row;
+    else if (row >= height - radius) distance = row - (height - radius - 1U);
+    if (distance == 0U) return 0U;
+    const uint64_t radius_squared = radius * radius;
+    const uint64_t distance_squared = distance * distance;
+    uint64_t inset = 0U;
+    while (inset < radius && inset * inset + distance_squared >
+           radius_squared) ++inset;
+    return inset;
+}
+
+void graphics_fill_round_rect(uint64_t x, uint64_t y, uint64_t width,
+                              uint64_t height, uint64_t radius,
+                              uint8_t red, uint8_t green, uint8_t blue) {
+    if (!initialized || width == 0U || height == 0U ||
+        x >= active_surface.width || y >= active_surface.height) return;
+    if (width > active_surface.width - x) width = active_surface.width - x;
+    if (height > active_surface.height - y) height = active_surface.height - y;
+    const uint64_t max_radius = (width < height ? width : height) / 2U;
+    if (radius > max_radius) radius = max_radius;
+    if (radius == 0U) {
+        graphics_fill_rect(x, y, width, height, red, green, blue);
+        return;
+    }
+    for (uint64_t row = 0U; row < height; ++row) {
+        const uint64_t inset = round_rect_inset(row, height, radius);
+        if (width > inset * 2U)
+            graphics_fill_rect(x + inset, y + row, width - inset * 2U,
+                               1U, red, green, blue);
+    }
+}
+
+void graphics_draw_round_rect(uint64_t x, uint64_t y, uint64_t width,
+                              uint64_t height, uint64_t radius,
+                              uint8_t red, uint8_t green, uint8_t blue) {
+    if (!initialized || width == 0U || height == 0U ||
+        x >= active_surface.width || y >= active_surface.height) return;
+    if (width > active_surface.width - x) width = active_surface.width - x;
+    if (height > active_surface.height - y) height = active_surface.height - y;
+    const uint64_t max_radius = (width < height ? width : height) / 2U;
+    if (radius > max_radius) radius = max_radius;
+    if (radius == 0U) {
+        graphics_draw_rect(x, y, width, height, red, green, blue);
+        return;
+    }
+    for (uint64_t row = 0U; row < height; ++row) {
+        const uint64_t inset = round_rect_inset(row, height, radius);
+        if (width <= inset * 2U) continue;
+        graphics_write_rgb_pixel(x + inset, y + row, red, green, blue);
+        graphics_write_rgb_pixel(x + width - inset - 1U, y + row,
+                                 red, green, blue);
+    }
+    for (uint64_t column = radius; column < width - radius; ++column) {
+        graphics_write_rgb_pixel(x + column, y, red, green, blue);
+        graphics_write_rgb_pixel(x + column, y + height - 1U,
+                                 red, green, blue);
+    }
+}
+
 static const struct glyph *find_glyph(char character) {
     if (character >= 'a' && character <= 'z') {
         character = (char)(character - 'a' + 'A');

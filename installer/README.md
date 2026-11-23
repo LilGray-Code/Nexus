@@ -3,7 +3,7 @@
 **Status: QEMU-validated installable engineering prototype.** The live installer
 and installed OS are separate bootable kernel images. The dual-mode BIOS/UEFI
 build has passed the repository's disposable-disk QEMU install and boot
-workflows. Physical-PC installation and recovery remain unverified.
+workflows. Physical-PC installation remains unverified.
 
 ## Product boundary
 
@@ -38,10 +38,11 @@ function-key shortcut. Installer mode is selected only when kernel boot-source
 identification positively establishes that the machine was started from an
 external live medium; ambiguous boot-source identity must fail closed.
 
-The installer discovers eligible block devices and provides a target
-selection and layout preview. A destructive install is blocked until the user
-confirms the selected device's stable identity and separately types `ERASE`.
-The kernel revalidates the device immediately before each destructive stage.
+The installer discovers eligible block devices and presents the selected
+drive's model, capacity, stable ID, and a read-only layout preview. Press Enter
+to review the chosen drive, then type `ERASE` once to authorize installation.
+Nexus captures the device identity automatically and revalidates it before
+each destructive stage; there is no need to type a long disk ID.
 
 After successful deployment, the installer displays a **Restart into Nexus OS**
 action and a reminder to remove the live USB. Pressing Enter or selecting the
@@ -61,19 +62,21 @@ backing up all important data.
 
 ## Disk layout
 
-The installer creates a GPT partition table. UEFI installs include:
+The installer creates a compact GPT partition table. UEFI installs use three
+partitions:
 
 1. **EFI System Partition** — FAT32, containing the Limine UEFI loader,
-   configuration, and required BIOS boot support files.
+   configuration and boot files. A small two-copy transaction journal occupies
+   relative sectors 8 and 9 inside the FAT32 reserved area.
 2. **Nexus System** — NXFS, containing the installed kernel and system
    manifest/readme.
-3. **Nexus Recovery** — a separate reserved partition for redundant,
-   checksummed installer transaction-journal records.
-4. **Nexus Data** — NXFS, used by the installed Files view for persistent
+3. **Nexus Data** — NXFS, used by the installed Files view for persistent
    user files.
 
-Legacy-BIOS and dual-firmware layouts also contain a BIOS Boot partition for
-the Limine BIOS stage. The same installed kernel and Data volume are used by
+No separate Recovery partition is created, and no recovery setup is required
+for normal installation or startup. Legacy-BIOS installs add a small BIOS Boot
+partition for the Limine BIOS stage; dual-firmware installs include both EFI
+and BIOS boot support. The same installed kernel and Data volume are used by
 both firmware boot paths. Secure Boot is not supported.
 
 ## Storage and deployment
@@ -86,21 +89,31 @@ physical NVMe/SATA controller or firmware implementation.
 
 The installer formats the System and Data NXFS volumes separately, copies the
 installed OS kernel and boot payloads, and records each completed transaction
-phase in the Recovery partition. The installed OS is a separate ELF built
-without `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES`; only the live installer
-image can receive that build flag. The ordinary kernel build remains
-write-locked.
+phase in the two reserved EFI journal sectors. The records alternate and use
+checksums so an interrupted journal update does not overwrite the last valid
+copy. FAT32 formatting preserves these reserved sectors. The installed OS is
+a separate ELF built without `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES`;
+only the live installer image can receive that build flag. The ordinary
+kernel build remains write-locked.
 
-The installed Files view mounts the NXFS Data partition following the
-Recovery partition. It does not present the NXFS System volume as the user's
-writable file store. FAT32 volumes remain read-only. If no writable Data volume
+The installed Files view mounts the NXFS Data partition following the System
+partition. It does not present the NXFS System volume as the user's writable
+file store. FAT32 volumes remain read-only. If no writable Data volume
 is mounted, RAM-only file saves are volatile and do not survive a reboot.
 
-## Recovery and test coverage
+## Automatic install resumption and test coverage
+
+No separate Recovery partition or recovery utility is part of the normal
+installation flow. The installer records its phase in the EFI reserved sectors
+and automatically resumes an interrupted installation when a valid journal
+exists. A missing or damaged old journal does not block a clean install after
+the user confirms the selected disk with `ERASE`. This is transaction
+resumption, not a claim that every disk or hardware failure can be repaired
+automatically.
 
 Host-side tests use disposable mock block devices and inject failures at
 filesystem formatting, system-payload deployment, and boot-payload deployment.
-They simulate multiple restarts while preserving the disk's GPT and Recovery
+They simulate multiple restarts while preserving the disk's GPT and EFI
 journal, then verify that a retry resumes without rewriting the committed GPT.
 NXFS tests unmount and remount the Data volume, verify a file, replace it with
 edited contents, remount again, and verify the new generation.
@@ -140,8 +153,9 @@ editor; this is not yet a complete hierarchical desktop file manager.
 - No Secure Boot support.
 - No full separate userland or mature init/service manager; desktop apps and
   core services remain integrated into the kernel.
-- No production-grade updates, rollback workflow, or filesystem repair
-  environment beyond the implemented installer transaction recovery path.
+- No independent rescue environment or automated filesystem-repair utility.
+  Normal installs do not require a recovery step, but severe disk or hardware
+  failures may still require reinstalling from the live installer.
 - No claim of arbitrary GPU, audio, Wi-Fi, Bluetooth, or motherboard support.
 - The browser provides only early plain-HTTP text retrieval; TLS/HTTPS is not
   implemented.

@@ -2514,7 +2514,19 @@ static void desktop_draw_window_surface(enum desktop_view view,
                 browser_search_mode ? "SEARCH RESPONSE" :
                     "PAGE CONTENT  |  ALT+1..5 SOURCES",
                 1U, 48U, 88U, 112U);
-            for (size_t row = 0U; row < browser_line_count; ++row) {
+            const uint64_t row_space = content_height > 64U
+                ? content_height - 64U : 0U;
+            const size_t available_rows = (size_t)((row_space + 19U) / 20U);
+            size_t visible_sources = browser_source_count;
+            const size_t max_source_rows = available_rows > 2U
+                ? available_rows - 2U : 0U;
+            if (visible_sources > max_source_rows)
+                visible_sources = max_source_rows;
+            size_t visible_text_rows = browser_line_count;
+            const size_t text_capacity = available_rows - visible_sources;
+            if (visible_text_rows > text_capacity)
+                visible_text_rows = text_capacity;
+            for (size_t row = 0U; row < visible_text_rows; ++row) {
                 const uint64_t row_y = content_y + 48U + row * 20U;
                 if (row_y + 16U >= content_y + content_height) break;
                 graphics_fill_round_rect(panel_x + 32U, row_y,
@@ -2525,7 +2537,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
                 graphics_draw_text(panel_x + 44U, row_y + 12U,
                     browser_lines[row], 1U, 37U, 57U, 75U);
             }
-            for (size_t source = 0U; source < browser_source_count; ++source) {
+            for (size_t source = 0U; source < visible_sources; ++source) {
                 const size_t row = browser_line_count + source;
                 const uint64_t row_y = content_y + 48U + row * 20U;
                 if (row_y + 16U >= content_y + content_height) break;
@@ -4000,12 +4012,11 @@ static void browser_navigate(void) {
             parsed.location[2] == 't' && parsed.location[3] == 'p' &&
             parsed.location[4] == 's') {
             browser_set_status("Website redirected to HTTPS; TLS is unavailable");
-            browser_show_notice("THIS WEBSITE REDIRECTS TO HTTPS",
-                                "SECURE CONNECTIONS ARE NOT IMPLEMENTED YET");
+            browser_show_notice("HTTPS REDIRECT TARGET", parsed.location);
         } else {
-            browser_set_status("Website redirected; automatic redirects are not ready");
-            browser_show_notice("REDIRECT RECEIVED",
-                                "OPEN THE LOCATION URL MANUALLY");
+            browser_set_status("Website redirected; open the target manually");
+            browser_show_notice("REDIRECT TARGET", parsed.location[0] != '\0'
+                ? parsed.location : "NO LOCATION HEADER");
         }
         return;
     }

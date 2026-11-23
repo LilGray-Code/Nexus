@@ -83,10 +83,12 @@ static bool files_listing_truncated;
 enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
-    FILES_EDITOR_CONTENT
+    FILES_EDITOR_CONTENT,
+    FILES_EDITOR_RENAME
 };
 static enum files_editor_state files_editor_state;
 static char files_edit_name[NEXUS_VFS_NAME_MAX];
+static char files_rename_source[NEXUS_VFS_NAME_MAX];
 static char files_edit_content[FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
@@ -1113,7 +1115,9 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, text_y + 48U,
                 files_editor_state == FILES_EDITOR_NAME
                     ? "NEW FILE - ENTER A NAME"
-                    : "TEXT EDITOR - 1MB LIMIT",
+                    : files_editor_state == FILES_EDITOR_RENAME
+                        ? "RENAME FILE - ENTER A NEW NAME"
+                        : "TEXT EDITOR - 1MB LIMIT",
                 1, 108, 216, 229);
             graphics_draw_text(text_x, text_y + 82U, "NAME:",
                                1, 233, 243, 252);
@@ -1141,6 +1145,13 @@ static void draw_shell(void) {
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 292U,
                     "PGUP/PGDN SCROLL  HOME/END  F10 SAVE  ENTER NEW LINE",
+                    1, 170, 191, 211);
+            } else if (files_editor_state == FILES_EDITOR_RENAME) {
+                graphics_draw_text(text_x, text_y + 124U,
+                    "UP TO 31 CHARS: LETTERS, NUMBERS, _ - AND ONE DOT",
+                    1, 170, 191, 211);
+                graphics_draw_text(text_x, text_y + 156U,
+                    "ENTER RENAME  ESC CANCEL",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
@@ -1279,7 +1290,7 @@ static void draw_shell(void) {
                                    1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  ENTER OPEN/PREVIEW  ESC PARENT",
+                               "UP/DOWN SELECT  ENTER OPEN  R RENAME  ESC PARENT",
                                1, 170, 191, 211);
             if (files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 414U,
@@ -1804,6 +1815,28 @@ static void files_editor_set_status(const char *message) {
     files_edit_status[i] = '\0';
 }
 
+static void files_editor_begin_rename(void) {
+    struct nexus_vfs_dirent selected;
+    if (files_selected_index >= files_listing_count ||
+        !vfs_root_entry(files_selected_index, &selected) ||
+        selected.type != NEXUS_VFS_FILE) {
+        files_editor_set_status("SELECT A FILE TO RENAME");
+        return;
+    }
+    size_t length = 0U;
+    while (length < NEXUS_VFS_NAME_MAX - 1U &&
+           selected.name[length] != '\0') {
+        files_rename_source[length] = selected.name[length];
+        files_edit_name[length] = selected.name[length];
+        ++length;
+    }
+    files_rename_source[length] = '\0';
+    files_edit_name[length] = '\0';
+    files_edit_name_length = length;
+    files_edit_status[0] = '\0';
+    files_editor_state = FILES_EDITOR_RENAME;
+}
+
 static void files_editor_begin_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
@@ -1918,6 +1951,7 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
     if ((event->scancode & 0x80U) != 0U) return;
     if (event->scancode == 0x01U) {
         files_editor_state = FILES_EDITOR_CLOSED;
+        files_rename_source[0] = '\0';
         return;
     }
     if (files_editor_state == FILES_EDITOR_NAME) {
@@ -1930,6 +1964,24 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                 for (size_t i = 0U; i < sizeof(files_edit_status); ++i) {
                     files_edit_status[i] = message[i];
                     if (message[i] == '\0') break;
+                }
+            } else if (files_editor_state == FILES_EDITOR_RENAME) {
+                if (files_editor_name_exists() &&
+                    !name_equal(files_edit_name, files_rename_source)) {
+                    files_editor_set_status("DESTINATION ALREADY EXISTS");
+                } else if (name_equal(files_edit_name, files_rename_source)) {
+                    files_editor_set_status("NAME IS UNCHANGED");
+                } else if (vfs_move_file(files_rename_source, files_edit_name)) {
+                    serial_write("FILES: renamed ");
+                    serial_write(files_rename_source);
+                    serial_write(" to ");
+                    serial_write(files_edit_name);
+                    serial_write("\r\n");
+                    files_editor_state = FILES_EDITOR_CLOSED;
+                    files_rename_source[0] = '\0';
+                    refresh_files_listing();
+                } else {
+                    files_editor_set_status("RENAME FAILED - SOURCE PRESERVED");
                 }
             } else if (files_editor_name_exists()) {
                 const char *message = "FILE EXISTS - PRESS E TO EDIT";
@@ -3562,6 +3614,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x12U) {
             files_editor_begin_selected();
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x13U) {
+            files_editor_begin_rename();
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x48U && files_listing_count > 0U) {

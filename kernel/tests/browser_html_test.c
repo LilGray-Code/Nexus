@@ -22,6 +22,10 @@ int main(void) {
     check("one\n  two\tthree<br>four", "one two three four");
     check("<SCRIPT type='text/javascript'>x</SCRIPT>visible",
           "visible");
+    check("<scripture>ordinary visible text</scripture>tail",
+          "ordinary visible text tail");
+    check("<styleguide>also visible</styleguide>tail",
+          "also visible tail");
     check("unknown &madeup; entity", "unknown &madeup; entity");
 
     char tiny[5];

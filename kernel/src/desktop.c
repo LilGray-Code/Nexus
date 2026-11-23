@@ -2320,6 +2320,18 @@ static void browser_navigate(void) {
     browser_set_status("Loaded plain HTTP text; browser features unavailable");
 }
 
+static void terminal_append(const char *text, size_t *used) {
+    if (text == NULL || used == NULL) return;
+    while (*text != '\\0' && *used < sizeof(terminal_output) - 1U)
+        terminal_output[(*used)++] = *text++;
+}
+
+static void terminal_append_number(uint64_t value, size_t *used) {
+    char number[21];
+    format_u64(value, number);
+    terminal_append(number, used);
+}
+
 static void terminal_execute(void) {
     terminal_output[0] = '\0';
     if (terminal_input_length == 0U) return;
@@ -2327,7 +2339,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime storage net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME";
+        const char *s = "help about info mem uptime storage net dns HOST http HOST ls cd DIR cd .. pwd cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -2335,6 +2347,30 @@ static void terminal_execute(void) {
                terminal_input[4]=='t' && terminal_input[5]=='\0') {
         const char *s = "Nexus OS original x86-64 kernel";
         size_t i=0; while(s[i]!='\0' && i<sizeof(terminal_output)-1U){terminal_output[i]=s[i];++i;} terminal_output[i]='\0';
+    } else if (terminal_input[0]=='i' && terminal_input[1]=='n' &&
+                terminal_input[2]=='f' && terminal_input[3]=='o' &&
+                terminal_input[4]=='\\0') {
+        size_t out = 0U;
+        terminal_append("NEXUS x86-64 | uptime ", &out);
+        terminal_append_number(timer_ticks() / 100U, &out);
+        terminal_append(" s | memory ", &out);
+        terminal_append_number(memory_free_bytes() / 1024U, &out);
+        terminal_append("/", &out);
+        terminal_append_number(memory_total_bytes() / 1024U, &out);
+        terminal_append(" KiB free/total | disks ", &out);
+        terminal_append_number(blockdev_count(), &out);
+        terminal_append(" | processes ", &out);
+        size_t processes = 0U;
+        for (size_t slot = 0U; slot < NEXUS_PROCESS_MAX; ++slot) {
+            struct nexus_process_info process_info;
+            if (process_get_info(slot, &process_info)) ++processes;
+        }
+        terminal_append_number(processes, &out);
+        terminal_append(" | NXFS ", &out);
+        terminal_append(vfs_nxfs_mounted()
+            ? (vfs_nxfs_writable() ? "writable" : "read-only")
+            : "not mounted", &out);
+        terminal_output[out] = '\\0';
     } else if (terminal_input[0]=='m' && terminal_input[1]=='e' &&
                terminal_input[2]=='m' && terminal_input[3]=='\0') {
         const char *label = "free bytes: ";
@@ -2637,24 +2673,68 @@ static void terminal_execute(void) {
             terminal_output[out] = message[out]; ++out;
         }
         terminal_output[out] = '\0';
-    } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
-               terminal_input[2]=='\0') {
-        if (!vfs_has_filesystem()) scan_files_once();
-        size_t out=0;
-        if (!vfs_has_filesystem()) {
-            const char *s="no mounted volume";
-            while(s[out]!='\0' && out<sizeof(terminal_output)-1U){terminal_output[out]=s[out];++out;}
-        } else {
-            for(size_t n=0;n<vfs_root_entry_count();++n) {
-                struct nexus_vfs_dirent e;
-                if(!vfs_root_entry(n,&e)) continue;
-                for(size_t k=0;e.name[k]!='\0' && out<sizeof(terminal_output)-2U;++k)
-                    terminal_output[out++]=e.name[k];
-                if(out<sizeof(terminal_output)-1U) terminal_output[out++]=' ';
-            }
-            if(out==0U) { terminal_output[out++]='('; terminal_output[out++]='e'; terminal_output[out++]=')'; }
+    } else if (terminal_input[0]=='p' && terminal_input[1]=='w' &&
+               terminal_input[2]=='d' && terminal_input[3]=='\\0') {
+        if (!vfs_root_mounted()) scan_files_once();
+        if (!vfs_current_path(terminal_output, sizeof(terminal_output))) {
+            size_t out = 0U;
+            terminal_append("no FAT32 directory is mounted", &out);
+            terminal_output[out] = '\\0';
         }
-        terminal_output[out]='\0';
+    } else if (terminal_input[0]=='c' && terminal_input[1]=='d' &&
+               terminal_input[2]==' ' && terminal_input[3]!='\\0') {
+        if (!vfs_root_mounted()) scan_files_once();
+        const char *target = terminal_input + 3;
+        size_t out = 0U;
+        if (!vfs_root_mounted()) {
+            terminal_append("no FAT32 directory is mounted", &out);
+        } else if (target[0]=='.' && target[1]=='.' && target[2]=='\\0') {
+            if (!vfs_parent_directory()) {
+                terminal_append("already at root", &out);
+            } else {
+                terminal_append("directory: ", &out);
+                char path[sizeof(terminal_output)];
+                if (vfs_current_path(path, sizeof(path)))
+                    terminal_append(path, &out);
+            }
+        } else if (!vfs_enter_directory(target)) {
+            terminal_append("directory not found or depth limit reached", &out);
+        } else {
+            terminal_append("directory: ", &out);
+            char path[sizeof(terminal_output)];
+            if (vfs_current_path(path, sizeof(path)))
+                terminal_append(path, &out);
+        }
+        terminal_output[out] = '\\0';
+    } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
+               terminal_input[2]=='\\0') {
+        if (!vfs_has_filesystem()) scan_files_once();
+        size_t out = 0U;
+        const size_t entries = vfs_root_entry_count();
+        if (!vfs_has_filesystem()) {
+            terminal_append("no mounted volume", &out);
+        } else if (entries == 0U) {
+            terminal_append("(empty)", &out);
+        } else {
+            for (size_t n = 0U; n < entries &&
+                 out < sizeof(terminal_output) - 1U; ++n) {
+                struct nexus_vfs_dirent entry;
+                if (!vfs_root_entry(n, &entry)) continue;
+                if (n != 0U) terminal_append("  ", &out);
+                if (entry.type == NEXUS_VFS_DIRECTORY) {
+                    terminal_append("[DIR] ", &out);
+                    terminal_append(entry.name, &out);
+                    terminal_append("/", &out);
+                } else {
+                    terminal_append("[FILE] ", &out);
+                    terminal_append(entry.name, &out);
+                    terminal_append(" (", &out);
+                    terminal_append_number(entry.size, &out);
+                    terminal_append(" B)", &out);
+                }
+            }
+        }
+        terminal_output[out] = '\\0';
     } else if (terminal_input[0]=='p' && terminal_input[1]=='s' &&
                terminal_input[2]=='\0') {
         size_t out = 0U;

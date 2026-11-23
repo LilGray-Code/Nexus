@@ -1644,7 +1644,38 @@ static void refresh_files_listing(void) {
                 (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : ' ';
         }
         files_preview[bytes_read] = '\0';
-    }    files_sort_listing();
+    }
+
+    files_sort_listing();
+    files_first_name[0] = '\0';
+    files_preview[0] = '\0';
+    for (size_t index = 0U; index < files_listing_count; ++index) {
+        if (files_listing_types[index] != NEXUS_VFS_FILE) continue;
+        size_t name_length = 0U;
+        while (name_length < sizeof(files_first_name) - 1U &&
+               files_listing[index][name_length] != '\0') {
+            files_first_name[name_length] = files_listing[index][name_length];
+            ++name_length;
+        }
+        files_first_name[name_length] = '\0';
+
+        struct nexus_vfs_file preview_file;
+        if (vfs_open_readonly(files_listing[index], &preview_file)) {
+            uint8_t preview_data[sizeof(files_preview) - 1U];
+            size_t amount = 0U;
+            if (vfs_read(&preview_file, preview_data, sizeof(preview_data),
+                         &amount)) {
+                for (size_t n = 0U; n < amount; ++n) {
+                    const uint8_t ch = preview_data[n];
+                    files_preview[n] =
+                        (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : ' ';
+                }
+                files_preview[amount] = '\0';
+            }
+            vfs_close(&preview_file);
+        }
+        break;
+    }
 }
 
 static size_t files_editor_max_view_offset(void) {

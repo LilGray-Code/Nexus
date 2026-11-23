@@ -13,9 +13,15 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal,
-  System Monitor, and a playable native Snake arcade app, plus keyboard and
-  mouse input. The Snake game is timer-driven, supports arrow-key movement,
-  pause/resume, restart, scoring, and win/game-over states.
+  System Monitor, a playable native Snake arcade app, and a native Calculator,
+  plus keyboard and mouse input. Snake is timer-driven, supports arrow-key
+  movement, pause/resume, restart, scoring, and win/game-over states.
+- The Calculator evaluates bounded integer expressions with precedence,
+  parentheses, unary signs, division and modulo; it reports syntax,
+  divide-by-zero, nesting and overflow errors. Its keypad accepts mouse input
+  as well as keyboard entry.
+- Supported USB gamepad hat and button reports can control Snake when a live
+  controller input path is available.
 - A bounded 12-window state-management core with generation-safe handles,
   focus and z-order, hit-testing, clamped movement/resizing, minimize,
   maximize/restore, and lifecycle tests. This is a kernel foundation only:

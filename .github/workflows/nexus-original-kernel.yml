@@ -45,6 +45,13 @@ jobs:
             -o /tmp/nexus-window-manager-test
           /tmp/nexus-window-manager-test
 
+      - name: Test Nexus calculator expression engine
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/calculator.c \
+            kernel/tests/calculator_test.c -o /tmp/nexus-calculator-test
+          /tmp/nexus-calculator-test
+
       - name: Test durable installer recovery journal (host-only mock disk)
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

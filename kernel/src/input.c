@@ -267,7 +267,7 @@ bool input_usb_gamepad_report(
         .type = NEXUS_INPUT_GAMEPAD,
         .gamepad_axis_count = layout->axis_count,
         .gamepad_buttons = decoded.buttons,
-        .gamepad_hat = decoded.hat
+        .gamepad_hat = layout->has_hat ? decoded.hat : -1
     };
     for (uint8_t i = 0U; i < layout->axis_count; ++i)
         event.gamepad_axes[i] = decoded.axes[i];

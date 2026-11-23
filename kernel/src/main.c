@@ -281,7 +281,7 @@ void kmain(void) {
     }
     if (netdev_ready()) {
         serial_write("NETWORK LINK: ");
-        serial_write(netdev_link_up() ? "UP\\r\\n" : "DOWN OR UNKNOWN\\r\\n");
+        serial_write(netdev_link_up() ? "UP\r\n" : "DOWN OR UNKNOWN\r\n");
     }
 
 

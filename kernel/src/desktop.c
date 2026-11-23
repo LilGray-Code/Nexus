@@ -37,6 +37,20 @@ enum desktop_view {
     DESKTOP_INSTALLER
 };
 
+enum desktop_snap_zone {
+    DESKTOP_SNAP_LEFT = 0,
+    DESKTOP_SNAP_RIGHT,
+    DESKTOP_SNAP_MAXIMIZE,
+    DESKTOP_SNAP_TOP_LEFT,
+    DESKTOP_SNAP_TOP_RIGHT,
+    DESKTOP_SNAP_BOTTOM_LEFT,
+    DESKTOP_SNAP_BOTTOM_RIGHT,
+    DESKTOP_SNAP_RESTORE
+};
+
+static void desktop_snap_window(nexus_window_id id,
+                                enum desktop_snap_zone zone);
+
 static enum desktop_view active_view = DESKTOP_HOME;
 static uint64_t screen_width;
 static uint64_t screen_height;
@@ -63,6 +77,8 @@ static enum desktop_window_drag_mode desktop_window_drag_mode;
 static nexus_window_id desktop_dragged_window;
 static int64_t desktop_drag_offset_x;
 static int64_t desktop_drag_offset_y;
+static nexus_window_id desktop_last_title_click_window;
+static uint64_t desktop_last_title_click_tick;
 static uint64_t window_animation_offset;
 /* Five coordinated palettes shared by the wallpaper, window chrome and
  * shell accents. The selected index is persisted in desktop.cfg. */
@@ -1242,17 +1258,6 @@ static void desktop_draw_desktop_icons(uint64_t top_bar,
                            246U, 249U, 253U);
     }
 }
-
-enum desktop_snap_zone {
-    DESKTOP_SNAP_LEFT = 0,
-    DESKTOP_SNAP_RIGHT,
-    DESKTOP_SNAP_MAXIMIZE,
-    DESKTOP_SNAP_TOP_LEFT,
-    DESKTOP_SNAP_TOP_RIGHT,
-    DESKTOP_SNAP_BOTTOM_LEFT,
-    DESKTOP_SNAP_BOTTOM_RIGHT,
-    DESKTOP_SNAP_RESTORE
-};
 
 static void desktop_snap_window(nexus_window_id id,
                                 enum desktop_snap_zone zone) {

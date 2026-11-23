@@ -362,7 +362,7 @@ bool paging_user_address_space_selftest(void) {
     if (paging_map_user_page(test_root_physical, 1ULL << user_bits,
                              duplicate_page, true, false)) valid = false;
     if (paging_map_user_page(kernel_root_physical, 0x00800000ULL,
-                             duplicate_page, true, false)) valid = false;
+                             second_user_page, true, false)) valid = false;
 
     /*
      * Put a deliberately malformed supervisor-only entry at the last user
@@ -381,6 +381,26 @@ bool paging_user_address_space_selftest(void) {
 
     if (!paging_destroy_user_address_space(test_root_physical)) return false;
     return valid;
+}
+
+static bool page_table_tree_contains_table_page(uint64_t table_physical,
+                                                          unsigned int level,
+                                                          uint64_t target_page) {
+    if (table_physical == target_page) return true;
+    if (level <= 1U) return false;
+    volatile uint64_t *table =
+        (volatile uint64_t *)memory_phys_to_virt(table_physical);
+    if (table == NULL) return false;
+
+    for (size_t i = 0U; i < 512U; ++i) {
+        const uint64_t entry = table[i];
+        if ((entry & PAGE_PRESENT) == 0U ||
+            (entry & PAGE_LARGE) != 0U) continue;
+        if (page_table_tree_contains_table_page(
+                entry & PAGE_ADDRESS_MASK, level - 1U, target_page))
+            return true;
+    }
+    return false;
 }
 
 static bool user_page_table_contains_table_page(uint64_t table_physical,
@@ -464,6 +484,16 @@ bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
                 subtree, levels - 1U, page_physical) ||
             user_page_table_contains_physical(
                 subtree, levels - 1U, page_physical)) return false;
+    }
+
+    /* Shared upper-half kernel page tables must never become user data pages. */
+    for (size_t root_index = 256U; root_index < 512U; ++root_index) {
+        const uint64_t root_entry = table[root_index];
+        if ((root_entry & PAGE_PRESENT) == 0U ||
+            (root_entry & PAGE_LARGE) != 0U) continue;
+        if (page_table_tree_contains_table_page(
+                root_entry & PAGE_ADDRESS_MASK, levels - 1U,
+                page_physical)) return false;
     }
 
     volatile uint64_t *created_entries[4];

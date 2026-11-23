@@ -44,6 +44,7 @@ struct net_arp_entry {
 
 struct net_state {
     bool ready;
+    bool link_up;
     uint8_t mac[6];
     uint8_t ipv4[4];
     uint16_t ipv4_id;
@@ -683,21 +684,64 @@ bool net_init(void) {
     copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
     network.ready = true;
     network.ipv4_id = 1U;
+    network.link_up = netdev_link_up();
     dhcp_state = NET_DHCP_DISCOVERING;
     dhcp_transaction_id = 0x4E585553U;
     dhcp_retry_count = 0U;
     dhcp_last_send_tick = timer_ticks();
     serial_write("NEXUS ETHERNET L2 READY\r\n");
-    if (send_dhcp_message(1U)) {
-        serial_write("NEXUS DHCP DISCOVER SENT\r\n");
+    if (network.link_up) {
+        if (send_dhcp_message(1U)) {
+            serial_write("NEXUS DHCP DISCOVER SENT\r\n");
+        } else {
+            serial_write("WARNING: DHCP Discover transmit failed\r\n");
+        }
     } else {
-        serial_write("WARNING: DHCP Discover transmit failed\r\n");
+        serial_write("NEXUS NETWORK WAITING FOR PHYSICAL LINK\r\n");
     }
     return true;
 }
 
+static void network_handle_link_change(bool link_up) {
+    if (network.link_up == link_up) return;
+    network.link_up = link_up;
+    for (size_t i = 0U; i < NET_ARP_CACHE_SIZE; ++i)
+        network.arp[i].valid = false;
+    network.arp_replace = 0U;
+    tcp_connection = (struct net_tcp_connection){0};
+    dns_query_active = false;
+    dns_query_done = true;
+    dns_query_success = false;
+
+    if (!link_up) {
+        for (size_t i = 0U; i < 4U; ++i) {
+            network.ipv4[i] = 0U;
+            offered_ipv4[i] = 0U;
+            dhcp_server_ipv4[i] = 0U;
+            subnet_mask[i] = 0U;
+            gateway_ipv4[i] = 0U;
+            dns_ipv4[i] = 0U;
+        }
+        dhcp_state = NET_DHCP_DISCOVERING;
+        dhcp_retry_count = 0U;
+        serial_write("NEXUS NETWORK LINK DOWN; CLEARED STALE STATE\r\n");
+        return;
+    }
+
+    dhcp_state = NET_DHCP_DISCOVERING;
+    dhcp_transaction_id ^= (uint32_t)timer_ticks() ^ 0x4E585553U;
+    if (dhcp_transaction_id == 0U) dhcp_transaction_id = 0x4E585553U;
+    dhcp_retry_count = 0U;
+    dhcp_last_send_tick = timer_ticks();
+    serial_write("NEXUS NETWORK LINK UP; RESTARTING DHCP\r\n");
+    if (send_dhcp_message(1U))
+        serial_write("NEXUS DHCP DISCOVER SENT\r\n");
+}
+
 void net_poll(void) {
     if (!network.ready) return;
+    network_handle_link_change(netdev_link_up());
+    if (!network.link_up) return;
     for (size_t i = 0; i < 32U; ++i) {
         size_t length = 0U;
         if (!netdev_receive_frame(rx_frame, sizeof(rx_frame), &length)) break;

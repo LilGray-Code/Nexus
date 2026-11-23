@@ -22,6 +22,8 @@ struct ramfs_entry {
 };
 
 static struct ramfs_entry ramfs[NEXUS_VFS_RAM_MAX_FILES];
+/* A single bounded copy workspace avoids large kernel-stack allocations. */
+static uint8_t vfs_copy_buffer[NEXUS_NXFS_MAX_FILE_BYTES];
 
 static char ascii_upper(char value) {
     if (value >= 'a' && value <= 'z')
@@ -277,6 +279,47 @@ bool vfs_write_file(const char *name, const void *data, size_t length) {
         return nxfs_write_file(name, data, length);
     }
     return vfs_ramfs_write(name, data, length);
+}
+
+bool vfs_copy_file(const char *source_name,
+                    const char *destination_name) {
+    if (source_name == NULL || destination_name == NULL ||
+        source_name[0] == '\0' || destination_name[0] == '\0' ||
+        name_equal(source_name, destination_name)) return false;
+
+    struct nexus_vfs_file source;
+    if (!vfs_open_readonly(source_name, &source)) return false;
+
+    uint32_t size = 0U;
+    if (!vfs_file_size(&source, &size) ||
+        size > NEXUS_NXFS_MAX_FILE_BYTES) {
+        vfs_close(&source);
+        return false;
+    }
+
+    size_t copied = 0U;
+    bool read_ok = true;
+    while (copied < size) {
+        size_t amount = (size_t)size - copied;
+        if (amount > NEXUS_VFS_READ_CHUNK) amount = NEXUS_VFS_READ_CHUNK;
+        size_t received = 0U;
+        if (!vfs_read(&source, vfs_copy_buffer + copied,
+                      amount, &received) || received == 0U) {
+            read_ok = false;
+            break;
+        }
+        copied += received;
+    }
+    vfs_close(&source);
+    if (!read_ok || copied != size) return false;
+
+    /* Copying from a nested FAT32 folder writes only to the Nexus root
+     * volume. FAT32 remains read-only and never receives copy writes. */
+    if (nxfs_root_mounted && nxfs_is_writable())
+        return nxfs_write_file(destination_name, vfs_copy_buffer, size);
+
+    if (size > NEXUS_VFS_RAM_MAX_FILE_SIZE) return false;
+    return vfs_ramfs_write(destination_name, vfs_copy_buffer, size);
 }
 
 /* Higher-priority writable layers hide lower-layer names, matching open(). */

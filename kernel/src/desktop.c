@@ -974,9 +974,16 @@ static void draw_shell(void) {
                 graphics_draw_text(text_x, text_y + 116U,
                                    "INSTALLATION DEPLOYMENT COMPLETED",
                                    1, 108, 216, 229);
-                graphics_draw_text(text_x, text_y + 146U,
-                                   "REMOVE USB MEDIA, THEN PRESS ENTER TO REBOOT",
-                                   1, 170, 225, 190);
+                graphics_fill_rect(text_x, text_y + 194U, 244U, 36U,
+                                   0U, 120U, 215U);
+                graphics_draw_rect(text_x, text_y + 194U, 244U, 36U,
+                                   65U, 165U, 230U);
+                graphics_draw_text(text_x + 12U, text_y + 208U,
+                                   "RESTART INTO NEXUS OS",
+                                   1, 255, 255, 255);
+                graphics_draw_text(text_x, text_y + 248U,
+                                   "REMOVE THE INSTALL USB BEFORE RESTARTING",
+                                   1, 239, 177, 119);
             } else if (installer_ui_state == INSTALLER_UI_FAILED) {
                 graphics_draw_text(text_x, text_y + 116U,
                                    "INSTALLATION STOPPED - RECOVERY MAY BE REQUIRED",
@@ -2844,6 +2851,14 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 const uint64_t py = window_maximized ? top + 8U
                     : top + (screen_height - top - bottom - ph) / 2U;
                 const uint64_t controls_x = px + pw - 66U;
+                if (active_view == DESKTOP_INSTALLER &&
+                    installer_ui_state == INSTALLER_UI_COMPLETE &&
+                    (uint64_t)pointer_x >= px + 32U &&
+                    (uint64_t)pointer_x < px + 276U &&
+                    (uint64_t)pointer_y >= py + 48U + 194U &&
+                    (uint64_t)pointer_y < py + 48U + 230U) {
+                    desktop_reboot_after_install();
+                }
                 if ((uint64_t)pointer_y >= py + 8U &&
                     (uint64_t)pointer_y < py + 28U &&
                     (uint64_t)pointer_x >= controls_x &&

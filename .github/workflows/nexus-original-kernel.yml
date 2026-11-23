@@ -170,6 +170,14 @@ jobs:
             -o /tmp/nexus-wifi-80211-test
           /tmp/nexus-wifi-80211-test
 
+      - name: Test exact Wi-Fi chipset identification
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi_chipset.c \
+            kernel/tests/wifi_chipset_test.c \
+            -o /tmp/nexus-wifi-chipset-test
+          /tmp/nexus-wifi-chipset-test
+
       - name: Test ELF64 dynamic metadata parser
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

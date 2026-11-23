@@ -48,6 +48,10 @@ make -C kernel clean all OUT=../build/os EXTRA_CFLAGS="-DNEXUS_INSTALLED_OS_BUIL
 make -C kernel clean all OUT=../build/installer EXTRA_CFLAGS="-DNEXUS_INSTALLER_BUILD ${installer_flags}"
 cp build/os/nexus-kernel.elf build/nexus-kernel.elf
 cp build/installer/nexus-kernel.elf build/nexus-installer.elf
+if cmp -s build/nexus-kernel.elf build/nexus-installer.elf; then
+  echo "Installed OS and live installer unexpectedly produced identical kernel images" >&2
+  exit 1
+fi
 
 ISO_ROOT="$ROOT/build/iso-root"
 rm -rf "$ISO_ROOT"

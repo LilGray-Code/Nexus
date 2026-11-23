@@ -3607,6 +3607,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
      * the available desktop work area, matching a familiar desktop shortcut. */
     if (active_view != DESKTOP_INSTALLER && event->scancode == 0x57U) {
         window_maximized = !window_maximized;
+        start_menu_open = false;
         (void)desktop_save_settings();
         draw_shell();
         draw_pointer();

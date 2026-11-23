@@ -589,8 +589,10 @@ static void draw_shell(void) {
                        settings_theme == 0U ? 0U : (settings_theme == 1U ? 0U : 202U),
                        settings_theme == 0U ? 120U : (settings_theme == 1U ? 153U : 80U),
                        settings_theme == 0U ? 215U : (settings_theme == 1U ? 188U : 16U));
-    graphics_fill_rect(16U, 7U, 28U, top_bar - 14U, 0U, 120U, 215U);
-    graphics_draw_text(25U, top_bar / 2U - 4U, "N", 1U, 7U, 23U, 39U);
+    /* Keep the shell identity consistent with the boot splash, launcher,
+     * taskbar and first-party app chrome. The top bar is at least 34 px tall,
+     * so the 22 px mark remains vertically centered on supported modes. */
+    desktop_draw_logo(18U, (top_bar - 22U) / 2U, 22U);
     graphics_draw_text(54U, top_bar / 2U - 4U,
                        "NEXUS  /  YOUR WORKSPACE", 1U,
                        232U, 243U, 252U);

@@ -1601,6 +1601,29 @@ static bool browser_append_text(char *buffer, size_t capacity,
     return true;
 }
 
+static bool browser_valid_host(const char *host, size_t length) {
+    if (host == NULL || length == 0U || length >= 64U) return false;
+    size_t label_length = 0U;
+    bool previous_hyphen = false;
+    for (size_t i = 0U; i < length; ++i) {
+        const char ch = host[i];
+        if (ch == '.') {
+            if (label_length == 0U || previous_hyphen) return false;
+            label_length = 0U;
+            previous_hyphen = false;
+            continue;
+        }
+        const bool alphanumeric =
+            (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9');
+        if (!alphanumeric && ch != '-') return false;
+        if (label_length == 0U && ch == '-') return false;
+        if (++label_length > 63U) return false;
+        previous_hyphen = ch == '-';
+    }
+    return label_length != 0U && !previous_hyphen;
+}
+
 static bool browser_starts_with(const char *value, size_t length,
                                  const char *prefix) {
     size_t i = 0U;
@@ -1659,6 +1682,7 @@ static void browser_navigate(void) {
             }
             host[host_length++] = ch;
         } else {
+            if (ch == '#') break; /* Fragments are never sent in HTTP requests. */
             if (path_length >= sizeof(path) - 1U ||
                 ch < 0x21 || ch > 0x7E) {
                 browser_set_status("Invalid or overlong URL path");
@@ -1673,6 +1697,10 @@ static void browser_navigate(void) {
     }
     host[host_length] = '\0';
     path[path_length] = '\0';
+    if (!browser_valid_host(host, host_length)) {
+        browser_set_status("Invalid host; ports and special characters are unsupported");
+        return;
+    }
 
     browser_set_status("Resolving host...");
     uint8_t address[4];

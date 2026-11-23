@@ -287,6 +287,16 @@ bool vfs_copy_file(const char *source_name,
         source_name[0] == '\0' || destination_name[0] == '\0' ||
         name_equal(source_name, destination_name)) return false;
 
+    /* Never silently replace an existing Nexus-owned destination. */
+    if (ramfs_find(destination_name) != NULL) return false;
+    if (nxfs_root_mounted) {
+        for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+            const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+            if (entry != NULL && name_equal(entry->name, destination_name))
+                return false;
+        }
+    }
+
     struct nexus_vfs_file source;
     if (!vfs_open_readonly(source_name, &source)) return false;
 

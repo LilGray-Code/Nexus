@@ -97,10 +97,7 @@ bool nexus_hid_gamepad_find_interface(
             if (descriptor_length < 7U ||
                 seen_endpoints >= expected_endpoints) return false;
             ++seen_endpoints;
-            if (!have_report_descriptor) {
-                offset += descriptor_length;
-                continue;
-            }
+            if (!have_report_descriptor) return false;
             const uint8_t address = configuration[offset + 2U];
             const uint8_t attributes = configuration[offset + 3U] & 0x03U;
             const uint16_t raw_packet = (uint16_t)(
@@ -108,10 +105,11 @@ bool nexus_hid_gamepad_find_interface(
                 ((uint16_t)configuration[offset + 5U] << 8));
             const uint16_t packet = raw_packet & 0x07FFU;
             const uint8_t interval = configuration[offset + 6U];
-            if ((address & 0x80U) != 0U && (address & 0x0FU) != 0U &&
-                attributes == 3U && (raw_packet & 0xF800U) == 0U &&
-                packet != 0U && packet <= NEXUS_HID_GAMEPAD_MAX_REPORT_BYTES &&
-                interval != 0U) {
+            if ((address & 0x70U) != 0U || (address & 0x0FU) == 0U ||
+                attributes != 3U || (raw_packet & 0xF800U) != 0U ||
+                packet == 0U || packet > NEXUS_HID_GAMEPAD_MAX_REPORT_BYTES ||
+                interval == 0U) return false;
+            if ((address & 0x80U) != 0U) {
                 candidate = (struct nexus_hid_gamepad_interface){
                     .interface_number = current_interface,
                     .configuration_value = configuration[5],

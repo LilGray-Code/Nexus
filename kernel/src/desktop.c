@@ -1092,6 +1092,189 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
                        1U,132U,165U,193U);
 }
 
+static uint64_t desktop_workspace_tab_x(uint8_t workspace) {
+    return 180U + (uint64_t)workspace * 34U;
+}
+
+static uint64_t desktop_workspace_overview_x(void) {
+    return 326U;
+}
+
+static void desktop_draw_workspace_switcher(uint64_t top_bar) {
+    if (screen_width < 500U) return;
+    graphics_draw_text(122U, top_bar / 2U - 4U, "DESKTOPS",
+                       1U, 139U, 184U, 210U);
+    const uint8_t active = nexus_wm_active_workspace();
+    for (uint8_t workspace = 0U;
+         workspace < NEXUS_WM_MAX_WORKSPACES; ++workspace) {
+        const uint64_t x = desktop_workspace_tab_x(workspace);
+        const bool selected = workspace == active;
+        graphics_fill_round_rect(x, 8U, 28U, top_bar - 16U, 7U,
+            selected ? 48U : 24U, selected ? 91U : 43U,
+            selected ? 119U : 62U);
+        if (selected)
+            graphics_draw_round_rect(x, 8U, 28U, top_bar - 16U, 7U,
+                                     94U, 169U, 197U);
+        char number[2] = {(char)('1' + workspace), '\0'};
+        graphics_draw_text(x + 10U, top_bar / 2U - 4U, number, 1U,
+                           selected ? 255U : 174U,
+                           selected ? 255U : 197U,
+                           selected ? 255U : 216U);
+    }
+    const uint64_t overview_x = desktop_workspace_overview_x();
+    graphics_fill_round_rect(overview_x, 8U, 82U, top_bar - 16U, 7U,
+                             workspace_overview_open ? 47U : 24U,
+                             workspace_overview_open ? 78U : 43U,
+                             workspace_overview_open ? 99U : 62U);
+    graphics_draw_text(overview_x + 8U, top_bar / 2U - 4U, "TASK VIEW",
+                       1U, 226U, 239U, 249U);
+}
+
+static void desktop_workspace_overview_geometry(uint64_t *x, uint64_t *y,
+                                                uint64_t *width,
+                                                uint64_t *height) {
+    uint64_t panel_width = screen_width > 940U ? 900U :
+        (screen_width > 32U ? screen_width - 32U : screen_width);
+    uint64_t panel_height = screen_height > 520U ? 430U :
+        (screen_height > 32U ? screen_height - 32U : screen_height);
+    if (panel_width < 220U) panel_width = screen_width;
+    if (panel_height < 140U) panel_height = screen_height;
+    if (x != NULL) *x = (screen_width - panel_width) / 2U;
+    if (y != NULL) *y = (screen_height - panel_height) / 2U;
+    if (width != NULL) *width = panel_width;
+    if (height != NULL) *height = panel_height;
+}
+
+static void desktop_draw_workspace_overview(void) {
+    if (!workspace_overview_open || installer_environment ||
+        !desktop_window_manager_ready || screen_width < 320U ||
+        screen_height < 220U) return;
+    uint64_t panel_x = 0U, panel_y = 0U, panel_width = 0U, panel_height = 0U;
+    desktop_workspace_overview_geometry(&panel_x, &panel_y,
+                                        &panel_width, &panel_height);
+    graphics_fill_rect(0U, 0U, screen_width, screen_height,
+                       5U, 10U, 22U);
+    graphics_fill_round_rect(panel_x + 8U, panel_y + 12U,
+                             panel_width, panel_height, 22U,
+                             1U, 5U, 16U);
+    graphics_fill_gradient_rect(panel_x, panel_y, panel_width, panel_height,
+                                24U, 38U, 59U, 13U, 22U, 38U);
+    graphics_draw_round_rect(panel_x, panel_y, panel_width, panel_height,
+                              22U, 77U, 111U, 143U);
+    graphics_fill_gradient_rect(panel_x + 1U, panel_y + 1U,
+                                panel_width - 2U, 3U,
+                                70U, 160U, 211U, 135U, 111U, 226U);
+    graphics_draw_text(panel_x + 24U, panel_y + 30U,
+                       "TASK VIEW", 2U, 245U, 249U, 255U);
+    graphics_draw_text(panel_x + 24U, panel_y + 52U,
+                       "FOUR DESKTOPS  /  KEEP PROJECTS AND WINDOWS SEPARATE",
+                       1U, 145U, 184U, 210U);
+    const uint64_t gap = 8U;
+    const uint64_t inner_x = panel_x + 18U;
+    const uint64_t inner_y = panel_y + 70U;
+    const uint64_t inner_width = panel_width - 36U;
+    const uint64_t card_width = (inner_width -
+        (NEXUS_WM_MAX_WORKSPACES - 1U) * gap) /
+        NEXUS_WM_MAX_WORKSPACES;
+    const uint64_t card_height = panel_height - 116U;
+    const uint8_t active = nexus_wm_active_workspace();
+    for (uint8_t workspace = 0U;
+         workspace < NEXUS_WM_MAX_WORKSPACES; ++workspace) {
+        const uint64_t x = inner_x + (uint64_t)workspace *
+                           (card_width + gap);
+        const uint64_t y = inner_y;
+        const bool selected = workspace == workspace_overview_selected;
+        const bool current = workspace == active;
+        graphics_fill_round_rect(x, y, card_width, card_height, 12U,
+            selected ? 39U : 20U, selected ? 73U : 37U,
+            selected ? 95U : 56U);
+        graphics_draw_round_rect(x, y, card_width, card_height, 12U,
+            selected ? 117U : 68U, selected ? 176U : 104U,
+            selected ? 201U : 135U);
+        char heading[16] = "DESKTOP 1";
+        heading[8] = (char)('1' + workspace);
+        if (card_width > 100U) {
+            graphics_draw_text(x + 10U, y + 22U, heading, 1U,
+                               241U, 247U, 253U);
+        } else {
+            char short_heading[3] = {'D', (char)('1' + workspace), '\0'};
+            graphics_draw_text(x + 10U, y + 22U, short_heading, 1U,
+                               241U, 247U, 253U);
+        }
+        graphics_draw_text(x + 10U, y + 42U,
+                           current ? "CURRENT" : "SWITCH",
+                           1U, current ? 112U : 151U,
+                           current ? 222U : 185U,
+                           current ? 190U : 209U);
+        char count_text[24] = "WINDOWS ";
+        char count_number[21];
+        format_u64(nexus_wm_workspace_count(workspace), count_number);
+        size_t count_pos = 8U;
+        for (size_t n = 0U; count_number[n] != '\0' &&
+             count_pos < sizeof(count_text) - 1U; ++n)
+            count_text[count_pos++] = count_number[n];
+        count_text[count_pos] = '\0';
+        if (card_width > 100U)
+            graphics_draw_text(x + 10U, y + 62U, count_text, 1U,
+                               139U, 184U, 210U);
+        const size_t windows = nexus_wm_workspace_count(workspace);
+        if (windows == 0U) {
+            graphics_fill_round_rect(x + 9U, y + 82U,
+                card_width - 18U, card_height > 112U ? 46U : 20U,
+                7U, 14U, 28U, 44U);
+            if (card_width > 100U)
+                graphics_draw_text(x + 17U, y + 98U, "EMPTY DESKTOP",
+                                   1U, 130U, 164U, 188U);
+        } else {
+            const size_t rows = windows < 3U ? windows : 3U;
+            for (size_t row = 0U; row < rows; ++row) {
+                nexus_window_id id = 0U;
+                struct nexus_window_info info;
+                if (!nexus_wm_workspace_z_order(workspace, row, &id) ||
+                    !nexus_wm_get(id, &info)) continue;
+                const uint64_t row_y = y + 82U + (uint64_t)row * 39U;
+                if (row_y + 31U > y + card_height - 8U) break;
+                graphics_fill_round_rect(x + 9U, row_y,
+                    card_width - 18U, 32U, 6U, 11U, 24U, 39U);
+                graphics_draw_rect(x + 13U, row_y + 6U, 12U, 2U,
+                                   80U, 162U, 190U);
+                if (card_width > 140U)
+                    graphics_draw_text(x + 30U, row_y + 19U,
+                        info.title, 1U, 223U, 235U, 244U);
+            }
+        }
+    }
+    graphics_draw_text(panel_x + 24U, panel_y + panel_height - 16U,
+        "CLICK A DESKTOP TO SWITCH  /  ESC TO CLOSE",
+        1U, 143U, 176U, 201U);
+}
+
+static void desktop_workspace_overview_click(void) {
+    uint64_t panel_x = 0U, panel_y = 0U, panel_width = 0U, panel_height = 0U;
+    desktop_workspace_overview_geometry(&panel_x, &panel_y,
+                                        &panel_width, &panel_height);
+    const uint64_t inner_x = panel_x + 18U;
+    const uint64_t inner_y = panel_y + 70U;
+    const uint64_t gap = 8U;
+    const uint64_t card_width =
+        (panel_width - 36U - (NEXUS_WM_MAX_WORKSPACES - 1U) * gap) /
+        NEXUS_WM_MAX_WORKSPACES;
+    if (pointer_x >= (int64_t)inner_x &&
+        pointer_x < (int64_t)(inner_x + panel_width - 36U) &&
+        pointer_y >= (int64_t)inner_y &&
+        pointer_y < (int64_t)(panel_y + panel_height - 42U)) {
+        const uint64_t relative = (uint64_t)pointer_x - inner_x;
+        const uint64_t stride = card_width + gap;
+        const uint64_t workspace = relative / stride;
+        const uint64_t local_x = relative % stride;
+        if (workspace < NEXUS_WM_MAX_WORKSPACES && local_x < card_width) {
+            desktop_switch_workspace((uint8_t)workspace);
+            return;
+        }
+    }
+    workspace_overview_open = false;
+}
+
 static void desktop_draw_startup_animation(void) {
     /* A short, timer-paced splash gives the user visible feedback while the
      * installed desktop is being brought up. Keep it framebuffer-only so it
@@ -2515,6 +2698,7 @@ static void draw_shell(void) {
     if (!installer_environment) {
         desktop_draw_taskbar(bottom_bar);
         desktop_draw_start_menu(bottom_bar);
+        desktop_draw_workspace_overview();
     }
 }
 
@@ -2559,6 +2743,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 #else
     installer_environment = blockdev_boot_source_is_external();
 #endif
+    workspace_overview_open = false;
+    workspace_overview_selected = 0U;
     if (!installer_environment && screen_width <= 0x7FFFFFFFU &&
         screen_height <= 0x7FFFFFFFU) {
         uint32_t work_height = 0U;
@@ -2590,6 +2776,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     keyboard_caps_lock_down = false;
     pointer_under_valid = false;
     start_menu_open = false;
+    workspace_overview_open = false;
+    workspace_overview_selected = 0U;
     desktop_launcher_reset();
     window_maximized = false;
     window_animation_offset = 0U;

@@ -96,6 +96,8 @@ static size_t files_edit_view_offset;
 static bool files_edit_follow_end;
 static bool files_delete_pending;
 static char files_delete_name[NEXUS_VFS_NAME_MAX];
+static bool files_search_active;
+static char files_search_query[NEXUS_VFS_NAME_MAX];
 static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
@@ -1259,9 +1261,11 @@ static void draw_shell(void) {
                                    actions[action], 1U, 234U, 244U, 252U);
             }
             graphics_draw_text(text_x, text_y + 304U,
-                                files_scan_ok
-                                    ? "PERSISTENT FILES  /  FAT32 + NXFS + RAM"
-                                    : "RAM FILES  /  VOLATILE UNTIL SAVED",
+                                files_search_query[0] != '\0'
+                                    ? "FILTERED FILE VIEW  /  SEARCH ACTIVE"
+                                    : (files_scan_ok
+                                        ? "PERSISTENT FILES  /  FAT32 + NXFS + RAM"
+                                        : "RAM FILES  /  VOLATILE UNTIL SAVED"),
                                 1U, 108U, 216U, 229U);
             for (size_t slot = 0U; slot < FILES_LISTING_VISIBLE; ++slot) {
                 const size_t index = files_listing_first_index + slot;
@@ -1290,9 +1294,22 @@ static void draw_shell(void) {
                                    1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  ENTER OPEN  R RENAME  ESC PARENT",
+                               "UP/DOWN SELECT  ENTER OPEN  R RENAME  / SEARCH",
                                1, 170, 191, 211);
-            if (files_listing_truncated) {
+            if (files_search_active) {
+                graphics_draw_text(text_x, text_y + 414U,
+                                   "SEARCH (ENTER APPLY / ESC CANCEL):",
+                                   1U, 255U, 190U, 112U);
+                graphics_draw_text(text_x + 220U, text_y + 414U,
+                                   files_search_query, 1U,
+                                   239U, 249U, 255U);
+            } else if (files_search_query[0] != '\0') {
+                graphics_draw_text(text_x, text_y + 414U,
+                                   "FILTER:", 1U, 170U, 191U, 211U);
+                graphics_draw_text(text_x + 55U, text_y + 414U,
+                                   files_search_query, 1U,
+                                   119U, 229U, 211U);
+            } else if (files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 414U,
                                    "LISTING LIMITED TO 128 ENTRIES",
                                    1, 239, 177, 119);
@@ -1646,6 +1663,22 @@ static void files_sort_listing(void) {
     }
 }
 
+static bool files_name_matches_query(const char *name) {
+    if (name == NULL) return false;
+    size_t query_length = 0U;
+    while (query_length < sizeof(files_search_query) &&
+           files_search_query[query_length] != '\0') ++query_length;
+    if (query_length == 0U) return true;
+    for (size_t start = 0U; name[start] != '\0'; ++start) {
+        size_t matched = 0U;
+        while (matched < query_length && name[start + matched] != '\0' &&
+               files_ascii_lower(name[start + matched]) ==
+                   files_ascii_lower(files_search_query[matched])) ++matched;
+        if (matched == query_length) return true;
+    }
+    return false;
+}
+
 static void refresh_files_listing(void) {
     files_vfs_ready = vfs_has_filesystem();
     files_listing_count = 0U;
@@ -1717,6 +1750,19 @@ static void refresh_files_listing(void) {
     }
 
     files_sort_listing();
+    if (files_search_query[0] != '\0') {
+        size_t kept = 0U;
+        for (size_t index = 0U; index < files_listing_count; ++index) {
+            if (!files_name_matches_query(files_listing[index])) continue;
+            if (kept != index) {
+                for (size_t n = 0U; n < NEXUS_VFS_NAME_MAX; ++n)
+                    files_listing[kept][n] = files_listing[index][n];
+                files_listing_types[kept] = files_listing_types[index];
+            }
+            ++kept;
+        }
+        files_listing_count = kept;
+    }
     files_first_name[0] = '\0';
     files_preview[0] = '\0';
     for (size_t index = 0U; index < files_listing_count; ++index) {
@@ -3607,6 +3653,34 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
+        if (files_search_active) {
+            if ((event->scancode & 0x80U) != 0U) return;
+            if (event->scancode == 0x01U) {
+                files_search_active = false;
+            } else if (event->scancode == 0x1CU) {
+                files_search_active = false;
+                refresh_files_listing();
+            } else if (event->scancode == 0x0EU) {
+                size_t length = 0U;
+                while (length < sizeof(files_search_query) - 1U &&
+                       files_search_query[length] != '\0') ++length;
+                if (length != 0U) files_search_query[length - 1U] = '\0';
+            } else {
+                const char ch = terminal_scancode_char(event->scancode);
+                size_t length = 0U;
+                while (length < sizeof(files_search_query) - 1U &&
+                       files_search_query[length] != '\0') ++length;
+                if (ch >= 0x20 && ch <= 0x7E &&
+                    length < sizeof(files_search_query) - 1U) {
+                    files_search_query[length] = ch >= 'A' && ch <= 'Z'
+                        ? (char)(ch - 'A' + 'a') : ch;
+                    files_search_query[length + 1U] = '\0';
+                }
+            }
+            draw_shell();
+            draw_pointer();
+            return;
+        }
         if (files_delete_pending) {
             if ((event->scancode & 0x80U) != 0U) return;
             if (event->scancode == 0x15U) {
@@ -3621,6 +3695,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             return;
         }
         if ((event->scancode & 0x80U) != 0U) return;
+        if (event->scancode == 0x35U) {
+            files_search_active = true;
+            draw_shell(); draw_pointer(); return;
+        }
         if (event->scancode == 0x31U) {
             files_editor_begin_new();
             draw_shell(); draw_pointer(); return;

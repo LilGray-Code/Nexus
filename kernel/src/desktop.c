@@ -2771,34 +2771,55 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t taskbar_height = clamp_min(screen_height / 11U, 48U);
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {
-                const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-                const uint64_t menu_height = 238U;
-                uint64_t menu_y = taskbar_top - menu_height + 4U;
+                const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
+                const uint64_t menu_height = 292U;
+                const uint64_t menu_x = 8U;
+                uint64_t menu_y = taskbar_top - menu_height + 2U;
                 const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
                 if (menu_y < top_limit) menu_y = top_limit;
-                if ((uint64_t)pointer_x >= 12U &&
-                    (uint64_t)pointer_x < 12U + menu_width &&
-                    (uint64_t)pointer_y >= menu_y + 49U &&
-                    (uint64_t)pointer_y < menu_y + 49U + 5U * 34U) {
-                    const size_t app = (size_t)((uint64_t)pointer_y -
-                        (menu_y + 49U)) / 34U;
+                const uint64_t row_top = menu_y + 58U;
+                const uint64_t row_step = 37U;
+                bool menu_item_clicked = false;
+                if (menu_width > 380U) {
+                    const uint64_t tile_x = menu_x + menu_width - 137U;
+                    if ((uint64_t)pointer_x >= tile_x &&
+                        (uint64_t)pointer_x < tile_x + 126U &&
+                        (uint64_t)pointer_y >= menu_y + 64U &&
+                        (uint64_t)pointer_y < menu_y + 64U + 3U * 64U) {
+                        const size_t col = (size_t)(((uint64_t)pointer_x - tile_x) / 63U);
+                        const size_t row = (size_t)(((uint64_t)pointer_y - (menu_y + 64U)) / 64U);
+                        const size_t app = row * 2U + col;
+                        if (app < 5U) {
+                            desktop_open_app(app);
+                            shell_click_handled = true;
+                            menu_item_clicked = true;
+                        }
+                    }
+                }
+                if (!menu_item_clicked &&
+                    (uint64_t)pointer_x >= menu_x + 49U &&
+                    (uint64_t)pointer_x < (menu_width > 380U
+                        ? menu_x + menu_width - 145U : menu_x + menu_width) &&
+                    (uint64_t)pointer_y >= row_top &&
+                    (uint64_t)pointer_y < row_top + 5U * row_step) {
+                    const size_t app = (size_t)((uint64_t)pointer_y - row_top) /
+                                       (size_t)row_step;
                     desktop_open_app(app);
                     shell_click_handled = true;
-                } else {
-                    start_menu_open = false;
+                    menu_item_clicked = true;
                 }
+                if (!menu_item_clicked) start_menu_open = false;
             }
             if (!shell_click_handled &&
                 (uint64_t)pointer_y >= taskbar_top) {
-                if ((uint64_t)pointer_x >= 12U &&
-                    (uint64_t)pointer_x < 100U) {
+                if ((uint64_t)pointer_x < 52U) {
                     start_menu_open = !start_menu_open;
                     shell_click_handled = true;
                 } else {
                     for (size_t app = 0U; app < 5U; ++app) {
-                        const uint64_t tab_x = 110U + (uint64_t)app * 78U;
+                        const uint64_t tab_x = 56U + (uint64_t)app * 92U;
                         if ((uint64_t)pointer_x >= tab_x &&
-                            (uint64_t)pointer_x < tab_x + 72U) {
+                            (uint64_t)pointer_x < tab_x + 88U) {
                             desktop_open_app(app);
                             shell_click_handled = true;
                             break;

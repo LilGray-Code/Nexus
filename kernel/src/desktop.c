@@ -298,8 +298,8 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
 
     graphics_fill_rect(menu_x + 5U, menu_y + 6U,
                        menu_width, menu_height, 2U, 5U, 15U);
-    graphics_fill_rect(menu_x, menu_y,
-                       menu_width, menu_height, 19U, 31U, 52U);
+    graphics_blend_rect(menu_x, menu_y,
+                        menu_width, menu_height, 19U, 31U, 52U, 224U);
     graphics_draw_rect(menu_x, menu_y,
                        menu_width, menu_height, 66U, 111U, 148U);
     graphics_fill_rect(menu_x, menu_y, menu_width, 42U,
@@ -399,8 +399,8 @@ static void draw_shell(void) {
 
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
                        panel_height, 1U, 4U, 13U);
-    graphics_fill_rect(panel_x, panel_y, panel_width, panel_height,
-                       17U, 28U, 47U);
+    graphics_blend_rect(panel_x, panel_y, panel_width, panel_height,
+                        17U, 28U, 47U, 224U);
     graphics_draw_rect(panel_x, panel_y, panel_width, panel_height,
                        61U, 99U, 133U);
     graphics_fill_rect(panel_x, panel_y, panel_width, 40U,

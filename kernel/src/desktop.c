@@ -2737,8 +2737,8 @@ static void draw_shell(void) {
     graphics_fill_round_rect(18U, 6U, width - 36U, 2U, 1U,
                              accent_r, accent_g, accent_b);
     desktop_draw_logo(18U, (top_bar - 22U) / 2U, 22U);
-    graphics_draw_text_smooth(54U, top_bar / 2U - 7U,
-                              "NEXUS OS", 2U, 245U, 249U, 255U);
+    graphics_draw_text(54U, top_bar / 2U - 4U,
+                       "NEXUS OS", 1U, 245U, 249U, 255U);
     desktop_draw_workspace_switcher(top_bar);
     char top_uptime[21];
     format_u64(timer_ticks() / 100U, top_uptime);

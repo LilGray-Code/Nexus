@@ -24,6 +24,7 @@
 #include "usermode.h"
 #include "process.h"
 #include "xhci.h"
+#include "wifi.h"
 #include "vfs.h"
 
 __attribute__((used, section(".limine_requests")))
@@ -375,6 +376,13 @@ void kmain(void) {
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     const bool ps2_input_ready = input_init();
     (void)xhci_init();
+    if (wifi_available()) {
+        if (wifi_start()) {
+            serial_write("WIFI: registered radio driver started\\r\\n");
+        } else {
+            serial_write("WIFI: registered radio driver failed to start\\r\\n");
+        }
+    }
     const bool usb_keyboard_ready = xhci_keyboard_ready();
     const bool usb_mouse_ready = xhci_mouse_ready();
     if (!ps2_input_ready && !usb_keyboard_ready) {
@@ -416,6 +424,7 @@ void kmain(void) {
     __asm__ volatile ("sti" : : : "memory");
     for (;;) {
         net_poll();
+        if (wifi_available()) wifi_poll();
         xhci_poll();
         struct nexus_input_event event;
         while (input_pop_event(&event)) {

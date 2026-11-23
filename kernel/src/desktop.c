@@ -545,9 +545,11 @@ static void draw_shell(void) {
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
 
-    const uint8_t base_r = settings_theme == 1U ? 5U : (settings_theme == 2U ? 24U : 5U);
-    const uint8_t base_g = settings_theme == 1U ? 18U : (settings_theme == 2U ? 13U : 11U);
-    const uint8_t base_b = settings_theme == 1U ? 38U : (settings_theme == 2U ? 22U : 25U);
+    /* Blue, window-inspired wallpaper is the default; alternate palettes
+     * remain selectable from Settings. */
+    const uint8_t base_r = settings_theme == 1U ? 3U : (settings_theme == 2U ? 54U : 7U);
+    const uint8_t base_g = settings_theme == 1U ? 34U : (settings_theme == 2U ? 25U : 55U);
+    const uint8_t base_b = settings_theme == 1U ? 68U : (settings_theme == 2U ? 27U : 104U);
     /* Avoid one framebuffer operation per scanline. The old gradient loop
      * issued hundreds of thousands of tiny drawing calls on high resolutions.
      * A solid base plus a few broad wallpaper bands is much cheaper to repaint. */
@@ -566,9 +568,9 @@ static void draw_shell(void) {
     }
     /* Wallpaper selection changes the actual framebuffer composition. */
     if (settings_wallpaper != 2U) {
-        const uint8_t wr = settings_theme == 2U ? 48U : 9U;
-        const uint8_t wg = settings_theme == 1U ? 37U : 26U;
-        const uint8_t wb = settings_theme == 2U ? 62U : 49U;
+        const uint8_t wr = settings_theme == 2U ? 96U : (settings_theme == 1U ? 5U : 12U);
+        const uint8_t wg = settings_theme == 1U ? 66U : (settings_theme == 2U ? 43U : 88U);
+        const uint8_t wb = settings_theme == 2U ? 48U : (settings_theme == 1U ? 100U : 166U);
         if (settings_wallpaper == 0U) {
             graphics_fill_rect(width / 2U, 0U, width / 2U, height, wr, wg, wb);
             graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
@@ -582,12 +584,12 @@ static void draw_shell(void) {
             }
         }
     }
-    graphics_fill_rect(0U, 0U, width, top_bar, 10U, 17U, 33U);
+    graphics_fill_rect(0U, 0U, width, top_bar, 27U, 30U, 35U);
     graphics_fill_rect(0U, top_bar - 2U, width, 2U,
-                       settings_theme == 0U ? 38U : (settings_theme == 1U ? 63U : 210U),
-                       settings_theme == 0U ? 159U : (settings_theme == 1U ? 174U : 133U),
-                       settings_theme == 0U ? 192U : (settings_theme == 1U ? 229U : 75U));
-    graphics_fill_rect(16U, 7U, 28U, top_bar - 14U, 30U, 154U, 184U);
+                       settings_theme == 0U ? 0U : (settings_theme == 1U ? 0U : 202U),
+                       settings_theme == 0U ? 120U : (settings_theme == 1U ? 153U : 80U),
+                       settings_theme == 0U ? 215U : (settings_theme == 1U ? 188U : 16U));
+    graphics_fill_rect(16U, 7U, 28U, top_bar - 14U, 0U, 120U, 215U);
     graphics_draw_text(25U, top_bar / 2U - 4U, "N", 1U, 7U, 23U, 39U);
     graphics_draw_text(54U, top_bar / 2U - 4U,
                        "NEXUS  /  YOUR WORKSPACE", 1U,
@@ -623,15 +625,16 @@ static void draw_shell(void) {
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
                        panel_height, 1U, 4U, 13U);
     graphics_fill_rect(panel_x, panel_y, panel_width, panel_height,
-                       17U, 28U, 47U);
+                       27U, 31U, 38U);
     graphics_draw_rect(panel_x, panel_y, panel_width, panel_height,
-                       61U, 99U, 133U);
+                       80U, 86U, 95U);
+    /* Saturated blue title bars and compact controls echo Windows 10 windows. */
     graphics_fill_rect(panel_x, panel_y, panel_width, 40U,
-                       25U, 42U, 66U);
+                       0U, 120U, 215U);
     graphics_fill_rect(panel_x, panel_y + 39U, panel_width, 1U,
-                       44U, 82U, 115U);
+                       0U, 93U, 172U);
     graphics_fill_rect(panel_x + 9U, panel_y + 12U, 16U, 16U,
-                       41U, 174U, 199U);
+                       255U, 255U, 255U);
 
     const char *window_title = "NEXUS DESKTOP";
     if (active_view == DESKTOP_FILES) window_title = "FILES";
@@ -645,15 +648,15 @@ static void draw_shell(void) {
     /* Custom window controls; close is wired to the shell input handler. */
     const uint64_t controls_x = panel_x + panel_width - 66U;
     graphics_fill_rect(controls_x, panel_y + 12U, 14U, 12U,
-                       49U, 69U, 91U);
+                       0U, 105U, 190U);
     graphics_draw_text(controls_x + 4U, panel_y + 15U, "-", 1U,
                        229U, 239U, 248U);
     graphics_fill_rect(controls_x + 22U, panel_y + 12U, 14U, 12U,
-                       49U, 69U, 91U);
+                       0U, 105U, 190U);
     graphics_draw_rect(controls_x + 26U, panel_y + 15U, 6U, 6U,
                        207U, 224U, 239U);
     graphics_fill_rect(controls_x + 44U, panel_y + 12U, 14U, 12U,
-                       177U, 67U, 80U);
+                       210U, 55U, 60U);
     graphics_draw_text(controls_x + 47U, panel_y + 16U, "X", 1U,
                        255U, 239U, 241U);
 

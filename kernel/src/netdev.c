@@ -72,6 +72,15 @@ bool netdev_receive_frame(void *buffer, size_t capacity, size_t *length) {
         capacity < NEXUS_NETDEV_MIN_FRAME) return false;
     if (capacity > active_device.info.max_frame_size)
         capacity = active_device.info.max_frame_size;
-    return active_device.ops.receive_frame(active_device.context, buffer,
-                                           capacity, length);
+    if (!active_device.ops.receive_frame(active_device.context, buffer,
+                                          capacity, length)) {
+        *length = 0U;
+        return false;
+    }
+    /* A driver must never report bytes outside the caller's buffer. */
+    if (*length < NEXUS_NETDEV_MIN_FRAME || *length > capacity) {
+        *length = 0U;
+        return false;
+    }
+    return true;
 }

@@ -3408,7 +3408,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {
                 const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
-                const uint64_t menu_height = 292U;
+                const uint64_t menu_height = 324U;
                 const uint64_t menu_x = 8U;
                 uint64_t menu_y = taskbar_top - menu_height + 2U;
                 const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
@@ -3933,6 +3933,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             snake_next_tick = timer_ticks() + 12U;
         } else if (event->scancode == 0x39U) {
             nexus_snake_toggle_pause(&snake_game);
+            snake_next_tick = timer_ticks() + 12U;
         } else if (event->scancode == 0x48U) {
             (void)nexus_snake_turn(&snake_game, NEXUS_GAME_UP);
         } else if (event->scancode == 0x4DU) {

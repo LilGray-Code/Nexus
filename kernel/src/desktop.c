@@ -712,6 +712,19 @@ static bool desktop_handle_window_mouse_click(void) {
             desktop_animate_view();
             return true;
         }
+        const uint64_t now = timer_ticks();
+        if (desktop_last_title_click_window == target &&
+            now >= desktop_last_title_click_tick &&
+            now - desktop_last_title_click_tick <= 45U) {
+            desktop_last_title_click_window = 0U;
+            desktop_snap_window(target,
+                (info.flags & NEXUS_WINDOW_MAXIMIZED) != 0U
+                    ? DESKTOP_SNAP_RESTORE : DESKTOP_SNAP_MAXIMIZE);
+            desktop_animate_view();
+            return true;
+        }
+        desktop_last_title_click_window = target;
+        desktop_last_title_click_tick = now;
         desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_MOVE;
         desktop_dragged_window = target;
         desktop_drag_offset_x = local_x;
@@ -1121,6 +1134,195 @@ static void calculator_button(size_t row,size_t col) {
     else if(key=='<') calculator_backspace();
     else if(key=='=') calculator_evaluate();
     else calculator_append(key);
+}
+
+
+static void desktop_draw_desktop_icons(uint64_t top_bar,
+                                       uint64_t bottom_bar) {
+    static const char *const labels[7] = {
+        "FILES", "BROWSER", "SETTINGS", "TERMINAL",
+        "MONITOR", "CONTROL", "CALCULATOR"
+    };
+    static const uint8_t label_widths[7] = {
+        40U, 56U, 56U, 56U, 56U, 56U, 72U
+    };
+    const uint64_t usable_bottom = screen_height > bottom_bar
+        ? screen_height - bottom_bar : 0U;
+    graphics_draw_text(22U, top_bar + 10U, "NEXUS DESKTOP", 1U,
+                       224U, 237U, 250U);
+
+    /* Familiar desktop shortcuts down the left edge. Running apps get a
+     * subtle indicator, while hover highlights make targets easy to find. */
+    for (size_t app = 0U; app < 7U; ++app) {
+        const uint64_t col = app / 6U;
+        const uint64_t row = app % 6U;
+        const uint64_t x = 18U + col * 92U;
+        const uint64_t y = top_bar + 28U + row * 76U;
+        if (y + 70U > usable_bottom) continue;
+        const bool hovered = pointer_x >= (int64_t)x &&
+            pointer_x < (int64_t)(x + 76U) &&
+            pointer_y >= (int64_t)y &&
+            pointer_y < (int64_t)(y + 70U);
+        graphics_fill_round_rect(x, y, 76U, 70U, 10U,
+                                 hovered ? 42U : 19U,
+                                 hovered ? 66U : 34U,
+                                 hovered ? 87U : 51U);
+        if (hovered)
+            graphics_draw_round_rect(x, y, 76U, 70U, 10U,
+                                     112U, 164U, 202U);
+        desktop_draw_app_icon(x + 23U, y + 7U, 29U, app);
+        graphics_draw_text(x + (76U - label_widths[app]) / 2U,
+                           y + 57U, labels[app], 1U,
+                           238U, 245U, 252U);
+        struct nexus_window_info info;
+        if (desktop_app_window_info(app, &info))
+            graphics_fill_round_rect(x + 34U, y + 66U, 8U, 2U, 1U,
+                                     102U, 202U, 229U);
+    }
+
+    /* Desktop widget: live, useful system facts instead of a large empty
+     * landing panel. It stays within the work area on smaller resolutions. */
+    if (screen_width > 760U && usable_bottom > top_bar + 198U) {
+        const uint64_t x = screen_width - 286U;
+        const uint64_t y = top_bar + 24U;
+        graphics_fill_round_rect(x + 5U, y + 7U, 268U, 166U, 16U,
+                                 1U, 5U, 15U);
+        graphics_fill_gradient_rect(x, y, 268U, 166U,
+                                    32U, 48U, 67U, 15U, 26U, 43U);
+        graphics_draw_round_rect(x, y, 268U, 166U, 16U,
+                                 78U, 105U, 137U);
+        graphics_draw_text(x + 16U, y + 22U, "SYSTEM OVERVIEW", 1U,
+                           241U, 247U, 253U);
+        char memory[21], uptime[21], disks[21], adapters[21];
+        format_u64(memory_free_bytes() / (1024U * 1024U), memory);
+        format_u64(timer_ticks() / 100U, uptime);
+        format_u64(blockdev_count(), disks);
+        format_u64(netdev_device_count(), adapters);
+        const uint64_t x1 = x + 14U;
+        const uint64_t x2 = x + 140U;
+        const uint64_t y1 = y + 42U;
+        const uint64_t y2 = y + 97U;
+        const uint64_t card_w = 114U;
+        const uint64_t card_h = 45U;
+        const uint8_t card_r = settings_high_contrast ? 3U : 20U;
+        const uint8_t card_g = settings_high_contrast ? 3U : 38U;
+        const uint8_t card_b = settings_high_contrast ? 3U : 56U;
+        graphics_fill_round_rect(x1, y1, card_w, card_h, 8U,
+                                 card_r, card_g, card_b);
+        graphics_fill_round_rect(x2, y1, card_w, card_h, 8U,
+                                 card_r, card_g, card_b);
+        graphics_fill_round_rect(x1, y2, card_w, card_h, 8U,
+                                 card_r, card_g, card_b);
+        graphics_fill_round_rect(x2, y2, card_w, card_h, 8U,
+                                 card_r, card_g, card_b);
+        graphics_draw_text(x1 + 9U, y1 + 12U, "FREE MiB", 1U,
+                           133U, 188U, 211U);
+        graphics_draw_text(x1 + 9U, y1 + 30U, memory, 1U,
+                           246U, 249U, 253U);
+        graphics_draw_text(x2 + 9U, y1 + 12U, "UPTIME s", 1U,
+                           133U, 188U, 211U);
+        graphics_draw_text(x2 + 9U, y1 + 30U, uptime, 1U,
+                           246U, 249U, 253U);
+        graphics_draw_text(x1 + 9U, y2 + 12U, "DISKS", 1U,
+                           133U, 188U, 211U);
+        graphics_draw_text(x1 + 9U, y2 + 30U, disks, 1U,
+                           246U, 249U, 253U);
+        graphics_draw_text(x2 + 9U, y2 + 12U, "ADAPTERS", 1U,
+                           133U, 188U, 211U);
+        graphics_draw_text(x2 + 9U, y2 + 30U, adapters, 1U,
+                           246U, 249U, 253U);
+    }
+}
+
+enum desktop_snap_zone {
+    DESKTOP_SNAP_LEFT = 0,
+    DESKTOP_SNAP_RIGHT,
+    DESKTOP_SNAP_MAXIMIZE,
+    DESKTOP_SNAP_TOP_LEFT,
+    DESKTOP_SNAP_TOP_RIGHT,
+    DESKTOP_SNAP_BOTTOM_LEFT,
+    DESKTOP_SNAP_BOTTOM_RIGHT,
+    DESKTOP_SNAP_RESTORE
+};
+
+static void desktop_snap_window(nexus_window_id id,
+                                enum desktop_snap_zone zone) {
+    struct nexus_window_info info;
+    if (id == 0U || !desktop_window_manager_ready ||
+        !nexus_wm_get(id, &info)) return;
+    if (zone == DESKTOP_SNAP_MAXIMIZE) {
+        (void)nexus_wm_maximize(id);
+        desktop_sync_focused_window();
+        return;
+    }
+    if (zone == DESKTOP_SNAP_RESTORE) {
+        (void)nexus_wm_unmaximize(id);
+        desktop_sync_focused_window();
+        return;
+    }
+    if ((info.flags & NEXUS_WINDOW_MAXIMIZED) != 0U)
+        (void)nexus_wm_unmaximize(id);
+
+    uint32_t work_height = 0U;
+    desktop_window_work_area(NULL, NULL, &work_height);
+    const uint32_t display_width = screen_width > 0xFFFFFFFFU
+        ? 0xFFFFFFFFU : (uint32_t)screen_width;
+    if (display_width < 320U || work_height < 192U) return;
+    const uint32_t half_width = display_width / 2U;
+    const uint32_t half_height = work_height / 2U;
+    uint32_t x = 0U, y = 0U;
+    uint32_t width = half_width, height = work_height;
+    switch (zone) {
+        case DESKTOP_SNAP_LEFT:
+            break;
+        case DESKTOP_SNAP_RIGHT:
+            x = half_width;
+            width = display_width - half_width;
+            break;
+        case DESKTOP_SNAP_TOP_LEFT:
+            height = half_height;
+            break;
+        case DESKTOP_SNAP_TOP_RIGHT:
+            x = half_width;
+            width = display_width - half_width;
+            height = half_height;
+            break;
+        case DESKTOP_SNAP_BOTTOM_LEFT:
+            y = half_height;
+            height = work_height - half_height;
+            break;
+        case DESKTOP_SNAP_BOTTOM_RIGHT:
+            x = half_width;
+            y = half_height;
+            width = display_width - half_width;
+            height = work_height - half_height;
+            break;
+        case DESKTOP_SNAP_MAXIMIZE:
+        case DESKTOP_SNAP_RESTORE:
+        default:
+            return;
+    }
+    if (nexus_wm_resize(id, width, height))
+        (void)nexus_wm_move(id, (int32_t)x, (int32_t)y);
+    desktop_sync_focused_window();
+}
+
+static void desktop_snap_window_at_pointer(nexus_window_id id) {
+    uint64_t top = 0U;
+    uint32_t work_height = 0U;
+    desktop_window_work_area(&top, NULL, &work_height);
+    const uint64_t edge = clamp_min(screen_width / 100U, 12U);
+    if (pointer_y <= (int64_t)(top + 8U)) {
+        desktop_snap_window(id, DESKTOP_SNAP_MAXIMIZE);
+    } else if (pointer_x <= (int64_t)edge) {
+        const uint64_t middle = top + work_height / 2U;
+        desktop_snap_window(id, pointer_y < (int64_t)middle
+            ? DESKTOP_SNAP_TOP_LEFT : DESKTOP_SNAP_BOTTOM_LEFT);
+    } else if (pointer_x >= (int64_t)(screen_width - edge)) {
+        const uint64_t middle = top + work_height / 2U;
+        desktop_snap_window(id, pointer_y < (int64_t)middle
+            ? DESKTOP_SNAP_TOP_RIGHT : DESKTOP_SNAP_BOTTOM_RIGHT);
+    }
 }
 
 static void desktop_draw_window_surface(enum desktop_view view,
@@ -2199,16 +2401,21 @@ static void draw_shell(void) {
         managed_windows_drawn = desktop_draw_managed_windows(top_bar);
 
     if (!managed_windows_drawn) {
-        /* Home is the base workspace. The live installer is the only view
-         * rendered without an application window. */
-        active_view = installer_environment ? DESKTOP_INSTALLER : DESKTOP_HOME;
         window_maximized = false;
-        uint64_t panel_x = 0U, panel_y = 0U;
-        uint64_t panel_width = 0U, panel_height = 0U;
-        desktop_get_current_window_rect(&panel_x, &panel_y,
-                                        &panel_width, &panel_height);
-        desktop_draw_window_surface(active_view, panel_x, panel_y,
-                                    panel_width, panel_height, false, true);
+        if (installer_environment) {
+            active_view = DESKTOP_INSTALLER;
+            uint64_t panel_x = 0U, panel_y = 0U;
+            uint64_t panel_width = 0U, panel_height = 0U;
+            desktop_get_current_window_rect(&panel_x, &panel_y,
+                                            &panel_width, &panel_height);
+            desktop_draw_window_surface(DESKTOP_INSTALLER,
+                                        panel_x, panel_y,
+                                        panel_width, panel_height,
+                                        false, true);
+        } else {
+            active_view = DESKTOP_HOME;
+            desktop_draw_desktop_icons(top_bar, bottom_bar);
+        }
     }
 
     if (!installer_environment) {
@@ -4043,6 +4250,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 return;
             }
             if (!left_down) {
+                if (desktop_window_drag_mode == DESKTOP_WINDOW_DRAG_MOVE)
+                    desktop_snap_window_at_pointer(desktop_dragged_window);
                 desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_NONE;
                 desktop_dragged_window = 0U;
                 draw_shell();
@@ -4315,31 +4524,20 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if (clicked && active_view == DESKTOP_HOME) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-            uint64_t pw = screen_width * 3U / 4U;
-            uint64_t ph = screen_height * 53U / 100U;
-            if (pw > 920U) pw = 920U;
-            /* Match draw_shell(): home window hit testing must use the same
-             * 512px maximum or the launcher drifts on tall displays. */
-            if (ph > 512U) ph = 512U;
-            if (pw > screen_width - 16U) pw = screen_width - 16U;
-            if (ph > screen_height - top - bottom - 16U)
-                ph = screen_height - top - bottom - 16U;
-            const uint64_t px = (screen_width - pw) / 2U;
-            const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
-            const uint64_t ty = py + 82U + 68U;
-            const uint64_t tile_gap = 8U;
-            const uint64_t tw = (pw - 56U - 3U * tile_gap) / 4U;
+            const uint64_t usable_bottom = screen_height > bottom
+                ? screen_height - bottom : 0U;
             for (size_t app = 0U; app < 7U; ++app) {
-                const uint64_t col = app % 4U;
-                const uint64_t row = app / 4U;
-                const uint64_t tx = px + 28U + col * (tw + tile_gap);
-                const uint64_t tile_y = ty + row * 56U;
-                if ((uint64_t)pointer_x >= tx &&
-                    (uint64_t)pointer_x < tx + tw &&
-                    (uint64_t)pointer_y >= tile_y &&
-                    (uint64_t)pointer_y < tile_y + 50U) {
+                const uint64_t col = app / 6U;
+                const uint64_t row = app % 6U;
+                const uint64_t x = 18U + col * 92U;
+                const uint64_t y = top + 28U + row * 76U;
+                if (y + 70U <= usable_bottom &&
+                    (uint64_t)pointer_x >= x &&
+                    (uint64_t)pointer_x < x + 76U &&
+                    (uint64_t)pointer_y >= y &&
+                    (uint64_t)pointer_y < y + 70U) {
                     desktop_open_app(app);
-                    serial_write("DESKTOP: app tile opened by mouse\r\n");
+                    serial_write("DESKTOP: desktop shortcut opened by mouse\r\n");
                     break;
                 }
             }
@@ -4387,6 +4585,30 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (key_released) return;
     /* Global shortcuts run before app text entry, so modifiers never leak
      * shortcut letters into documents, search fields or terminal commands. */
+    if (keyboard_ctrl && keyboard_alt &&
+        active_view != DESKTOP_INSTALLER && desktop_window_manager_ready) {
+        enum desktop_snap_zone zone = DESKTOP_SNAP_RESTORE;
+        bool snap = true;
+        switch (key_code) {
+            case 0x4BU: zone = DESKTOP_SNAP_LEFT; break;
+            case 0x4DU: zone = DESKTOP_SNAP_RIGHT; break;
+            case 0x48U: zone = DESKTOP_SNAP_MAXIMIZE; break;
+            case 0x50U: zone = DESKTOP_SNAP_RESTORE; break;
+            case 0x02U: zone = DESKTOP_SNAP_TOP_LEFT; break;
+            case 0x03U: zone = DESKTOP_SNAP_TOP_RIGHT; break;
+            case 0x04U: zone = DESKTOP_SNAP_BOTTOM_LEFT; break;
+            case 0x05U: zone = DESKTOP_SNAP_BOTTOM_RIGHT; break;
+            default: snap = false; break;
+        }
+        if (snap) {
+            desktop_snap_window(nexus_wm_focused(), zone);
+            start_menu_open = false;
+            desktop_animate_view();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+    }
     if (keyboard_ctrl && active_view != DESKTOP_INSTALLER) {
         if (key_code == 0x39U) { /* Ctrl+Space: application finder */
             start_menu_open = !start_menu_open;

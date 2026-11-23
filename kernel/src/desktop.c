@@ -20,6 +20,7 @@
 #include "browser_html.h"
 #include "calculator.h"
 #include "launcher.h"
+#include "window_manager.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -51,6 +52,17 @@ static const char *const launcher_app_names[7] = {
     "System Monitor", "Control Center", "Calculator"
 };
 static bool window_maximized;
+static bool desktop_window_manager_ready;
+static nexus_window_id desktop_app_windows[7];
+enum desktop_window_drag_mode {
+    DESKTOP_WINDOW_DRAG_NONE = 0,
+    DESKTOP_WINDOW_DRAG_MOVE,
+    DESKTOP_WINDOW_DRAG_RESIZE
+};
+static enum desktop_window_drag_mode desktop_window_drag_mode;
+static nexus_window_id desktop_dragged_window;
+static int64_t desktop_drag_offset_x;
+static int64_t desktop_drag_offset_y;
 static uint64_t window_animation_offset;
 static uint8_t settings_theme;
 static uint8_t settings_wallpaper;
@@ -501,15 +513,378 @@ static void desktop_load_settings(void) {
     settings_persisted = true;
     serial_write("DESKTOP: restored settings from persistent NXFS\r\n");
 }
+
+static bool desktop_view_app_index(enum desktop_view view, size_t *index) {
+    if (view < DESKTOP_FILES || view > DESKTOP_CALCULATOR || index == NULL)
+        return false;
+    *index = (size_t)(view - DESKTOP_FILES);
+    return *index < 7U;
+}
+
+static bool desktop_app_window_info(size_t app,
+                                    struct nexus_window_info *info) {
+    if (!desktop_window_manager_ready || app >= 7U ||
+        desktop_app_windows[app] == 0U || info == NULL) return false;
+    if (!nexus_wm_get(desktop_app_windows[app], info)) {
+        desktop_app_windows[app] = 0U;
+        return false;
+    }
+    return true;
+}
+
+static void desktop_window_work_area(uint64_t *top, uint64_t *bottom,
+                                     uint32_t *height) {
+    const uint64_t t = clamp_min(screen_height / 16U, 34U);
+    const uint64_t b = clamp_min(screen_height / 11U, 48U);
+    const uint64_t available = screen_height > t + b
+        ? screen_height - t - b : 1U;
+    if (top != NULL) *top = t;
+    if (bottom != NULL) *bottom = b;
+    if (height != NULL)
+        *height = (uint32_t)(available > 0xFFFFFFFFU
+            ? 0xFFFFFFFFU : available);
+}
+
+static void desktop_sync_focused_window(void) {
+    const nexus_window_id focused = nexus_wm_focused();
+    struct nexus_window_info info;
+    if (focused != 0U && nexus_wm_get(focused, &info) &&
+        info.application_id >= (uint32_t)DESKTOP_FILES &&
+        info.application_id <= (uint32_t)DESKTOP_CALCULATOR) {
+        active_view = (enum desktop_view)info.application_id;
+        window_maximized = (info.flags & NEXUS_WINDOW_MAXIMIZED) != 0U;
+        return;
+    }
+    active_view = DESKTOP_HOME;
+    window_maximized = false;
+}
+
+static void desktop_get_current_window_rect(uint64_t *x, uint64_t *y,
+                                            uint64_t *width,
+                                            uint64_t *height) {
+    const uint64_t top = clamp_min(screen_height / 16U, 34U);
+    const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+    size_t app = 0U;
+    struct nexus_window_info info;
+    if (!installer_environment &&
+        desktop_view_app_index(active_view, &app) &&
+        desktop_app_window_info(app, &info)) {
+        if (x != NULL) *x = (uint64_t)info.x;
+        if (y != NULL) *y = top + (uint64_t)info.y;
+        if (width != NULL) *width = info.width;
+        if (height != NULL) *height = info.height;
+        return;
+    }
+
+    uint64_t w = screen_width * 3U / 4U;
+    uint64_t h = active_view == DESKTOP_HOME
+        ? screen_height * 53U / 100U : 512U;
+    if (w > 920U) w = 920U;
+    if (h > 512U) h = 512U;
+    if (w > screen_width - 16U) w = screen_width - 16U;
+    if (h > screen_height - top - bottom - 16U)
+        h = screen_height - top - bottom - 16U;
+    if (window_maximized && active_view != DESKTOP_HOME) {
+        w = screen_width - 32U;
+        h = screen_height - top - bottom - 16U;
+    }
+    const uint64_t left = (screen_width - w) / 2U;
+    const uint64_t upper = window_maximized && active_view != DESKTOP_HOME
+        ? top + 8U : top + (screen_height - top - bottom - h) / 2U;
+    if (x != NULL) *x = left;
+    if (y != NULL) *y = upper;
+    if (width != NULL) *width = w;
+    if (height != NULL) *height = h;
+}
+
+static void desktop_return_home(void) {
+    if (installer_environment) return;
+    if (desktop_window_manager_ready) {
+        const nexus_window_id focused = nexus_wm_focused();
+        if (focused != 0U) (void)nexus_wm_minimize(focused);
+        desktop_sync_focused_window();
+    }
+    active_view = DESKTOP_HOME;
+    window_maximized = false;
+    start_menu_open = false;
+}
+
+static void desktop_close_window(nexus_window_id id) {
+    struct nexus_window_info info;
+    if (!desktop_window_manager_ready || id == 0U ||
+        !nexus_wm_get(id, &info)) return;
+    if (info.application_id >= (uint32_t)DESKTOP_FILES &&
+        info.application_id <= (uint32_t)DESKTOP_CALCULATOR) {
+        const size_t app = (size_t)(info.application_id - DESKTOP_FILES);
+        if (app < 7U && desktop_app_windows[app] == id)
+            desktop_app_windows[app] = 0U;
+    }
+    (void)nexus_wm_destroy(id);
+    desktop_sync_focused_window();
+}
+
+static void desktop_close_focused_window(void) {
+    if (!desktop_window_manager_ready) {
+        desktop_return_home();
+        return;
+    }
+    desktop_close_window(nexus_wm_focused());
+}
+
+static void desktop_toggle_app(size_t app) {
+    struct nexus_window_info info;
+    if (app >= 7U) return;
+    if (!desktop_app_window_info(app, &info)) {
+        desktop_open_app(app);
+        return;
+    }
+    if (info.id == nexus_wm_focused() &&
+        (info.flags & NEXUS_WINDOW_MINIMIZED) == 0U) {
+        (void)nexus_wm_minimize(info.id);
+        desktop_sync_focused_window();
+    } else {
+        (void)nexus_wm_restore(info.id);
+        (void)nexus_wm_focus(info.id);
+        desktop_sync_focused_window();
+        if (active_view == DESKTOP_FILES) {
+            scan_files_once();
+            refresh_files_listing();
+        }
+    }
+    start_menu_open = false;
+    desktop_animate_view();
+}
+
+static bool desktop_handle_window_mouse_click(void) {
+    if (!desktop_window_manager_ready || installer_environment) return false;
+    const uint64_t top = clamp_min(screen_height / 16U, 34U);
+    const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+    if (pointer_y < (int64_t)top ||
+        pointer_y >= (int64_t)(screen_height - bottom) ||
+        pointer_x < 0 || pointer_y < 0) return false;
+
+    const nexus_window_id target = nexus_wm_hit_test(
+        (uint32_t)pointer_x, (uint32_t)(pointer_y - (int64_t)top));
+    if (target == 0U) return false;
+    struct nexus_window_info info;
+    if (!nexus_wm_get(target, &info)) return false;
+
+    const bool changed_focus = target != nexus_wm_focused();
+    if (changed_focus) {
+        if (!nexus_wm_focus(target)) return false;
+        desktop_sync_focused_window();
+        start_menu_open = false;
+        if (active_view == DESKTOP_FILES) {
+            scan_files_once();
+            refresh_files_listing();
+        }
+    }
+
+    const int64_t window_x = info.x;
+    const int64_t window_y = (int64_t)top + info.y;
+    const int64_t local_x = pointer_x - window_x;
+    const int64_t local_y = pointer_y - window_y;
+    if (local_y >= 0 && local_y < 36) {
+        const int64_t controls_x = (int64_t)info.width - 66;
+        if (local_x >= controls_x && local_x < controls_x + 64) {
+            const int64_t control = local_x - controls_x;
+            if (control < 18) {
+                (void)nexus_wm_minimize(target);
+                desktop_sync_focused_window();
+            } else if (control >= 22 && control < 42) {
+                if ((info.flags & NEXUS_WINDOW_MAXIMIZED) != 0U)
+                    (void)nexus_wm_unmaximize(target);
+                else
+                    (void)nexus_wm_maximize(target);
+                desktop_sync_focused_window();
+                (void)desktop_save_settings();
+            } else if (control >= 44) {
+                desktop_close_window(target);
+            }
+            desktop_animate_view();
+            return true;
+        }
+        desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_MOVE;
+        desktop_dragged_window = target;
+        desktop_drag_offset_x = local_x;
+        desktop_drag_offset_y = local_y;
+        return true;
+    }
+
+    if (target == nexus_wm_focused() &&
+        local_x >= (int64_t)info.width - 20 &&
+        local_y >= (int64_t)info.height - 20) {
+        desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_RESIZE;
+        desktop_dragged_window = target;
+        return true;
+    }
+    return changed_focus;
+}
+
+static void desktop_update_window_drag(void) {
+    struct nexus_window_info info;
+    if (desktop_dragged_window == 0U ||
+        !nexus_wm_get(desktop_dragged_window, &info)) {
+        desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_NONE;
+        desktop_dragged_window = 0U;
+        return;
+    }
+    const uint64_t top = clamp_min(screen_height / 16U, 34U);
+    if (desktop_window_drag_mode == DESKTOP_WINDOW_DRAG_MOVE) {
+        int64_t x = pointer_x - desktop_drag_offset_x;
+        int64_t y = pointer_y - (int64_t)top - desktop_drag_offset_y;
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+        if (x > 0x7FFFFFFFLL) x = 0x7FFFFFFFLL;
+        if (y > 0x7FFFFFFFLL) y = 0x7FFFFFFFLL;
+        (void)nexus_wm_move(desktop_dragged_window, (int32_t)x, (int32_t)y);
+    } else if (desktop_window_drag_mode == DESKTOP_WINDOW_DRAG_RESIZE) {
+        int64_t width = pointer_x - info.x;
+        int64_t height = pointer_y - (int64_t)top - info.y;
+        uint64_t work_height = 0U;
+        desktop_window_work_area(NULL, NULL, (uint32_t *)&work_height);
+        const uint64_t min_width = screen_width < 560U ? screen_width : 560U;
+        const uint64_t min_height = work_height < 440U ? work_height : 440U;
+        if (width < (int64_t)min_width) width = (int64_t)min_width;
+        if (height < (int64_t)min_height) height = (int64_t)min_height;
+        if (width > (int64_t)screen_width) width = (int64_t)screen_width;
+        if (height > (int64_t)work_height) height = (int64_t)work_height;
+        (void)nexus_wm_resize(desktop_dragged_window,
+                              (uint32_t)width, (uint32_t)height);
+    }
+}
+
+static void desktop_draw_managed_windows(uint64_t top_bar) {
+    if (!desktop_window_manager_ready) return;
+    const nexus_window_id focused = nexus_wm_focused();
+    const size_t count = nexus_wm_count();
+    for (size_t z = 0U; z < count; ++z) {
+        nexus_window_id id = 0U;
+        struct nexus_window_info info;
+        if (!nexus_wm_z_order(z, &id) || id == focused ||
+            !nexus_wm_get(id, &info) ||
+            (info.flags & NEXUS_WINDOW_MINIMIZED) != 0U) continue;
+        if (info.application_id < (uint32_t)DESKTOP_FILES ||
+            info.application_id > (uint32_t)DESKTOP_CALCULATOR) continue;
+        const size_t app = (size_t)(info.application_id - DESKTOP_FILES);
+        const uint64_t x = (uint64_t)info.x;
+        const uint64_t y = top_bar + (uint64_t)info.y;
+        const uint64_t w = info.width;
+        const uint64_t h = info.height;
+        if (w < 150U || h < 80U) continue;
+
+        graphics_fill_round_rect(x + 5U, y + 7U, w, h, 15U,
+                                 1U, 4U, 13U);
+        graphics_fill_gradient_rect(x, y, w, h,
+                                    27U, 42U, 62U, 13U, 23U, 39U);
+        graphics_draw_round_rect(x, y, w, h, 15U,
+                                 69U, 96U, 125U);
+        graphics_fill_gradient_rect(x + 1U, y + 1U, w - 2U, 36U,
+                                    37U, 57U, 81U, 22U, 36U, 55U);
+        graphics_fill_gradient_rect(x + 1U, y + 35U, w - 2U, 2U,
+                                    70U, 166U, 205U, 127U, 112U, 222U);
+        desktop_draw_app_icon(x + 10U, y + 7U, 22U, app);
+        graphics_draw_text(x + 40U, y + 21U, info.title, 1U,
+                           236U, 244U, 252U);
+        if (w > 250U) {
+            const uint64_t controls_x = x + w - 66U;
+            graphics_fill_round_rect(controls_x, y + 10U, 14U, 12U,
+                                     4U, 47U, 118U, 181U);
+            graphics_draw_text(controls_x + 4U, y + 13U, "-", 1U,
+                               229U, 239U, 248U);
+            graphics_fill_round_rect(controls_x + 22U, y + 10U, 14U, 12U,
+                                     4U, 47U, 118U, 181U);
+            graphics_draw_rect(controls_x + 26U, y + 13U, 6U, 6U,
+                               207U, 224U, 239U);
+            graphics_fill_round_rect(controls_x + 44U, y + 10U, 14U, 12U,
+                                     4U, 218U, 82U, 98U);
+            graphics_draw_text(controls_x + 47U, y + 14U, "X", 1U,
+                               255U, 239U, 241U);
+        }
+        if (h > 112U && w > 220U) {
+            static const char *const summaries[7] = {
+                "FILES AND FOLDERS", "WEB BROWSING SESSION",
+                "PERSONALIZE YOUR DESKTOP", "COMMAND LINE WORKSPACE",
+                "LIVE SYSTEM RESOURCES", "QUICK SETTINGS AND STATUS",
+                "CALCULATOR WORKSPACE"
+            };
+            graphics_fill_round_rect(x + 14U, y + 50U, w - 28U,
+                                     h - 64U, 10U, 18U, 32U, 49U);
+            graphics_draw_text(x + 28U, y + 72U, summaries[app], 1U,
+                               169U, 205U, 226U);
+            graphics_draw_text(x + 28U, y + 94U,
+                               "SELECT THIS WINDOW TO CONTINUE",
+                               1U, 115U, 190U, 212U);
+        }
+    }
+}
+
 static void desktop_open_view(enum desktop_view view) {
     if (view == DESKTOP_INSTALLER && !installer_environment) return;
+    if (view == DESKTOP_HOME) {
+        if (desktop_window_manager_ready) {
+            const nexus_window_id focused = nexus_wm_focused();
+            if (focused != 0U) (void)nexus_wm_minimize(focused);
+            desktop_sync_focused_window();
+        }
+        active_view = DESKTOP_HOME;
+        window_maximized = false;
+        start_menu_open = false;
+        desktop_animate_view();
+        return;
+    }
+    size_t app = 0U;
+    if (desktop_window_manager_ready &&
+        desktop_view_app_index(view, &app)) {
+        struct nexus_window_info info;
+        if (!desktop_app_window_info(app, &info)) {
+            uint64_t top = 0U, bottom = 0U;
+            uint32_t work_height = 0U;
+            desktop_window_work_area(&top, &bottom, &work_height);
+            uint64_t w = screen_width * 3U / 4U;
+            uint64_t h = (uint64_t)work_height * 4U / 5U;
+            if (w > 1120U) w = 1120U;
+            if (h > 660U) h = 660U;
+            if (w > screen_width) w = screen_width;
+            if (h > work_height) h = work_height;
+            const uint64_t x_offset = (uint64_t)(app % 3U) * 22U;
+            const uint64_t y_offset = 18U + (uint64_t)(app % 4U) * 20U;
+            uint64_t x = (screen_width - w) / 2U + x_offset;
+            uint64_t y = y_offset;
+            if (x + w > screen_width) x = screen_width - w;
+            if (y + h > work_height) y = work_height - h;
+            if (!nexus_wm_create((uint32_t)view, launcher_app_names[app],
+                                 (int32_t)x, (int32_t)y,
+                                 (uint32_t)w, (uint32_t)h,
+                                 &desktop_app_windows[app])) {
+                desktop_window_manager_ready = false;
+            }
+        } else if ((info.flags & NEXUS_WINDOW_MINIMIZED) != 0U) {
+            (void)nexus_wm_restore(info.id);
+        } else {
+            (void)nexus_wm_focus(info.id);
+        }
+        struct nexus_window_info focused_info;
+        if (desktop_window_manager_ready &&
+            nexus_wm_get(nexus_wm_focused(), &focused_info)) {
+            active_view = view;
+            window_maximized =
+                (focused_info.flags & NEXUS_WINDOW_MAXIMIZED) != 0U;
+        } else {
+            active_view = view;
+        }
+        start_menu_open = false;
+        if (view == DESKTOP_FILES) {
+            scan_files_once();
+            refresh_files_listing();
+        }
+        desktop_animate_view();
+        return;
+    }
     if (active_view == view) return;
     active_view = view;
     start_menu_open = false;
-    if (view == DESKTOP_FILES) {
-        scan_files_once();
-        refresh_files_listing();
-    } else if (view == DESKTOP_INSTALLER) {
+    if (view == DESKTOP_INSTALLER) {
         installer_refresh_plan();
         installer_log_selected_target();
     }
@@ -574,16 +949,24 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         if(i==5U) continue;
         const size_t visible_index=i<5U?i:i-1U;
         const uint64_t x=apps_start+(uint64_t)visible_index*42U;
-        const bool selected=active_view==desktop_view_for_app(i);
+        struct nexus_window_info app_info;
+        const bool running = desktop_app_window_info(i, &app_info);
+        const bool selected = active_view == desktop_view_for_app(i) &&
+            running && app_info.id == nexus_wm_focused();
         graphics_fill_round_rect(x+2U,button_y+3U,36U,
             button_h>8U?button_h-8U:button_h,10U,
-            selected?39U:20U,selected?67U:34U,selected?94U:53U);
-        if(selected) graphics_draw_round_rect(x+2U,button_y+3U,36U,
-            button_h>8U?button_h-8U:button_h,10U,101U,143U,184U);
+            selected?39U:(running?29U:20U),
+            selected?67U:(running?49U:34U),
+            selected?94U:(running?70U:53U));
+        if(selected || running) graphics_draw_round_rect(x+2U,button_y+3U,36U,
+            button_h>8U?button_h-8U:button_h,10U,
+            selected?101U:72U,selected?143U:111U,selected?184U:145U);
         desktop_draw_app_icon(x+10U,
             button_y+(button_h>22U?(button_h-20U)/2U:1U),20U,i);
         if(selected) graphics_fill_round_rect(x+13U,y+bottom_bar-6U,
                                                14U,2U,1U,108U,215U,235U);
+        else if(running) graphics_fill_round_rect(x+17U,y+bottom_bar-6U,
+                                                  6U,2U,1U,106U,173U,204U);
     }
     const uint64_t control_x=desktop_taskbar_control_x();
     graphics_fill_round_rect(control_x+2U,button_y+3U,38U,
@@ -877,23 +1260,11 @@ static void draw_shell(void) {
                            adapter_count ? 190U : 119U);
     }
 
-    uint64_t panel_width = width * 3U / 4U;
-    uint64_t panel_height = active_view == DESKTOP_HOME
-        ? height * 53U / 100U : 512U;
-    if (panel_width > 920U) panel_width = 920U;
-    if (panel_height > 512U) panel_height = 512U;
-    if (panel_width > width - 16U) panel_width = width - 16U;
-    if (panel_height > height - top_bar - bottom_bar - 16U)
-        panel_height = height - top_bar - bottom_bar - 16U;
-    if (window_maximized && active_view != DESKTOP_HOME) {
-        panel_width = width - 32U;
-        panel_height = height - top_bar - bottom_bar - 16U;
-    }
-
-    const uint64_t panel_x = (width - panel_width) / 2U;
-    const uint64_t panel_base_y = window_maximized && active_view != DESKTOP_HOME
-        ? top_bar + 8U
-        : top_bar + (height - top_bar - bottom_bar - panel_height) / 2U;
+    uint64_t panel_x = 0U, panel_base_y = 0U;
+    uint64_t panel_width = 0U, panel_height = 0U;
+    desktop_get_current_window_rect(&panel_x, &panel_base_y,
+                                    &panel_width, &panel_height);
+    desktop_draw_managed_windows(top_bar);
     const uint64_t panel_y = panel_base_y + window_animation_offset;
 
     graphics_fill_round_rect(panel_x + 7U, panel_y + 10U, panel_width,
@@ -1876,6 +2247,10 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 
     screen_width = graphics_width();
     screen_height = graphics_height();
+    desktop_window_manager_ready = false;
+    desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_NONE;
+    desktop_dragged_window = 0U;
+    for (size_t app = 0U; app < 7U; ++app) desktop_app_windows[app] = 0U;
 #if defined(NEXUS_INSTALLED_OS_BUILD)
     /* The installed OS image never enters the live installer, even if the
      * firmware reports that it was started from USB/removable storage. */
@@ -1885,6 +2260,16 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 #else
     installer_environment = blockdev_boot_source_is_external();
 #endif
+    if (!installer_environment && screen_width <= 0x7FFFFFFFU &&
+        screen_height <= 0x7FFFFFFFU) {
+        uint32_t work_height = 0U;
+        desktop_window_work_area(NULL, NULL, &work_height);
+        desktop_window_manager_ready = nexus_wm_init(
+            (uint32_t)screen_width, work_height);
+        if (desktop_window_manager_ready)
+            serial_write("DESKTOP: multi-window workspace ready
+");
+    }
     active_view = installer_environment ? DESKTOP_INSTALLER : DESKTOP_HOME;
     installer_ui_state = INSTALLER_UI_SELECT;
     installer_firmware = NEXUS_FIRMWARE_UEFI;
@@ -3653,6 +4038,21 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         const bool left_down = (event->mouse_buttons & 1U) != 0;
         const bool clicked = left_down && !mouse_left_was_down;
         mouse_left_was_down = left_down;
+        if (desktop_window_drag_mode != DESKTOP_WINDOW_DRAG_NONE) {
+            if (left_down && !clicked) {
+                desktop_update_window_drag();
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+            if (!left_down) {
+                desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_NONE;
+                desktop_dragged_window = 0U;
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+        }
         bool shell_click_handled = false;
         if (clicked) {
             const uint64_t taskbar_height = clamp_min(screen_height / 11U, 48U);
@@ -3719,9 +4119,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             if (!shell_click_handled &&
                 (uint64_t)pointer_y < clamp_min(screen_height / 16U, 34U)) {
                 if ((uint64_t)pointer_x < 108U) {
-                    active_view = DESKTOP_HOME;
-                    window_maximized = false;
-                    start_menu_open = false;
+                    desktop_open_view(DESKTOP_HOME);
                     shell_click_handled = true;
                 } else if (screen_width > 620U &&
                            (uint64_t)pointer_x >= screen_width - 176U &&
@@ -3746,54 +4144,26 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         const size_t visible_index=app<5U?app:app-1U;
                         const uint64_t ax=apps_start+(uint64_t)visible_index*42U;
                         if((uint64_t)pointer_x>=ax && (uint64_t)pointer_x<ax+40U) {
-                            desktop_open_app(app); shell_click_handled=true; break;
+                            desktop_toggle_app(app); shell_click_handled=true; break;
                         }
                     }
                 }
             }
-            if (!shell_click_handled && active_view != DESKTOP_HOME) {
-                const uint64_t top = clamp_min(screen_height / 16U, 34U);
-                const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-                uint64_t pw = screen_width * 3U / 4U;
-                uint64_t ph = 512U;
-                if (pw > 920U) pw = 920U;
-                if (pw > screen_width - 16U) pw = screen_width - 16U;
-                if (ph > screen_height - top - bottom - 16U)
-                    ph = screen_height - top - bottom - 16U;
-                if (window_maximized) {
-                    pw = screen_width - 32U;
-                    ph = screen_height - top - bottom - 16U;
-                }
-                const uint64_t px = (screen_width - pw) / 2U;
-                const uint64_t py = window_maximized ? top + 8U
-                    : top + (screen_height - top - bottom - ph) / 2U;
-                const uint64_t controls_x = px + pw - 66U;
-                if (active_view == DESKTOP_INSTALLER &&
-                    installer_ui_state == INSTALLER_UI_COMPLETE &&
+            if (!shell_click_handled && active_view == DESKTOP_INSTALLER) {
+                uint64_t px = 0U, py = 0U, pw = 0U, ph = 0U;
+                desktop_get_current_window_rect(&px, &py, &pw, &ph);
+                (void)pw;
+                (void)ph;
+                if (installer_ui_state == INSTALLER_UI_COMPLETE &&
                     (uint64_t)pointer_x >= px + 32U &&
                     (uint64_t)pointer_x < px + 276U &&
                     (uint64_t)pointer_y >= py + 48U + 194U &&
-                    (uint64_t)pointer_y < py + 48U + 230U) {
+                    (uint64_t)pointer_y < py + 48U + 230U)
                     desktop_reboot_after_install();
-                }
-                if ((uint64_t)pointer_y >= py + 8U &&
-                    (uint64_t)pointer_y < py + 28U &&
-                    (uint64_t)pointer_x >= controls_x &&
-                    (uint64_t)pointer_x < controls_x + 58U) {
-                    const uint64_t control = (uint64_t)pointer_x - controls_x;
-                    if (control < 14U) {
-                        active_view = DESKTOP_HOME; /* Minimize */
-                        window_maximized = false;
-                    } else if (control >= 22U && control < 36U) {
-                        window_maximized = !window_maximized; /* Maximize / restore */
-                    } else if (control >= 44U) {
-                        active_view = DESKTOP_HOME; /* Close */
-                        window_maximized = false;
-                    }
-                    start_menu_open = false;
-                    shell_click_handled = true;
-                }
             }
+            if (!shell_click_handled &&
+                desktop_handle_window_mouse_click())
+                shell_click_handled = true;
         }
         if (shell_click_handled) {
             draw_shell();
@@ -3806,21 +4176,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 draw_pointer();
                 return;
             }
-            const uint64_t top = clamp_min(screen_height / 16U, 34U);
-            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-            uint64_t pw = screen_width * 3U / 4U;
-            uint64_t ph = 512U;
-            if (pw > 920U) pw = 920U;
-            if (pw > screen_width - 16U) pw = screen_width - 16U;
-            if (ph > screen_height - top - bottom - 16U)
-                ph = screen_height - top - bottom - 16U;
-            if (window_maximized) {
-                pw = screen_width - 32U;
-                ph = screen_height - top - bottom - 16U;
-            }
-            const uint64_t px = (screen_width - pw) / 2U;
-            const uint64_t py = window_maximized ? top + 8U
-                : top + (screen_height - top - bottom - ph) / 2U;
+            uint64_t px = 0U, py = 0U, pw = 0U, ph = 0U;
+            desktop_get_current_window_rect(&px, &py, &pw, &ph);
             const uint64_t tx = px + 32U;
             const uint64_t ty = py + 82U;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 270U);
@@ -3907,16 +4264,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
         }
         if (clicked && active_view == DESKTOP_CALCULATOR) {
-            const uint64_t top=clamp_min(screen_height/16U,34U);
-            const uint64_t bottom=clamp_min(screen_height/11U,48U);
-            uint64_t pw=screen_width*3U/4U, ph=512U;
-            if(pw>920U) pw=920U;
-            if(pw>screen_width-16U) pw=screen_width-16U;
-            if(ph>screen_height-top-bottom-16U) ph=screen_height-top-bottom-16U;
-            if(window_maximized) { pw=screen_width-32U; ph=screen_height-top-bottom-16U; }
-            const uint64_t px=(screen_width-pw)/2U;
-            const uint64_t py=window_maximized ? top+8U :
-                top+(screen_height-top-bottom-ph)/2U;
+            uint64_t px=0U,py=0U,pw=0U,ph=0U;
+            desktop_get_current_window_rect(&px,&py,&pw,&ph);
             const uint64_t key_x=px+24U, key_y=py+82U+132U;
             const uint64_t key_w=(pw-72U)/4U;
             const int64_t rx=pointer_x-(int64_t)key_x;
@@ -3932,15 +4281,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_shell(); draw_pointer(); return;
         }
         if(clicked && active_view==DESKTOP_CONTROL_CENTER) {
-            const uint64_t top=clamp_min(screen_height/16U,34U);
-            const uint64_t bottom=clamp_min(screen_height/11U,48U);
-            uint64_t pw=screen_width*3U/4U,ph=512U;
-            if(pw>920U) pw=920U;
-            if(pw>screen_width-16U) pw=screen_width-16U;
-            if(ph>screen_height-top-bottom-16U) ph=screen_height-top-bottom-16U;
-            if(window_maximized) { pw=screen_width-32U; ph=screen_height-top-bottom-16U; }
-            const uint64_t px=(screen_width-pw)/2U;
-            const uint64_t py=window_maximized?top+8U:top+(screen_height-top-bottom-ph)/2U;
+            uint64_t px=0U,py=0U,pw=0U,ph=0U;
+            desktop_get_current_window_rect(&px,&py,&pw,&ph);
             const uint64_t qx=px+24U,qy=py+82U+198U,qw=(pw-64U)/3U;
             const int64_t rx=pointer_x-(int64_t)qx,ry=pointer_y-(int64_t)qy;
             if(rx>=0 && ry>=0 && (uint64_t)rx<3U*qw+16U &&
@@ -3955,21 +4297,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
         }
         if (clicked && active_view == DESKTOP_SETTINGS) {
-            const uint64_t top = clamp_min(screen_height / 16U, 34U);
-            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-            uint64_t pw = screen_width * 3U / 4U;
-            uint64_t ph = 512U;
-            if (pw > 920U) pw = 920U;
-            if (pw > screen_width - 16U) pw = screen_width - 16U;
-            if (ph > screen_height - top - bottom - 16U)
-                ph = screen_height - top - bottom - 16U;
-            if (window_maximized) {
-                pw = screen_width - 32U;
-                ph = screen_height - top - bottom - 16U;
-            }
-            const uint64_t px = (screen_width - pw) / 2U;
-            const uint64_t py = window_maximized ? top + 8U
-                : top + (screen_height - top - bottom - ph) / 2U;
+            uint64_t px=0U,py=0U,pw=0U,ph=0U;
+            desktop_get_current_window_rect(&px,&py,&pw,&ph);
             const uint64_t row_x = px + 24U;
             const uint64_t row_y = py + 82U + 54U;
             const uint64_t row_w = pw - 48U;
@@ -4112,9 +4441,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
              * close the view while it contains an unsaved draft. */
             return;
         }
-        if (key_code == 0x11U) { /* Ctrl+W: close current app view */
-            active_view = DESKTOP_HOME;
-            window_maximized = false;
+        if (key_code == 0x11U) { /* Ctrl+W closes the focused window */
+            desktop_close_focused_window();
             start_menu_open = false;
             desktop_animate_view();
             draw_shell();
@@ -4126,35 +4454,50 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         active_view != DESKTOP_INSTALLER &&
         !(active_view == DESKTOP_FILES &&
           files_editor_state != FILES_EDITOR_CLOSED)) { /* Alt+F4 */
-        active_view = DESKTOP_HOME;
-        window_maximized = false;
+        desktop_close_focused_window();
         start_menu_open = false;
         desktop_animate_view();
         draw_shell();
         draw_pointer();
         return;
     }
-    /* Alt+Tab switches between the built-in desktop applications. This is
-     * view switching, not yet independent overlapping application windows. */
+    /* Alt+Tab now cycles the actual open-window z-order. */
     if (keyboard_alt && key_code == 0x0FU &&
-        active_view != DESKTOP_INSTALLER) {
-        const size_t app_count =
-            (size_t)(DESKTOP_CALCULATOR - DESKTOP_FILES) + 1U;
-        size_t app = active_view >= DESKTOP_FILES &&
-                     active_view <= DESKTOP_CALCULATOR
-            ? (size_t)(active_view - DESKTOP_FILES) : 0U;
-        if (keyboard_left_shift || keyboard_right_shift) {
-            app = app == 0U ? app_count - 1U : app - 1U;
-        } else {
-            app = (app + 1U) % app_count;
+        active_view != DESKTOP_INSTALLER &&
+        desktop_window_manager_ready) {
+        const size_t count = nexus_wm_count();
+        const nexus_window_id current = nexus_wm_focused();
+        if (count > 1U) {
+            size_t current_position = count - 1U;
+            for (size_t i = 0U; i < count; ++i) {
+                nexus_window_id id = 0U;
+                if (nexus_wm_z_order(i, &id) && id == current) {
+                    current_position = i;
+                    break;
+                }
+            }
+            const bool reverse = keyboard_left_shift || keyboard_right_shift;
+            for (size_t step = 1U; step <= count; ++step) {
+                const size_t next_position = reverse
+                    ? (current_position + count - (step % count)) % count
+                    : (current_position + step) % count;
+                nexus_window_id next = 0U;
+                struct nexus_window_info info;
+                if (nexus_wm_z_order(next_position, &next) &&
+                    next != current && nexus_wm_get(next, &info) &&
+                    info.application_id >= (uint32_t)DESKTOP_FILES &&
+                    info.application_id <= (uint32_t)DESKTOP_CALCULATOR) {
+                    (void)nexus_wm_restore(next);
+                    (void)nexus_wm_focus(next);
+                    desktop_sync_focused_window();
+                    if (active_view == DESKTOP_FILES) {
+                        scan_files_once();
+                        refresh_files_listing();
+                    }
+                    break;
+                }
+            }
         }
-        const enum desktop_view next =
-            (enum desktop_view)(DESKTOP_FILES + app);
-        if (next == DESKTOP_FILES) {
-            scan_files_once();
-            refresh_files_listing();
-        }
-        active_view = next;
         start_menu_open = false;
         desktop_animate_view();
         draw_shell();
@@ -4164,9 +4507,17 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     /* F11 toggles the active app between its normal centered frame and
      * the available desktop work area, matching a familiar desktop shortcut. */
     if (active_view != DESKTOP_INSTALLER && event->scancode == 0x57U) {
-        window_maximized = !window_maximized;
+        const nexus_window_id focused = nexus_wm_focused();
+        struct nexus_window_info info;
+        if (focused != 0U && nexus_wm_get(focused, &info)) {
+            if ((info.flags & NEXUS_WINDOW_MAXIMIZED) != 0U)
+                (void)nexus_wm_unmaximize(focused);
+            else
+                (void)nexus_wm_maximize(focused);
+            desktop_sync_focused_window();
+            (void)desktop_save_settings();
+        }
         start_menu_open = false;
-        (void)desktop_save_settings();
         draw_shell();
         draw_pointer();
         return;
@@ -4229,7 +4580,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             if (installer_ui_state == INSTALLER_UI_SELECT) {
                 /* A live installer boot is a dedicated environment, not a
                  * desktop session with an installer window to dismiss. */
-                if (!installer_environment) active_view = DESKTOP_HOME;
+                if (!installer_environment) desktop_return_home();
             } else {
                 installer_ui_state = INSTALLER_UI_SELECT;
                 installer_input_length = 0U;
@@ -4382,7 +4733,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (active_view == DESKTOP_CONTROL_CENTER) {
-        if(event->scancode==0x01U) active_view=DESKTOP_HOME;
+        if(event->scancode==0x01U) desktop_return_home();
         else if(event->scancode>=0x02U && event->scancode<=0x06U)
             desktop_control_center_activate((size_t)(event->scancode-0x02U));
         else if(event->scancode==0x1CU) desktop_control_center_activate(5U);
@@ -4390,7 +4741,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         draw_shell(); draw_pointer(); return;
     }
     if (active_view == DESKTOP_CALCULATOR) {
-        if (event->scancode==0x01U) active_view=DESKTOP_HOME;
+        if (event->scancode==0x01U) desktop_return_home();
         else if (event->scancode==0x0EU) calculator_backspace();
         else if (event->scancode==0x1CU) calculator_evaluate();
         else if (event->scancode==0x2EU) calculator_clear();
@@ -4402,14 +4753,14 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         draw_shell(); draw_pointer(); return;
     }
     if (active_view == DESKTOP_MONITOR) {
-        if (event->scancode == 0x01U) active_view = DESKTOP_HOME;
+        if (event->scancode == 0x01U) desktop_return_home();
         draw_shell();
         draw_pointer();
         return;
     }
     if (active_view == DESKTOP_SETTINGS) {
         if (event->scancode == 0x01U) {
-            active_view = DESKTOP_HOME;
+            desktop_return_home();
         } else if (event->scancode >= 0x02U &&
                    event->scancode <= 0x08U) {
             desktop_settings_activate((size_t)(event->scancode - 0x02U));
@@ -4423,7 +4774,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x01U) {
-            active_view = DESKTOP_HOME;
+            desktop_return_home();
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x1CU) {

@@ -53,6 +53,11 @@ bool netdev_ready(void) {
     return active_device.registered;
 }
 
+bool netdev_link_up(void) {
+    return active_device.registered && active_device.ops.link_up != NULL &&
+           active_device.ops.link_up(active_device.context);
+}
+
 bool netdev_get_info(struct nexus_netdev_info *info) {
     if (!active_device.registered || info == NULL) return false;
     *info = active_device.info;

@@ -404,7 +404,7 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
     identity.block_size = device->block_size;
 
     report(progress, progress_context, NEXUS_INSTALL_PHASE_PREFLIGHT,
-           "Validating the interrupted installation and recovery journal");
+           "Validating saved installer progress");
     if (!gpt_scan_device(device))
         return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
     struct nexus_gpt_partition esp = {0};
@@ -506,6 +506,6 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
     report(progress, progress_context, NEXUS_INSTALL_PHASE_RECOVERY,
            "Resuming from the last verified installer journal phase");
     return apply_remaining_stages(device, &identity, typed_stable_id,
-        typed_erase_phrase, firmware, &esp, &system, &data, &recovery,
+        typed_erase_phrase, firmware, &esp, &system, &data,
         needs_bios ? &bios : NULL, &journal, progress, progress_context);
 }

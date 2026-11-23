@@ -32,12 +32,26 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   deployment, the completion screen offers **Restart into Nexus OS**. Remove
   the installation USB before activating restart so firmware boots the target
   drive rather than returning to the installer.
-- A Files view with a flat root listing (up to 128 indexed entries, six
-  visible at once), keyboard/mouse selection, create/open/edit/delete, names
-  up to 31 characters, and a scrollable 4 KiB ASCII text editor. The desktop
-  mounts the dedicated NXFS Data partition after the Recovery partition;
-  it does not expose the NXFS System partition as the user's file store.
-  FAT32 volumes are read-only; RAM-only fallback saves are volatile.
+- A Files view with a bounded listing (up to 128 indexed entries, six
+  visible at once), keyboard/mouse selection, folder-first alphabetical
+  sorting, visible directory labels, nested read-only FAT32 navigation,
+  create/open/edit/delete for writable root-level files, and a scrollable
+  1 MiB ASCII text editor. FAT32 remains read-only; user-created NXFS files
+  are persistent while RAMFS fallback files are volatile. The desktop mounts
+  the dedicated NXFS Data partition after the Recovery partition; it does
+  not expose the NXFS System partition as the user's file store.
+- A Terminal with live system overview (`info`), storage/network/process
+  inspection, current-directory reporting (`pwd`), nested FAT32 navigation
+  (`cd DIR`, `cd ..`), directory listings with types and file sizes (`ls`),
+  file reads (`cat FILE`), and safe file copying (`cp SOURCE DEST`) into
+  Nexus root storage. Copy reads are chunked, bounded to 1 MiB, refuse an
+  existing Nexus destination, and use transactional NXFS writes when that
+  volume is writable; otherwise only files fitting the 4 KiB RAMFS limit
+  can be copied, and those copies are volatile.
+- The Browser's HTML text extraction retains block separation for headings
+  and paragraphs, line breaks, and list bullets, while suppressing comments,
+  script/style contents, and decoding common HTML entities. This remains a
+  text-only page viewer, not a modern browser engine.
 - An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, and a plain
   HTTP text viewer. This is limited network access, not a general-purpose
   internet/browser implementation.
@@ -96,8 +110,11 @@ the latest run attached to the current branch.
   dynamic userspace, graphics and system interfaces Chrome depends on.
 - The E1000/DHCP stack is exercised with emulated networking in QEMU; actual
   public-internet access on physical hardware has not yet been validated.
-- The Files view is currently a flat root listing with bounded filename and
-  editor sizes; it is not yet a full hierarchical file manager.
+- File management remains bounded: Nexus's writable NXFS namespace is
+  root-level, FAT32 subdirectories are read-only, and graphical copy/move,
+  rename, writable folder creation, and volume-to-volume management remain
+  incomplete. The Terminal can copy files into Nexus root storage but does
+  not yet provide a full shell or a general file-management command set.
 - Desktop applications and much of the system runtime remain kernel-integrated.
   A separate userland, a full application/process model, robust preemptive
   multitasking, updates, and production recovery/upgrade tooling remain work

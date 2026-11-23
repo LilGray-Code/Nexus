@@ -113,8 +113,10 @@ static bool parse_content_disposition(const uint8_t *source, size_t length,
             for (size_t i = value_start; i < value_end; ++i) {
                 uint8_t c = source[i];
                 if (c == '\\' && quoted && i + 1U < value_end) c = source[++i];
-                if (c < 0x20U || c > 0x7EU) return false;
-                if (used + 1U >= capacity) return false;
+                if (c < 0x20U || c > 0x7EU || used + 1U >= capacity) {
+                    filename[0] = '\0';
+                    return true;
+                }
                 filename[used++] = (char)c;
             }
             filename[used] = '\0';
@@ -192,8 +194,8 @@ bool nexus_browser_http_parse(const uint8_t *response, size_t response_length,
                 return false;
         } else if (equal_ascii_ci(response + cursor, colon - cursor,
                                   "transfer-encoding")) {
-            uint8_t encoding[32];
-            if (!copy_header_value((char *)encoding, sizeof(encoding),
+            char encoding[32];
+            if (!copy_header_value(encoding, sizeof(encoding),
                                    value, value_length)) return false;
             size_t encoding_length = 0U;
             while (encoding_length < sizeof(encoding) &&

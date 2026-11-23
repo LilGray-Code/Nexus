@@ -3264,27 +3264,24 @@ static bool files_is_efi_system_partition(
     return files_partition_guid_matches(partition, efi_system_guid);
 }
 
-/* Nexus System and Data volumes share the NXFS type GUID.  The recovery
- * partition is their stable boundary: System precedes it and user Data
- * follows it.  Never expose the installed kernel's System volume as the
- * user's file store. */
+/* Nexus System and Data volumes share the NXFS type GUID. The Data
+ * volume is the last NXFS partition in the installer-created layout, while
+ * System is the preceding NXFS partition. Requiring both prevents the Files
+ * app from exposing the installed kernel's System volume as user storage. */
 static bool files_is_user_data_partition(
     const struct nexus_gpt_partition *partition) {
-    static const uint8_t recovery_guid[16] = {
-        0x4EU, 0x58U, 0x52U, 0x43U, 0x01U, 0x00U, 0x58U, 0x4EU,
-        0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x52U, 0x43U
-    };
     if (!nxfs_partition_type_matches(partition)) return false;
+    const struct nexus_gpt_partition *last_nxfs = NULL;
+    size_t nxfs_count = 0U;
     for (size_t i = 0U; i < gpt_partition_count(); ++i) {
-        const struct nexus_gpt_partition *recovery = gpt_partition_at(i);
-        if (!files_partition_guid_matches(recovery, recovery_guid)) continue;
-        const struct nexus_gpt_partition *data = gpt_partition_at(i + 1U);
-        return data != NULL &&
-               data->first_lba == partition->first_lba &&
-               data->last_lba == partition->last_lba &&
-               nxfs_partition_type_matches(data);
+        const struct nexus_gpt_partition *candidate = gpt_partition_at(i);
+        if (!nxfs_partition_type_matches(candidate)) continue;
+        last_nxfs = candidate;
+        ++nxfs_count;
     }
-    return false;
+    return nxfs_count >= 2U && last_nxfs != NULL &&
+           last_nxfs->first_lba == partition->first_lba &&
+           last_nxfs->last_lba == partition->last_lba;
 }
 
 static void scan_files_once(void) {
@@ -4243,7 +4240,7 @@ static const char *installer_result_message(
     switch (result) {
         case NEXUS_INSTALL_RESULT_OK: return "Installation completed";
         case NEXUS_INSTALL_RESULT_EXISTING_RECOVERY:
-            return "Existing interrupted install or corrupt journal; recovery required";
+            return "Saved install state is invalid; retry a clean install";
         case NEXUS_INSTALL_RESULT_PARTITION_WRITE:
             return "GPT write failed; inspect disk before retrying";
         case NEXUS_INSTALL_RESULT_PARTITION_VERIFY:

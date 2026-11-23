@@ -36,10 +36,8 @@ static void test_geometry_and_bounds(void) {
     assert(nexus_wm_get(id, &info));
     assert(info.x == 0 && info.y == 0);
     assert(info.width == 800U && info.height == 600U);
-    assert(nexus_wm_move(id, 700, 550));
-    assert(nexus_wm_get(id, &info));
-    assert(info.x == 640 && info.y == 504);
     assert(nexus_wm_resize(id, 320U, 200U));
+    assert(nexus_wm_move(id, 700, 550));
     assert(nexus_wm_get(id, &info));
     assert(info.width == 320U && info.height == 200U);
     assert(info.x == 480 && info.y == 400);

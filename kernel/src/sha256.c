@@ -112,6 +112,14 @@ void nexus_sha256(const void *data,size_t length,
 void nexus_hmac_sha256(const void *key,size_t key_length,
                        const void *data,size_t data_length,
                        uint8_t digest[NEXUS_SHA256_SIZE]) {
+    if (digest == NULL) return;
+    /* This API cannot report errors, so reject invalid spans by returning a
+     * deterministic all-zero result instead of silently hashing empty input. */
+    if ((key_length != 0U && key == NULL) ||
+        (data_length != 0U && data == NULL)) {
+        for (size_t i = 0U; i < NEXUS_SHA256_SIZE; ++i) digest[i] = 0U;
+        return;
+    }
     uint8_t block[64]={0},inner[NEXUS_SHA256_SIZE];
     if(key_length>64U){nexus_sha256(key,key_length,block);key_length=32U;}
     else if(key_length!=0U&&key!=NULL){

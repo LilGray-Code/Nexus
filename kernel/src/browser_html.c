@@ -141,16 +141,24 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             const bool is_style = name_length == 5U &&
                 html_equal_ci(html + tag_start, name_length, "style");
             const bool hidden = is_script || is_style;
+            const bool list_item = name_length == 2U &&
+                html_equal_ci(html + tag_start, name_length, "li");
+            const bool void_break = name_length == 2U &&
+                (html_equal_ci(html + tag_start, name_length, "br") ||
+                 html_equal_ci(html + tag_start, name_length, "hr"));
             const bool block = html_is_block_tag(html + tag_start,
                                                   name_length) ||
-                (name_length == 2U &&
-                 html_equal_ci(html + tag_start, name_length, "li")) ||
-                (name_length == 2U &&
-                 html_equal_ci(html + tag_start, name_length, "br"));
-            if (block && !html_append_break(output, capacity, &used))
-                break;
-            if (!closing_tag && name_length == 2U &&
-                html_equal_ci(html + tag_start, name_length, "li")) {
+                list_item || void_break;
+
+            /* Block boundaries belong after the previous block (closing
+             * tags) or before the next block's content (opening tags).
+             * Void breaks such as <br> and <hr> emit their break after the
+             * tag. List prefixes stay on the same line as their item text. */
+            if (block && (closing_tag || !void_break)) {
+                if (!html_append_break(output, capacity, &used)) break;
+                pending_space = false;
+            }
+            if (!closing_tag && list_item) {
                 if (used + 2U >= capacity) break;
                 output[used++] = '-';
                 output[used++] = ' ';
@@ -176,8 +184,10 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
                     if (i < length) ++i;
                 } else i = length;
             }
-            if (block && !html_append_break(output, capacity, &used))
-                break;
+            if (void_break && !closing_tag) {
+                if (!html_append_break(output, capacity, &used)) break;
+                pending_space = false;
+            }
             if (block) pending_space = false;
             continue;
         }

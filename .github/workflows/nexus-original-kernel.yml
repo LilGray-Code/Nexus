@@ -633,11 +633,31 @@ jobs:
               print(open(log_path, encoding="utf-8", errors="replace").read())
               raise SystemExit("Graphical installer did not finish within 120 seconds")
 
-          # Simulate removing the live USB by selecting the installed disk as
-          # the next firmware boot device, then exercise the installer's real
-          # Enter-to-restart path. The same QEMU instance must boot the
-          # installed-system kernel and reach its desktop without a manual VM
-          # shutdown/relaunch.
+          # Simulate physically removing the live installer medium before
+          # reboot. Merely changing the next-boot order leaves OVMF's existing
+          # DVD Boot#### entry ahead of the installed disk, so eject the only
+          # removable block device and verify it has no inserted medium.
+          blocks = command({"execute": "query-block"})
+          optical = [item for item in blocks
+                     if item.get("removable") and item.get("inserted") is not None]
+          if len(optical) != 1:
+              print(blocks)
+              raise SystemExit("Could not identify the single live installer medium")
+          optical_device = optical[0].get("device")
+          if not optical_device:
+              print(optical[0])
+              raise SystemExit("QEMU did not expose a removable-media device name")
+          command({"execute": "human-monitor-command",
+                   "arguments": {"command-line": f"eject -f {optical_device}"}})
+          blocks = command({"execute": "query-block"})
+          optical_after = next((item for item in blocks
+                                if item.get("device") == optical_device), None)
+          if optical_after is None or optical_after.get("inserted") is not None:
+              print(blocks)
+              raise SystemExit("Live installer medium was not ejected")
+
+          # Make the installed target the next boot choice, then exercise the
+          # installer's actual Enter-to-restart path in this same VM.
           command({"execute": "human-monitor-command",
                    "arguments": {"command-line": "boot_set order=c"}})
           key("ret")

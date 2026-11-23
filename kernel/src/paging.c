@@ -25,8 +25,6 @@ static bool nx_enabled;
 static bool allocate_table(uint64_t *physical,
                            volatile uint64_t **virtual_table) {
     if (physical == NULL || virtual_table == NULL) return false;
-    if (!memory_alloc_page(physical)) return false;
-
     *virtual_table = NULL;
     if (!memory_alloc_page(physical)) return false;
 
@@ -159,9 +157,8 @@ bool paging_map_mmio_page(uint64_t physical_address,
 }
 
 /*
- * Clone the active kernel page-table root and remove the low canonical slot.
- * Kernel mappings in the high half remain shared, while user mappings are
- * created beneath a private lower-half tree.
+ * Create a process root with shared supervisor kernel mappings in the high
+ * half and a private, initially empty lower canonical half for user mappings.
  */
 
 static bool destroy_user_page_table(uint64_t table_physical,

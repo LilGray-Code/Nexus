@@ -994,7 +994,7 @@ static void draw_shell(void) {
         const uint64_t card_y = text_y + 201U;
         const uint64_t card_h = 48U;
         const char *card_labels[4] = {
-            "MEMORY AVAILABLE", "SESSION UPTIME", "DATA VOLUME", "NETWORK"
+            "MEM FREE", "UPTIME", "STORAGE", "NETWORK"
         };
         char free_mem[21], uptime[21];
         format_u64(memory_free_bytes() / (1024U * 1024U), free_mem);
@@ -3698,6 +3698,20 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 }
                 if(!app_clicked) start_menu_open=false;
             }
+            if (!shell_click_handled &&
+                (uint64_t)pointer_y < clamp_min(screen_height / 16U, 34U)) {
+                if ((uint64_t)pointer_x < 108U) {
+                    active_view = DESKTOP_HOME;
+                    window_maximized = false;
+                    start_menu_open = false;
+                    shell_click_handled = true;
+                } else if (screen_width > 620U &&
+                           (uint64_t)pointer_x >= screen_width - 176U &&
+                           (uint64_t)pointer_x < screen_width - 18U) {
+                    desktop_open_view(DESKTOP_CONTROL_CENTER);
+                    shell_click_handled = true;
+                }
+            }
             if(!shell_click_handled && (uint64_t)pointer_y>=taskbar_top) {
                 if((uint64_t)pointer_x<56U) {
                     start_menu_open=!start_menu_open;
@@ -3802,8 +3816,15 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 action_count * action_width + (action_count - 1U) * action_gap;
             if (relative_y >= 0 && relative_y < 25 && relative_x >= 0 &&
                 (uint64_t)relative_x < toolbar_width) {
+                const uint64_t local_x =
+                    (uint64_t)relative_x % (action_width + action_gap);
                 const size_t action =
                     (size_t)((uint64_t)relative_x / (action_width + action_gap));
+                if (local_x >= action_width) {
+                    draw_shell();
+                    draw_pointer();
+                    return;
+                }
                 if (action == 0U) {
                     files_editor_begin_new();
                 } else if (action == 1U) {
@@ -4058,14 +4079,19 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             return;
         }
         if (active_view == DESKTOP_FILES &&
-            files_editor_state == FILES_EDITOR_CONTENT &&
-            key_code == 0x1FU) { /* Ctrl+S */
-            const struct nexus_input_event save_event = {
-                .type = NEXUS_INPUT_KEYBOARD, .scancode = 0x44U
-            };
-            files_editor_handle_key(&save_event);
-            draw_shell();
-            draw_pointer();
+            files_editor_state != FILES_EDITOR_CLOSED) {
+            if (files_editor_state == FILES_EDITOR_CONTENT &&
+                key_code == 0x1FU) { /* Ctrl+S */
+                const struct nexus_input_event save_event = {
+                    .type = NEXUS_INPUT_KEYBOARD, .scancode = 0x44U
+                };
+                files_editor_handle_key(&save_event);
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+            /* Do not insert shortcut letters into an active edit dialog or
+             * close the view while it contains an unsaved draft. */
             return;
         }
         if (key_code == 0x11U) { /* Ctrl+W: close current app view */
@@ -4079,7 +4105,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
     }
     if (keyboard_alt && key_code == 0x3EU &&
-        active_view != DESKTOP_INSTALLER) { /* Alt+F4 */
+        active_view != DESKTOP_INSTALLER &&
+        !(active_view == DESKTOP_FILES &&
+          files_editor_state != FILES_EDITOR_CLOSED)) { /* Alt+F4 */
         active_view = DESKTOP_HOME;
         window_maximized = false;
         start_menu_open = false;

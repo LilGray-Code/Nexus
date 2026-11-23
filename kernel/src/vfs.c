@@ -875,6 +875,12 @@ bool vfs_ramfs_selftest(void) {
             return false;
         }
         vfs_close(&file);
+        if (vfs_move_file(shadow_name, "NXFS-SHADOW-MOVED.TST")) {
+            (void)vfs_ramfs_remove(shadow_name);
+            (void)vfs_remove_file(shadow_name);
+            (void)vfs_remove_file("NXFS-SHADOW-MOVED.TST");
+            return false;
+        }
         if (!vfs_ramfs_remove(shadow_name) ||
             vfs_root_entry_count() != before + 1U ||
             !vfs_open_readonly(shadow_name, &file) || !file.nxfs_file) {

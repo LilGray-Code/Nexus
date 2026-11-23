@@ -106,12 +106,14 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   than 1 MiB are not implemented.
 - The Browser's HTML text extraction retains block separation for headings
   and paragraphs, line breaks, and list bullets, while suppressing comments,
-  script/style contents, and decoding common HTML entities. It does not yet
-  retain clickable anchor links, render CSS or execute JavaScript; it remains
-  a limited text viewer, not a modern browser engine.
-- An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, and a plain
-  HTTP text viewer. This is limited network access, not a general-purpose
-  internet/browser implementation.
+  script/style contents, and decoding common HTML entities. It can collect up
+  to five distinct absolute HTTP(S) anchor URLs from a loaded page; press
+  **Alt+1** through **Alt+5** to open them. Relative links are not yet resolved,
+  and CSS layout and JavaScript execution are not implemented. This remains a
+  limited text browser, not a modern browser engine.
+- An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, a plain-HTTP
+  page viewer, and bounded direct-HTTP downloads. This is limited network
+  access, not a general-purpose internet/browser implementation.
 
 The desktop applications and current system services are integrated into the
 kernel. The presence of an ELF loader and ring-3 execution tests does **not**

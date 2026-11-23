@@ -17,7 +17,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   taskbar, Start menu, app buttons, blue window chrome, and blue wallpaper.
   It displays an animated Nexus startup splash and does not expose the live
   installer as an application or launcher item.
-- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
+- PS/2 input, xHCI USB HID boot-keyboard / boot-mouse support, and
+  report-protocol USB gamepad discovery with bounded HID report parsing and
+  interrupt-IN input decoding for supported controller layouts. Unsupported
+  or malformed interface/endpoint layouts are rejected; broad controller
+  compatibility is not claimed.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.
 - GPT, FAT32, NXFS, and a virtual filesystem layer.

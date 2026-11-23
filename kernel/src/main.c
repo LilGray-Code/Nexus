@@ -61,6 +61,12 @@ static volatile uint32_t scheduler_count_a;
 static volatile uint32_t scheduler_count_b;
 static volatile uint8_t scheduler_trace[6];
 static volatile uint32_t scheduler_trace_count;
+static volatile uint32_t scheduler_reuse_count;
+
+static void scheduler_reuse_worker(void *argument) {
+    (void)argument;
+    ++scheduler_reuse_count;
+}
 
 static void scheduler_worker_a(void *argument) {
     (void)argument;
@@ -311,6 +317,26 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("K2: preemptive kernel-thread test passed (timer-driven A/B alternation)\r\n");
+
+    /* More sequential workers than slots verifies finished-slot reclamation. */
+    scheduler_reuse_count = 0U;
+    bool scheduler_reuse_ok = true;
+    for (uint32_t i = 0U; i < 12U; ++i) {
+        if (!scheduler_create_thread(scheduler_reuse_worker, NULL)) {
+            scheduler_reuse_ok = false;
+            break;
+        }
+        scheduler_yield();
+        if (scheduler_reuse_count != i + 1U) {
+            scheduler_reuse_ok = false;
+            break;
+        }
+    }
+    if (!scheduler_reuse_ok) {
+        serial_write("ERROR: scheduler thread-slot reuse test failed\\r\\n");
+        halt_forever();
+    }
+    serial_write("K2: scheduler reclaims finished thread slots (12 sequential workers)\\r\\n");
 
     if (framebuffer_request.response != NULL &&
         framebuffer_request.response->framebuffer_count > 0) {

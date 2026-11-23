@@ -7,6 +7,7 @@
 
 struct nexus_net_info {
     bool interface_ready;
+    bool link_up;
     bool ipv4_configured;
     uint8_t mac[6];
     uint8_t ipv4[4];

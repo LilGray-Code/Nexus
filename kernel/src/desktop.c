@@ -1697,6 +1697,7 @@ static bool files_name_matches_query(const char *name) {
 }
 
 static void refresh_files_listing(void) {
+    files_last_click_valid = false;
     files_vfs_ready = vfs_has_filesystem();
     files_listing_count = 0U;
     files_selected_index = 0U;

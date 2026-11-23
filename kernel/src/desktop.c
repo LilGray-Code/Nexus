@@ -2084,6 +2084,8 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            "ESC RETURNS HOME - STATUS REFRESHES ON INPUT",
                            1, 170, 191, 211);
     }
+    active_view = saved_view;
+    window_maximized = saved_maximized;
 }
 
 static bool desktop_draw_managed_windows(uint64_t top_bar) {

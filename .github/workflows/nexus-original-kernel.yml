@@ -201,10 +201,10 @@ jobs:
 
       - name: Test USB gamepad desktop input queue
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
-            -DNEXUS_INPUT_HOST_TEST -Ikernel/src \\
-            kernel/src/input.c kernel/src/usb_hid.c \\
-            kernel/src/usb_hid_gamepad.c kernel/tests/usb_hid_gamepad_input_test.c \\
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_INPUT_HOST_TEST -Ikernel/src \
+            kernel/src/input.c kernel/src/usb_hid.c \
+            kernel/src/usb_hid_gamepad.c kernel/tests/usb_hid_gamepad_input_test.c \
             -o /tmp/nexus-usb-gamepad-input-test
           /tmp/nexus-usb-gamepad-input-test
 

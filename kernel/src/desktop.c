@@ -3777,6 +3777,22 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         draw_pointer();
         return;
     }
+    if (active_view == DESKTOP_FILES &&
+        files_editor_state == FILES_EDITOR_CLOSED &&
+        !files_search_active && files_vfs_ready &&
+        (event->scancode == 0x3FU || event->scancode == 0x53U)) {
+        /* F5 refreshes the current folder. Delete opens the existing
+         * explicit Y/N confirmation instead of removing data immediately. */
+        if (event->scancode == 0x3FU) {
+            refresh_files_listing();
+            serial_write("FILES: listing refreshed by F5\\r\\n");
+        } else if (!files_delete_pending) {
+            files_request_delete_selected();
+        }
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     if (active_view == DESKTOP_MONITOR) {
         if (event->scancode == 0x01U) active_view = DESKTOP_HOME;
         draw_shell();

@@ -242,6 +242,32 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("NEXUS PCI DISCOVERY READY\r\n");
+    serial_write("PCI: retained network controllers (class 02):\\r\\n");
+    uint32_t pci_index = 0U;
+    const struct nexus_pci_device *network_controller;
+    while ((network_controller = pci_find_class(0x02U, 0x00U,
+                                                   pci_index,
+                                                   &pci_index)) != NULL) {
+        serial_write("PCI NET: ");
+        serial_write_hex(network_controller->bus);
+        serial_write(":");
+        serial_write_hex(network_controller->slot);
+        serial_write(".");
+        serial_write_hex(network_controller->function);
+        serial_write(" id=");
+        serial_write_hex(network_controller->vendor_id);
+        serial_write("/");
+        serial_write_hex(network_controller->device_id);
+        serial_write(" prog-if=");
+        serial_write_hex(network_controller->programming_interface);
+        serial_write("\\r\\n");
+        ++pci_index;
+    }
+    serial_write("PCI: retained functions=");
+    serial_write_hex(pci_stored_device_count());
+    serial_write(" total discovered=");
+    serial_write_hex(pci_device_count());
+    serial_write("\\r\\n");
 
     netdev_init();
     if (e1000_init()) {

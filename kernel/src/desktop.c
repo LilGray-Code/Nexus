@@ -49,6 +49,7 @@ static size_t files_last_click_index;
 static uint64_t files_last_click_tick;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
+static bool keyboard_alt;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
@@ -3553,6 +3554,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         keyboard_right_shift = !key_released;
         return;
     }
+    if (key_code == 0x38U) {
+        keyboard_alt = !key_released;
+        return;
+    }
     if (key_code == 0x3AU) {
         if (key_released) {
             keyboard_caps_lock_down = false;
@@ -3563,6 +3568,33 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (key_released) return;
+    /* Alt+Tab switches between the built-in desktop applications. This is
+     * view switching, not yet independent overlapping application windows. */
+    if (keyboard_alt && key_code == 0x0FU &&
+        active_view != DESKTOP_INSTALLER) {
+        const size_t app_count =
+            (size_t)(DESKTOP_MONITOR - DESKTOP_FILES) + 1U;
+        size_t app = active_view >= DESKTOP_FILES &&
+                     active_view <= DESKTOP_MONITOR
+            ? (size_t)(active_view - DESKTOP_FILES) : 0U;
+        if (keyboard_left_shift || keyboard_right_shift) {
+            app = app == 0U ? app_count - 1U : app - 1U;
+        } else {
+            app = (app + 1U) % app_count;
+        }
+        const enum desktop_view next =
+            (enum desktop_view)(DESKTOP_FILES + app);
+        if (next == DESKTOP_FILES) {
+            scan_files_once();
+            refresh_files_listing();
+        }
+        active_view = next;
+        start_menu_open = false;
+        desktop_animate_view();
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     if (active_view != DESKTOP_INSTALLER && event->scancode == 0x40U) {
         start_menu_open = !start_menu_open;
         draw_shell();

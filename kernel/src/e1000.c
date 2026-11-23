@@ -295,7 +295,7 @@ bool e1000_init(void) {
     state = (struct e1000_state){0};
     const struct nexus_pci_device *device = NULL;
 
-    for (uint32_t i = 0; i < pci_device_count(); ++i) {
+    for (uint32_t i = 0; i < pci_stored_device_count(); ++i) {
         const struct nexus_pci_device *candidate = pci_device_at(i);
         if (candidate == NULL || candidate->class_code != 0x02U ||
             candidate->subclass != 0x00U ||

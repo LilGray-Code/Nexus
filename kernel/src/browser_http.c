@@ -43,10 +43,10 @@ static bool contains_comma_token_ci(const char *value, size_t length,
     while (cursor < length) {
         while (cursor < length &&
                (value[cursor] == ',' || value[cursor] == ' ' ||
-                value[cursor] == '\\t')) ++cursor;
+                value[cursor] == 9U)) ++cursor;
         const size_t start = cursor;
         while (cursor < length && value[cursor] != ',' &&
-               value[cursor] != ' ' && value[cursor] != '\\t') ++cursor;
+               value[cursor] != ' ' && value[cursor] != 9U) ++cursor;
         if (cursor > start &&
             equal_ascii_ci((const uint8_t *)value + start,
                            cursor - start, wanted)) return true;

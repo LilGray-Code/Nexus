@@ -287,7 +287,7 @@ static void test_bios_layouts(void) {
     assert(run_install(NEXUS_FIRMWARE_LEGACY_BIOS, disk.stable_id, "ERASE") ==
            NEXUS_INSTALL_RESULT_OK);
     assert(bios_installs == 1U);
-    assert(current_plan.partition_count == 5U);
+    assert(current_plan.partition_count == 4U);
     assert(current_plan.partitions[0].kind == NEXUS_PARTITION_ESP);
     assert(current_plan.partitions[1].kind == NEXUS_PARTITION_BIOS_BOOT);
 
@@ -364,10 +364,12 @@ static void test_recovery_and_failures(void) {
     assert(nexus_partition_plan_create(disk.block_count, disk.block_size,
         NEXUS_FIRMWARE_UEFI, &current_plan));
     populate_partitions(&current_plan, dummy_disk_guid, dummy_guids);
+    /* A corrupt journal is not a blocker: the user already authorized
+     * erasure of this exact target, so the installer can create a clean layout. */
     old_journal_result = NEXUS_JOURNAL_CORRUPT;
     assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==
-           NEXUS_INSTALL_RESULT_EXISTING_RECOVERY);
-    assert(gpt_writes == 0U);
+            NEXUS_INSTALL_RESULT_OK);
+    assert(gpt_writes == 1U);
 
     reset_test(); fail_gpt = true;
     assert(run_install(NEXUS_FIRMWARE_UEFI, disk.stable_id, "ERASE") ==

@@ -597,9 +597,25 @@ bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
         length > entry->size - offset) return false;
 
     size_t slot = NEXUS_NXFS_MAX_FILES;
-    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i)
-        if (&nxfs_entries[i] == entry) slot = i;
-    if (slot >= NEXUS_NXFS_MAX_FILES || !entry->used) return false;
+    if (!entry->used || entry->bank > 1U ||
+        entry->size > NEXUS_NXFS_MAX_FILE_BYTES) return false;
+    /*
+     * File handles may retain a metadata snapshot. Resolve it to the current
+     * slot only while that exact generation is still live; never let a stale
+     * handle silently read a replacement file after an overwrite.
+     */
+    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
+        const struct nexus_nxfs_entry *current = &nxfs_entries[i];
+        if (current->used && current->bank == entry->bank &&
+            current->size == entry->size &&
+            current->data_crc == entry->data_crc &&
+            current->generation == entry->generation &&
+            names_equal(current->name, entry->name)) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot >= NEXUS_NXFS_MAX_FILES) return false;
     if (length == 0U) return true;
 
     nxfs_busy = true;

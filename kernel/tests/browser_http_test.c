@@ -41,7 +41,7 @@ static void test_redirect_response(void) {
 static void test_chunked_response(void) {
     static const uint8_t response[] =
         "HTTP/1.1 200 OK\r\n"
-        "Transfer-Encoding: chunked\r\n"
+        "Transfer-Encoding: gzip, chunked\r\n"
         "\r\n"
         "5\r\nhello\r\n0\r\n\r\n";
     struct nexus_browser_http_response parsed;

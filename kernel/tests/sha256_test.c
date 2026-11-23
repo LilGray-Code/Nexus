@@ -5,8 +5,8 @@
 
 static void expect_hex(const uint8_t *bytes,const char *hex,size_t n){
     static const char digits[]="0123456789abcdef";
-    char out[65];
-    assert(n<=32U);
+    char out[129];
+    assert(n<=64U);
     for(size_t i=0U;i<n;++i){out[i*2U]=digits[bytes[i]>>4];out[i*2U+1U]=digits[bytes[i]&15U];}
     out[n*2U]='\0';assert(strcmp(out,hex)==0);
 }

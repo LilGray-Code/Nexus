@@ -119,8 +119,15 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             if (hidden && name_length != 0U) {
                 const char *close = is_script ? "</script" : "</style";
                 size_t close_len = is_script ? 8U : 7U;
-                while (i + close_len <= length &&
-                       !html_equal_ci(html + i, close_len, close)) ++i;
+                while (i + close_len <= length) {
+                    const size_t after = i + close_len;
+                    const bool name_ends = after == length ||
+                        html_space(html[after]) || html[after] == '>' ||
+                        html[after] == '/';
+                    if (name_ends &&
+                        html_equal_ci(html + i, close_len, close)) break;
+                    ++i;
+                }
                 if (i + close_len <= length) {
                     i += close_len;
                     while (i < length && html[i] != '>') ++i;

@@ -186,6 +186,31 @@ static bool destroy_user_page_table(uint64_t table_physical,
     return true;
 }
 
+/*
+ * Validate a complete user-owned subtree before teardown mutates it. This
+ * two-pass design prevents a malformed later entry from leaving earlier
+ * mappings already freed while the root still appears live.
+ */
+static bool validate_user_page_table(uint64_t table_physical,
+                                     unsigned int level) {
+    if (level == 0U) return false;
+    volatile uint64_t *table =
+        (volatile uint64_t *)memory_phys_to_virt(table_physical);
+    if (table == NULL) return false;
+
+    for (size_t i = 0U; i < 512U; ++i) {
+        const uint64_t entry = table[i];
+        if ((entry & PAGE_PRESENT) == 0U) continue;
+        if ((entry & PAGE_USER) == 0U) return false;
+        if (level > 1U) {
+            if ((entry & PAGE_LARGE) != 0U) return false;
+            if (!validate_user_page_table(entry & PAGE_ADDRESS_MASK,
+                                          level - 1U)) return false;
+        }
+    }
+    return true;
+}
+
 bool paging_destroy_user_address_space(uint64_t root_physical) {
     if ((root_physical & 0xFFFULL) != 0U) return false;
 
@@ -208,8 +233,15 @@ bool paging_destroy_user_address_space(uint64_t root_physical) {
     for (size_t index = 0U; index < 256U; ++index) {
         const uint64_t entry = root[index];
         if ((entry & PAGE_PRESENT) == 0U) continue;
-        if ((entry & PAGE_USER) == 0U || (entry & PAGE_LARGE) != 0U)
-            return false;
+        if ((entry & PAGE_USER) == 0U || (entry & PAGE_LARGE) != 0U ||
+            !validate_user_page_table(entry & PAGE_ADDRESS_MASK,
+                                      levels - 1U)) return false;
+    }
+
+    /* Only after every subtree is valid do we begin reclaiming its pages. */
+    for (size_t index = 0U; index < 256U; ++index) {
+        const uint64_t entry = root[index];
+        if ((entry & PAGE_PRESENT) == 0U) continue;
         const uint64_t user_table = entry & PAGE_ADDRESS_MASK;
         if (!destroy_user_page_table(user_table, levels - 1U) ||
             !memory_free_page(user_table)) return false;

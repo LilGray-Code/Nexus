@@ -2339,7 +2339,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about info mem uptime storage net dns HOST http HOST ls cd DIR cd .. pwd cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME";
+        const char *s = "help about info mem uptime storage net dns HOST http HOST ls cd DIR cd .. pwd cp SOURCE DEST cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -2608,6 +2608,41 @@ static void terminal_execute(void) {
                 }
             }
             net_tcp_close();
+        }
+    } else if (terminal_input[0]=='c' && terminal_input[1]=='p' &&
+               terminal_input[2]==' ') {
+        const char *arguments = terminal_input + 3;
+        size_t source_length = 0U;
+        while (arguments[source_length] != '\0' &&
+               arguments[source_length] != ' ') ++source_length;
+        const char *destination = arguments + source_length;
+        while (*destination == ' ') ++destination;
+        size_t destination_length = 0U;
+        while (destination[destination_length] != '\0')
+            ++destination_length;
+        if (source_length == 0U ||
+            source_length >= NEXUS_VFS_NAME_MAX ||
+            destination_length == 0U ||
+            destination_length >= NEXUS_VFS_NAME_MAX) {
+            size_t out = 0U;
+            terminal_append("usage: cp SOURCE DEST", &out);
+            terminal_output[out] = '\0';
+        } else {
+            char source_name[NEXUS_VFS_NAME_MAX];
+            char destination_name[NEXUS_VFS_NAME_MAX];
+            for (size_t i = 0U; i < source_length; ++i)
+                source_name[i] = arguments[i];
+            source_name[source_length] = '\0';
+            for (size_t i = 0U; i < destination_length; ++i)
+                destination_name[i] = destination[i];
+            destination_name[destination_length] = '\0';
+            const bool copied = vfs_copy_file(source_name,
+                                              destination_name);
+            size_t out = 0U;
+            terminal_append(copied ? "copied into Nexus root storage" :
+                "copy failed: name exists, source too large, or no writable space",
+                &out);
+            terminal_output[out] = '\0';
         }
     } else if (terminal_input[0]=='s' && terminal_input[1]=='a' &&
                terminal_input[2]=='v' && terminal_input[3]=='e' &&

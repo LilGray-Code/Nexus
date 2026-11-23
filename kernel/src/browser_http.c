@@ -37,6 +37,23 @@ static bool copy_header_value(char *destination, size_t capacity,
     return true;
 }
 
+static bool contains_comma_token_ci(const char *value, size_t length,
+                                      const char *wanted) {
+    size_t cursor = 0U;
+    while (cursor < length) {
+        while (cursor < length &&
+               (value[cursor] == ',' || value[cursor] == ' ' ||
+                value[cursor] == '\\t')) ++cursor;
+        const size_t start = cursor;
+        while (cursor < length && value[cursor] != ',' &&
+               value[cursor] != ' ' && value[cursor] != '\\t') ++cursor;
+        if (cursor > start &&
+            equal_ascii_ci((const uint8_t *)value + start,
+                           cursor - start, wanted)) return true;
+    }
+    return false;
+}
+
 static bool parse_content_length(const uint8_t *source, size_t length,
                                  struct nexus_browser_http_response *parsed) {
     while (length > 0U && (*source == ' ' || *source == '\t')) {
@@ -201,7 +218,7 @@ bool nexus_browser_http_parse(const uint8_t *response, size_t response_length,
             while (encoding_length < sizeof(encoding) &&
                    encoding[encoding_length] != '\0') ++encoding_length;
             parsed->chunked_transfer =
-                equal_ascii_ci(encoding, encoding_length, "chunked");
+                contains_comma_token_ci(encoding, encoding_length, "chunked");
         } else if (equal_ascii_ci(response + cursor, colon - cursor,
                                   "content-disposition")) {
             if (!parse_content_disposition(value, value_length,

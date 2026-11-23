@@ -40,7 +40,11 @@ bool nexus_hid_gamepad_find_interface(
     bool gamepad_interface = false;
     bool have_report_descriptor = false;
     uint8_t current_interface = 0U;
+    uint8_t expected_endpoints = 0U;
+    uint8_t seen_endpoints = 0U;
     uint16_t current_report_length = 0U;
+    bool have_candidate = false;
+    struct nexus_hid_gamepad_interface candidate = {0};
     for (size_t offset = configuration[0]; offset < total_length;) {
         if (total_length - offset < 2U) return false;
         const uint8_t descriptor_length = configuration[offset];
@@ -50,15 +54,29 @@ bool nexus_hid_gamepad_find_interface(
 
         if (descriptor_type == 4U) {
             if (descriptor_length < 9U) return false;
+            if (gamepad_interface) {
+                if (seen_endpoints != expected_endpoints) return false;
+                if (have_candidate) {
+                    *interface = candidate;
+                    return true;
+                }
+            }
             gamepad_interface = configuration[offset + 3U] == 0U &&
                 configuration[offset + 5U] == 3U &&
-                configuration[offset + 6U] == 0U;
+                configuration[offset + 6U] == 0U &&
+                configuration[offset + 7U] == 0U &&
+                configuration[offset + 4U] != 0U;
             current_interface = gamepad_interface
                 ? configuration[offset + 2U] : 0U;
+            expected_endpoints = gamepad_interface
+                ? configuration[offset + 4U] : 0U;
+            seen_endpoints = 0U;
+            have_candidate = false;
             have_report_descriptor = false;
             current_report_length = 0U;
         } else if (descriptor_type == 0x21U && gamepad_interface) {
-            if (descriptor_length < 6U) return false;
+            if (seen_endpoints != 0U || descriptor_length < 6U)
+                return false;
             const uint8_t count = configuration[offset + 5U];
             if ((size_t)count > (descriptor_length - 6U) / 3U)
                 return false;
@@ -75,9 +93,14 @@ bool nexus_hid_gamepad_find_interface(
                 have_report_descriptor = true;
                 break;
             }
-        } else if (descriptor_type == 5U && gamepad_interface &&
-                   have_report_descriptor) {
-            if (descriptor_length < 7U) return false;
+        } else if (descriptor_type == 5U && gamepad_interface) {
+            if (descriptor_length < 7U ||
+                seen_endpoints >= expected_endpoints) return false;
+            ++seen_endpoints;
+            if (!have_report_descriptor) {
+                offset += descriptor_length;
+                continue;
+            }
             const uint8_t address = configuration[offset + 2U];
             const uint8_t attributes = configuration[offset + 3U] & 0x03U;
             const uint16_t raw_packet = (uint16_t)(
@@ -89,7 +112,7 @@ bool nexus_hid_gamepad_find_interface(
                 attributes == 3U && (raw_packet & 0xF800U) == 0U &&
                 packet != 0U && packet <= NEXUS_HID_GAMEPAD_MAX_REPORT_BYTES &&
                 interval != 0U) {
-                const struct nexus_hid_gamepad_interface parsed = {
+                candidate = (struct nexus_hid_gamepad_interface){
                     .interface_number = current_interface,
                     .configuration_value = configuration[5],
                     .endpoint_address = address,
@@ -97,11 +120,16 @@ bool nexus_hid_gamepad_find_interface(
                     .max_packet = packet,
                     .report_descriptor_length = current_report_length
                 };
-                *interface = parsed;
-                return true;
+                have_candidate = true;
             }
         }
         offset += descriptor_length;
+    }
+    if (gamepad_interface && seen_endpoints != expected_endpoints)
+        return false;
+    if (have_candidate) {
+        *interface = candidate;
+        return true;
     }
     return false;
 }

@@ -120,7 +120,7 @@ nexus_browser_download_http(const char *address, char *saved_name,
         return NEXUS_BROWSER_DOWNLOAD_INVALID_URL;
     if (url.scheme != NEXUS_BROWSER_SCHEME_HTTP)
         return NEXUS_BROWSER_DOWNLOAD_HTTPS_BLOCKED;
-    if (!vfs_nxfs_writable())
+    if (!vfs_nxfs_writable() || vfs_directory_depth() != 0U)
         return NEXUS_BROWSER_DOWNLOAD_NOT_PERSISTENT;
 
     uint8_t remote_ip[4];

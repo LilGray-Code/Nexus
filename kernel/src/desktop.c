@@ -34,6 +34,12 @@ static uint64_t screen_height;
 static bool desktop_ready;
 static bool start_menu_open;
 static bool window_maximized;
+static bool window_positioned;
+static uint64_t window_position_x;
+static uint64_t window_position_y;
+static bool window_dragging;
+static uint64_t window_drag_offset_x;
+static uint64_t window_drag_offset_y;
 static bool mouse_left_was_down;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
@@ -217,6 +223,8 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
 static void desktop_open_view(enum desktop_view view) {
     active_view = view;
     start_menu_open = false;
+    window_positioned = false;
+    window_dragging = false;
     if (view == DESKTOP_FILES) {
         scan_files_once();
         refresh_files_listing();
@@ -396,10 +404,15 @@ static void draw_shell(void) {
         panel_height = height - top_bar - bottom_bar - 16U;
     }
 
-    const uint64_t panel_x = (width - panel_width) / 2U;
-    const uint64_t panel_y = window_maximized && active_view != DESKTOP_HOME
+    uint64_t panel_x = (width - panel_width) / 2U;
+    uint64_t panel_y = window_maximized && active_view != DESKTOP_HOME
         ? top_bar + 8U
         : top_bar + (height - top_bar - bottom_bar - panel_height) / 2U;
+    if (window_positioned && !window_maximized &&
+        active_view != DESKTOP_HOME) {
+        panel_x = window_position_x;
+        panel_y = window_position_y;
+    }
 
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
                        panel_height, 1U, 4U, 13U);
@@ -1027,6 +1040,10 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     mouse_left_was_down = false;
     start_menu_open = false;
     window_maximized = false;
+    window_positioned = false;
+    window_dragging = false;
+    window_position_x = 0U;
+    window_position_y = 0U;
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
     desktop_ready = true;
@@ -2270,6 +2287,36 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         const bool left_down = (event->mouse_buttons & 1U) != 0;
         const bool clicked = left_down && !mouse_left_was_down;
         mouse_left_was_down = left_down;
+
+        if (window_dragging) {
+            if (left_down && active_view != DESKTOP_HOME &&
+                !window_maximized) {
+                const uint64_t top = clamp_min(screen_height / 16U, 34U);
+                const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+                uint64_t pw = screen_width * 3U / 4U;
+                uint64_t ph = 512U;
+                if (pw > 920U) pw = 920U;
+                if (pw > screen_width - 16U) pw = screen_width - 16U;
+                if (ph > screen_height - top - bottom - 16U)
+                    ph = screen_height - top - bottom - 16U;
+                int64_t next_x = pointer_x - (int64_t)window_drag_offset_x;
+                int64_t next_y = pointer_y - (int64_t)window_drag_offset_y;
+                const int64_t max_x = (int64_t)(screen_width - pw);
+                const int64_t min_y = (int64_t)top;
+                const int64_t max_y = (int64_t)(screen_height - bottom - ph);
+                if (next_x < 0) next_x = 0;
+                if (next_x > max_x) next_x = max_x;
+                if (next_y < min_y) next_y = min_y;
+                if (next_y > max_y) next_y = max_y;
+                window_position_x = (uint64_t)next_x;
+                window_position_y = (uint64_t)next_y;
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+            window_dragging = false;
+        }
+
         bool shell_click_handled = false;
         if (clicked) {
             const uint64_t taskbar_height = clamp_min(screen_height / 11U, 48U);
@@ -2323,9 +2370,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     pw = screen_width - 32U;
                     ph = screen_height - top - bottom - 16U;
                 }
-                const uint64_t px = (screen_width - pw) / 2U;
-                const uint64_t py = window_maximized ? top + 8U
+                uint64_t px = (screen_width - pw) / 2U;
+                uint64_t py = window_maximized ? top + 8U
                     : top + (screen_height - top - bottom - ph) / 2U;
+                if (window_positioned && !window_maximized) {
+                    px = window_position_x;
+                    py = window_position_y;
+                }
                 const uint64_t controls_x = px + pw - 66U;
                 if ((uint64_t)pointer_y >= py + 8U &&
                     (uint64_t)pointer_y < py + 28U &&
@@ -2335,13 +2386,30 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     if (control < 14U) {
                         active_view = DESKTOP_HOME; /* Minimize */
                         window_maximized = false;
+                        window_positioned = false;
+                        window_dragging = false;
                     } else if (control >= 22U && control < 36U) {
                         window_maximized = !window_maximized; /* Maximize / restore */
                     } else if (control >= 44U) {
                         active_view = DESKTOP_HOME; /* Close */
                         window_maximized = false;
+                        window_positioned = false;
+                        window_dragging = false;
                     }
                     start_menu_open = false;
+                    shell_click_handled = true;
+                }
+                if (!shell_click_handled &&
+                    (uint64_t)pointer_x >= px &&
+                    (uint64_t)pointer_x < px + pw &&
+                    (uint64_t)pointer_y >= py &&
+                    (uint64_t)pointer_y < py + 40U) {
+                    window_position_x = px;
+                    window_position_y = py;
+                    window_positioned = true;
+                    window_drag_offset_x = (uint64_t)pointer_x - px;
+                    window_drag_offset_y = (uint64_t)pointer_y - py;
+                    window_dragging = true;
                     shell_click_handled = true;
                 }
             }
@@ -2364,9 +2432,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 pw = screen_width - 32U;
                 ph = screen_height - top - bottom - 16U;
             }
-            const uint64_t px = (screen_width - pw) / 2U;
-            const uint64_t py = window_maximized ? top + 8U
+            uint64_t px = (screen_width - pw) / 2U;
+            uint64_t py = window_maximized ? top + 8U
                 : top + (screen_height - top - bottom - ph) / 2U;
+            if (window_positioned && !window_maximized) {
+                px = window_position_x;
+                py = window_position_y;
+            }
             const uint64_t tx = px + 32U;
             const uint64_t ty = py + 82U;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 270U);

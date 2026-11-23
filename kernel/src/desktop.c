@@ -1359,7 +1359,15 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 
     screen_width = graphics_width();
     screen_height = graphics_height();
+#if defined(NEXUS_INSTALLED_OS_BUILD)
+    /* The installed OS image never enters the live installer, even if the
+     * firmware reports that it was started from USB/removable storage. */
+    installer_environment = false;
+#elif defined(NEXUS_INSTALLER_BUILD)
     installer_environment = blockdev_boot_source_is_external();
+#else
+    installer_environment = blockdev_boot_source_is_external();
+#endif
     active_view = installer_environment ? DESKTOP_INSTALLER : DESKTOP_HOME;
     installer_ui_state = INSTALLER_UI_SELECT;
     installer_firmware = NEXUS_FIRMWARE_UEFI;

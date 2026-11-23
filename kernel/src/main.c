@@ -8,7 +8,7 @@
 #include "boot_payload.h"
 #include "desktop.h"
 #include "elf64.h"
-#include "e1000.h"
+#include "e1000.h"\n#include "netdev.h"
 #include "net.h"
 #include "gdt.h"
 #include "interrupts.h"
@@ -242,7 +242,7 @@ void kmain(void) {
     }
     serial_write("NEXUS PCI DISCOVERY READY\r\n");
 
-    if (e1000_init()) {
+    netdev_init();\n    if (e1000_init()) {
         if (e1000_send_arp_probe()) {
             serial_write("NEXUS E1000 TX READY\r\n");
         } else {

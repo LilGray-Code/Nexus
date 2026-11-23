@@ -18,8 +18,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   It displays an animated Nexus startup splash and does not expose the live
   installer as an application or launcher item. Alt+Tab cycles through the
   built-in Files, Browser, Settings, Terminal, and System Monitor views;
-  Shift+Alt+Tab cycles in reverse. This switches the active full-screen app
-  view and is not independent overlapping-window multitasking.
+  Shift+Alt+Tab cycles in reverse. F11 toggles the active app frame between
+  its centered and maximized desktop-work-area layouts, and the choice is
+  saved in desktop settings. These features switch the active full-screen app
+  view; they are not independent overlapping-window multitasking.
 - PS/2 input, xHCI USB HID boot-keyboard / boot-mouse support, and
   report-protocol USB gamepad discovery with bounded HID report parsing and
   interrupt-IN input decoding for supported controller layouts. Unsupported

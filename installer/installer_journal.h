@@ -49,9 +49,10 @@ struct nexus_installer_journal_device {
     bool (*flush)(void *context);
 };
 
-/* The two journal sectors must be in a dedicated reserved region, not inside
- * an active filesystem. Updates alternate sectors and verify the new copy
- * after flush so a torn write leaves the previous committed record intact. */
+/* The two journal sectors must be in a reserved region, not in active FAT
+ * metadata or file data. Nexus stores alternating records in ESP-relative
+ * sectors 8 and 9, which remain reserved in the FAT32 layout. Each commit is
+ * flushed and verified so a torn write leaves the previous record intact. */
 enum nexus_installer_journal_result nexus_installer_journal_load(
     const struct nexus_installer_journal_device *device, uint64_t first_lba,
     struct nexus_installer_journal_record *record);

@@ -20,6 +20,10 @@ int64_t usermode_sys_file_write(uint64_t user_path, uint64_t user_buffer,
 extern volatile uint64_t usermode_exit_status;
 extern volatile bool usermode_exit_seen;
 extern volatile bool usermode_write_rejected;
+extern volatile bool usermode_fault_seen;
+extern volatile uint64_t usermode_fault_vector;
+extern volatile uint64_t usermode_fault_error;
+void usermode_record_exception(uint64_t vector, uint64_t error_code);
 void nexus_user_return(void);
 
 #endif

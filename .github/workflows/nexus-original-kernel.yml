@@ -386,6 +386,7 @@ jobs:
           grep -q "INSTALLER: separate installed OS and live-installer images verified" uefi-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
+          grep -q "NEXUS USER FAULT ISOLATION READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
           grep -q "NEXUS FILE EXEC OK" uefi-serial.log
@@ -436,6 +437,7 @@ jobs:
           grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log
           grep -q "NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY" uefi-serial.log
+          grep -q "K2: four concurrent thread slots and capacity guard passed" uefi-serial.log
           grep -q "NEXUS DESKTOP FRAMEBUFFER READY" uefi-serial.log
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
@@ -511,6 +513,7 @@ jobs:
           grep -q "INSTALLER: separate installed OS and live-installer images verified" bios-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
+          grep -q "NEXUS USER FAULT ISOLATION READY" bios-serial.log
           grep -q "NEXUS RAMFS READY" bios-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" bios-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" bios-serial.log
@@ -530,6 +533,7 @@ jobs:
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log
           grep -q "STORAGE: controller " bios-serial.log
           grep -q "NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY" bios-serial.log
+          grep -q "K2: four concurrent thread slots and capacity guard passed" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 
       - name: Test the graphical installer on a disposable NVMe target

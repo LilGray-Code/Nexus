@@ -62,10 +62,16 @@ static volatile uint32_t scheduler_count_b;
 static volatile uint8_t scheduler_trace[6];
 static volatile uint32_t scheduler_trace_count;
 static volatile uint32_t scheduler_reuse_count;
+static volatile uint32_t scheduler_capacity_count;
 
 static void scheduler_reuse_worker(void *argument) {
     (void)argument;
     ++scheduler_reuse_count;
+}
+
+static void scheduler_capacity_worker(void *argument) {
+    (void)argument;
+    ++scheduler_capacity_count;
 }
 
 static void scheduler_worker_a(void *argument) {
@@ -317,6 +323,26 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("K2: preemptive kernel-thread test passed (timer-driven A/B alternation)\r\n");
+
+    /* All four worker slots can be active; a fifth must be rejected. */
+    scheduler_capacity_count = 0U;
+    bool scheduler_capacity_ok = true;
+    for (uint32_t i = 0U; i < 4U; ++i) {
+        if (!scheduler_create_thread(scheduler_capacity_worker, NULL)) {
+            scheduler_capacity_ok = false;
+            break;
+        }
+    }
+    if (scheduler_capacity_ok &&
+        scheduler_create_thread(scheduler_capacity_worker, NULL)) {
+        scheduler_capacity_ok = false;
+    }
+    if (scheduler_capacity_ok) scheduler_wait();
+    if (!scheduler_capacity_ok || scheduler_capacity_count != 4U) {
+        serial_write("ERROR: scheduler four-slot capacity test failed\r\n");
+        halt_forever();
+    }
+    serial_write("K2: four concurrent thread slots and capacity guard passed\r\n");
 
     /* More sequential workers than slots verifies finished-slot reclamation. */
     scheduler_reuse_count = 0U;

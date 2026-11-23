@@ -55,6 +55,16 @@ int main(void) {
     graphics_blend_rect(7U, 5U, UINT64_MAX, UINT64_MAX,
                         0U, 255U, 0U, 128U);
 
+    /* Rounded rectangles clip safely and leave their corner pixels untouched. */
+    graphics_clear(0U, 0U, 0U);
+    graphics_round_rect(1U, 1U, 6U, 4U, 2U, 0U, 255U, 0U);
+    assert(guarded[1U + 1U * WIDTH + 1U] == 0U);
+    assert(guarded[1U + 2U * WIDTH + 3U] == 0x0000FF00U);
+    assert(guarded[1U + 4U * WIDTH + 6U] == 0U);
+    graphics_blend_round_rect(0U, 0U, UINT64_MAX, UINT64_MAX,
+                              UINT32_MAX, 0U, 0U, 255U, 128U);
+    assert(guarded[1U + 2U * WIDTH + 3U] != 0x0000FF00U);
+
     /* Extreme text scale and origin must remain clipped to the surface. */
     graphics_draw_text(0U, 0U, "NEXUS", UINT32_MAX, 255U, 255U, 255U);
     graphics_draw_text(UINT64_MAX - 2U, UINT64_MAX - 2U, "X",

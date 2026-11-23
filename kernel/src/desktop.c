@@ -673,14 +673,20 @@ static void draw_shell(void) {
         const uint64_t tile_y = text_y + 76U;
         uint64_t tile_width = (panel_width - 90U) / 4U;
         if (tile_width > 190U) tile_width = 190U;
-        static const char *const labels[4] = {
-            "FILES", "WEB", "SETTINGS", "TERMINAL"
+        static const char *const labels[5] = {
+            "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR"
         };
-        static const uint8_t accent[4][3] = {
+        static const uint8_t accent[5][3] = {
             {0U, 120U, 215U}, {0U, 153U, 188U},
-            {16U, 124U, 16U}, {202U, 80U, 16U}
+            {16U, 124U, 16U}, {202U, 80U, 16U},
+            {104U, 33U, 122U}
         };
-        for (uint32_t i = 0U; i < 4U; ++i) {
+        /* Keep the launcher geometry identical to the mouse hit targets:
+         * five equal-width app tiles fit the home panel at every supported
+         * framebuffer width, including the System Monitor shortcut. */
+        tile_width = (panel_width - 100U) / 5U;
+        if (tile_width > 190U) tile_width = 190U;
+        for (uint32_t i = 0U; i < 5U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
             graphics_fill_rect(tile_x, tile_y, tile_width, 74U,

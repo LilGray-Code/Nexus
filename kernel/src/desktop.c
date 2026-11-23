@@ -313,6 +313,39 @@ static bool desktop_save_settings(void) {
     return saved;
 }
 
+static void desktop_settings_activate(size_t option) {
+    switch (option) {
+        case 0U:
+            settings_theme = (uint8_t)((settings_theme + 1U) % 3U);
+            break;
+        case 1U:
+            settings_wallpaper = (uint8_t)((settings_wallpaper + 1U) % 3U);
+            break;
+        case 2U:
+            settings_show_status = !settings_show_status;
+            break;
+        case 3U:
+            window_maximized = !window_maximized;
+            break;
+        case 4U: {
+            const uint32_t count = netdev_device_count();
+            if (count > 1U) {
+                const uint32_t next = (netdev_default_index() + 1U) % count;
+                if (!net_select_device(next))
+                    serial_write("NETWORK: adapter switch failed; previous interface restored\\r\\n");
+            } else if (count == 1U) {
+                (void)net_select_device(0U);
+            } else {
+                serial_write("NETWORK: no supported adapter driver is installed\\r\\n");
+            }
+            break;
+        }
+        default:
+            return;
+    }
+    (void)desktop_save_settings();
+}
+
 static void desktop_load_settings(void) {
     if (!files_scanned) scan_files_once();
     if (!vfs_nxfs_mounted()) return;
@@ -2948,6 +2981,38 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 }
             }
         }
+        if (clicked && active_view == DESKTOP_SETTINGS) {
+            const uint64_t top = clamp_min(screen_height / 16U, 34U);
+            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+            uint64_t pw = screen_width * 3U / 4U;
+            uint64_t ph = 512U;
+            if (pw > 920U) pw = 920U;
+            if (pw > screen_width - 16U) pw = screen_width - 16U;
+            if (ph > screen_height - top - bottom - 16U)
+                ph = screen_height - top - bottom - 16U;
+            if (window_maximized) {
+                pw = screen_width - 32U;
+                ph = screen_height - top - bottom - 16U;
+            }
+            const uint64_t px = (screen_width - pw) / 2U;
+            const uint64_t py = window_maximized ? top + 8U
+                : top + (screen_height - top - bottom - ph) / 2U;
+            const uint64_t row_x = px + 24U;
+            const uint64_t row_y = py + 82U + 82U + 54U;
+            const uint64_t row_w = pw - 48U;
+            if ((uint64_t)pointer_x >= row_x &&
+                (uint64_t)pointer_x < row_x + row_w) {
+                for (size_t option = 0U; option < 5U; ++option) {
+                    const uint64_t y = row_y + (uint64_t)option * 44U;
+                    if ((uint64_t)pointer_y >= y &&
+                        (uint64_t)pointer_y < y + 38U) {
+                        desktop_settings_activate(option);
+                        shell_click_handled = true;
+                        break;
+                    }
+                }
+            }
+        }
         if (clicked && active_view == DESKTOP_HOME) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
@@ -3183,29 +3248,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view == DESKTOP_SETTINGS) {
         if (event->scancode == 0x01U) {
             active_view = DESKTOP_HOME;
-        } else if (event->scancode == 0x02U) {
-            settings_theme = (uint8_t)((settings_theme + 1U) % 3U);
-        } else if (event->scancode == 0x03U) {
-            settings_wallpaper = (uint8_t)((settings_wallpaper + 1U) % 3U);
-        } else if (event->scancode == 0x04U) {
-            settings_show_status = !settings_show_status;
-        } else if (event->scancode == 0x05U) {
-            window_maximized = !window_maximized;
-        } else if (event->scancode == 0x06U) {
-            const uint32_t count = netdev_device_count();
-            if (count > 1U) {
-                const uint32_t next = (netdev_default_index() + 1U) % count;
-                if (!net_select_device(next))
-                    serial_write("NETWORK: adapter switch failed; previous interface restored\\r\\n");
-            } else if (count == 1U) {
-                (void)net_select_device(0U);
-            } else {
-                serial_write("NETWORK: no supported adapter driver is installed\\r\\n");
-            }
+        } else if (event->scancode >= 0x02U &&
+                   event->scancode <= 0x06U) {
+            desktop_settings_activate((size_t)(event->scancode - 0x02U));
         } else {
             return;
         }
-        (void)desktop_save_settings();
         draw_shell();
         draw_pointer();
         return;

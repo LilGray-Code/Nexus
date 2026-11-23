@@ -122,6 +122,59 @@ static void test_reject_unsupported_hid_interface_endpoints(void) {
         configuration, sizeof(configuration) - 1U, &interface));
 }
 
+static void test_interface_requires_complete_supported_endpoint_set(void) {
+    const uint8_t valid[] = {
+        9,0x02, 34,0, 1,1,0,0x80,50,
+        9,0x04, 2,0,1,3,0,0,0,
+        9,0x21, 0x11,0x01,0,1,0x22,
+        (uint8_t)sizeof(standard_gamepad),0,
+        7,0x05, 0x81,3,64,0,4
+    };
+    uint8_t configuration[41];
+    struct nexus_hid_gamepad_interface interface = {0};
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[16] = 1U; /* Nonzero interface protocol is not supported. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(valid), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[13] = 0U; /* A gamepad interface must expose an endpoint. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(valid), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[13] = 2U; /* Declared endpoint count must match descriptors. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(valid), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[2] = sizeof(configuration);
+    configuration[13] = 2U;
+    configuration[34] = 7U;
+    configuration[35] = 5U;
+    configuration[36] = 0x02U; /* OUT endpoint. */
+    configuration[37] = 2U;    /* Unsupported bulk endpoint. */
+    configuration[38] = 64U;
+    configuration[39] = 0U;
+    configuration[40] = 4U;
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[2] = sizeof(configuration);
+    configuration[13] = 2U;
+    configuration[34] = 7U;
+    configuration[35] = 5U;
+    configuration[36] = 0x01U; /* Optional interrupt-OUT endpoint. */
+    configuration[37] = 3U;
+    configuration[38] = 64U;
+    configuration[39] = 0U;
+    configuration[40] = 4U;
+    assert(nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+}
+
 static void test_reject_malformed_gamepad_hid_descriptors(void) {
     const uint8_t valid[] = {
         9,0x02, 34,0, 1,1,0,0x80,50,
@@ -177,6 +230,7 @@ int main(void) {
     test_signed_axes_and_report_id();
     test_find_report_protocol_gamepad_interface();
     test_reject_unsupported_hid_interface_endpoints();
+    test_interface_requires_complete_supported_endpoint_set();
     test_reject_malformed_gamepad_hid_descriptors();
     test_rejects_invalid_gamepad_logical_ranges();
     test_rejects_truncated_and_oversized_descriptors();

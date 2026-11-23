@@ -1121,7 +1121,9 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     if (!xhci->keyboard_active && !xhci->mouse_active &&
         !xhci->gamepad_active) {
         serial_write("xHCI: no supported directly attached HID input found\r\n");
-        return false;
+        /* The controller is still usable for USB inventory. Lack of an HID
+         * driver must not hide a detected USB network adapter.
+         */
     }
     return true;
 }

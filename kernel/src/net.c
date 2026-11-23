@@ -678,7 +678,9 @@ bool net_init(void) {
     dns_query_done = false;
     dns_query_success = false;
     dns_next_id = 0x4E58U;
-    struct nexus_netdev_info device_info;\n    if (!netdev_get_info(&device_info)) return false;\n    copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
+    struct nexus_netdev_info device_info;
+    if (!netdev_get_info(&device_info)) return false;
+    copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
     network.ready = true;
     network.ipv4_id = 1U;
     dhcp_state = NET_DHCP_DISCOVERING;

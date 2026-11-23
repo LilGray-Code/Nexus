@@ -170,6 +170,10 @@ bool wifi_parse_beacon_frame(const uint8_t *frame, size_t frame_length,
         offset += length;
     }
     if (!have_ssid || !have_channel || unsupported_wpa1) return false;
+    /* Capability Information is at offset 34 in beacon/probe-response
+     * frames. Never classify legacy WEP privacy as an open network. */
+    const bool privacy_enabled = (read_le16(frame + 34U) & 0x0010U) != 0U;
+    if (privacy_enabled && !have_rsn) return false;
     if (!have_rsn) parsed.security = NEXUS_WIFI_SECURITY_OPEN;
     if (!channel_frequency(parsed.channel, &parsed.band,
                            &parsed.frequency_mhz)) return false;

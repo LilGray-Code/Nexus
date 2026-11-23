@@ -64,6 +64,15 @@ static nexus_window_id desktop_dragged_window;
 static int64_t desktop_drag_offset_x;
 static int64_t desktop_drag_offset_y;
 static uint64_t window_animation_offset;
+/* Five coordinated palettes shared by the wallpaper, window chrome and
+ * shell accents. The selected index is persisted in desktop.cfg. */
+static const uint8_t desktop_palette_colors[5][6] = {
+    {5U, 13U, 38U, 18U, 51U, 103U},   /* Midnight */
+    {2U, 24U, 43U, 5U, 83U, 100U},    /* Ocean */
+    {35U, 12U, 31U, 105U, 34U, 45U},  /* Ember */
+    {20U, 13U, 42U, 71U, 42U, 120U},  /* Violet */
+    {7U, 28U, 28U, 24U, 91U, 67U}     /* Forest */
+};
 static uint8_t settings_theme;
 static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
@@ -441,8 +450,8 @@ static bool desktop_save_settings(void) {
 
 static void desktop_settings_activate(size_t option) {
     switch (option) {
-        case 0U: settings_theme = (uint8_t)((settings_theme + 1U) % 3U); break;
-        case 1U: settings_wallpaper = (uint8_t)((settings_wallpaper + 1U) % 3U); break;
+        case 0U: settings_theme = (uint8_t)((settings_theme + 1U) % 5U) ; break;
+        case 1U: settings_wallpaper = (uint8_t)((settings_wallpaper + 1U) % 5U); break;
         case 2U: settings_show_status = !settings_show_status; break;
         case 3U: window_maximized = !window_maximized; break;
         case 4U: {
@@ -498,7 +507,7 @@ static void desktop_load_settings(void) {
     const size_t checksum_offset = legacy ? 8U : 10U;
     if (!read_ok || received != size ||
         record[0] != 'N' || record[1] != 'X' || record[2] != 'S' ||
-        (!legacy && !current) || record[4] > 2U || record[5] > 2U ||
+        (!legacy && !current) || record[4] > 4U || record[5] > 4U ||
         record[6] > 1U || record[7] > 1U ||
         (current && (record[8] > 1U || record[9] > 1U)) ||
         record[checksum_offset] != desktop_settings_checksum(record, checksum_offset)) {
@@ -1505,10 +1514,16 @@ static void desktop_draw_window_surface(enum desktop_view view,
         const uint64_t row_x = panel_x + 24U;
         const uint64_t row_w = panel_width - 48U;
         const uint64_t row_y = text_y + 54U;
-        const char *theme_name = settings_theme == 0U ? "MIDNIGHT" :
-                                 (settings_theme == 1U ? "OCEAN" : "EMBER");
-        const char *wallpaper_name = settings_wallpaper == 0U ? "GEOMETRIC" :
-                                     (settings_wallpaper == 1U ? "PLAIN GRADIENT" : "SOLID");
+        static const char *const theme_names[5] = {
+            "MIDNIGHT", "OCEAN", "EMBER", "VIOLET", "FOREST"
+        };
+        static const char *const wallpaper_names[5] = {
+            "AURORA", "GRADIENT", "SOLID", "GRID", "ORBIT"
+        };
+        const char *theme_name = theme_names[settings_theme < 5U
+            ? settings_theme : 0U];
+        const char *wallpaper_name = wallpaper_names[settings_wallpaper < 5U
+            ? settings_wallpaper : 0U];
         const char *status_name = settings_show_status ? "ON" : "OFF";
         const char *window_name = window_maximized ? "MAXIMIZED" : "WINDOWED";
         const uint32_t network_count = netdev_device_count();
@@ -1523,7 +1538,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
                                  "HIGH CONTRAST", "MOTION EFFECTS"};
         const char *values[7] = {theme_name, wallpaper_name, status_name,
                                  window_name, network_name, contrast_name, motion_name};
-        const char *hints[7] = {"1  CYCLE COLOR PALETTE", "2  CHANGE BACKGROUND STYLE",
+        const char *hints[7] = {"1  CYCLE FIVE COLOR PALETTES", "2  CYCLE FIVE WALLPAPERS",
                                 "3  SHOW OR HIDE UPTIME", "4  TOGGLE WINDOW SIZE",
                                 "5  SELECT NEXT INSTALLED ADAPTER",
                                 "6  INCREASE TEXT AND CONTROL CONTRAST",
@@ -2328,40 +2343,69 @@ static void draw_shell(void) {
 
     /* Nexus Aurora wallpaper: a deep vertical gradient with restrained
      * geometric light ribbons. All effects are native framebuffer drawing. */
-    const uint8_t base_r = settings_theme == 1U ? 2U : (settings_theme == 2U ? 35U : 5U);
-    const uint8_t base_g = settings_theme == 1U ? 24U : (settings_theme == 2U ? 12U : 13U);
-    const uint8_t base_b = settings_theme == 1U ? 43U : (settings_theme == 2U ? 31U : 38U);
-    const uint8_t end_r = settings_theme == 1U ? 5U : (settings_theme == 2U ? 105U : 18U);
-    const uint8_t end_g = settings_theme == 1U ? 83U : (settings_theme == 2U ? 34U : 51U);
-    const uint8_t end_b = settings_theme == 1U ? 100U : (settings_theme == 2U ? 45U : 103U);
-    if (settings_wallpaper == 2U) {
+    const uint8_t palette = settings_theme < 5U ? settings_theme : 0U;
+    const uint8_t base_r = desktop_palette_colors[palette][0];
+    const uint8_t base_g = desktop_palette_colors[palette][1];
+    const uint8_t base_b = desktop_palette_colors[palette][2];
+    const uint8_t end_r = desktop_palette_colors[palette][3];
+    const uint8_t end_g = desktop_palette_colors[palette][4];
+    const uint8_t end_b = desktop_palette_colors[palette][5];
+    const uint8_t accent_r = (uint8_t)(60U + palette * 31U);
+    const uint8_t accent_g = (uint8_t)(130U + (palette * 13U) % 100U);
+    const uint8_t accent_b = (uint8_t)(170U + (palette * 11U) % 80U);
+    const uint8_t background = settings_wallpaper < 5U
+        ? settings_wallpaper : 0U;
+    if (background == 2U) {
         graphics_fill_rect(0U, 0U, width, height, base_r, base_g, base_b);
     } else {
         graphics_fill_gradient_rect(0U, 0U, width, height,
                                     base_r, base_g, base_b,
                                     end_r, end_g, end_b);
-        if (settings_wallpaper == 0U && width > 180U && height > 180U) {
+        if (background == 0U && width > 180U && height > 180U) {
             const uint64_t ribbon_w = width / 3U;
-            const uint64_t ribbon_h = height / 7U > 34U ? height / 7U : 34U;
+            const uint64_t ribbon_h = height / 7U > 34U
+                ? height / 7U : 34U;
             const uint64_t ribbon_x = width - ribbon_w - width / 18U;
             const uint64_t ribbon_y = height / 5U;
             graphics_fill_round_rect(ribbon_x, ribbon_y, ribbon_w,
-                                     ribbon_h, ribbon_h / 2U,
-                                     settings_theme == 2U ? 100U : 13U,
-                                     settings_theme == 2U ? 38U : 76U,
-                                     settings_theme == 2U ? 49U : 129U);
+                ribbon_h, ribbon_h / 2U,
+                accent_r / 2U, accent_g / 2U, accent_b / 2U);
             graphics_fill_round_rect(width / 12U, height * 3U / 5U,
-                                     width / 3U, ribbon_h, ribbon_h / 2U,
-                                     settings_theme == 2U ? 88U : 8U,
-                                     settings_theme == 2U ? 28U : 62U,
-                                     settings_theme == 2U ? 43U : 108U);
+                width / 3U, ribbon_h, ribbon_h / 2U,
+                (uint8_t)(base_r / 2U + accent_r / 3U),
+                (uint8_t)(base_g / 2U + accent_g / 3U),
+                (uint8_t)(base_b / 2U + accent_b / 3U));
             graphics_draw_round_rect(ribbon_x, ribbon_y, ribbon_w,
-                                     ribbon_h, ribbon_h / 2U,
-                                     settings_theme == 2U ? 170U : 61U,
-                                     settings_theme == 2U ? 83U : 151U,
-                                     settings_theme == 2U ? 76U : 198U);
+                ribbon_h, ribbon_h / 2U, accent_r, accent_g, accent_b);
+        } else if (background == 3U) {
+            for (uint64_t x = 48U; x < width; x += 64U)
+                graphics_fill_rect(x, 0U, 1U, height,
+                                   accent_r / 7U, accent_g / 7U,
+                                   accent_b / 7U);
+            for (uint64_t y = 48U; y < height; y += 64U)
+                graphics_fill_rect(0U, y, width, 1U,
+                                   accent_r / 7U, accent_g / 7U,
+                                   accent_b / 7U);
+        } else if (background == 4U && width > 250U && height > 250U) {
+            const uint64_t cx = width / 2U;
+            const uint64_t cy = height / 2U;
+            const uint64_t diameter =
+                (height < width ? height : width) * 3U / 4U;
+            for (size_t ring = 0U; ring < 3U; ++ring) {
+                const uint64_t inset = (diameter / 8U) * ring;
+                const uint64_t d = diameter - inset * 2U;
+                const uint64_t radius = d / 2U;
+                if (cx >= radius && cy >= radius && d != 0U) {
+                    graphics_draw_round_rect(cx - radius, cy - radius,
+                        d, d, radius,
+                        accent_r / (uint8_t)(ring + 1U),
+                        accent_g / (uint8_t)(ring + 1U),
+                        accent_b / (uint8_t)(ring + 1U));
+                }
+            }
         }
     }
+
     /* Floating system bar: keeps the wallpaper visible and clarifies the
      * home, workspace and live-status hierarchy. */
     graphics_fill_round_rect(10U, 4U, width - 20U, top_bar - 8U,
@@ -2369,7 +2413,7 @@ static void draw_shell(void) {
     graphics_draw_round_rect(10U, 4U, width - 20U, top_bar - 8U,
                              11U, 62U, 91U, 125U);
     graphics_fill_round_rect(18U, 6U, width - 36U, 2U, 1U,
-                             55U, 125U, 164U);
+                             accent_r, accent_g, accent_b);
     desktop_draw_logo(18U, (top_bar - 22U) / 2U, 22U);
     graphics_draw_text(54U, top_bar / 2U - 4U,
                        "NEXUS OS", 1U, 245U, 249U, 255U);

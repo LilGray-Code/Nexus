@@ -80,12 +80,23 @@ bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
 
     const bool restore_if = (interrupt_flags() & RFLAGS_INTERRUPT_ENABLE) != 0U;
     __asm__ volatile ("cli" : : : "memory");
-    if (thread_count >= NEXUS_MAX_THREADS) {
-        restore_interrupt_state(restore_if);
-        return false;
+    size_t slot = NEXUS_MAX_THREADS;
+    for (size_t i = 0U; i < thread_count; ++i) {
+        if (threads[i].finished) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == NEXUS_MAX_THREADS) {
+        if (thread_count >= NEXUS_MAX_THREADS) {
+            restore_interrupt_state(restore_if);
+            return false;
+        }
+        slot = thread_count++;
     }
 
-    struct nexus_thread *thread = &threads[thread_count];
+    struct nexus_thread *thread = &threads[slot];
+    thread->saved_stack = 0U;
     thread->entry = entry;
     thread->argument = argument;
     thread->finished = false;
@@ -152,15 +163,28 @@ void scheduler_start(void) {
 }
 
 void scheduler_yield(void) {
-    struct nexus_thread *old = current_thread;
-    if (old == NULL || !scheduler_started) return;
-
-    struct nexus_thread *next = next_runnable_thread(old);
-    if (next == old) return;
-
+    /*
+     * Preserve the caller's interrupt state, then take the scheduler lock
+     * before reading current_thread or selecting a destination. The previous
+     * ordering allowed a timer IRQ between selection and CLI to invalidate
+     * the saved current/next pair.
+     */
     const bool restore_if =
         (interrupt_flags() & RFLAGS_INTERRUPT_ENABLE) != 0U;
     __asm__ volatile ("cli" : : : "memory");
+
+    struct nexus_thread *old = current_thread;
+    if (old == NULL || !scheduler_started) {
+        restore_interrupt_state(restore_if);
+        return;
+    }
+
+    struct nexus_thread *next = next_runnable_thread(old);
+    if (next == old) {
+        restore_interrupt_state(restore_if);
+        return;
+    }
+
     old->saved_interrupts_enabled = restore_if;
     current_thread = next;
     arch_context_switch(&old->saved_stack, next->saved_stack);

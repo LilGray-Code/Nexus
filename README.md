@@ -112,10 +112,11 @@ manager, or ordinary preemptive multitasking.
 
 ## Installer safety
 
-The installer asks the user to choose a target disk, review its model, capacity
-and stable ID, then type `ERASE` once. Nexus captures the selected identity
-automatically and revalidates it before destructive writes; the user does not
-need to type a long device ID. A two-copy, checksummed transaction journal lives
+The installer asks the user to choose a target disk and review its model,
+capacity, stable ID and proposed layout. A clear **Confirm & Install** button
+(or Enter) authorizes the destructive operation; no confirmation phrase needs
+to be typed. Nexus captures the selected identity automatically and
+revalidates it before destructive writes. A two-copy, checksummed transaction journal lives
 in reserved EFI sectors. There is no separate Recovery partition or required
 recovery setup. If power is interrupted, a later install attempt automatically
 resumes from a valid journal. If an old journal is missing or damaged, the user

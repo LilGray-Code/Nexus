@@ -1026,7 +1026,9 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     if (!xhci_schedule_interrupt_read(xhci, device)) goto failed;
     serial_write(kind == XHCI_HID_KEYBOARD
         ? "USB: HID boot keyboard attached to xHCI port "
-        : "USB: HID boot mouse attached to xHCI port ");
+        : kind == XHCI_HID_MOUSE
+            ? "USB: HID boot mouse attached to xHCI port "
+            : "USB: HID report-protocol gamepad attached to xHCI port ");
     serial_write_hex(port_number);
     serial_write("\r\n");
     return true;

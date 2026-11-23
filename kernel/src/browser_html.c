@@ -248,7 +248,9 @@ static bool html_link_contains_control_or_space(const uint8_t *value,
 size_t nexus_browser_html_extract_links(
     const uint8_t *html, size_t length,
     char (*links)[NEXUS_BROWSER_HTML_LINK_MAX], size_t link_capacity) {
-    if (html == NULL || links == NULL || link_capacity == 0U) return 0U;
+    if (links == NULL || link_capacity == 0U) return 0U;
+    for (size_t i = 0U; i < link_capacity; ++i) links[i][0] = '\0';
+    if (html == NULL) return 0U;
     size_t count = 0U;
 
     for (size_t i = 0U; i < length && count < link_capacity; ++i) {
@@ -314,28 +316,55 @@ size_t nexus_browser_html_extract_links(
 
             if (!html_equal_ci(html + key_start, key_length, "href") ||
                 !html_is_http_link(html + value_start, value_length) ||
-                value_length >= NEXUS_BROWSER_HTML_LINK_MAX ||
-                html_link_contains_control_or_space(html + value_start,
-                                                     value_length)) continue;
+                value_length >= NEXUS_BROWSER_HTML_LINK_MAX) continue;
 
             char candidate[NEXUS_BROWSER_HTML_LINK_MAX];
-            for (size_t n = 0U; n < value_length; ++n)
-                candidate[n] = (char)html[value_start + n];
-            candidate[value_length] = '\0';
+            size_t candidate_length = 0U;
+            for (size_t n = 0U; n < value_length;) {
+                uint8_t decoded = html[value_start + n];
+                size_t consumed = 1U;
+                if (decoded == '&') {
+                    size_t entity_end = n + 1U;
+                    while (entity_end < value_length &&
+                           entity_end - n <= 16U &&
+                           html[value_start + entity_end] != ';' &&
+                           html[value_start + entity_end] != '&') ++entity_end;
+                    if (entity_end < value_length &&
+                        html[value_start + entity_end] == ';' &&
+                        html_decode_entity(html + value_start + n + 1U,
+                            entity_end - n - 1U, &decoded) != 0U) {
+                        consumed = entity_end - n + 1U;
+                    } else {
+                        decoded = '&';
+                    }
+                }
+                if (candidate_length + 1U >= sizeof(candidate)) {
+                    candidate_length = 0U;
+                    break;
+                }
+                candidate[candidate_length++] = (char)decoded;
+                n += consumed;
+            }
+            if (candidate_length == 0U ||
+                !html_is_http_link((const uint8_t *)candidate,
+                                   candidate_length) ||
+                html_link_contains_control_or_space(
+                    (const uint8_t *)candidate, candidate_length)) continue;
+            candidate[candidate_length] = '\0';
             bool duplicate = false;
             for (size_t n = 0U; n < count; ++n) {
                 size_t existing_length = 0U;
                 while (existing_length < NEXUS_BROWSER_HTML_LINK_MAX &&
                        links[n][existing_length] != '\0') ++existing_length;
-                if (existing_length == value_length) {
+                if (existing_length == candidate_length) {
                     size_t match = 0U;
-                    while (match < value_length &&
+                    while (match < candidate_length &&
                            links[n][match] == candidate[match]) ++match;
-                    if (match == value_length) duplicate = true;
+                    if (match == candidate_length) duplicate = true;
                 }
             }
             if (!duplicate) {
-                for (size_t n = 0U; n <= value_length; ++n)
+                for (size_t n = 0U; n <= candidate_length; ++n)
                     links[count][n] = candidate[n];
                 ++count;
             }

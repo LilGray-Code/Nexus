@@ -12,8 +12,27 @@ static void expect_hex(const uint8_t *bytes,const char *hex,size_t n){
 }
 int main(void){
     uint8_t digest[32];
+    nexus_sha256("",0U,digest);
+    expect_hex(digest,"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",32U);
     nexus_sha256("abc",3U,digest);
     expect_hex(digest,"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",32U);
+
+    /* NIST SHA-256 long-message vector exercises padding across blocks. */
+    static const char long_message[] =
+        "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    nexus_sha256(long_message,sizeof(long_message)-1U,digest);
+    expect_hex(digest,"248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",32U);
+
+    /* The streaming API must match one-shot hashing at awkward boundaries. */
+    struct nexus_sha256_context streaming;
+    nexus_sha256_init(&streaming);
+    nexus_sha256_update(&streaming,long_message,17U);
+    nexus_sha256_update(&streaming,long_message+17U,23U);
+    nexus_sha256_update(&streaming,long_message+40U,
+                        sizeof(long_message)-1U-40U);
+    uint8_t streamed[32];
+    nexus_sha256_final(&streaming,streamed);
+    assert(memcmp(streamed,digest,sizeof(digest))==0);
     uint8_t key[20];memset(key,0x0b,sizeof(key));
     nexus_hmac_sha256(key,sizeof(key),"Hi There",8U,digest);
     expect_hex(digest,"b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",32U);

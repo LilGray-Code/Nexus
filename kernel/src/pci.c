@@ -205,6 +205,26 @@ bool pci_init(void) {
         serial_write("\r\n");
     }
 
+    for (uint32_t i = 0U; i < stored_device_count; ++i) {
+        const struct nexus_pci_device *device = &stored_devices[i];
+        if (!pci_is_wireless_lan_candidate(device)) continue;
+        serial_write("PCI: WLAN-CANDIDATE BDF ");
+        serial_write_hex(device->bus);
+        serial_write(":");
+        serial_write_hex(device->slot);
+        serial_write(".");
+        serial_write_hex(device->function);
+        serial_write(" VID:PID ");
+        serial_write_hex(device->vendor_id);
+        serial_write(":");
+        serial_write_hex(device->device_id);
+        serial_write(" class/subclass ");
+        serial_write_hex(device->class_code);
+        serial_write("/");
+        serial_write_hex(device->subclass);
+        serial_write(" status=NO-CHIPSET-DRIVER-BOUND\r\n");
+    }
+
     serial_write("PCI: scan complete; device configuration remains read-only\r\n");
     return discovered_device_count != 0;
 }

@@ -27,9 +27,16 @@ static bool allocate_table(uint64_t *physical,
     if (physical == NULL || virtual_table == NULL) return false;
     if (!memory_alloc_page(physical)) return false;
 
+    *virtual_table = NULL;
+    if (!memory_alloc_page(physical)) return false;
+
     volatile uint64_t *table =
         (volatile uint64_t *)memory_phys_to_virt(*physical);
-    if (table == NULL) return false;
+    if (table == NULL) {
+        (void)memory_free_page(*physical);
+        *physical = 0U;
+        return false;
+    }
 
     for (unsigned int i = 0; i < 512; ++i) table[i] = 0;
     *virtual_table = table;
@@ -91,6 +98,9 @@ bool paging_nx_enabled(void) {
 bool paging_map_mmio_page(uint64_t physical_address,
                           volatile uint32_t **virtual_address) {
     if (virtual_address == NULL) return false;
+    *virtual_address = NULL;
+    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U)
+        return false;
 
     const uint64_t physical_page = physical_address & PAGE_ADDRESS_MASK;
     uint64_t cr3, cr4;
@@ -115,14 +125,28 @@ bool paging_map_mmio_page(uint64_t physical_address,
         : (0xFFFF000000000000ULL | ((uint64_t)root_index << 39));
 
     volatile uint64_t *parent = root;
+    volatile uint64_t *created_entries[4];
+    uint64_t created_pages[4];
+    size_t created_count = 0U;
     for (unsigned int level = levels; level > 1U; --level) {
         uint64_t next_physical;
         volatile uint64_t *next_table;
-        if (!allocate_table(&next_physical, &next_table)) return false;
+        const unsigned int parent_index =
+            (level == levels) ? root_index : 0U;
+        if (!allocate_table(&next_physical, &next_table)) {
+            while (created_count != 0U) {
+                --created_count;
+                *created_entries[created_count] = 0U;
+                (void)memory_free_page(created_pages[created_count]);
+            }
+            return false;
+        }
 
-        parent[(level == levels) ? root_index : 0] =
-            (next_physical & PAGE_ADDRESS_MASK) |
-            PAGE_PRESENT | PAGE_WRITABLE;
+        created_entries[created_count] = &parent[parent_index];
+        created_pages[created_count] = next_physical;
+        ++created_count;
+        parent[parent_index] = (next_physical & PAGE_ADDRESS_MASK) |
+                               PAGE_PRESENT | PAGE_WRITABLE;
         parent = next_table;
     }
 
@@ -268,6 +292,22 @@ bool paging_user_address_space_selftest(void) {
     if ((test_root[0] & (PAGE_PRESENT | PAGE_USER)) !=
         (PAGE_PRESENT | PAGE_USER)) valid = false;
 
+    const uint64_t second_user_address =
+        levels == 5U ? (1ULL << 48) : (1ULL << 39);
+    uint64_t second_user_page = 0U;
+    if (!memory_alloc_page(&second_user_page)) {
+        (void)paging_destroy_user_address_space(test_root_physical);
+        return false;
+    }
+    if (!paging_map_user_page(test_root_physical, second_user_address,
+                              second_user_page, true, false)) {
+        (void)memory_free_page(second_user_page);
+        (void)paging_destroy_user_address_space(test_root_physical);
+        return false;
+    }
+    if ((test_root[1] & (PAGE_PRESENT | PAGE_USER)) !=
+        (PAGE_PRESENT | PAGE_USER)) valid = false;
+
     uint64_t duplicate_page = 0U;
     if (!memory_alloc_page(&duplicate_page)) {
         (void)paging_destroy_user_address_space(test_root_physical);
@@ -300,37 +340,72 @@ bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
     const unsigned int user_bits = levels == 5U ? 56U : 47U;
     if (virtual_address >= (1ULL << user_bits)) return false;
 
+    uint64_t current_cr3;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(current_cr3));
+    if ((current_cr3 & PAGE_ADDRESS_MASK) == root_physical) return false;
+
     volatile uint64_t *table =
         (volatile uint64_t *)memory_phys_to_virt(root_physical);
     if (table == NULL) return false;
 
+    volatile uint64_t *created_entries[4];
+    uint64_t created_pages[4];
+    size_t created_count = 0U;
     for (unsigned int level = levels; level > 1U; --level) {
         const unsigned int shift = 12U + 9U * (level - 1U);
         const unsigned int index =
             (unsigned int)((virtual_address >> shift) & 0x1FFU);
-        uint64_t entry = table[index];
+        const uint64_t entry = table[index];
 
         if ((entry & PAGE_PRESENT) == 0U) {
             uint64_t next_physical;
             volatile uint64_t *next_table;
-            if (!allocate_table(&next_physical, &next_table)) return false;
-            entry = (next_physical & PAGE_ADDRESS_MASK) |
-                    PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
-            table[index] = entry;
+            if (!allocate_table(&next_physical, &next_table)) {
+                while (created_count != 0U) {
+                    --created_count;
+                    *created_entries[created_count] = 0U;
+                    (void)memory_free_page(created_pages[created_count]);
+                }
+                return false;
+            }
+            created_entries[created_count] = &table[index];
+            created_pages[created_count] = next_physical;
+            ++created_count;
+            table[index] = (next_physical & PAGE_ADDRESS_MASK) |
+                           PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
             table = next_table;
         } else {
             if ((entry & PAGE_USER) == 0U || (entry & PAGE_LARGE) != 0U) {
+                while (created_count != 0U) {
+                    --created_count;
+                    *created_entries[created_count] = 0U;
+                    (void)memory_free_page(created_pages[created_count]);
+                }
                 return false;
             }
             table = (volatile uint64_t *)memory_phys_to_virt(
                 entry & PAGE_ADDRESS_MASK);
-            if (table == NULL) return false;
+            if (table == NULL) {
+                while (created_count != 0U) {
+                    --created_count;
+                    *created_entries[created_count] = 0U;
+                    (void)memory_free_page(created_pages[created_count]);
+                }
+                return false;
+            }
         }
     }
 
     const unsigned int leaf_index =
         (unsigned int)((virtual_address >> 12) & 0x1FFU);
-    if ((table[leaf_index] & PAGE_PRESENT) != 0U) return false;
+    if ((table[leaf_index] & PAGE_PRESENT) != 0U) {
+        while (created_count != 0U) {
+            --created_count;
+            *created_entries[created_count] = 0U;
+            (void)memory_free_page(created_pages[created_count]);
+        }
+        return false;
+    }
 
     table[leaf_index] = (page_physical & PAGE_ADDRESS_MASK) |
                         PAGE_PRESENT | PAGE_USER |

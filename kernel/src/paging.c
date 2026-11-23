@@ -340,6 +340,10 @@ bool paging_user_address_space_selftest(void) {
     }
     if ((test_root[1] & (PAGE_PRESENT | PAGE_USER)) !=
         (PAGE_PRESENT | PAGE_USER)) valid = false;
+    if (paging_map_user_page(test_root_physical, 0x00800000ULL,
+                             user_page, true, false)) valid = false;
+    if (paging_map_user_page(test_root_physical, 0x00C00000ULL,
+                             0x00100000ULL, true, false)) valid = false;
 
     uint64_t duplicate_page = 0U;
     if (!memory_alloc_page(&duplicate_page)) {
@@ -374,6 +378,28 @@ bool paging_user_address_space_selftest(void) {
     return valid;
 }
 
+static bool user_page_table_contains_physical(uint64_t table_physical,
+                                                  unsigned int level,
+                                                  uint64_t physical_page) {
+    if (level == 0U) return false;
+    volatile uint64_t *table =
+        (volatile uint64_t *)memory_phys_to_virt(table_physical);
+    if (table == NULL) return false;
+
+    for (size_t i = 0U; i < 512U; ++i) {
+        const uint64_t entry = table[i];
+        if ((entry & PAGE_PRESENT) == 0U) continue;
+        const uint64_t child_or_leaf = entry & PAGE_ADDRESS_MASK;
+        if (level == 1U) {
+            if (child_or_leaf == physical_page) return true;
+        } else if (user_page_table_contains_physical(
+                       child_or_leaf, level - 1U, physical_page)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* Map one previously-unmapped 4 KiB page into a user address space. */
 bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
                           uint64_t page_physical, bool writable, bool executable) {
@@ -397,6 +423,22 @@ bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
     volatile uint64_t *table =
         (volatile uint64_t *)memory_phys_to_virt(root_physical);
     if (table == NULL) return false;
+
+    /*
+     * A user mapping takes ownership of its physical page until address-space
+     * teardown. Reject aliases and malformed trees so one allocation cannot
+     * be freed twice or shared accidentally between virtual addresses.
+     */
+    for (size_t root_index = 0U; root_index < 256U; ++root_index) {
+        const uint64_t root_entry = table[root_index];
+        if ((root_entry & PAGE_PRESENT) == 0U) continue;
+        if ((root_entry & PAGE_USER) == 0U ||
+            (root_entry & PAGE_LARGE) != 0U) return false;
+        const uint64_t subtree = root_entry & PAGE_ADDRESS_MASK;
+        if (!validate_user_page_table(subtree, levels - 1U)) return false;
+        if (user_page_table_contains_physical(
+                subtree, levels - 1U, page_physical)) return false;
+    }
 
     volatile uint64_t *created_entries[4];
     uint64_t created_pages[4];

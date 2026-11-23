@@ -383,6 +383,16 @@ void kmain(void) {
             serial_write("WIFI: registered radio driver failed to start\\r\\n");
         }
     }
+    if (wifi_network_adapter_registered()) {
+        struct nexus_net_info wifi_net_info = {0};
+        if (!net_get_info(&wifi_net_info)) {
+            if (net_init()) {
+                serial_write("WIFI: shared IP network initialized on default adapter\\r\\n");
+            } else {
+                serial_write("WIFI: shared IP network initialization failed\\r\\n");
+            }
+        }
+    }
     const bool usb_keyboard_ready = xhci_keyboard_ready();
     const bool usb_mouse_ready = xhci_mouse_ready();
     if (!ps2_input_ready && !usb_keyboard_ready) {

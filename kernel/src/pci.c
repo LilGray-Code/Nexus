@@ -182,6 +182,8 @@ bool pci_init(void) {
     serial_write_hex(display_device_count);
     serial_write("\r\nPCI: network-class functions: ");
     serial_write_hex(network_device_count);
+    serial_write("\r\nPCI: wireless-controller functions: ");
+    serial_write_hex(wireless_device_count);
     serial_write("\r\n");
 
     const uint32_t printed = stored_device_count < PCI_MAX_PRINTED_DEVICES

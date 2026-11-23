@@ -1,7 +1,7 @@
 # Nexus Installer
 
-**Status: QEMU-validated installable engineering prototype.** The Nexus-owned
-graphical installer runs in the live Nexus desktop. The dual-mode BIOS/UEFI
+**Status: QEMU-validated installable engineering prototype.** The live installer
+and installed OS are separate bootable kernel images. The dual-mode BIOS/UEFI
 build has passed the repository's disposable-disk QEMU install and boot
 workflows. Physical-PC installation and recovery remain unverified.
 
@@ -20,10 +20,16 @@ production desktop application environment.
 
 ## Live installer and installed desktop are separate environments
 
+The release ISO contains two distinct kernel executables. `nexus-installer.elf`
+is the Limine boot entry for the USB/live environment. `nexus-os.elf` is loaded
+as a separately validated install payload and is deployed to the target's
+Nexus System volume and EFI boot files. The build compiles the installed OS
+with `NEXUS_INSTALLED_OS_BUILD`; this runtime never enables installer mode or
+the destructive installer-write build flag.
+
 Booting the USB/live medium starts directly in the dedicated Nexus Installer.
-It is not presented as an app inside the installed desktop: the live installer
-uses a full-screen installation interface and hides the normal desktop taskbar,
-launcher, and application shortcuts.
+It is a full-screen interface with no normal desktop taskbar, Start menu, or
+application shortcuts. It is not an installer window inside the installed OS.
 
 Booting from an installed Nexus disk starts the normal Nexus desktop
 (Home, Files, Browser, Settings, and Terminal). The installer is not listed in
@@ -37,11 +43,13 @@ selection and layout preview. A destructive install is blocked until the user
 confirms the selected device's stable identity and separately types `ERASE`.
 The kernel revalidates the device immediately before each destructive stage.
 
-After successful deployment, the installer displays a remove-media/reboot
-instruction. Pressing Enter requests a hardware reset. Remove the USB before
-the machine starts again; the firmware should then boot the installed Nexus
-disk into the normal desktop. The live boot medium,
-mounted devices, and devices with ambiguous identity are rejected.
+After successful deployment, the installer displays a **Restart into Nexus OS**
+action and a reminder to remove the live USB. Selecting it requests a hardware
+reset. Remove the installer USB before triggering the reset; firmware should
+then boot the installed target into the ordinary Nexus desktop. The software
+does not assume it can control every machine's firmware boot order or
+physically eject removable media. The live boot medium, mounted devices, and
+devices with ambiguous identity are rejected as installation targets.
 
 **The selected target disk is erased and repartitioned.** Only proceed after
 checking the exact model, capacity, and stable device identity, and after
@@ -73,10 +81,11 @@ paths are exercised using disposable QEMU disks; this does not certify every
 physical NVMe/SATA controller or firmware implementation.
 
 The installer formats the System and Data NXFS volumes separately, copies the
-kernel and boot payloads, and records each completed transaction phase in the
-Recovery partition. The ordinary kernel build remains write-locked. Destructive
-write support is enabled only for the installer-enabled release build after
-the test workflow builds the candidate.
+installed OS kernel and boot payloads, and records each completed transaction
+phase in the Recovery partition. The installed OS is a separate ELF built
+without `NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES`; only the live installer
+image can receive that build flag. The ordinary kernel build remains
+write-locked.
 
 The installed Files view mounts the NXFS Data partition following the
 Recovery partition. It does not present the NXFS System volume as the user's
@@ -101,7 +110,10 @@ The QEMU workflow additionally exercises:
   types;
 - a GUI text-editor insertion and save on NVMe, followed by reboot and
   verification that the larger edited file is still present;
-- construction and boot-check of the install-enabled dual-mode ISO.
+- construction and boot-check of the install-enabled dual-mode ISO;
+- validation that the ISO carries two separately built kernel executables;
+- installed UEFI and BIOS boots that confirm the installed runtime disables
+  installer mode.
 
 The simulated power cycles and QEMU reboots are not physical power-cut tests.
 No physical-PC installation, controller matrix, or real-world recovery
@@ -129,6 +141,13 @@ editor; this is not yet a complete hierarchical desktop file manager.
 - No claim of arbitrary GPU, audio, Wi-Fi, Bluetooth, or motherboard support.
 - The browser provides only early plain-HTTP text retrieval; TLS/HTTPS is not
   implemented.
+
+## Installed desktop appearance
+
+The installed desktop is styled around a Windows 10-inspired layout: a bottom
+taskbar with Start button and pinned app buttons, a Start menu with app rows and
+tiles, a blue accent and title bars, and a blue-toned wallpaper. This is a
+Nexus-native design; it is not Windows and does not include Windows binaries.
 
 Treat the ISO as an engineering prototype. Prefer QEMU or another disposable
 test machine until physical testing has been completed.

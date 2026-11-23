@@ -2998,7 +2998,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t py = window_maximized ? top + 8U
                 : top + (screen_height - top - bottom - ph) / 2U;
             const uint64_t row_x = px + 24U;
-            const uint64_t row_y = py + 82U + 82U + 54U;
+            const uint64_t row_y = py + 82U + 54U;
             const uint64_t row_w = pw - 48U;
             if ((uint64_t)pointer_x >= row_x &&
                 (uint64_t)pointer_x < row_x + row_w) {

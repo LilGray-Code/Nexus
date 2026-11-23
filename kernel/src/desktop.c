@@ -1014,8 +1014,10 @@ static void draw_shell(void) {
         char uptime_value[40] = "";
         size_t uptime_pos = 0U;
         while (uptime[uptime_pos] != '\0' &&
-               uptime_pos < sizeof(uptime_value) - 2U)
-            uptime_value[uptime_pos++] = uptime[uptime_pos];
+               uptime_pos < sizeof(uptime_value) - 2U) {
+            uptime_value[uptime_pos] = uptime[uptime_pos];
+            ++uptime_pos;
+        }
         uptime_value[uptime_pos++] = 's';
         uptime_value[uptime_pos] = '\0';
         const char *storage_label =
@@ -3791,16 +3793,30 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t ty = py + 82U;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 270U);
             const int64_t relative_x = pointer_x - (int64_t)tx;
-            if (relative_y >= 0 && relative_y < 25 &&
-                relative_x >= 0 && relative_x < 392) {
-                const size_t action = (size_t)relative_x / 100U;
+            const size_t action_count = pw >= 560U ? 6U : 4U;
+            const uint64_t action_gap = 6U;
+            const uint64_t action_width =
+                (pw - 64U - (action_count - 1U) * action_gap) /
+                action_count;
+            const uint64_t toolbar_width =
+                action_count * action_width + (action_count - 1U) * action_gap;
+            if (relative_y >= 0 && relative_y < 25 && relative_x >= 0 &&
+                (uint64_t)relative_x < toolbar_width) {
+                const size_t action =
+                    (size_t)((uint64_t)relative_x / (action_width + action_gap));
                 if (action == 0U) {
                     files_editor_begin_new();
                 } else if (action == 1U) {
                     files_editor_begin_selected();
-                } else if (action == 2U) {
+                } else if (action_count == 6U && action == 2U) {
+                    files_editor_begin_copy();
+                } else if (action_count == 6U && action == 3U) {
+                    files_editor_begin_rename();
+                } else if ((action_count == 6U && action == 4U) ||
+                           (action_count == 4U && action == 2U)) {
                     files_request_delete_selected();
-                } else if (action == 3U) {
+                } else if ((action_count == 6U && action == 5U) ||
+                           (action_count == 4U && action == 3U)) {
                     if (vfs_directory_depth() != 0U) {
                         if (vfs_parent_directory()) {
                             files_preview[0] = '\0';
@@ -3829,24 +3845,24 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     index < files_listing_count) {
                     files_selected_index = index;
                     files_listing_ensure_selection_visible();
-                    if (files_listing_types[index] == NEXUS_VFS_DIRECTORY) {
-                        const uint64_t now = timer_ticks();
-                        if (files_last_click_valid &&
-                            files_last_click_index == index &&
-                            now - files_last_click_tick <= 50U) {
+                    const uint64_t now = timer_ticks();
+                    if (files_last_click_valid &&
+                        files_last_click_index == index &&
+                        now - files_last_click_tick <= 50U) {
+                        if (files_listing_types[index] == NEXUS_VFS_DIRECTORY) {
                             if (vfs_enter_directory(files_listing[index])) {
                                 files_preview[0] = '\0';
                                 files_first_name[0] = '\0';
                                 refresh_files_listing();
                             }
-                            files_last_click_valid = false;
                         } else {
-                            files_last_click_valid = true;
-                            files_last_click_index = index;
-                            files_last_click_tick = now;
+                            files_editor_begin_selected();
                         }
-                    } else {
                         files_last_click_valid = false;
+                    } else {
+                        files_last_click_valid = true;
+                        files_last_click_index = index;
+                        files_last_click_tick = now;
                     }
                 }
             }
@@ -3945,18 +3961,21 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 ph = screen_height - top - bottom - 16U;
             const uint64_t px = (screen_width - pw) / 2U;
             const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
-            const uint64_t ty = py + 82U + 76U;
-            uint64_t tw = (pw > 100U ? pw - 100U : 24U) / 7U;
-            if (tw > 130U) tw = 130U;
-            if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (size_t app = 0U; app < 7U; ++app) {
-                    const uint64_t tx = px + 28U + (uint64_t)app * (tw + 6U);
-                    if ((uint64_t)pointer_x >= tx &&
-                        (uint64_t)pointer_x < tx + tw) {
-                        desktop_open_app(app);
-                        serial_write("DESKTOP: app tile opened by mouse\r\n");
-                        break;
-                    }
+            const uint64_t ty = py + 82U + 68U;
+            const uint64_t tile_gap = 8U;
+            const uint64_t tw = (pw - 56U - 3U * tile_gap) / 4U;
+            for (size_t app = 0U; app < 7U; ++app) {
+                const uint64_t col = app % 4U;
+                const uint64_t row = app / 4U;
+                const uint64_t tx = px + 28U + col * (tw + tile_gap);
+                const uint64_t tile_y = ty + row * 56U;
+                if ((uint64_t)pointer_x >= tx &&
+                    (uint64_t)pointer_x < tx + tw &&
+                    (uint64_t)pointer_y >= tile_y &&
+                    (uint64_t)pointer_y < tile_y + 50U) {
+                    desktop_open_app(app);
+                    serial_write("DESKTOP: app tile opened by mouse\r\n");
+                    break;
                 }
             }
         }
@@ -3987,6 +4006,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         keyboard_alt = !key_released;
         return;
     }
+    if (key_code == 0x1DU) {
+        keyboard_ctrl = !key_released;
+        return;
+    }
     if (key_code == 0x3AU) {
         if (key_released) {
             keyboard_caps_lock_down = false;
@@ -3997,6 +4020,74 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (key_released) return;
+    /* Global shortcuts run before app text entry, so modifiers never leak
+     * shortcut letters into documents, search fields or terminal commands. */
+    if (keyboard_ctrl && active_view != DESKTOP_INSTALLER) {
+        if (key_code == 0x39U) { /* Ctrl+Space: application finder */
+            start_menu_open = !start_menu_open;
+            if (start_menu_open) desktop_launcher_reset();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (key_code >= 0x02U && key_code <= 0x08U) { /* Ctrl+1..7 */
+            desktop_open_app((size_t)(key_code - 0x02U));
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (active_view == DESKTOP_FILES &&
+            files_editor_state == FILES_EDITOR_CLOSED && files_vfs_ready) {
+            if (key_code == 0x21U) { /* Ctrl+F */
+                files_search_active = true;
+                for (size_t i = 0U; i < sizeof(files_search_query); ++i)
+                    files_search_input[i] = files_search_query[i];
+            } else if (key_code == 0x31U) { /* Ctrl+N */
+                files_editor_begin_new();
+            } else if (key_code == 0x18U) { /* Ctrl+O */
+                files_editor_begin_selected();
+            } else if (key_code == 0x2EU) { /* Ctrl+C */
+                files_editor_begin_copy();
+            } else if (key_code == 0x13U) { /* Ctrl+R */
+                files_editor_begin_rename();
+            } else {
+                return;
+            }
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (active_view == DESKTOP_FILES &&
+            files_editor_state == FILES_EDITOR_CONTENT &&
+            key_code == 0x1FU) { /* Ctrl+S */
+            const struct nexus_input_event save_event = {
+                .type = NEXUS_INPUT_KEYBOARD, .scancode = 0x44U
+            };
+            files_editor_handle_key(&save_event);
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (key_code == 0x11U) { /* Ctrl+W: close current app view */
+            active_view = DESKTOP_HOME;
+            window_maximized = false;
+            start_menu_open = false;
+            desktop_animate_view();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+    }
+    if (keyboard_alt && key_code == 0x3EU &&
+        active_view != DESKTOP_INSTALLER) { /* Alt+F4 */
+        active_view = DESKTOP_HOME;
+        window_maximized = false;
+        start_menu_open = false;
+        desktop_animate_view();
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     /* Alt+Tab switches between the built-in desktop applications. This is
      * view switching, not yet independent overlapping application windows. */
     if (keyboard_alt && key_code == 0x0FU &&

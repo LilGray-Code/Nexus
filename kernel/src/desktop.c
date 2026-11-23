@@ -20,6 +20,7 @@
 #include "browser_html.h"
 #include "browser_search.h"
 #include "browser_http.h"
+#include "browser_download.h"
 #include "calculator.h"
 #include "launcher.h"
 #include "window_manager.h"
@@ -196,6 +197,8 @@ static bool browser_search_mode;
 static bool browser_has_page;
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
+static char browser_current_url[NEXUS_BROWSER_SEARCH_URL_MAX];
+static bool browser_download_pending;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -3834,6 +3837,8 @@ static void browser_show_notice(const char *line_one, const char *line_two) {
 static void browser_navigate(void) {
     browser_clear_page();
     browser_search_mode = false;
+    browser_download_pending = false;
+    browser_current_url[0] = '\0';
     if (browser_address_length == 0U) {
         browser_set_status("Enter a search query or web address");
         return;
@@ -3983,7 +3988,14 @@ static void browser_navigate(void) {
     browser_render_body(response + parsed.body_offset,
                         response_length - parsed.body_offset);
     if (parsed.status_code >= 200U && parsed.status_code < 300U) {
-        browser_set_status("HTTP page loaded; secure web features still limited");
+        size_t url_length = 0U;
+        while (input[url_length] != '\0' &&
+               url_length + 1U < sizeof(browser_current_url)) {
+            browser_current_url[url_length] = input[url_length];
+            ++url_length;
+        }
+        browser_current_url[url_length] = '\0';
+        browser_set_status("HTTP page loaded | Ctrl+S saves to Nexus Data");
     } else {
         browser_set_status("HTTP response status is not successful");
     }
@@ -5522,6 +5534,103 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
+        if (browser_download_pending) {
+            if (event->scancode == 0x01U) {
+                browser_download_pending = false;
+                browser_set_status("Download cancelled");
+            } else if (event->scancode == 0x1CU) {
+                browser_download_pending = false;
+                char saved_name[NEXUS_VFS_NAME_MAX] = {0};
+                browser_set_status("Downloading over HTTP...");
+                const enum nexus_browser_download_result result =
+                    nexus_browser_download_http(browser_current_url,
+                        saved_name, sizeof(saved_name));
+                switch (result) {
+                    case NEXUS_BROWSER_DOWNLOAD_OK:
+                        browser_show_notice("DOWNLOAD SAVED TO NEXUS DATA",
+                                            saved_name);
+                        browser_set_status("Download verified and saved");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_HTTPS_BLOCKED:
+                        browser_set_status("HTTPS download blocked: verified TLS is not implemented");
+                        browser_show_notice("SECURE DOWNLOAD UNAVAILABLE",
+                                            "NEXUS REQUIRES VERIFIED TLS");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_NOT_PERSISTENT:
+                        browser_set_status("Persistent Nexus Data storage is unavailable");
+                        browser_show_notice("DOWNLOAD NOT SAVED",
+                                            "MOUNT A WRITABLE NEXUS DATA VOLUME");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_FILE_EXISTS:
+                        browser_set_status("File already exists; Nexus will not overwrite it");
+                        browser_show_notice("FILE ALREADY EXISTS",
+                                            "RENAME OR MOVE THE EXISTING FILE FIRST");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_CHUNKED_UNSUPPORTED:
+                        browser_set_status("Server uses chunked transfer; decoder is not ready");
+                        browser_show_notice("DOWNLOAD FORMAT NOT SUPPORTED",
+                                            "SERVER SENT CHUNKED TRANSFER DATA");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_LENGTH_REQUIRED:
+                        browser_set_status("Server omitted Content-Length");
+                        browser_show_notice("DOWNLOAD SIZE UNKNOWN",
+                                            "NEXUS NEEDS A VERIFIED FILE LENGTH");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_TOO_LARGE:
+                        browser_set_status("Download exceeds the current 1 MiB limit");
+                        browser_show_notice("FILE TOO LARGE",
+                                            "CURRENT DOWNLOAD LIMIT IS 1 MIB");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_INCOMPLETE:
+                        browser_set_status("Download ended early or timed out");
+                        browser_show_notice("DOWNLOAD INCOMPLETE",
+                                            "NO PARTIAL FILE WAS SAVED");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_REDIRECT:
+                        browser_set_status("Download redirected; follow the URL manually");
+                        browser_show_notice("REDIRECT NOT FOLLOWED",
+                                            "HTTPS REDIRECTS REQUIRE VERIFIED TLS");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_DNS_FAILED:
+                        browser_set_status("Download DNS lookup failed");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_CONNECT_FAILED:
+                        browser_set_status("Download TCP connection failed");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_VERIFY_FAILED:
+                        browser_set_status("Saved bytes failed read-back verification");
+                        browser_show_notice("DOWNLOAD VERIFICATION FAILED",
+                                            "THE INVALID FILE WAS REMOVED");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_SAVE_FAILED:
+                        browser_set_status("Could not write the downloaded file");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_REQUEST_FAILED:
+                        browser_set_status("Could not send the download request");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_HEADER_FAILED:
+                        browser_set_status("Invalid or unsuccessful download response");
+                        break;
+                    default:
+                        browser_set_status("Invalid download URL");
+                        break;
+                }
+            } else {
+                return;
+            }
+            draw_shell(); draw_pointer(); return;
+        }
+        if (keyboard_ctrl && event->scancode == 0x1FU) {
+            if (browser_current_url[0] == '\0') {
+                browser_set_status("Load an HTTP page before saving a file");
+            } else {
+                browser_download_pending = true;
+                browser_show_notice("SAVE THIS FILE TO NEXUS DATA?",
+                                    "HTTP IS NOT ENCRYPTED. ENTER SAVES; ESC CANCELS.");
+                browser_set_status("Review HTTP warning; Enter to save or Esc to cancel");
+            }
+            draw_shell(); draw_pointer(); return;
+        }
         if (event->scancode == 0x01U) {
             desktop_return_home();
             draw_shell(); draw_pointer(); return;

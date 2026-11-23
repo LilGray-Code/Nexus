@@ -44,6 +44,9 @@ static uint8_t settings_theme;
 static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
 static bool mouse_left_was_down;
+static bool files_last_click_valid;
+static size_t files_last_click_index;
+static uint64_t files_last_click_tick;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
 static bool keyboard_caps_lock;
@@ -3443,6 +3446,25 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     index < files_listing_count) {
                     files_selected_index = index;
                     files_listing_ensure_selection_visible();
+                    if (files_listing_types[index] == NEXUS_VFS_DIRECTORY) {
+                        const uint64_t now = timer_ticks();
+                        if (files_last_click_valid &&
+                            files_last_click_index == index &&
+                            now - files_last_click_tick <= 50U) {
+                            if (vfs_enter_directory(files_listing[index])) {
+                                files_preview[0] = '\0';
+                                files_first_name[0] = '\0';
+                                refresh_files_listing();
+                            }
+                            files_last_click_valid = false;
+                        } else {
+                            files_last_click_valid = true;
+                            files_last_click_index = index;
+                            files_last_click_tick = now;
+                        }
+                    } else {
+                        files_last_click_valid = false;
+                    }
                 }
             }
         }

@@ -745,16 +745,16 @@ static void draw_shell(void) {
                        1U, 234U, 244U, 252U);
     /* Custom window controls; close is wired to the shell input handler. */
     const uint64_t controls_x = panel_x + panel_width - 66U;
-    graphics_fill_rect(controls_x, panel_y + 12U, 14U, 12U,
-                       0U, 105U, 190U);
+    graphics_fill_round_rect(controls_x, panel_y + 12U, 14U, 12U,
+                             4U, 47U, 118U, 181U);
     graphics_draw_text(controls_x + 4U, panel_y + 15U, "-", 1U,
                        229U, 239U, 248U);
-    graphics_fill_rect(controls_x + 22U, panel_y + 12U, 14U, 12U,
-                       0U, 105U, 190U);
+    graphics_fill_round_rect(controls_x + 22U, panel_y + 12U, 14U, 12U,
+                             4U, 47U, 118U, 181U);
     graphics_draw_rect(controls_x + 26U, panel_y + 15U, 6U, 6U,
                        207U, 224U, 239U);
-    graphics_fill_rect(controls_x + 44U, panel_y + 12U, 14U, 12U,
-                       210U, 55U, 60U);
+    graphics_fill_round_rect(controls_x + 44U, panel_y + 12U, 14U, 12U,
+                             4U, 218U, 82U, 98U);
     graphics_draw_text(controls_x + 47U, panel_y + 16U, "X", 1U,
                        255U, 239U, 241U);
 
@@ -787,12 +787,12 @@ static void draw_shell(void) {
         for (uint32_t i = 0U; i < 5U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
-            graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
-                               24U, 41U, 65U);
-            graphics_draw_rect(tile_x, tile_y, tile_width, 74U,
-                               58U, 91U, 121U);
-            graphics_fill_rect(tile_x, tile_y, 4U, 74U,
-                               accent[i][0], accent[i][1], accent[i][2]);
+            graphics_fill_round_rect(tile_x, tile_y, tile_width, 74U,
+                                      11U, 25U, 45U, 70U);
+            graphics_draw_round_rect(tile_x, tile_y, tile_width, 74U,
+                                     11U, 76U, 111U, 146U);
+            graphics_fill_round_rect(tile_x + 1U, tile_y + 12U, 3U, 50U,
+                                     1U, accent[i][0], accent[i][1], accent[i][2]);
             desktop_draw_app_icon(tile_x + 13U, tile_y + 12U, 25U, i);
             graphics_draw_text(tile_x + 13U, tile_y + 51U, labels[i],
                                1U, 235U, 245U, 252U);
@@ -841,13 +841,14 @@ static void draw_shell(void) {
         for (size_t i = 0U; i < 3U; ++i) {
             const uint64_t card_x = panel_x + 28U +
                                     (uint64_t)i * (card_width + card_gap);
-            graphics_fill_rect(card_x, card_y, card_width, card_h,
-                               22U, 38U, 60U);
-            graphics_draw_rect(card_x, card_y, card_width, card_h,
-                               50U, 79U, 107U);
-            graphics_fill_rect(card_x, card_y, 3U, card_h,
-                               card_accent[i][0], card_accent[i][1],
-                               card_accent[i][2]);
+            graphics_fill_round_rect(card_x, card_y, card_width, card_h,
+                                      9U, 25U, 43U, 66U);
+            graphics_draw_round_rect(card_x, card_y, card_width, card_h,
+                                     9U, 68U, 103U, 137U);
+            graphics_fill_round_rect(card_x + 1U, card_y + 8U, 3U,
+                                     card_h - 16U, 1U,
+                                     card_accent[i][0], card_accent[i][1],
+                                     card_accent[i][2]);
             graphics_draw_text(card_x + 11U, card_y + 13U,
                                card_labels[i], 1U, 148U, 177U, 198U);
             if (i == 0U) {
@@ -895,9 +896,11 @@ static void draw_shell(void) {
                                 "5  SELECT NEXT INSTALLED ADAPTER"};
         for (size_t i = 0U; i < 5U; ++i) {
             const uint64_t y = row_y + (uint64_t)i * 44U;
-            graphics_fill_rect(row_x, y, row_w, 38U, 23U, 39U, 60U);
-            graphics_draw_rect(row_x, y, row_w, 38U, 55U, 88U, 116U);
-            graphics_fill_rect(row_x, y, 4U, 38U,
+            graphics_fill_round_rect(row_x, y, row_w, 38U, 8U,
+                                      25U, 43U, 66U);
+            graphics_draw_round_rect(row_x, y, row_w, 38U, 8U,
+                                     68U, 103U, 137U);
+            graphics_fill_round_rect(row_x + 1U, y + 7U, 3U, 24U, 1U,
                                i == 0U ? 45U : (i == 1U ? 117U : (i == 2U ? 82U : 217U)),
                                i == 0U ? 177U : (i == 1U ? 136U : (i == 2U ? 198U : 164U)),
                                i == 0U ? 202U : (i == 1U ? 244U : (i == 2U ? 155U : 83U)));
@@ -926,10 +929,10 @@ static void draw_shell(void) {
         const char *values[4] = {memory_total, memory_free, uptime, device_count};
         for (size_t i = 0U; i < 4U; ++i) {
             const uint64_t y = text_y + 66U + (uint64_t)i * 55U;
-            graphics_fill_rect(panel_x + 24U, y, panel_width - 48U, 43U,
-                               23U, 39U, 60U);
-            graphics_draw_rect(panel_x + 24U, y, panel_width - 48U, 43U,
-                               55U, 88U, 116U);
+            graphics_fill_round_rect(panel_x + 24U, y, panel_width - 48U,
+                                      43U, 9U, 25U, 43U, 66U);
+            graphics_draw_round_rect(panel_x + 24U, y, panel_width - 48U,
+                                     43U, 9U, 68U, 103U, 137U);
             graphics_draw_text(panel_x + 40U, y + 16U, labels[i],
                                1U, 145U, 177U, 198U);
             graphics_draw_text(panel_x + panel_width - 130U, y + 16U, values[i],

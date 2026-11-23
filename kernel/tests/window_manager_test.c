@@ -122,12 +122,26 @@ static void test_small_display_and_titles(void) {
     assert(nexus_wm_hit_test(95U, 63U) == id);
 }
 
+static void test_reinitialization_invalidates_old_handles(void) {
+    nexus_window_id before, after;
+    struct nexus_window_info info;
+    assert(nexus_wm_init(640U, 480U));
+    assert(nexus_wm_create(1U, "Before reset", 10, 10, 300U, 200U, &before));
+    assert(nexus_wm_init(640U, 480U));
+    assert(!nexus_wm_get(before, &info));
+    assert(nexus_wm_create(1U, "After reset", 10, 10, 300U, 200U, &after));
+    assert(after != before);
+    assert(nexus_wm_get(after, &info));
+    assert(strcmp(info.title, "After reset") == 0);
+}
+
 int main(void) {
     test_creation_focus_and_stacking();
     test_geometry_and_bounds();
     test_minimize_restore_maximize();
     test_lifetime_capacity_and_stale_handles();
     test_small_display_and_titles();
+    test_reinitialization_invalidates_old_handles();
     puts("Nexus window manager core tests passed");
     return 0;
 }

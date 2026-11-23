@@ -115,9 +115,16 @@ bool nexus_wm_init(uint32_t screen_width, uint32_t screen_height) {
     display_height = screen_height;
     window_count = 0U;
     focused_id = 0U;
+    const bool was_initialized = manager_ready;
     for (size_t i = 0U; i < NEXUS_WM_MAX_WINDOWS; ++i) {
         slots[i].occupied = false;
-        slots[i].generation = 1U;
+        if (!was_initialized) {
+            slots[i].generation = 1U;
+        } else if (slots[i].generation >= NEXUS_WM_MAX_GENERATION) {
+            slots[i].generation = 1U;
+        } else {
+            ++slots[i].generation;
+        }
         slots[i].info.id = 0U;
         slots[i].info.flags = 0U;
     }

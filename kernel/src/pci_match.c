@@ -1,4 +1,5 @@
 #include "pci.h"
+#include "wifi_chipset.h"
 
 #include <stddef.h>
 
@@ -31,6 +32,12 @@ bool pci_is_wireless_controller(const struct nexus_pci_device *device) {
 
 bool pci_is_wireless_lan_candidate(const struct nexus_pci_device *device) {
     if (device == NULL) return false;
+
+    /* An exact reviewed chipset ID is stronger evidence than the class code.
+     * Some firmware reports a generic network subclass for wireless silicon.
+     */
+    if (wifi_pci_chipset_name(device->vendor_id, device->device_id) != NULL)
+        return true;
 
     /* PCI wireless-controller subclasses 802.11a/b identify WLAN directly.
      * Network-controller subclass 0x80 is vendor-specific "other network";

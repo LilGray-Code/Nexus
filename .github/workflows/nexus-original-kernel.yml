@@ -157,7 +157,7 @@ jobs:
       - name: Test wireless interface state manager
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/wifi.c \
+            -Ikernel/src kernel/src/wifi.c kernel/src/netdev.c \
             kernel/tests/wifi_test.c \
             -o /tmp/nexus-wifi-test
           /tmp/nexus-wifi-test

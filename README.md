@@ -48,9 +48,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   payload. The installed image is compiled with installer mode disabled and
   without the destructive installer-write build flag. Booting the USB opens
   the full-screen installer; booting the installed disk opens the normal
-  desktop. The installer builds a GPT layout with an EFI System Partition, Nexus
-  System volume, Recovery journal partition, and separate Nexus Data volume;
-  BIOS installs also include a BIOS Boot partition. After successful
+  desktop. The installer builds a compact GPT layout with an EFI System
+  Partition, Nexus System volume, and separate Nexus Data volume. Its small
+  alternating install journal lives in reserved EFI sectors, so no separate
+  Recovery partition is created. Legacy BIOS installs add a BIOS Boot
+  partition. After successful
   deployment, the live installer offers **Restart into Nexus OS**. Remove
   the installation USB, then press Enter or click Restart. The installer
   resets the computer and firmware loads the separately built installed-system
@@ -67,8 +69,8 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   the source. Existing destination names are rejected, and FAT32 remains
   read-only. User-created NXFS files
   are persistent while RAMFS fallback files are volatile. The desktop mounts
-  the dedicated NXFS Data partition after the Recovery partition; it does
-  not expose the NXFS System partition as the user's file store.
+  the dedicated NXFS Data partition after the System partition; it does not
+  expose the NXFS System partition as the user's file store.
 - A Terminal with live system overview (`info`), storage/network/process
   inspection, current-directory reporting (`pwd`), nested FAT32 navigation
   (`cd DIR`, `cd ..`), directory listings with types and file sizes (`ls`),
@@ -94,12 +96,14 @@ manager, or ordinary preemptive multitasking.
 
 ## Installer safety
 
-The installer requires the user to choose a target disk, confirm its stable
-device identity, and separately type `ERASE` before destructive operations.
-It revalidates the target and keeps a durable recovery journal. The Recovery
-partition is separate from the System and Data volumes. An interrupted install
-can be retried against the same target; the transaction tests verify resume
-after simulated restarts without rewriting an already-committed GPT.
+The installer asks the user to choose a target disk, review its model, capacity
+and stable ID, then type `ERASE` once. Nexus captures the selected identity
+automatically and revalidates it before destructive writes; the user does not
+need to type a long device ID. A two-copy, checksummed transaction journal lives
+in reserved EFI sectors. There is no separate Recovery partition or required
+recovery setup. If power is interrupted, a later install attempt automatically
+resumes from a valid journal. If an old journal is missing or damaged, the user
+can start a clean install with the same explicit erase confirmation.
 
 **Installing erases the selected disk.** Use a disposable disk or virtual
 machine while evaluating Nexus. Back up important data and check the displayed
@@ -117,8 +121,8 @@ and the installer-enabled kernel and exercise:
   AHCI/SATA targets;
 - a Files-editor keyboard edit followed by save, reboot, and verification of
   the edited file on the NVMe Data volume;
-- host-side installer fault injection across simulated power cycles, journal
-  recovery, and NXFS unmount/remount/edit/remount persistence;
+- host-side installer fault injection across simulated power cycles, automatic
+  journal resume, and NXFS unmount/remount/edit/remount persistence;
 - dual-mode ISO construction and a boot check of the distributable ISO;
 - separate installer/OS ELF validation and installed UEFI/BIOS boot checks
   that verify the installed runtime reports installer mode disabled.

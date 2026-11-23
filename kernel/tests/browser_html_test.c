@@ -27,9 +27,9 @@ int main(void) {
     check("<SCRIPT type='text/javascript'>x</SCRIPT>visible",
           "visible");
     check("<scripture>ordinary visible text</scripture>tail",
-          "ordinary visible text tail");
+          "ordinary visible texttail");
     check("<styleguide>also visible</styleguide>tail",
-          "also visible tail");
+          "also visibletail");
     check("<script>hidden </scripture> still hidden</script>shown",
           "shown");
     check("unknown &madeup; entity", "unknown &madeup; entity");

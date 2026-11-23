@@ -95,7 +95,8 @@ static bool add_input_fields(const struct hid_globals *g,
             layout->button_bit_offsets[layout->button_count++] =
                 (uint16_t)offset;
         } else if (page == 0x01U && id >= 0x30U && id <= 0x37U) {
-            if (layout->axis_count >= NEXUS_HID_GAMEPAD_MAX_AXES)
+            if (g->logical_min > g->logical_max ||
+                layout->axis_count >= NEXUS_HID_GAMEPAD_MAX_AXES)
                 return false;
             struct nexus_hid_gamepad_axis *axis =
                 &layout->axes[layout->axis_count++];
@@ -105,7 +106,8 @@ static bool add_input_fields(const struct hid_globals *g,
             axis->logical_max = g->logical_max;
             axis->usage = (uint16_t)id;
         } else if (page == 0x01U && id == 0x39U) {
-            if (layout->has_hat) return false;
+            if (g->logical_min > g->logical_max || layout->has_hat)
+                return false;
             layout->has_hat = true;
             layout->hat_bit_offset = (uint16_t)offset;
             layout->hat_bit_size = (uint8_t)g->report_size;
@@ -254,7 +256,10 @@ bool nexus_hid_gamepad_decode_report(
         layout->report_bytes == 0U ||
         layout->report_bytes > NEXUS_HID_GAMEPAD_MAX_REPORT_BYTES ||
         layout->axis_count > NEXUS_HID_GAMEPAD_MAX_AXES ||
-        layout->button_count > NEXUS_HID_GAMEPAD_MAX_BUTTONS) return false;
+        layout->button_count > NEXUS_HID_GAMEPAD_MAX_BUTTONS ||
+        (layout->has_hat &&
+         (layout->hat_bit_size == 0U || layout->hat_bit_size > 16U ||
+          layout->hat_logical_min > layout->hat_logical_max))) return false;
     const size_t prefix = layout->has_report_id ? 1U : 0U;
     if (length != (size_t)layout->report_bytes + prefix ||
         (layout->has_report_id && report[0] != layout->report_id))
@@ -263,6 +268,7 @@ bool nexus_hid_gamepad_decode_report(
     struct nexus_hid_gamepad_state decoded = {0};
     for (uint8_t i = 0U; i < layout->axis_count; ++i) {
         const struct nexus_hid_gamepad_axis *axis = &layout->axes[i];
+        if (axis->logical_min > axis->logical_max) return false;
         uint32_t raw = 0U;
         if (!extract_bits(payload, layout->report_bytes, axis->bit_offset,
                           axis->bit_size, &raw)) return false;

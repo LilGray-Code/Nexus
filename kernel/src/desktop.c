@@ -1533,6 +1533,49 @@ static void draw_pointer(void) {
     graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
 }
 
+static char files_ascii_lower(char value) {
+    return value >= 'A' && value <= 'Z'
+        ? (char)(value + ('a' - 'A')) : value;
+}
+
+static bool files_listing_entry_before(size_t left, size_t right) {
+    const bool left_directory =
+        files_listing_types[left] == NEXUS_VFS_DIRECTORY;
+    const bool right_directory =
+        files_listing_types[right] == NEXUS_VFS_DIRECTORY;
+    if (left_directory != right_directory) return left_directory;
+    for (size_t i = 0U; i < NEXUS_VFS_NAME_MAX; ++i) {
+        const char a = files_ascii_lower(files_listing[left][i]);
+        const char b = files_ascii_lower(files_listing[right][i]);
+        if (a != b) return a < b;
+        if (a == '\0') return false;
+    }
+    return false;
+}
+
+static void files_sort_listing(void) {
+    for (size_t i = 1U; i < files_listing_count; ++i) {
+        char name[NEXUS_VFS_NAME_MAX];
+        for (size_t n = 0U; n < NEXUS_VFS_NAME_MAX; ++n)
+            name[n] = files_listing[i][n];
+        const uint8_t type = files_listing_types[i];
+        size_t at = i;
+        while (at > 0U && files_listing_entry_before(i, at - 1U)) {
+            for (size_t n = 0U; n < NEXUS_VFS_NAME_MAX; ++n)
+                files_listing[at][n] = files_listing[at - 1U][n];
+            files_listing_types[at] = files_listing_types[at - 1U];
+            --at;
+            /* The insertion key is kept separately while the array shifts. */
+            for (size_t n = 0U; n < NEXUS_VFS_NAME_MAX; ++n)
+                files_listing[i][n] = name[n];
+            files_listing_types[i] = type;
+        }
+        for (size_t n = 0U; n < NEXUS_VFS_NAME_MAX; ++n)
+            files_listing[at][n] = name[n];
+        files_listing_types[at] = type;
+    }
+}
+
 static void refresh_files_listing(void) {
     files_vfs_ready = vfs_has_filesystem();
     files_listing_count = 0U;
@@ -1601,7 +1644,7 @@ static void refresh_files_listing(void) {
                 (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : ' ';
         }
         files_preview[bytes_read] = '\0';
-    }
+    }    files_sort_listing();
 }
 
 static size_t files_editor_max_view_offset(void) {

@@ -4246,7 +4246,7 @@ static const char *installer_result_message(
         case NEXUS_INSTALL_RESULT_PARTITION_VERIFY:
             return "GPT read-back verification failed";
         case NEXUS_INSTALL_RESULT_JOURNAL:
-            return "Recovery journal update failed";
+            return "Could not save install progress to the EFI partition";
         case NEXUS_INSTALL_RESULT_ESP_FORMAT:
             return "EFI partition formatting failed";
         case NEXUS_INSTALL_RESULT_SYSTEM_FORMAT:

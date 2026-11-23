@@ -33,6 +33,8 @@ struct nexus_vfs_file {
     bool ram_file;
     bool nxfs_file;
     bool fat32_file;
+    bool nxfs_snapshot_valid;
+    struct nexus_nxfs_entry nxfs_snapshot;
     struct nexus_fat32_entry fat32_snapshot;
 };
 

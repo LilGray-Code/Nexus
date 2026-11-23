@@ -188,7 +188,8 @@ size_t vfs_directory_depth(void) {
 }
 
 bool vfs_current_path(char *buffer, size_t capacity) {
-    if (buffer == NULL || capacity < 2U || !root_mounted) return false;
+    if (buffer == NULL || capacity < 2U ||
+        (directory_depth != 0U && !root_mounted)) return false;
     size_t used = 0U;
     buffer[used++] = '/';
     for (size_t depth = 0U; depth < directory_depth; ++depth) {
@@ -669,6 +670,10 @@ bool vfs_ramfs_selftest(void) {
     static const char long_payload[] = "long filenames remain readable";
     if (!vfs_write_file("NXRAM.TST", payload, sizeof(payload) - 1U))
         return false;
+
+    char current_path[8];
+    if (!vfs_current_path(current_path, sizeof(current_path)) ||
+        current_path[0] != '/' || current_path[1] != '\0') return false;
 
     struct nexus_vfs_file file;
     if (!vfs_open_readonly("nxram.tst", &file) ||

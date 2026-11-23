@@ -75,6 +75,7 @@ static bool files_vfs_ready;
 static char files_first_name[NEXUS_VFS_NAME_MAX];
 static char files_preview[41];
 static char files_listing[FILES_LISTING_MAX_ENTRIES][NEXUS_VFS_NAME_MAX];
+static uint8_t files_listing_types[FILES_LISTING_MAX_ENTRIES];
 static size_t files_listing_count;
 static size_t files_selected_index;
 static size_t files_listing_first_index;
@@ -1202,7 +1203,12 @@ static void draw_shell(void) {
                     graphics_fill_rect(text_x + column * 260U - 6U,
                                        text_y + 321U + line * 24U,
                                        240U, 20U, 34U, 78U, 105U);
-                graphics_draw_text(text_x + column * 260U,
+                if (files_listing_types[index] == NEXUS_VFS_DIRECTORY)
+                    graphics_draw_text(text_x + column * 260U,
+                                       text_y + 326U + line * 24U,
+                                       "DIR", 1U, 255U, 190U, 112U);
+                graphics_draw_text(text_x + column * 260U +
+                                       (files_listing_types[index] == NEXUS_VFS_DIRECTORY ? 28U : 0U),
                                    text_y + 326U + line * 24U,
                                    files_listing[index], 1U,
                                    selected ? 119U : 233U,
@@ -1561,6 +1567,7 @@ static void refresh_files_listing(void) {
                 ++length;
             }
             files_listing[files_listing_count][length] = '\0';
+            files_listing_types[files_listing_count] = (uint8_t)entry.type;
             ++files_listing_count;
         } else {
             files_listing_truncated = true;

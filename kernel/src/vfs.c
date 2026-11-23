@@ -645,6 +645,7 @@ bool vfs_ramfs_selftest(void) {
      */
     if (vfs_nxfs_writable()) {
         static const char large_name[] = "NXFS-LARGE-READ-TEST.BIN";
+        static const char large_copy_name[] = "NXFS-LARGE-COPY-TEST.BIN";
         static uint8_t large_payload[2U * NEXUS_VFS_READ_CHUNK + 137U];
         uint8_t chunk_buffer[NEXUS_VFS_READ_CHUNK];
         for (size_t i = 0U; i < sizeof(large_payload); ++i)
@@ -673,8 +674,42 @@ bool vfs_ramfs_selftest(void) {
             total_read += received;
         }
         vfs_close(&file);
-        const bool removed = vfs_remove_file(large_name);
-        if (!large_read_ok || total_read != sizeof(large_payload) || !removed)
+        if (!large_read_ok || total_read != sizeof(large_payload))
+            return false;
+
+        /* The copy operation must stream multi-chunk sources and refuse to
+         * overwrite an existing destination on a later duplicate request. */
+        if (!vfs_copy_file(large_name, large_copy_name) ||
+            vfs_copy_file(large_name, large_copy_name) ||
+            !vfs_open_readonly(large_copy_name, &file)) {
+            (void)vfs_remove_file(large_copy_name);
+            (void)vfs_remove_file(large_name);
+            return false;
+        }
+        total_read = 0U;
+        large_read_ok = true;
+        while (total_read < sizeof(large_payload)) {
+            size_t received = 0U;
+            if (!vfs_read(&file, chunk_buffer, sizeof(chunk_buffer),
+                          &received) || received == 0U) {
+                large_read_ok = false;
+                break;
+            }
+            for (size_t i = 0U; i < received; ++i) {
+                if (chunk_buffer[i] !=
+                    large_payload[total_read + i]) {
+                    large_read_ok = false;
+                    break;
+                }
+            }
+            if (!large_read_ok) break;
+            total_read += received;
+        }
+        vfs_close(&file);
+        const bool copy_removed = vfs_remove_file(large_copy_name);
+        const bool source_removed = vfs_remove_file(large_name);
+        if (!large_read_ok || total_read != sizeof(large_payload) ||
+            !copy_removed || !source_removed)
             return false;
     }
 

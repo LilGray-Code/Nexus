@@ -14,6 +14,16 @@ live DHCP over Wi-Fi. Do not advertise a chipset as supported until a driver
 has passed hardware/emulator tests and can connect, exchange traffic, and
 recover from disconnects.
 
+The Wi-Fi driver API now has an optional all-or-none Ethernet-frame bridge:
+a native radio driver can provide MAC-address, frame-send, and frame-receive
+callbacks. Nexus registers that radio with the same network-device registry
+as wired Ethernet under **wlan0**, so the existing network selector and
+IPv4/DHCP/DNS stack can use it. Drivers that omit any of those callbacks are
+not exposed as IP network interfaces. The driver still owns scanning,
+association, WPA2/WPA3, encryption, and conversion between 802.11 radio traffic
+and Ethernet frames. This bridge makes integration consistent; it does not
+provide a radio driver by itself.
+
 ## Adapter detection and current chipset identification
 
 Nexus now classifies PCI wireless-controller functions separately from ordinary

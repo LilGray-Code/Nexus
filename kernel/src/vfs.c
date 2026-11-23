@@ -290,10 +290,11 @@ bool vfs_write_file(const char *name, const void *data, size_t length) {
 bool vfs_copy_file(const char *source_name,
                     const char *destination_name) {
     if (source_name == NULL || destination_name == NULL ||
-        source_name[0] == '\0' || destination_name[0] == '\0' ||
-        name_equal(source_name, destination_name)) return false;
+        source_name[0] == '\0' || destination_name[0] == '\0')
+        return false;
 
-    /* Never silently replace an existing Nexus-owned destination. */
+    /* Never silently replace an existing Nexus-owned destination. A file
+     * copied out of a nested read-only folder may keep its original name. */
     if (ramfs_find(destination_name) != NULL) return false;
     if (nxfs_root_mounted) {
         for (size_t i = 0U; i < nxfs_entry_count(); ++i) {

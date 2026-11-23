@@ -143,10 +143,9 @@ static bool validate_plan(const struct nexus_partition_plan *plan,
     } else {
         return false;
     }
-    if (index + 3U != plan->partition_count ||
+    if (index + 2U != plan->partition_count ||
         plan->partitions[index].kind != NEXUS_PARTITION_SYSTEM ||
-        plan->partitions[index + 1U].kind != NEXUS_PARTITION_RECOVERY ||
-        plan->partitions[index + 2U].kind != NEXUS_PARTITION_DATA)
+        plan->partitions[index + 1U].kind != NEXUS_PARTITION_DATA)
         return false;
     return true;
 }

@@ -39,10 +39,11 @@ identification positively establishes that the machine was started from an
 external live medium; ambiguous boot-source identity must fail closed.
 
 The installer discovers eligible block devices and presents the selected
-drive's model, capacity, stable ID, and a read-only layout preview. Press Enter
-to review the chosen drive, then type `ERASE` once to authorize installation.
-Nexus captures the device identity automatically and revalidates it before
-each destructive stage; there is no need to type a long disk ID.
+drive's model, capacity, stable ID, and a read-only layout preview. Select the
+drive, review its identity and layout, then click **Confirm & Install** (or
+press Enter) on the final confirmation screen. No confirmation phrase needs
+to be typed. Nexus captures the selected identity automatically and
+revalidates it before each destructive stage.
 
 After successful deployment, the installer displays a **Restart into Nexus OS**
 action and a reminder to remove the live USB. Pressing Enter or selecting the

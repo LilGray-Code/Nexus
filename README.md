@@ -92,7 +92,7 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   and those copies are volatile.
 - The Browser accepts plain search queries as queries (rather than mistaking
   them for hostnames), builds an encoded DuckDuckGo Lite search URL, and
-  provides a dedicated search landing page. The current provider uses HTTPS;
+  provides a dedicated search landing page. Direct HTTP pages now use an 8 KiB bounded response buffer, a 64-line text view, and Page Up/Page Down scrolling. The current provider uses HTTPS;
   secure search and HTTPS pages remain blocked until Nexus has a verified TLS
   client and certificate validation. Requests are never downgraded to
   plaintext. Direct plain-HTTP pages can be fetched and shown as bounded text.
@@ -108,7 +108,8 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   and paragraphs, line breaks, and list bullets, while suppressing comments,
   script/style contents, and decoding common HTML entities. It can collect up
   to five distinct absolute HTTP(S) anchor URLs from a loaded page; press
-  **Alt+1** through **Alt+5** to open them. Relative links are not yet resolved,
+  **Alt+1** through **Alt+5** to open them. Use **Page Up/Page Down** to
+  scroll the retained text view. Relative links are not yet resolved,
   and CSS layout and JavaScript execution are not implemented. This remains a
   limited text browser, not a modern browser engine.
 - An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, a plain-HTTP

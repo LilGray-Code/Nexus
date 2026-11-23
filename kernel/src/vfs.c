@@ -345,6 +345,31 @@ bool vfs_copy_file(const char *source_name,
     return write_ok;
 }
 
+/*
+ * Move is restricted to Nexus-owned writable files. It copies and verifies
+ * the destination through the normal VFS path before deleting the source.
+ * Read-only FAT32 entries can be copied out, but never moved or deleted.
+ */
+bool vfs_move_file(const char *source_name,
+                   const char *destination_name) {
+    if (source_name == NULL || destination_name == NULL ||
+        source_name[0] == '\0' || destination_name[0] == '\0' ||
+        name_equal(source_name, destination_name)) return false;
+
+    struct nexus_vfs_file source;
+    if (!vfs_open_readonly(source_name, &source)) return false;
+    const bool writable_source = source.ram_file || source.nxfs_file;
+    vfs_close(&source);
+    if (!writable_source) return false;
+
+    if (!vfs_copy_file(source_name, destination_name)) return false;
+    if (vfs_remove_file(source_name)) return true;
+
+    /* Preserve the source if deletion fails; best-effort rollback the copy. */
+    (void)vfs_remove_file(destination_name);
+    return false;
+}
+
 /* Higher-priority writable layers hide lower-layer names, matching open(). */
 static bool ramfs_shadows_name(const char *name) {
     return ramfs_find(name) != NULL;

@@ -395,8 +395,8 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
 bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
     if (file == NULL || !file->open || size == NULL ||
         (!file->ram_file && !file->nxfs_file && !file->fat32_file) ||
-        ((file->ram_file || file->nxfs_file) &&
-         file->filesystem_entry == NULL)) return false;
+        (file->ram_file && file->filesystem_entry == NULL) ||
+        (file->nxfs_file && !file->nxfs_snapshot_valid)) return false;
     if (file->ram_file) {
         const struct ramfs_entry *entry =
             (const struct ramfs_entry *)file->filesystem_entry;
@@ -407,7 +407,7 @@ bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
     if (file->nxfs_file) {
         const struct nexus_nxfs_entry *entry = &file->nxfs_snapshot;
         if (!nxfs_root_mounted || !file->nxfs_snapshot_valid ||
-            !entry->used) return false;
+            !nxfs_entry_is_current(entry)) return false;
         *size = entry->size;
         return true;
     }
@@ -637,7 +637,9 @@ bool vfs_ramfs_selftest(void) {
             (void)vfs_remove_file(snapshot_name);
             return false;
         }
+        uint32_t stale_size = 0U;
         const bool stale_read_rejected =
+            !vfs_file_size(&snapshot_file, &stale_size) &&
             !vfs_read(&snapshot_file, snapshot_buffer,
                       sizeof(snapshot_buffer), &snapshot_read) &&
             snapshot_read == 0U;

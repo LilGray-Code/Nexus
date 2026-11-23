@@ -50,11 +50,13 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - A Terminal with live system overview (`info`), storage/network/process
   inspection, current-directory reporting (`pwd`), nested FAT32 navigation
   (`cd DIR`, `cd ..`), directory listings with types and file sizes (`ls`),
-  file reads (`cat FILE`), and safe file copying (`cp SOURCE DEST`) into
-  Nexus root storage. Copy reads are chunked, bounded to 1 MiB, refuse an
-  existing Nexus destination, and use transactional NXFS writes when that
-  volume is writable; otherwise only files fitting the 4 KiB RAMFS limit
-  can be copied, and those copies are volatile.
+  file reads (`cat FILE`), safe file copying (`cp SOURCE DEST`), and
+  verified file moves/renames (`mv SOURCE DEST`) into Nexus root storage.
+  Copy and move operations are bounded to 1 MiB and refuse existing
+  destinations; moves read back and compare the copied bytes before deleting
+  the source. They use transactional NXFS writes when that volume is writable;
+  otherwise only files fitting the 4 KiB RAMFS limit can be copied or moved,
+  and those copies are volatile.
 - The Browser's HTML text extraction retains block separation for headings
   and paragraphs, line breaks, and list bullets, while suppressing comments,
   script/style contents, and decoding common HTML entities. This remains a

@@ -601,9 +601,16 @@ static void desktop_get_current_window_rect(uint64_t *x, uint64_t *y,
 static void desktop_return_home(void) {
     if (installer_environment) return;
     if (desktop_window_manager_ready) {
-        const nexus_window_id focused = nexus_wm_focused();
-        if (focused != 0U) (void)nexus_wm_minimize(focused);
-        desktop_sync_focused_window();
+        /* Home is a separate shell layer. Minimize every application window
+         * before showing it, preserving their taskbar entries for restore. */
+        const size_t count = nexus_wm_count();
+        for (size_t i = 0U; i < count; ++i) {
+            nexus_window_id id = 0U;
+            struct nexus_window_info info;
+            if (nexus_wm_z_order(i, &id) && nexus_wm_get(id, &info) &&
+                (info.flags & NEXUS_WINDOW_MINIMIZED) == 0U)
+                (void)nexus_wm_minimize(id);
+        }
     }
     active_view = DESKTOP_HOME;
     window_maximized = false;
@@ -824,14 +831,7 @@ static void desktop_draw_managed_windows(uint64_t top_bar) {
 static void desktop_open_view(enum desktop_view view) {
     if (view == DESKTOP_INSTALLER && !installer_environment) return;
     if (view == DESKTOP_HOME) {
-        if (desktop_window_manager_ready) {
-            const nexus_window_id focused = nexus_wm_focused();
-            if (focused != 0U) (void)nexus_wm_minimize(focused);
-            desktop_sync_focused_window();
-        }
-        active_view = DESKTOP_HOME;
-        window_maximized = false;
-        start_menu_open = false;
+        desktop_return_home();
         desktop_animate_view();
         return;
     }
@@ -2269,8 +2269,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         desktop_window_manager_ready = nexus_wm_init(
             (uint32_t)screen_width, work_height);
         if (desktop_window_manager_ready)
-            serial_write("DESKTOP: multi-window workspace ready
-");
+            serial_write("DESKTOP: multi-window workspace ready\r\n");
     }
     active_view = installer_environment ? DESKTOP_INSTALLER : DESKTOP_HOME;
     installer_ui_state = INSTALLER_UI_SELECT;

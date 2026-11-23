@@ -1,4 +1,5 @@
 #include "e1000.h"
+#include "netdev.h"
 
 #include "memory.h"
 #include "paging.h"
@@ -269,6 +270,18 @@ static bool configure_receive_ring(void) {
                           E1000_RCTL_EN | E1000_RCTL_BAM | E1000_RCTL_SECRC);
 }
 
+static bool e1000_netdev_send(void *context, const void *frame,
+                               size_t length) {
+    (void)context;
+    return e1000_send_frame(frame, length);
+}
+
+static bool e1000_netdev_receive(void *context, void *buffer, size_t capacity,
+                                 size_t *length) {
+    (void)context;
+    return e1000_receive_frame(buffer, capacity, length);
+}
+
 bool e1000_init(void) {
     state = (struct e1000_state){0};
     const struct nexus_pci_device *device = NULL;
@@ -347,6 +360,19 @@ bool e1000_init(void) {
     }
 
     state.ready = true;
+    static const struct nexus_netdev_ops netdev_ops = {
+        .send_frame = e1000_netdev_send,
+        .receive_frame = e1000_netdev_receive
+    };
+    if (!netdev_register("e1000", state.mac, E1000_BUFFER_SIZE,
+                         &netdev_ops, NULL)) {
+        state.ready = false;
+        (void)register_write(E1000_REG_RCTL, 0U);
+        (void)register_write(E1000_REG_TCTL, 0U);
+        release_dma_resources();
+        serial_write("E1000: network-device registration failed\\r\\n");
+        return false;
+    }
     serial_write("E1000: initialized in polling mode; MAC=");
     for (size_t i = 0; i < 6U; ++i) {
         serial_write_hex(state.mac[i]);

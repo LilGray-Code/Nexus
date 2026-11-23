@@ -2952,7 +2952,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             uint64_t pw = screen_width * 3U / 4U;
             uint64_t ph = screen_height * 53U / 100U;
             if (pw > 920U) pw = 920U;
-            if (ph > 480U) ph = 480U;
+            /* Match draw_shell(): home window hit testing must use the same
+             * 512px maximum or the launcher drifts on tall displays. */
+            if (ph > 512U) ph = 512U;
             if (pw > screen_width - 16U) pw = screen_width - 16U;
             if (ph > screen_height - top - bottom - 16U)
                 ph = screen_height - top - bottom - 16U;

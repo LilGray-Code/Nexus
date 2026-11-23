@@ -1808,6 +1808,32 @@ static void refresh_files_listing(void) {
     }
 }
 
+static bool files_selected_entry(struct nexus_vfs_dirent *selected) {
+    if (selected == NULL || files_selected_index >= files_listing_count)
+        return false;
+    const char *selected_name = files_listing[files_selected_index];
+    for (size_t i = 0U; i < vfs_root_entry_count(); ++i) {
+        struct nexus_vfs_dirent candidate;
+        if (!vfs_root_entry(i, &candidate)) continue;
+        size_t n = 0U;
+        bool equal = true;
+        while (n < NEXUS_VFS_NAME_MAX) {
+            if (files_ascii_lower(candidate.name[n]) !=
+                files_ascii_lower(selected_name[n])) {
+                equal = false;
+                break;
+            }
+            if (candidate.name[n] == '\0') break;
+            ++n;
+        }
+        if (equal) {
+            *selected = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
 static size_t files_editor_max_view_offset(void) {
     return files_edit_content_length > FILES_EDITOR_VIEW_BYTES
         ? files_edit_content_length - FILES_EDITOR_VIEW_BYTES : 0U;
@@ -1890,7 +1916,7 @@ static bool files_names_equal(const char *left, const char *right) {
 static void files_editor_begin_rename(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
-        !vfs_root_entry(files_selected_index, &selected) ||
+        !files_selected_entry(&selected) ||
         selected.type != NEXUS_VFS_FILE) {
         files_editor_set_status("SELECT A FILE TO RENAME");
         return;
@@ -1912,7 +1938,7 @@ static void files_editor_begin_rename(void) {
 static void files_editor_begin_copy(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
-        !vfs_root_entry(files_selected_index, &selected) ||
+        !files_selected_entry(&selected) ||
         selected.type != NEXUS_VFS_FILE) {
         files_editor_set_status("SELECT A FILE TO COPY");
         return;
@@ -1933,7 +1959,7 @@ static void files_editor_begin_copy(void) {
 static void files_editor_begin_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
-        !vfs_root_entry(files_selected_index, &selected)) {
+        !files_selected_entry(&selected)) {
         files_editor_set_status("SELECT A FILE");
         return;
     }
@@ -1991,7 +2017,7 @@ static void files_editor_begin_selected(void) {
 static void files_request_delete_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
-        !vfs_root_entry(files_selected_index, &selected) ||
+        !files_selected_entry(&selected) ||
         selected.type != NEXUS_VFS_FILE) {
         files_delete_pending = false;
         return;
@@ -3864,14 +3890,14 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x1CU && files_selected_index < files_listing_count) {
             struct nexus_vfs_dirent selected;
-            if (vfs_root_entry(files_selected_index, &selected) &&
+            if (files_selected_entry(&selected) &&
                 selected.type == NEXUS_VFS_DIRECTORY) {
                 if (vfs_enter_directory(selected.name)) {
                     refresh_files_listing();
                     files_preview[0] = '\0';
                     files_first_name[0] = '\0';
                 }
-            } else if (vfs_root_entry(files_selected_index, &selected) &&
+            } else if (files_selected_entry(&selected) &&
                        selected.type == NEXUS_VFS_FILE) {
                 struct nexus_vfs_file file;
                 if (vfs_open_readonly(selected.name, &file)) {

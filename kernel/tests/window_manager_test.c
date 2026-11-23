@@ -214,7 +214,8 @@ int main(void) {
     test_lifetime_capacity_and_stale_handles();
     test_small_display_and_titles();
     test_virtual_desktops();
-    test_reinitialization_invalidates_old_handles();\n    test_live_display_resize();
+    test_reinitialization_invalidates_old_handles();
+    test_live_display_resize();
     puts("Nexus window manager core tests passed");
     return 0;
 }

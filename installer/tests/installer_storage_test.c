@@ -308,15 +308,15 @@ int main(int argc,char **argv) {
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
         identity.stable_id,"ERASE",&esp_copy,&journal)==NEXUS_JOURNAL_OK);
     assert(nexus_installer_load_recovery_record(target_handle,&identity,
-        &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
+        &esp_copy,&journal_readback)==NEXUS_JOURNAL_OK);
     assert(journal_readback.sequence==1U&&
            journal_readback.phase==NEXUS_JOURNAL_PREPARED);
     journal.sequence=2U;journal.phase=NEXUS_JOURNAL_GPT_WRITTEN;
     journal.completed_steps=1U;
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
-        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_OK);
+        identity.stable_id,"ERASE",&esp_copy,&journal)==NEXUS_JOURNAL_OK);
     assert(nexus_installer_load_recovery_record(target_handle,&identity,
-        &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
+        &esp_copy,&journal_readback)==NEXUS_JOURNAL_OK);
     assert(journal_readback.sequence==2U&&
            journal_readback.phase==NEXUS_JOURNAL_GPT_WRITTEN);
     const size_t journal_offset =
@@ -325,7 +325,7 @@ int main(int argc,char **argv) {
     assert(target.flushes==33U);
     journal.disk_guid[0]^=0xFFU;
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
-        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_INVALID);
+        identity.stable_id,"ERASE",&esp_copy,&journal)==NEXUS_JOURNAL_INVALID);
     journal.disk_guid[0]^=0xFFU;
 
     const uint32_t bps=512U;

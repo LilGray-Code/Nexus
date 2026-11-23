@@ -11,6 +11,7 @@ static bool root_mounted;
 static bool nxfs_root_mounted;
 #define VFS_DIRECTORY_MAX_DEPTH 16U
 static uint32_t directory_stack[VFS_DIRECTORY_MAX_DEPTH];
+static char directory_names[VFS_DIRECTORY_MAX_DEPTH][NEXUS_VFS_NAME_MAX];
 static size_t directory_depth;
 
 struct ramfs_entry {
@@ -165,6 +166,8 @@ bool vfs_mount_root_fat32(const struct nexus_block_device *device,
     root_mounted = true;
     directory_depth = 0U;
     directory_stack[0] = fat32_root_cluster();
+    for (size_t i = 0U; i < VFS_DIRECTORY_MAX_DEPTH; ++i)
+        directory_names[i][0] = '\0';
     return true;
 }
 
@@ -174,6 +177,25 @@ bool vfs_root_mounted(void) {
 
 size_t vfs_directory_depth(void) {
     return directory_depth;
+}
+
+bool vfs_current_path(char *buffer, size_t capacity) {
+    if (buffer == NULL || capacity < 2U || !root_mounted) return false;
+    size_t used = 0U;
+    buffer[used++] = '/';
+    for (size_t depth = 0U; depth < directory_depth; ++depth) {
+        size_t length = 0U;
+        while (length < NEXUS_VFS_NAME_MAX &&
+               directory_names[depth][length] != '\0') ++length;
+        if (length == 0U || length == NEXUS_VFS_NAME_MAX) return false;
+        const size_t separator = used > 1U ? 1U : 0U;
+        if (used + separator + length + 1U > capacity) return false;
+        if (separator != 0U) buffer[used++] = '/';
+        for (size_t i = 0U; i < length; ++i)
+            buffer[used++] = directory_names[depth][i];
+    }
+    buffer[used] = '\0';
+    return true;
 }
 
 bool vfs_enter_directory(const char *name) {
@@ -190,6 +212,14 @@ bool vfs_enter_directory(const char *name) {
         }
         if (!fat32_read_directory(child_cluster)) return false;
         directory_stack[++directory_depth] = child_cluster;
+        size_t name_length = 0U;
+        while (name_length < NEXUS_VFS_NAME_MAX - 1U &&
+               entry->name[name_length] != '\0') {
+            directory_names[directory_depth - 1U][name_length] =
+                entry->name[name_length];
+            ++name_length;
+        }
+        directory_names[directory_depth - 1U][name_length] = '\0';
         return true;
     }
     return false;
@@ -199,6 +229,7 @@ bool vfs_parent_directory(void) {
     if (!root_mounted || directory_depth == 0U) return false;
     const uint32_t parent = directory_stack[directory_depth - 1U];
     if (!fat32_read_directory(parent)) return false;
+    directory_names[directory_depth - 1U][0] = '\0';
     --directory_depth;
     return true;
 }

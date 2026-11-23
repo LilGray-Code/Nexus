@@ -60,6 +60,7 @@ static volatile uint64_t requests_end[] = LIMINE_REQUESTS_END_MARKER;
 
 static volatile uint32_t scheduler_count_a;
 static volatile uint32_t scheduler_count_b;
+static volatile uint32_t scheduler_recycle_count;
 static volatile uint8_t scheduler_trace[6];
 static volatile uint32_t scheduler_trace_count;
 
@@ -85,6 +86,11 @@ static void scheduler_worker_b(void *argument) {
         if (scheduler_trace_count < 6)
             scheduler_trace[scheduler_trace_count++] = 2;
     }
+}
+
+static void scheduler_recycle_worker(void *argument) {
+    (void)argument;
+    ++scheduler_recycle_count;
 }
 
 __attribute__((noreturn))
@@ -334,6 +340,7 @@ void kmain(void) {
     scheduler_init();
     scheduler_count_a = 0;
     scheduler_count_b = 0;
+    scheduler_recycle_count = 0;
     scheduler_trace_count = 0;
 
     if (!scheduler_create_thread(scheduler_worker_a, NULL) ||
@@ -354,10 +361,31 @@ void kmain(void) {
     }
 
     if (!scheduler_ok) {
-        serial_write("ERROR: cooperative scheduler round-robin test failed\r\n");
+        serial_write("ERROR: preemptive scheduler round-robin test failed\r\n");
         halt_forever();
     }
-    serial_write("K2: preemptive kernel-thread test passed (timer-driven A/B alternation)\r\n");
+
+    /*
+     * Fill the remaining thread slots, let those workers exit, then create
+     * another worker. Finished slots must be reusable across scheduler runs.
+     */
+    if (!scheduler_create_thread(scheduler_recycle_worker, NULL) ||
+        !scheduler_create_thread(scheduler_recycle_worker, NULL)) {
+        serial_write("ERROR: scheduler could not fill recyclable slots\r\n");
+        halt_forever();
+    }
+    scheduler_wait();
+    if (scheduler_recycle_count != 2U ||
+        !scheduler_create_thread(scheduler_recycle_worker, NULL)) {
+        serial_write("ERROR: scheduler failed to recycle finished thread slots\r\n");
+        halt_forever();
+    }
+    scheduler_wait();
+    if (scheduler_recycle_count != 3U) {
+        serial_write("ERROR: scheduler recycled-thread self-test failed\r\n");
+        halt_forever();
+    }
+    serial_write("K2: preemptive scheduling and thread-slot recycling passed\r\n");
 
     if (framebuffer_request.response != NULL &&
         framebuffer_request.response->framebuffer_count > 0) {

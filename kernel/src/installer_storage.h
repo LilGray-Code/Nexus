@@ -34,16 +34,18 @@ bool nexus_installer_format_nxfs(
     const char *typed_erase_phrase,
     const struct nexus_gpt_partition *partition);
 
+/* Compatibility-named helpers store the transaction journal in ESP-relative
+ * sectors 8 and 9. A separate Recovery GPT partition is not required. */
 enum nexus_installer_journal_result nexus_installer_load_recovery_record(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
-    const struct nexus_gpt_partition *recovery_partition,
+    const struct nexus_gpt_partition *esp_partition,
     struct nexus_installer_journal_record *record);
 enum nexus_installer_journal_result nexus_installer_store_recovery_record(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
     const char *typed_stable_id,const char *typed_erase_phrase,
-    const struct nexus_gpt_partition *recovery_partition,
+    const struct nexus_gpt_partition *esp_partition,
     const struct nexus_installer_journal_record *record);
 
 enum nexus_installer_system_payload_result {

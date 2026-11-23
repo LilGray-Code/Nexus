@@ -844,8 +844,9 @@ static void draw_shell(void) {
             uptime_value[uptime_pos++] = seconds_suffix[n];
         }
         uptime_value[uptime_pos] = '\0';
-        static const uint8_t card_accent[3][3] = {
-            {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U}
+        static const uint8_t card_accent[4][3] = {
+            {45U, 177U, 202U}, {117U, 136U, 244U},
+            {82U, 198U, 155U}, {224U, 154U, 83U}
         };
         for (size_t i = 0U; i < 4U; ++i) {
             const uint64_t card_x = panel_x + 28U +

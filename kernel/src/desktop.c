@@ -354,7 +354,7 @@ static void desktop_draw_app_icon(uint64_t x, uint64_t y,
                                  size / 5U, size / 5U, size / 10U,
                                  255U, 255U, 255U);
     } else {
-        graphics_draw_text(x + size / 4U, y + size / 3U, "=", 2U,
+        graphics_draw_text_smooth(x + size / 4U, y + size / 3U, "=", 2U,
                            255U, 255U, 255U);
         graphics_fill_rect(x + size / 4U, y + size * 2U / 3U,
                            size / 2U, 2U, 255U, 255U, 255U);
@@ -1035,7 +1035,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     graphics_fill_gradient_rect(menu_x+1U,menu_y+1U,menu_width-2U,3U,
                                  71U,164U,211U,133U,111U,224U);
     desktop_draw_logo(menu_x+20U,menu_y+16U,24U);
-    graphics_draw_text(menu_x+56U,menu_y+19U,"NEXUS",2U,246U,249U,255U);
+    graphics_draw_text_smooth(menu_x+56U,menu_y+19U,"NEXUS", 2U,246U,249U,255U);
     graphics_draw_text(menu_x+57U,menu_y+41U,"FIND YOUR NEXT TASK",1U,
                        151U,181U,205U);
 
@@ -1635,8 +1635,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
     const uint64_t text_y = panel_y +
         (active_view == DESKTOP_INSTALLER ? 48U : 82U);
     if (active_view == DESKTOP_HOME) {
-        graphics_draw_text(text_x, text_y, "WELCOME TO YOUR WORKSPACE",
-                           2U, 245U, 249U, 255U);
+        graphics_draw_text_smooth(text_x, text_y, "WELCOME TO YOUR WORKSPACE", 2U, 245U, 249U, 255U);
         graphics_draw_text(text_x + 2U, text_y + 29U,
                            "YOUR TOOLS, FILES AND SYSTEM STATUS IN ONE PLACE",
                            1U, 139U, 190U, 218U);
@@ -1748,7 +1747,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            "F1-F7 OPEN APPS   CTRL+SPACE SEARCH   ALT+TAB SWITCH",
                            1U, 151U, 190U, 213U);
     } else if (active_view == DESKTOP_SETTINGS) {
-        graphics_draw_text(text_x, text_y, "MAKE NEXUS YOURS", 2U, 241U, 248U, 255U);
+        graphics_draw_text_smooth(text_x, text_y, "MAKE NEXUS YOURS", 2U, 241U, 248U, 255U);
         graphics_draw_text(text_x, text_y + 30U,
                            "PERSONALIZATION AND DESKTOP BEHAVIOR", 1U, 111U, 207U, 231U);
         const uint64_t row_x = panel_x + 24U;
@@ -1827,7 +1826,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            "1-7 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_MONITOR) {
-        graphics_draw_text(text_x, text_y, "SYSTEM MONITOR", 2U, 241U, 248U, 255U);
+        graphics_draw_text_smooth(text_x, text_y, "SYSTEM MONITOR", 2U, 241U, 248U, 255U);
         graphics_draw_text(text_x, text_y + 30U,
                            "LIVE RESOURCE AND DEVICE OVERVIEW", 1U, 111U, 207U, 231U);
         char memory_total[21], memory_free[21], uptime[21], device_count[21];
@@ -1859,7 +1858,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            "ESC RETURN HOME   VALUES REFRESH WHEN THE DESKTOP REDRAWS",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_CONTROL_CENTER) {
-        graphics_draw_text(text_x,text_y,"CONTROL CENTER",2U,245U,249U,255U);
+        graphics_draw_text_smooth(text_x,text_y,"CONTROL CENTER", 2U,245U,249U,255U);
         graphics_draw_text(text_x,text_y+30U,
             "LIVE SYSTEM STATUS  /  QUICK PERSONALIZATION",
             1U,139U,184U,210U);
@@ -1937,7 +1936,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
             "1-5 TOGGLE QUICK SETTINGS   ENTER OPENS ALL SETTINGS",
             1U,141U,173U,198U);
     } else if (active_view == DESKTOP_CALCULATOR) {
-        graphics_draw_text(text_x,text_y,"NEXUS CALCULATOR",2U,241U,248U,255U);
+        graphics_draw_text_smooth(text_x,text_y,"NEXUS CALCULATOR", 2U,241U,248U,255U);
         graphics_draw_text(text_x,text_y+30U,
             "INTEGER MODE  /  PRECEDENCE  /  PARENTHESES",1U,111U,207U,231U);
         const uint64_t display_x=panel_x+24U, display_y=text_y+62U;

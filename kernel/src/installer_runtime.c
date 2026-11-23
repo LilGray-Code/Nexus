@@ -99,11 +99,27 @@ static bool old_install_pending(
         const enum nexus_installer_journal_result result =
             nexus_installer_load_recovery_record(device, identity,
                                                   &esp, &record);
-        /* A valid unfinished journal resumes automatically. Missing or
-         * damaged legacy metadata does not force a separate recovery tool:
-         * the next explicit ERASE confirmation can start a clean install. */
         if (result != NEXUS_JOURNAL_OK) return false;
-        return record.phase != NEXUS_JOURNAL_COMPLETE;
+        if (record.phase == NEXUS_JOURNAL_COMPLETE) return false;
+        if (record.completed_steps < 1U || record.completed_steps > 5U ||
+            (record.phase != NEXUS_JOURNAL_RECOVERY_REQUIRED &&
+             record.phase != NEXUS_JOURNAL_GPT_WRITTEN &&
+             record.phase != NEXUS_JOURNAL_FILESYSTEMS_FORMATTED &&
+             record.phase != NEXUS_JOURNAL_PAYLOAD_DEPLOYED &&
+             record.phase != NEXUS_JOURNAL_BOOTLOADER_INSTALLED))
+            return false;
+        if (record.phase != NEXUS_JOURNAL_RECOVERY_REQUIRED) {
+            const uint32_t expected_steps =
+                record.phase == NEXUS_JOURNAL_GPT_WRITTEN ? 1U :
+                (record.phase == NEXUS_JOURNAL_FILESYSTEMS_FORMATTED ? 2U :
+                (record.phase == NEXUS_JOURNAL_PAYLOAD_DEPLOYED ? 3U : 4U));
+            if (record.completed_steps != expected_steps) return false;
+        }
+        if (record.firmware_mode != NEXUS_FIRMWARE_UEFI &&
+            record.firmware_mode != NEXUS_FIRMWARE_LEGACY_BIOS &&
+            record.firmware_mode != NEXUS_FIRMWARE_DUAL)
+            return false;
+        return true;
     }
     return false;
 }

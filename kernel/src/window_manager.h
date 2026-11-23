@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define NEXUS_WM_MAX_WINDOWS 12U
+#define NEXUS_WM_MAX_WORKSPACES 4U
 #define NEXUS_WM_TITLE_MAX 31U
 
 typedef uint32_t nexus_window_id;
@@ -29,6 +30,7 @@ struct nexus_window_info {
     uint32_t restore_width;
     uint32_t restore_height;
     uint32_t flags;
+    uint8_t workspace;
     char title[NEXUS_WM_TITLE_MAX + 1U];
 };
 
@@ -55,5 +57,14 @@ nexus_window_id nexus_wm_focused(void);
 nexus_window_id nexus_wm_hit_test(uint32_t x, uint32_t y);
 size_t nexus_wm_count(void);
 bool nexus_wm_z_order(size_t bottom_to_top_index, nexus_window_id *out_id);
+
+/* Virtual desktop/workspace support. Window IDs and z-order remain global;
+ * visibility, focus and hit-testing are scoped to the active workspace. */
+uint8_t nexus_wm_active_workspace(void);
+bool nexus_wm_switch_workspace(uint8_t workspace);
+bool nexus_wm_move_to_workspace(nexus_window_id id, uint8_t workspace);
+size_t nexus_wm_workspace_count(uint8_t workspace);
+bool nexus_wm_workspace_z_order(uint8_t workspace, size_t bottom_to_top_index,
+                                nexus_window_id *out_id);
 
 #endif

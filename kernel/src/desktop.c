@@ -172,7 +172,6 @@ static char terminal_output[160];
 
 enum installer_ui_state {
     INSTALLER_UI_SELECT = 0,
-    INSTALLER_UI_CONFIRM_ID,
     INSTALLER_UI_CONFIRM_ERASE,
     INSTALLER_UI_RUNNING,
     INSTALLER_UI_COMPLETE,
@@ -1835,10 +1834,10 @@ static void desktop_draw_window_surface(enum desktop_view view,
                 }
             }
             graphics_draw_text(text_x, text_y + 298U,
-                               "UP/DOWN DRIVE  F1 UEFI  F2 BIOS  F3 DUAL",
+                               "UP/DOWN CHOOSE DRIVE  F1 UEFI  F2 BIOS  F3 DUAL",
                                1, 170, 191, 211);
             graphics_draw_text(text_x, text_y + 316U,
-                               "ENTER CONTINUE  ESC HOME",
+                               "ENTER REVIEW  ESC HOME",
                                1, 170, 191, 211);
         } else {
             const struct nexus_block_device *device =
@@ -1851,16 +1850,12 @@ static void desktop_draw_window_surface(enum desktop_view view,
                 graphics_draw_text(text_x, text_y + 54U, device->stable_id,
                                    1, 119, 229, 211);
             }
-            if (installer_ui_state == INSTALLER_UI_CONFIRM_ID) {
+            if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
                 graphics_draw_text(text_x, text_y + 100U,
-                                   "TYPE THE COMPLETE TARGET ID TO CONTINUE",
+                                   "FINAL CHECK: THIS ERASES THE SELECTED DRIVE",
                                    1, 239, 177, 119);
-            } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
-                graphics_draw_text(text_x, text_y + 116U,
-                                   "FINAL WARNING: THIS ERASES THE SELECTED DISK",
-                                   1, 239, 177, 119);
-                graphics_draw_text(text_x, text_y + 140U,
-                                   "TYPE ERASE TO AUTHORIZE THE INSTALL",
+                graphics_draw_text(text_x, text_y + 124U,
+                                   "CHECK THE MODEL AND SIZE, THEN TYPE ERASE",
                                    1, 239, 177, 119);
             } else if (installer_ui_state == INSTALLER_UI_RUNNING) {
                 graphics_draw_text(text_x, text_y + 116U,
@@ -1882,13 +1877,12 @@ static void desktop_draw_window_surface(enum desktop_view view,
                                    1, 239, 177, 119);
             } else if (installer_ui_state == INSTALLER_UI_FAILED) {
                 graphics_draw_text(text_x, text_y + 116U,
-                                   "INSTALLATION STOPPED - RECOVERY MAY BE REQUIRED",
+                                   "INSTALL STOPPED - READ THE MESSAGE BELOW, THEN RETRY",
                                    1, 239, 177, 119);
             }
             graphics_draw_text(text_x, text_y + 160U, installer_status_text,
                                1, 170, 225, 190);
-            if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
-                installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
+            if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
                 graphics_fill_rect(text_x, text_y + 194U, 520U, 30U,
                                    11, 20, 39);
                 graphics_draw_rect(text_x, text_y + 194U, 520U, 30U,
@@ -4877,49 +4871,40 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (event->scancode == 0x1CU) {
                 const struct nexus_block_device *device =
                     blockdev_at(installer_selected_device);
+                size_t id_length = 0U;
+                if (device != NULL) {
+                    while (id_length < sizeof(installer_confirmed_id) &&
+                           device->stable_id[id_length] != '\0')
+                        ++id_length;
+                }
                 if (device != NULL && installer_plan_valid &&
+                    id_length > 0U &&
+                    id_length < sizeof(installer_confirmed_id) &&
+                    device->stable_id[id_length] == '\0' &&
                     blockdev_boot_media_detection_complete() &&
                     !blockdev_is_boot_media(device) &&
                     !blockdev_is_mounted(device) &&
                     blockdev_identity_is_unique(device) &&
                     blockdev_install_write_supported(device)) {
-                    installer_ui_state = INSTALLER_UI_CONFIRM_ID;
+                    for (size_t i = 0U; i <= id_length; ++i)
+                        installer_confirmed_id[i] = device->stable_id[i];
+                    installer_ui_state = INSTALLER_UI_CONFIRM_ERASE;
                     installer_input_length = 0U;
                     installer_input[0] = '\0';
-                    installer_set_status("No disk writes have occurred");
+                    installer_set_status(
+                        "Review the selected drive; nothing has been written");
                 } else {
                     installer_set_status("Target is not eligible for installation");
                 }
             } else {
                 return;
             }
-        } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
-                   installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
+        } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
             if (event->scancode == 0x0EU) {
                 if (installer_input_length > 0U)
                     installer_input[--installer_input_length] = '\0';
             } else if (event->scancode == 0x1CU) {
-                if (installer_ui_state == INSTALLER_UI_CONFIRM_ID) {
-                    const struct nexus_block_device *device =
-                        blockdev_at(installer_selected_device);
-                    if (device != NULL &&
-                        installer_text_equal_ci(installer_input,
-                                                 device->stable_id)) {
-                        size_t n = 0U;
-                        while (device->stable_id[n] != '\0' &&
-                               n < sizeof(installer_confirmed_id) - 1U) {
-                            installer_confirmed_id[n] = device->stable_id[n];
-                            ++n;
-                        }
-                        installer_confirmed_id[n] = '\0';
-                        installer_ui_state = INSTALLER_UI_CONFIRM_ERASE;
-                        installer_input_length = 0U;
-                        installer_input[0] = '\0';
-                        installer_set_status("Second confirmation is required");
-                    } else {
-                        installer_set_status("Target ID did not match");
-                    }
-                } else if (installer_text_equal_ci(installer_input, "ERASE")) {
+                if (installer_text_equal_ci(installer_input, "ERASE")) {
                     const struct nexus_block_device *device =
                         blockdev_at(installer_selected_device);
 #ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES

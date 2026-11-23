@@ -110,6 +110,10 @@ jobs:
             -Ikernel/src kernel/src/sha256.c kernel/tests/sha256_test.c \
             -o /tmp/nexus-sha256-test
           /tmp/nexus-sha256-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/native_game.c kernel/tests/native_game_test.c \
+            -o /tmp/nexus-native-game-test
+          /tmp/nexus-native-game-test
 
       - name: Test generic network-device frame boundary
         run: |

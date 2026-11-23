@@ -45,8 +45,8 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   visible at once), keyboard/mouse selection, folder-first alphabetical
   sorting, visible directory labels, nested read-only FAT32 navigation,
   create/open/edit/delete/copy/rename for writable root-level files, and a
-  scrollable 1 MiB ASCII text editor. Press C to copy and R to rename the
-  selected file;
+  scrollable 1 MiB ASCII text editor. Press C to copy and R or F2 to rename
+  the selected file;
   the move transaction copies, reads back, compares, and only then removes
   the source. Existing destination names are rejected, and FAT32 remains
   read-only. User-created NXFS files

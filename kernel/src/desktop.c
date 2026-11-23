@@ -3905,7 +3905,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             files_editor_begin_selected();
             draw_shell(); draw_pointer(); return;
         }
-        if (event->scancode == 0x13U) {
+        if (event->scancode == 0x13U || event->scancode == 0x3CU) {
+            /* R remains available; F2 matches the familiar File Explorer
+             * rename shortcut. Set-1 F2 make code is 0x3C. */
             files_editor_begin_rename();
             draw_shell(); draw_pointer(); return;
         }

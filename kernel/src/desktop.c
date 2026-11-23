@@ -1595,11 +1595,41 @@ static bool browser_append_text(char *buffer, size_t capacity,
     return true;
 }
 
+static bool browser_starts_with(const char *value, size_t length,
+                                 const char *prefix) {
+    size_t i = 0U;
+    while (prefix[i] != '\0') {
+        if (i >= length || value[i] != prefix[i]) return false;
+        ++i;
+    }
+    return true;
+}
+
 static void browser_navigate(void) {
     browser_clear_page();
     if (browser_address_length == 0U) {
         browser_set_status("Enter a host or host/path first");
         return;
+    }
+
+    size_t address_start = 0U;
+    if (browser_starts_with(browser_address, browser_address_length,
+                            "https://")) {
+        browser_set_status("HTTPS unavailable: TLS certificate validation is not implemented");
+        return;
+    }
+    if (browser_starts_with(browser_address, browser_address_length,
+                            "http://")) {
+        address_start = 7U;
+    } else {
+        for (size_t i = 0U; i + 2U < browser_address_length; ++i) {
+            if (browser_address[i] == ':' &&
+                browser_address[i + 1U] == '/' &&
+                browser_address[i + 2U] == '/') {
+                browser_set_status("Unsupported URL scheme");
+                return;
+            }
+        }
     }
 
     char host[64];
@@ -1608,7 +1638,7 @@ static void browser_navigate(void) {
     size_t path_length = 0U;
     bool in_path = false;
     path[path_length++] = '/';
-    for (size_t i = 0; i < browser_address_length; ++i) {
+    for (size_t i = address_start; i < browser_address_length; ++i) {
         const char ch = browser_address[i];
         if (!in_path && ch == '/') {
             in_path = true;

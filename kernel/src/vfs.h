@@ -51,6 +51,7 @@ bool vfs_root_mounted(void);
 bool vfs_enter_directory(const char *name);
 bool vfs_parent_directory(void);
 size_t vfs_directory_depth(void);
+bool vfs_current_path(char *buffer, size_t capacity);
 bool vfs_has_filesystem(void);
 bool vfs_ramfs_create(const char *name);
 bool vfs_ramfs_write(const char *name, const void *data, size_t length);

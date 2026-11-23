@@ -11,14 +11,27 @@ The target is a modern, general-purpose browser with the core capabilities peopl
 ## Current implementation (not release-ready)
 
 The desktop contains an early text-oriented HTTP client:
-- one address field and a small fixed text display;
-- DNS lookup and a single TCP connection;
-- an HTTP/1.0 request to port 80;
-- basic response-body text extraction.
+- an address field and a small fixed text display;
+- DNS lookup and one active TCP connection;
+- HTTP/1.0 GET requests and bounded HTTP response-header parsing;
+- basic HTML-to-text extraction and up to five distinct absolute HTTP(S)
+  anchor targets, opened with Alt+1 through Alt+5;
+- a plain-HTTP download action (Ctrl+S) that asks for confirmation,
+  requires a writable persistent Nexus Data volume at its root, requires a
+  Content-Length, rejects chunked transfer and files larger than 1 MiB,
+  refuses overwrites, and reads the stored file back to verify the disk write.
 
-It is not a modern web browser. It has no TLS/HTTPS, certificate validation, HTML/CSS layout engine, JavaScript engine, tabs, browser storage, downloads manager, extensions, media, sandbox, or site isolation. The current kernel networking path is early IPv4/DHCP/DNS/TCP and is not a secure browser transport.
+The search UI constructs a DuckDuckGo Lite HTTPS URL, but the browser correctly
+refuses to fetch it because no TLS client or certificate validator exists.
+Therefore live public search results and ordinary HTTPS sources are not
+available. Relative links, automatic redirects, CSS layout, JavaScript,
+cookies, tabs, browser profile storage, resumable downloads, and download
+management are also missing. HTTP downloads are unencrypted and must never be
+used for credentials or other private data.
 
-The existing client must be treated as a prototype only. Do not advertise secure browsing or modern web compatibility until the relevant implementation and tests exist.
+This is an incremental prototype, not a modern web browser. Do not advertise
+secure browsing, general-purpose downloads, or Chrome-level compatibility
+until their corresponding implementations and tests exist.
 
 ## Architecture to build
 
@@ -84,10 +97,16 @@ the destination or uses a clearly displayed default Downloads folder. Browser
 downloads must use the same VFS/storage APIs as the file manager so completed
 files appear in Nexus Files.
 
-**Current status:** downloads are not implemented. The existing browser is an
-HTTP-only text prototype and cannot safely save web resources. This feature
-must not be advertised as available until transfer, persistence, UI, security,
-and reboot-recovery tests pass.
+**Current status:** a narrow HTTP-only download prototype now exists.
+Ctrl+S re-requests the currently loaded URL after an unencrypted-transfer
+warning, accepts only a bounded Content-Length response, writes to the
+persistent Nexus Data root, refuses an existing filename, and verifies the
+saved bytes by reading them back. It rejects HTTPS, redirects, chunked transfer,
+missing length, and files over 1 MiB. It has no progress manager, pause/resume,
+recovery journal, destination picker, atomic partial-file rename, checksum
+validation from the origin, or post-reboot download history. It is not yet the
+general-purpose secure download feature specified above; do not advertise it
+as one until transfer, persistence, security, and recovery tests pass.
 
 ### 7. OS integration and distribution
 - Native Nexus windowing, input, clipboard, fonts, audio, filesystem, network sockets, process, and memory APIs.
@@ -108,17 +127,20 @@ These are OS engineering requirements, not features that can be supplied by a br
 
 ## First implemented browser foundation
 
-The kernel now includes a standalone, host-testable URL model/parser
-(`kernel/src/browser_url.c`). It recognizes HTTP and HTTPS URL schemes,
-validates host and numeric port syntax, applies default ports, preserves
-path/query data, and strips fragments from the request target. It rejects
-userinfo, bracketed IPv6 literals, unsupported schemes, whitespace, and
-invalid ports rather than guessing.
+The kernel includes host-testable URL, HTTP response, search URL, and HTML
+text/link parsing modules. The URL parser validates HTTP and HTTPS schemes,
+host and port syntax, applies default ports, preserves path/query data, and
+strips fragments from the request target. The HTML path can collect up to five
+absolute HTTP(S) anchor URLs; the desktop opens them with Alt+1 through Alt+5.
+The HTTP response parser extracts Content-Length, Content-Type,
+Content-Disposition filename, redirects, and chunked-transfer metadata.
+Host tests cover those parsers and malformed/conflicting content lengths.
 
-This is only URL parsing and navigation-state groundwork. The desktop's
-existing network path remains HTTP-only; HTTPS URLs must not be fetched until
-TLS, certificate validation, and secure transport are implemented. The parser
-does not provide HTML/CSS rendering, JavaScript, or browser security isolation.
+The desktop transport remains HTTP-only. Secure search and HTTPS pages/downloads
+must remain blocked until Nexus has a TLS client, secure random generation,
+trusted roots, certificate-chain and hostname validation, and reliable secure
+transport. This prototype does not provide a standards-compliant HTML/CSS
+renderer, JavaScript, or browser security isolation.
 
 ## Implementation milestones and release gates
 

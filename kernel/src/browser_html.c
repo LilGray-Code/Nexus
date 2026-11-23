@@ -99,10 +99,6 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             size_t tag_start = i + 1U;
             while (tag_start < length && html_space(html[tag_start]))
                 ++tag_start;
-            bool hidden = html_equal_ci(html + tag_start,
-                                        length - tag_start, "script") ||
-                          html_equal_ci(html + tag_start,
-                                        length - tag_start, "style");
             size_t name_length = 0U;
             while (tag_start + name_length < length) {
                 uint8_t c = html[tag_start + name_length];
@@ -110,14 +106,19 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
                       (c >= 'A' && c <= 'Z'))) break;
                 ++name_length;
             }
+            /* Match complete tag names: <scripture> is not <script>, and
+             * must never cause the rest of a page to be discarded. */
+            const bool is_script = name_length == 6U &&
+                html_equal_ci(html + tag_start, name_length, "script");
+            const bool is_style = name_length == 5U &&
+                html_equal_ci(html + tag_start, name_length, "style");
+            const bool hidden = is_script || is_style;
             i = tag_start + name_length;
             while (i < length && html[i] != '>') ++i;
             if (i < length) ++i;
             if (hidden && name_length != 0U) {
-                const char *close = html_equal_ci(html + tag_start,
-                    name_length, "script") ? "</script" : "</style";
-                size_t close_len = html_equal_ci(html + tag_start,
-                    name_length, "script") ? 8U : 7U;
+                const char *close = is_script ? "</script" : "</style";
+                size_t close_len = is_script ? 8U : 7U;
                 while (i + close_len <= length &&
                        !html_equal_ci(html + i, close_len, close)) ++i;
                 if (i + close_len <= length) {

@@ -217,7 +217,7 @@ bool nexus_browser_http_parse(const uint8_t *response, size_t response_length,
             size_t encoding_length = 0U;
             while (encoding_length < sizeof(encoding) &&
                    encoding[encoding_length] != '\0') ++encoding_length;
-            parsed->chunked_transfer =
+            parsed->chunked_transfer = parsed->chunked_transfer ||
                 contains_comma_token_ci(encoding, encoding_length, "chunked");
         } else if (equal_ascii_ci(response + cursor, colon - cursor,
                                   "content-disposition")) {

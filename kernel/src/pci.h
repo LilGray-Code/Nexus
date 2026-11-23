@@ -35,7 +35,14 @@ struct nexus_pci_bar {
 
 bool pci_init(void);
 uint32_t pci_device_count(void);
+/* Number of entries retained in the bounded discovery table. */
+uint32_t pci_stored_device_count(void);
 const struct nexus_pci_device *pci_device_at(uint32_t index);
+/* Find the stored device at or after start_index with matching class codes. */
+const struct nexus_pci_device *pci_find_class(uint8_t class_code,
+                                               uint8_t subclass,
+                                               uint32_t start_index,
+                                               uint32_t *found_index);
 
 /* Decode the raw BAR value captured during enumeration; never writes config. */
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,

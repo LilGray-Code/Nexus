@@ -47,6 +47,10 @@ int main(void) {
     assert(network.bssid[0]==0x02U && network.bssid[5]==0x55U);
 
     n = make_frame(frame,0x0080U,false,0U);
+    frame[34] = 0x10U; /* Privacy capability without a supported RSN IE. */
+    assert(!wifi_parse_beacon_frame(frame,n,-42,&network));
+
+    n = make_frame(frame,0x0080U,false,0U);
     frame[44]=36U; /* 5 GHz channel 36. */
     assert(wifi_parse_beacon_frame(frame,n,-48,&network));
     assert(network.band==NEXUS_WIFI_BAND_5GHZ);

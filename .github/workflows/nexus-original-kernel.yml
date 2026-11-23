@@ -129,6 +129,14 @@ jobs:
             -o /tmp/nexus-browser-html-test
           /tmp/nexus-browser-html-test
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_search.c \
+            kernel/tests/browser_search_test.c -o /tmp/nexus-browser-search-test
+          /tmp/nexus-browser-search-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_http.c \
+            kernel/tests/browser_http_test.c -o /tmp/nexus-browser-http-test
+          /tmp/nexus-browser-http-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src kernel/src/sha256.c kernel/tests/sha256_test.c \
             -o /tmp/nexus-sha256-test
           /tmp/nexus-sha256-test

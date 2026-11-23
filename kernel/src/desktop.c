@@ -18,6 +18,8 @@
 #include "installer_runtime.h"
 #include "browser_url.h"
 #include "browser_html.h"
+#include "browser_search.h"
+#include "browser_http.h"
 #include "calculator.h"
 #include "launcher.h"
 #include "window_manager.h"
@@ -189,9 +191,11 @@ static char installer_status_text[96] = "Select a supported target disk";
 
 #define NEXUS_BROWSER_LINE_COUNT 9U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
-static char browser_address[96];
+static char browser_address[192];
 static size_t browser_address_length;
-static char browser_status[80] = "Early preview - HTTP only, no HTTPS";
+static char browser_status[80] = "Search the web or enter an HTTP address";
+static bool browser_search_mode;
+static bool browser_has_page;
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 
@@ -2382,80 +2386,114 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_BROWSER) {
-        /* Modern first-party browser shell. This is deliberately labeled as a
-         * preview: the current transport and page renderer are still limited. */
-        graphics_fill_rect(panel_x + 18U, text_y - 8U,
-                           panel_width - 36U, 28U, 23U, 39U, 61U);
-        graphics_fill_rect(panel_x + 18U, text_y - 8U, 3U, 28U,
-                           57U, 190U, 207U);
-        graphics_draw_text(panel_x + 30U, text_y + 1U,
+        /* Modern browser chrome with a real query/address input path. */
+        graphics_fill_gradient_rect(panel_x + 18U, text_y - 8U,
+            panel_width - 36U, 30U, 29U, 58U, 83U, 18U, 35U, 55U);
+        graphics_fill_round_rect(panel_x + 18U, text_y - 8U,
+            panel_width - 36U, 30U, 8U, 23U, 44U, 65U);
+        graphics_fill_round_rect(panel_x + 18U, text_y - 8U,
+            4U, 30U, 2U, 79U, 204U, 202U);
+        desktop_draw_logo(panel_x + 28U, text_y - 3U, 20U);
+        graphics_draw_text(panel_x + 56U, text_y + 1U,
                            "NEXUS BROWSER", 1U, 239U, 249U, 255U);
         graphics_draw_text(panel_x + panel_width - 170U, text_y + 1U,
-                           "FIRST-PARTY PREVIEW", 1U, 120U, 190U, 207U);
+                           "WEB AND SEARCH", 1U, 120U, 210U, 205U);
 
-        const uint64_t toolbar_y = text_y + 32U;
-        graphics_fill_rect(panel_x + 18U, toolbar_y,
-                           panel_width - 36U, 38U, 12U, 21U, 36U);
-        graphics_draw_rect(panel_x + 18U, toolbar_y,
-                           panel_width - 36U, 38U, 49U, 78U, 103U);
-        graphics_draw_text(panel_x + 30U, toolbar_y + 15U,
-                           "<", 1U, 155U, 180U, 201U);
-        graphics_draw_text(panel_x + 52U, toolbar_y + 15U,
-                           ">", 1U, 155U, 180U, 201U);
-        graphics_draw_text(panel_x + 76U, toolbar_y + 15U,
-                           "R", 1U, 155U, 180U, 201U);
-        const uint64_t address_x = panel_x + 104U;
+        const uint64_t toolbar_y = text_y + 28U;
+        graphics_fill_round_rect(panel_x + 18U, toolbar_y,
+            panel_width - 36U, 42U, 10U, 12U, 21U, 36U);
+        graphics_draw_round_rect(panel_x + 18U, toolbar_y,
+            panel_width - 36U, 42U, 10U, 51U, 81U, 105U);
+        graphics_fill_round_rect(panel_x + 29U, toolbar_y + 8U,
+            27U, 26U, 7U, 29U, 48U, 68U);
+        graphics_draw_text(panel_x + 39U, toolbar_y + 17U,
+                           "<", 1U, 170U, 194U, 213U);
+        graphics_fill_round_rect(panel_x + 64U, toolbar_y + 8U,
+            27U, 26U, 7U, 29U, 48U, 68U);
+        graphics_draw_text(panel_x + 74U, toolbar_y + 17U,
+                           ">", 1U, 170U, 194U, 213U);
+        const uint64_t address_x = panel_x + 101U;
         const uint64_t address_width = panel_width > 180U
-            ? panel_width - 140U : panel_width - 130U;
-        graphics_fill_rect(address_x, toolbar_y + 6U,
-                           address_width, 26U, 27U, 43U, 62U);
-        graphics_draw_rect(address_x, toolbar_y + 6U,
-                           address_width, 26U, 57U, 91U, 116U);
-        graphics_draw_text(address_x + 9U, toolbar_y + 15U,
-                           "HTTP  ", 1U, 226U, 181U, 112U);
-        graphics_draw_text(address_x + 52U, toolbar_y + 15U,
-                           browser_address[0] ? browser_address :
-                           "Enter a website address", 1U,
-                           230U, 240U, 248U);
+            ? panel_width - 119U : panel_width - 110U;
+        graphics_fill_round_rect(address_x, toolbar_y + 6U,
+            address_width, 30U, 8U, 29U, 48U, 68U);
+        graphics_draw_round_rect(address_x, toolbar_y + 6U,
+            address_width, 30U, 8U, 72U, 111U, 133U);
+        graphics_fill_round_rect(address_x + 8U, toolbar_y + 14U,
+            6U, 6U, 3U, browser_search_mode ? 83U : 98U,
+            browser_search_mode ? 213U : 170U,
+            browser_search_mode ? 203U : 208U);
+        graphics_draw_text(address_x + 22U, toolbar_y + 18U,
+            browser_address[0] ? browser_address :
+            "Search web or enter address", 1U, 230U, 240U, 248U);
 
-        const uint64_t tab_y = toolbar_y + 46U;
-        graphics_fill_rect(panel_x + 18U, tab_y,
-                           panel_width - 36U, 28U, 17U, 29U, 46U);
-        graphics_fill_rect(panel_x + 26U, tab_y + 2U,
-                           164U, 25U, 36U, 58U, 80U);
-        graphics_fill_rect(panel_x + 26U, tab_y + 25U,
-                           164U, 2U, 57U, 190U, 207U);
-        graphics_draw_text(panel_x + 38U, tab_y + 11U,
-                           "Nexus - New tab", 1U, 232U, 242U, 250U);
-        graphics_draw_text(panel_x + 202U, tab_y + 11U,
-                           "+", 1U, 150U, 181U, 202U);
-
-        const uint64_t content_y = tab_y + 42U;
-        graphics_fill_rect(panel_x + 18U, content_y,
-                           panel_width - 36U, panel_height > 250U
-                               ? panel_height - 160U : 90U,
-                           244U, 247U, 251U);
-        desktop_draw_logo(panel_x + 42U, content_y + 12U, 32U);
-        graphics_draw_text(panel_x + 84U, content_y + 28U,
-                           "Nexus Browser", 2U, 29U, 48U, 67U);
-        graphics_draw_text(panel_x + 42U, content_y + 58U,
-                           "A faster, more private web experience is being built.",
-                           1U, 83U, 103U, 122U);
-        graphics_draw_text(panel_x + 42U, content_y + 88U,
-                           "Type an address above and press ENTER to try the preview.",
-                           1U, 83U, 103U, 122U);
-        for (size_t row = 0U; row < browser_line_count; ++row) {
-            graphics_draw_text(panel_x + 42U, content_y + 122U + row * 20U,
-                               browser_lines[row], 1U, 37U, 57U, 75U);
+        const uint64_t content_y = toolbar_y + 54U;
+        const uint64_t content_height = panel_height > 230U
+            ? panel_height - 150U : 80U;
+        graphics_fill_round_rect(panel_x + 18U, content_y,
+            panel_width - 36U, content_height, 13U, 244U, 247U, 251U);
+        if (!browser_has_page) {
+            const uint64_t center_x = panel_x + panel_width / 2U;
+            desktop_draw_logo(center_x - 24U, content_y + 20U, 48U);
+            graphics_draw_text(center_x - 74U, content_y + 86U,
+                "NEXUS BROWSER", 2U, 29U, 48U, 67U);
+            graphics_draw_text(center_x - 145U, content_y + 111U,
+                "SEARCH THE WEB OR OPEN A WEBSITE", 1U,
+                76U, 104U, 125U);
+            const uint64_t search_x = panel_x + 48U;
+            const uint64_t search_y = content_y + 138U;
+            const uint64_t search_w = panel_width - 96U;
+            graphics_fill_round_rect(search_x, search_y,
+                search_w, 42U, 13U, 255U, 255U, 255U);
+            graphics_draw_round_rect(search_x, search_y,
+                search_w, 42U, 13U, 115U, 151U, 176U);
+            graphics_fill_round_rect(search_x + 15U, search_y + 13U,
+                12U, 12U, 6U, 60U, 150U, 171U);
+            graphics_draw_text(search_x + 39U, search_y + 25U,
+                "TYPE A QUERY ABOVE AND PRESS ENTER", 1U,
+                73U, 100U, 121U);
+            const uint64_t chip_y = search_y + 62U;
+            static const char *const chips[3] = {
+                "WEB SEARCH", "DIRECT HTTP", "NEXUS HELP"
+            };
+            const uint64_t chip_w = (search_w - 24U) / 3U;
+            for (size_t i = 0U; i < 3U; ++i) {
+                const uint64_t chip_x = search_x + i * (chip_w + 12U);
+                graphics_fill_round_rect(chip_x, chip_y, chip_w, 27U,
+                    8U, 230U, 237U, 244U);
+                graphics_draw_text(chip_x + 8U, chip_y + 17U,
+                    chips[i], 1U, 61U, 91U, 116U);
+            }
+            graphics_draw_text(search_x, content_y + content_height - 18U,
+                "HTTPS SEARCH IS BLOCKED UNTIL TLS AND CERTIFICATES ARE READY",
+                1U, 177U, 104U, 73U);
+        } else {
+            graphics_fill_round_rect(panel_x + 32U, content_y + 14U,
+                panel_width - 64U, 27U, 8U, 225U, 234U, 243U);
+            graphics_draw_text(panel_x + 46U, content_y + 31U,
+                browser_search_mode ? "SEARCH RESPONSE" : "PAGE CONTENT",
+                1U, 48U, 88U, 112U);
+            for (size_t row = 0U; row < browser_line_count; ++row) {
+                const uint64_t row_y = content_y + 48U + row * 20U;
+                if (row_y + 16U >= content_y + content_height) break;
+                graphics_fill_round_rect(panel_x + 32U, row_y,
+                    panel_width - 64U, 18U, 4U,
+                    (row & 1U) ? 247U : 236U,
+                    (row & 1U) ? 249U : 242U,
+                    (row & 1U) ? 251U : 247U);
+                graphics_draw_text(panel_x + 44U, row_y + 12U,
+                    browser_lines[row], 1U, 37U, 57U, 75U);
+            }
         }
-        graphics_fill_rect(panel_x + 18U, panel_y + panel_height - 34U,
-                           panel_width - 36U, 22U, 17U, 29U, 46U);
+        graphics_fill_round_rect(panel_x + 18U,
+            panel_y + panel_height - 34U, panel_width - 36U, 22U,
+            7U, 17U, 29U, 46U);
         graphics_draw_text(panel_x + 30U, panel_y + panel_height - 19U,
-                           browser_status, 1U, 160U, 207U, 196U);
-        graphics_draw_text(panel_x + panel_width - 300U,
-                           panel_y + panel_height - 19U,
-                           "HTTP ONLY - NO TLS OR JAVASCRIPT", 1U,
-                           230U, 177U, 122U);
+            browser_status, 1U, 160U, 207U, 196U);
+        graphics_draw_text(panel_x + panel_width - 176U,
+            panel_y + panel_height - 19U,
+            browser_search_mode ? "SEARCH" : "HTTP", 1U,
+            111U, 207U, 231U);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
                            2, 239, 249, 255);
@@ -2595,21 +2633,39 @@ static void draw_shell(void) {
                                     base_r, base_g, base_b,
                                     end_r, end_g, end_b);
         if (background == 0U && width > 180U && height > 180U) {
-            const uint64_t ribbon_w = width / 3U;
-            const uint64_t ribbon_h = height / 7U > 34U
-                ? height / 7U : 34U;
-            const uint64_t ribbon_x = width - ribbon_w - width / 18U;
-            const uint64_t ribbon_y = height / 5U;
-            graphics_fill_round_rect(ribbon_x, ribbon_y, ribbon_w,
-                ribbon_h, ribbon_h / 2U,
+            /*
+             * Layered Aurora artwork: overlapping capsules, soft-tinted
+             * discs and thin orbit outlines create depth without a GPU.
+             * Colors are blended into the active palette at draw time.
+             */
+            const uint64_t ribbon_h = height / 8U > 38U
+                ? height / 8U : 38U;
+            const uint64_t disc_x = width * 3U / 4U;
+            const uint64_t disc_y = height / 3U;
+            const uint64_t disc_size = height / 2U;
+            const uint8_t glow_r = (uint8_t)((base_r * 3U + accent_r) / 4U);
+            const uint8_t glow_g = (uint8_t)((base_g * 3U + accent_g) / 4U);
+            const uint8_t glow_b = (uint8_t)((base_b * 3U + accent_b) / 4U);
+            graphics_fill_round_rect(disc_x - disc_size / 2U,
+                disc_y - disc_size / 2U, disc_size, disc_size,
+                disc_size / 2U, glow_r, glow_g, glow_b);
+            graphics_draw_round_rect(disc_x - disc_size / 2U - 10U,
+                disc_y - disc_size / 2U - 10U, disc_size + 20U,
+                disc_size + 20U, (disc_size + 20U) / 2U,
                 accent_r / 2U, accent_g / 2U, accent_b / 2U);
-            graphics_fill_round_rect(width / 12U, height * 3U / 5U,
-                width / 3U, ribbon_h, ribbon_h / 2U,
-                (uint8_t)(base_r / 2U + accent_r / 3U),
-                (uint8_t)(base_g / 2U + accent_g / 3U),
-                (uint8_t)(base_b / 2U + accent_b / 3U));
-            graphics_draw_round_rect(ribbon_x, ribbon_y, ribbon_w,
-                ribbon_h, ribbon_h / 2U, accent_r, accent_g, accent_b);
+            graphics_fill_round_rect(width / 14U, height * 3U / 5U,
+                width * 2U / 5U, ribbon_h, ribbon_h / 2U,
+                (uint8_t)(base_r / 2U + accent_r / 4U),
+                (uint8_t)(base_g / 2U + accent_g / 4U),
+                (uint8_t)(base_b / 2U + accent_b / 4U));
+            graphics_fill_round_rect(width / 3U, height / 4U,
+                width / 2U, ribbon_h / 2U, ribbon_h / 4U,
+                (uint8_t)(base_r / 2U + accent_r / 5U),
+                (uint8_t)(base_g / 2U + accent_g / 5U),
+                (uint8_t)(base_b / 2U + accent_b / 5U));
+            graphics_draw_round_rect(width / 14U, height * 3U / 5U,
+                width * 2U / 5U, ribbon_h, ribbon_h / 2U,
+                accent_r, accent_g, accent_b);
         } else if (background == 3U) {
             for (uint64_t x = 48U; x < width; x += 64U)
                 graphics_fill_rect(x, 0U, 1U, height,
@@ -3633,6 +3689,7 @@ static void browser_set_status(const char *message) {
 }
 
 static void browser_clear_page(void) {
+    browser_has_page = false;
     browser_line_count = 1U;
     for (size_t row = 0; row < NEXUS_BROWSER_LINE_COUNT; ++row) {
         for (size_t column = 0; column < NEXUS_BROWSER_LINE_WIDTH; ++column)
@@ -3703,41 +3760,81 @@ static bool browser_append_text(char *buffer, size_t capacity,
     return true;
 }
 
+static bool browser_address_is_explicit_url(const char *value,
+                                             size_t length) {
+    return (length >= 7U && value[0] == 'h' && value[1] == 't' &&
+            value[2] == 't' && value[3] == 'p' && value[4] == ':' &&
+            value[5] == '/' && value[6] == '/') ||
+           (length >= 8U && value[0] == 'h' && value[1] == 't' &&
+            value[2] == 't' && value[3] == 'p' && value[4] == 's' &&
+            value[5] == ':' && value[6] == '/' && value[7] == '/');
+}
+
+static bool browser_input_looks_like_host(const char *value, size_t length) {
+    bool has_dot = false;
+    if (length == 0U) return false;
+    for (size_t i = 0U; i < length; ++i) {
+        if (value[i] == ' ' || value[i] == '\t') return false;
+        if (value[i] == '.') has_dot = true;
+    }
+    return has_dot || (length >= 9U &&
+        value[0] == 'l' && value[1] == 'o' && value[2] == 'c' &&
+        value[3] == 'a' && value[4] == 'l' && value[5] == 'h' &&
+        value[6] == 'o' && value[7] == 's' && value[8] == 't');
+}
+
+static void browser_show_notice(const char *line_one, const char *line_two) {
+    browser_clear_page();
+    browser_has_page = true;
+    if (line_one != NULL) {
+        for (size_t i = 0U; line_one[i] != '\0'; ++i)
+            browser_append_page_char(line_one[i]);
+    }
+    browser_append_page_char('\n');
+    if (line_two != NULL) {
+        for (size_t i = 0U; line_two[i] != '\0'; ++i)
+            browser_append_page_char(line_two[i]);
+    }
+}
+
 static void browser_navigate(void) {
     browser_clear_page();
+    browser_search_mode = false;
     if (browser_address_length == 0U) {
-        browser_set_status("Enter a host or full URL first");
+        browser_set_status("Enter a search query or web address");
         return;
     }
 
-    /* Accept a bare host for convenience, but parse all navigation through
-     * the shared strict URL parser. Never reinterpret an HTTPS URL as HTTP. */
-    char input[sizeof(browser_address) + 8U];
+    /* Plain text is a web search. Dotted input remains convenient for
+     * direct HTTP host navigation; explicit schemes are always respected. */
+    char input[NEXUS_BROWSER_SEARCH_URL_MAX];
     size_t input_length = 0U;
-    const bool has_http_scheme =
-        browser_address_length >= 7U &&
-        browser_address[0] == 'h' && browser_address[1] == 't' &&
-        browser_address[2] == 't' && browser_address[3] == 'p' &&
-        browser_address[4] == ':' && browser_address[5] == '/' &&
-        browser_address[6] == '/';
-    const bool has_https_scheme =
-        browser_address_length >= 8U &&
-        browser_address[0] == 'h' && browser_address[1] == 't' &&
-        browser_address[2] == 't' && browser_address[3] == 'p' &&
-        browser_address[4] == 's' && browser_address[5] == ':' &&
-        browser_address[6] == '/' && browser_address[7] == '/';
-    if (!has_http_scheme && !has_https_scheme) {
-        static const char prefix[] = "http://";
-        for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
-            input[input_length++] = prefix[i];
+    if (!browser_address_is_explicit_url(browser_address,
+                                          browser_address_length) &&
+        !browser_input_looks_like_host(browser_address,
+                                        browser_address_length)) {
+        browser_search_mode = true;
+        if (!nexus_browser_search_url(browser_address, input, sizeof(input))) {
+            browser_set_status("Search query is empty, invalid or too long");
+            return;
+        }
+        while (input[input_length] != '\0') ++input_length;
     }
-    if (input_length + browser_address_length >= sizeof(input)) {
-        browser_set_status("Address is too long");
-        return;
+    if (!browser_search_mode) {
+        if (!browser_address_is_explicit_url(browser_address,
+                                              browser_address_length)) {
+            static const char prefix[] = "http://";
+            for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
+                input[input_length++] = prefix[i];
+        }
+        if (input_length + browser_address_length >= sizeof(input)) {
+            browser_set_status("Address is too long");
+            return;
+        }
+        for (size_t i = 0U; i < browser_address_length; ++i)
+            input[input_length++] = browser_address[i];
+        input[input_length] = '\0';
     }
-    for (size_t i = 0U; i < browser_address_length; ++i)
-        input[input_length++] = browser_address[i];
-    input[input_length] = '\0';
 
     struct nexus_browser_url url;
     if (!nexus_browser_url_parse(input, &url)) {
@@ -3745,11 +3842,18 @@ static void browser_navigate(void) {
         return;
     }
     if (url.scheme == NEXUS_BROWSER_SCHEME_HTTPS) {
-        browser_set_status("HTTPS unavailable: TLS is not implemented");
+        browser_set_status(browser_search_mode
+            ? "Search needs HTTPS; TLS and certificate validation are missing"
+            : "HTTPS blocked until TLS and certificate validation are ready");
+        browser_show_notice(
+            browser_search_mode ? "YOUR SEARCH URL IS READY" :
+                                  "THIS WEBSITE REQUIRES HTTPS",
+            "NEXUS DOES NOT YET HAVE A VERIFIED TLS CLIENT");
         return;
     }
 
-    browser_set_status("Resolving host...");
+    browser_set_status(browser_search_mode
+        ? "Looking up search provider..." : "Resolving website host...");
     uint8_t address[4];
     if (!net_dns_resolve(url.host, address, 600U)) {
         browser_set_status("DNS failed; check DHCP/network");
@@ -3811,10 +3915,46 @@ static void browser_navigate(void) {
 
     if (response_length == 0U) {
         browser_set_status("No HTTP response received");
+        browser_show_notice("NO RESPONSE FROM WEBSITE",
+                            "CHECK NETWORK CONNECTION AND TRY AGAIN");
         return;
     }
-    browser_render_body(response, response_length);
-    browser_set_status("Loaded plain HTTP text; browser features unavailable");
+
+    struct nexus_browser_http_response parsed;
+    if (!nexus_browser_http_parse(response, response_length, &parsed)) {
+        browser_set_status("Malformed or incomplete HTTP response");
+        browser_show_notice("WEBSITE SENT AN INVALID RESPONSE",
+                            "NEXUS REJECTED THE RESPONSE HEADERS");
+        return;
+    }
+    if (parsed.status_code >= 300U && parsed.status_code < 400U) {
+        if (parsed.location[0] != '\0' &&
+            parsed.location[0] == 'h' && parsed.location[1] == 't' &&
+            parsed.location[2] == 't' && parsed.location[3] == 'p' &&
+            parsed.location[4] == 's') {
+            browser_set_status("Website redirected to HTTPS; TLS is unavailable");
+            browser_show_notice("THIS WEBSITE REDIRECTS TO HTTPS",
+                                "SECURE CONNECTIONS ARE NOT IMPLEMENTED YET");
+        } else {
+            browser_set_status("Website redirected; automatic redirects are not ready");
+            browser_show_notice("REDIRECT RECEIVED",
+                                "OPEN THE LOCATION URL MANUALLY");
+        }
+        return;
+    }
+    if (parsed.body_offset > response_length) {
+        browser_set_status("Invalid HTTP body offset");
+        return;
+    }
+    browser_has_page = true;
+    browser_has_page = true;
+    browser_render_body(response + parsed.body_offset,
+                        response_length - parsed.body_offset);
+    if (parsed.status_code >= 200U && parsed.status_code < 300U) {
+        browser_set_status("HTTP page loaded; secure web features still limited");
+    } else {
+        browser_set_status("HTTP response status is not successful");
+    }
 }
 
 static void terminal_append(const char *text, size_t *used) {

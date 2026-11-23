@@ -90,6 +90,13 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   the source. They use transactional NXFS writes when that volume is writable;
   otherwise only files fitting the 4 KiB RAMFS limit can be copied or moved,
   and those copies are volatile.
+- The Browser accepts plain search queries as queries (rather than mistaking
+  them for hostnames), builds an encoded DuckDuckGo Lite search URL, and
+  provides a dedicated search landing page. Its HTTP response parser validates
+  status lines, bounded headers, content types and redirect locations. Live
+  search and modern websites still require a verified TLS implementation;
+  search requests are not silently downgraded to plaintext. Direct plain-HTTP
+  pages can be fetched and shown as bounded text.
 - The Browser's HTML text extraction retains block separation for headings
   and paragraphs, line breaks, and list bullets, while suppressing comments,
   script/style contents, and decoding common HTML entities. This remains a
@@ -147,8 +154,12 @@ the latest run attached to the current branch.
 - No physical PC installation or hardware-compatibility matrix has been
   completed. Hardware testing remains required.
 - Secure Boot is not supported.
-- The built-in Browser is the current default web app, but it is only an early
-  plain-HTTP text viewer. HTTPS/TLS, modern web rendering, Wi-Fi, and broad
+- The built-in Browser now has a native search landing page, query-to-search
+  URL handling, bounded HTTP response parsing and redirect detection. Search
+  providers require HTTPS, so live public search results remain unavailable
+  until TLS and certificate validation are implemented. Its current direct
+  page viewer still supports only plain HTTP text. Modern web rendering,
+  Wi-Fi, and broad
   network-adapter support are not implemented. Google Chrome cannot run on
   the current freestanding kernel: Nexus still lacks the Linux/POSIX runtime,
   dynamic userspace, graphics and system interfaces Chrome depends on.

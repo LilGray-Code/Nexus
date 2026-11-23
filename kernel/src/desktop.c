@@ -18,7 +18,6 @@
 #include "installer_runtime.h"
 #include "browser_url.h"
 #include "browser_html.h"
-#include "native_game.h"
 #include "calculator.h"
 
 #include <stddef.h>
@@ -31,7 +30,7 @@ enum desktop_view {
     DESKTOP_SETTINGS,
     DESKTOP_TERMINAL,
     DESKTOP_MONITOR,
-    DESKTOP_GAMES,
+    DESKTOP_CONTROL_CENTER,
     DESKTOP_CALCULATOR,
     DESKTOP_INSTALLER
 };
@@ -49,10 +48,6 @@ static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
 static bool settings_high_contrast;
 static bool settings_reduce_motion;
-static struct nexus_snake_game snake_game;
-static uint64_t snake_next_tick;
-static uint32_t snake_seed = 0x4E455855U;
-static uint32_t snake_gamepad_buttons;
 static char calculator_expression[NEXUS_CALCULATOR_EXPRESSION_MAX + 1U];
 static char calculator_result[32] = "0";
 static enum nexus_calculator_error calculator_error = NEXUS_CALCULATOR_OK;
@@ -242,9 +237,9 @@ static void desktop_draw_logo(uint64_t x, uint64_t y, uint64_t size) {
 static void desktop_draw_app_icon(uint64_t x, uint64_t y,
                                      uint64_t size, size_t app) {
     static const uint8_t accent[7][3] = {
-        {63U, 157U, 239U}, {49U, 190U, 210U}, {123U, 143U, 255U},
-        {239U, 151U, 84U}, {164U, 119U, 238U}, {74U, 196U, 137U},
-        {96U, 159U, 216U}
+        {71U, 153U, 232U}, {45U, 185U, 202U}, {133U, 117U, 230U},
+        {224U, 151U, 93U}, {66U, 188U, 151U}, {151U, 117U, 224U},
+        {85U, 157U, 215U}
     };
     if (app >= 7U || size < 12U) return;
     graphics_fill_round_rect(x, y, size, size, size / 4U,
@@ -293,14 +288,21 @@ static void desktop_draw_app_icon(uint64_t x, uint64_t y,
         graphics_fill_rect(x + size / 3U, y + size * 4U / 5U,
                            size / 3U, 2U, 245U, 253U, 255U);
     } else if (app == 5U) {
-        graphics_fill_rect(x + pad, y + size / 3U, inner * 2U / 3U, size / 7U,
-                           245U, 255U, 249U);
-        graphics_fill_rect(x + size / 2U, y + size / 3U, size / 7U,
-                           size / 3U, 245U, 255U, 249U);
-        graphics_fill_rect(x + size / 2U, y + size * 3U / 5U,
-                           inner / 2U, size / 7U, 245U, 255U, 249U);
-        graphics_fill_rect(x + size * 3U / 4U, y + size * 3U / 5U,
-                           size / 7U, size / 7U, 245U, 255U, 249U);
+        /* Control Center: adjustment rails and slider knobs. */
+        for (uint64_t rail = 0U; rail < 3U; ++rail) {
+            const uint64_t ry = y + size / 3U + rail * (size / 5U);
+            graphics_fill_round_rect(x + pad, ry, inner, 2U, 1U,
+                                     236U, 243U, 255U);
+        }
+        graphics_fill_round_rect(x + size / 3U, y + size / 4U,
+                                 size / 5U, size / 5U, size / 10U,
+                                 255U, 255U, 255U);
+        graphics_fill_round_rect(x + size * 3U / 5U, y + size * 9U / 20U,
+                                 size / 5U, size / 5U, size / 10U,
+                                 255U, 255U, 255U);
+        graphics_fill_round_rect(x + size / 4U, y + size * 13U / 20U,
+                                 size / 5U, size / 5U, size / 10U,
+                                 255U, 255U, 255U);
     } else {
         graphics_draw_text(x + size / 4U, y + size / 3U, "=", 2U,
                            255U, 255U, 255U);
@@ -381,7 +383,7 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
         case 2U: return DESKTOP_SETTINGS;
         case 3U: return DESKTOP_TERMINAL;
         case 4U: return DESKTOP_MONITOR;
-        case 5U: return DESKTOP_GAMES;
+        case 5U: return DESKTOP_CONTROL_CENTER;
         case 6U: return DESKTOP_CALCULATOR;
         default: return DESKTOP_INSTALLER;
     }
@@ -440,6 +442,22 @@ static void desktop_settings_activate(size_t option) {
     (void)desktop_save_settings();
 }
 
+static void desktop_control_center_activate(size_t option) {
+    switch (option) {
+        case 0U: desktop_settings_activate(0U); break;
+        case 1U: desktop_settings_activate(1U); break;
+        case 2U: desktop_settings_activate(5U); break;
+        case 3U: desktop_settings_activate(6U); break;
+        case 4U: desktop_settings_activate(2U); break;
+        case 5U:
+            active_view = DESKTOP_SETTINGS;
+            start_menu_open = false;
+            desktop_animate_view();
+            break;
+        default: return;
+    }
+}
+
 static void desktop_load_settings(void) {
     if (!files_scanned) scan_files_once();
     if (!vfs_nxfs_mounted()) return;
@@ -493,133 +511,116 @@ static void desktop_open_app(size_t app_index) {
     desktop_open_view(desktop_view_for_app(app_index));
 }
 
+static uint64_t desktop_taskbar_apps_start(void) {
+    const uint64_t apps_width = 7U * 42U;
+    return screen_width > apps_width + 96U
+        ? (screen_width - apps_width) / 2U : 56U;
+}
+static uint64_t desktop_taskbar_control_x(void) {
+    return screen_width > 52U ? screen_width - 50U : 0U;
+}
 static void desktop_draw_taskbar(uint64_t bottom_bar) {
     const uint64_t y = screen_height - bottom_bar;
-    /* Floating, glass-dark dock with a subtle cool edge. */
-    graphics_fill_round_rect(10U, y + 4U, screen_width - 20U,
-                             bottom_bar - 8U, 13U, 13U, 20U, 35U);
-    graphics_draw_round_rect(10U, y + 4U, screen_width - 20U,
-                             bottom_bar - 8U, 13U, 58U, 82U, 112U);
-    graphics_fill_round_rect(18U, y + 7U, screen_width - 36U, 2U,
-                             1U, 49U, 104U, 157U);
-
     const uint64_t button_y = y + 2U;
     const uint64_t button_h = bottom_bar - 2U;
-    graphics_fill_round_rect(14U, button_y + 4U, 38U,
-                             button_h > 8U ? button_h - 8U : button_h,
-                             9U, start_menu_open ? 27U : 20U,
-                             start_menu_open ? 91U : 38U,
-                             start_menu_open ? 150U : 61U);
-    desktop_draw_logo(15U, button_y + (button_h > 24U ? 11U : 4U), 22U);
+    graphics_fill_round_rect(10U,y+4U,screen_width-20U,bottom_bar-8U,
+                             16U,10U,17U,31U);
+    graphics_draw_round_rect(10U,y+4U,screen_width-20U,bottom_bar-8U,
+                             16U,66U,88U,119U);
+    graphics_fill_round_rect(18U,y+7U,screen_width-36U,2U,1U,
+                             58U,124U,158U);
+    graphics_fill_round_rect(15U,button_y+4U,38U,
+        button_h>8U?button_h-8U:button_h,11U,
+        start_menu_open?36U:22U,start_menu_open?83U:39U,
+        start_menu_open?132U:59U);
+    desktop_draw_logo(23U,button_y+(button_h>24U?11U:4U),22U);
 
-    static const char *const labels[7] = {
-        "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR", "GAMES", "CALC"
-    };
-    const uint64_t tab_width = 88U;
-    const uint64_t tab_step = 92U;
-    for (size_t i = 0U; i < 7U; ++i) {
-        const uint64_t x = 56U + (uint64_t)i * tab_step;
-        if (x + tab_width >= screen_width - 96U) break;
-        const bool selected = active_view == desktop_view_for_app(i);
-        if (selected) {
-            graphics_fill_round_rect(x, button_y + 4U, tab_width,
-                                     button_h > 8U ? button_h - 8U : button_h,
-                                     9U, 35U, 59U, 91U);
-            graphics_draw_round_rect(x, button_y + 4U, tab_width,
-                                     button_h > 8U ? button_h - 8U : button_h,
-                                     9U, 72U, 126U, 174U);
-        }
-        desktop_draw_app_icon(x + 7U,
-                               button_y + (button_h > 18U
-                                   ? (button_h - 18U) / 2U : 1U),
-                               18U, i);
-        graphics_draw_text(x + 30U, button_y + button_h / 2U - 4U,
-                           labels[i], 1U, 235U, 242U, 250U);
+    const uint64_t apps_start=desktop_taskbar_apps_start();
+    for(size_t i=0U;i<7U;++i) {
+        const uint64_t x=apps_start+(uint64_t)i*42U;
+        const bool selected=active_view==desktop_view_for_app(i);
+        graphics_fill_round_rect(x+2U,button_y+3U,36U,
+            button_h>8U?button_h-8U:button_h,10U,
+            selected?39U:20U,selected?67U:34U,selected?94U:53U);
+        if(selected) graphics_draw_round_rect(x+2U,button_y+3U,36U,
+            button_h>8U?button_h-8U:button_h,10U,101U,143U,184U);
+        desktop_draw_app_icon(x+10U,
+            button_y+(button_h>22U?(button_h-20U)/2U:1U),20U,i);
+        if(selected) graphics_fill_round_rect(x+13U,y+bottom_bar-6U,
+                                               14U,2U,1U,108U,215U,235U);
     }
-
-    char uptime[21];
-    format_u64(timer_ticks() / 100U, uptime);
-    const uint64_t status_x = screen_width > 112U ? screen_width - 104U : 8U;
-    if (settings_show_status) {
-        graphics_draw_text(status_x, button_y + 7U, "NEXUS", 1U,
-                           185U, 190U, 198U);
-        graphics_draw_text(status_x, button_y + 24U, uptime, 1U,
-                           238U, 240U, 244U);
+    const uint64_t control_x=desktop_taskbar_control_x();
+    graphics_fill_round_rect(control_x+2U,button_y+3U,38U,
+        button_h>8U?button_h-8U:button_h,11U,
+        active_view==DESKTOP_CONTROL_CENTER?39U:20U,
+        active_view==DESKTOP_CONTROL_CENTER?67U:34U,
+        active_view==DESKTOP_CONTROL_CENTER?94U:53U);
+    desktop_draw_app_icon(control_x+11U,
+        button_y+(button_h>22U?(button_h-20U)/2U:1U),20U,5U);
+    if(settings_show_status && screen_width>820U) {
+        char uptime[21]; format_u64(timer_ticks()/100U,uptime);
+        graphics_draw_text(screen_width-142U,button_y+16U,"UP",
+                           1U,137U,167U,192U);
+        graphics_draw_text(screen_width-119U,button_y+16U,uptime,
+                           1U,235U,243U,250U);
     }
 }
 
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
-    if (!start_menu_open) return;
-    const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
-    const uint64_t menu_height = 364U;
-    const uint64_t menu_x = 8U;
-    const uint64_t menu_bottom =
-        screen_height > bottom_bar ? screen_height - bottom_bar : 0U;
-    const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
-    uint64_t menu_y = menu_bottom > menu_height
-        ? menu_bottom - menu_height + 2U : top_limit;
-    if (menu_y < top_limit) menu_y = top_limit;
-
-    graphics_fill_round_rect(menu_x + 5U, menu_y + 7U,
-                              menu_width, menu_height, 16U, 2U, 5U, 15U);
-    graphics_fill_gradient_rect(menu_x, menu_y, menu_width, menu_height,
-                                 24U, 37U, 58U, 13U, 22U, 39U);
-    graphics_draw_round_rect(menu_x, menu_y, menu_width, menu_height,
-                             16U, 71U, 101U, 137U);
-    /* Narrow left rail and header reproduce the Windows 10 Start layout. */
-    graphics_fill_rect(menu_x, menu_y, 42U, menu_height, 24U, 27U, 31U);
-    graphics_fill_rect(menu_x, menu_y, menu_width, 38U, 27U, 30U, 35U);
-    desktop_draw_logo(menu_x + 11U, menu_y + 9U, 20U);
-    graphics_draw_text(menu_x + 51U, menu_y + 15U,
-                       "NEXUS OS", 1U, 245U, 246U, 248U);
-    graphics_draw_text(menu_x + 55U, menu_y + 46U,
-                       "MOST USED", 1U, 160U, 165U, 174U);
-
-    static const char *const names[7] = {
-        "File Explorer", "Nexus Browser", "Settings", "Terminal",
-        "System Monitor", "Nexus Snake", "Calculator"
+    if(!start_menu_open) return;
+    const uint64_t menu_width=screen_width>500U?460U:screen_width-16U;
+    const uint64_t menu_height=360U;
+    const uint64_t menu_x=(screen_width-menu_width)/2U;
+    const uint64_t menu_bottom=screen_height>bottom_bar
+        ?screen_height-bottom_bar:0U;
+    const uint64_t top_limit=clamp_min(screen_height/16U,34U)+8U;
+    uint64_t menu_y=menu_bottom>menu_height
+        ?menu_bottom-menu_height+2U:top_limit;
+    if(menu_y<top_limit) menu_y=top_limit;
+    graphics_fill_round_rect(menu_x+6U,menu_y+9U,menu_width,menu_height,
+                             22U,1U,5U,16U);
+    graphics_fill_gradient_rect(menu_x,menu_y,menu_width,menu_height,
+                                27U,39U,57U,14U,23U,39U);
+    graphics_draw_round_rect(menu_x,menu_y,menu_width,menu_height,
+                             22U,76U,105U,135U);
+    graphics_fill_gradient_rect(menu_x+1U,menu_y+1U,menu_width-2U,3U,
+                                 71U,164U,211U,133U,111U,224U);
+    desktop_draw_logo(menu_x+20U,menu_y+18U,24U);
+    graphics_draw_text(menu_x+56U,menu_y+21U,"NEXUS",2U,246U,249U,255U);
+    graphics_draw_text(menu_x+57U,menu_y+43U,"YOUR WORKSPACE",1U,
+                       151U,181U,205U);
+    graphics_draw_text(menu_x+22U,menu_y+67U,"PINNED APPLICATIONS",
+                       1U,141U,177U,204U);
+    static const char *const names[7]={
+        "File Explorer","Nexus Browser","Settings","Terminal",
+        "System Monitor","Control Center","Calculator"
     };
-    static const uint8_t accents[7][3] = {
-        {0U, 120U, 215U}, {0U, 153U, 188U}, {16U, 124U, 16U},
-        {202U, 80U, 16U}, {104U, 33U, 122U}, {39U, 154U, 104U},
-        {67U, 126U, 193U}
-    };
-    const uint64_t row_top = menu_y + 58U;
-    const uint64_t row_step = 37U;
-    for (size_t i = 0U; i < 7U; ++i) {
-        const uint64_t row_y = row_top + (uint64_t)i * row_step;
-        graphics_fill_round_rect(menu_x + 49U, row_y, menu_width - 58U,
-                                  32U, 7U, 25U, 42U, 65U);
-        desktop_draw_app_icon(menu_x + 56U, row_y + 6U, 20U, i);
-        graphics_draw_text(menu_x + 85U, row_y + 12U,
-                           names[i], 1U, 238U, 240U, 244U);
-    }
-
-    if (menu_width > 380U) {
-        const uint64_t tile_x = menu_x + menu_width - 137U;
-        graphics_draw_text(tile_x, menu_y + 47U, "PINNED", 1U,
-                           160U, 165U, 174U);
-        static const char *const tile_names[7] = {
-            "FILES", "WEB", "SET", "TERM", "MON", "SNAKE", "CALC"
-        };
-        for (size_t i = 0U; i < 7U; ++i) {
-            const uint64_t col = i % 2U;
-            const uint64_t row = i / 2U;
-            const uint64_t x = tile_x + col * 63U;
-            const uint64_t y = menu_y + 64U + row * 64U;
-            graphics_fill_round_rect(x, y, 58U, 57U, 10U,
-                                     accents[i][0], accents[i][1], accents[i][2]);
-            graphics_draw_round_rect(x, y, 58U, 57U, 10U,
-                                     150U, 192U, 220U);
-            graphics_draw_text(x + 7U, y + 25U, tile_names[i], 1U,
-                               255U, 255U, 255U);
+    if(menu_width>400U) {
+        const uint64_t card_width=(menu_width-54U)/2U;
+        const uint64_t row_top=menu_y+82U;
+        for(size_t i=0U;i<7U;++i) {
+            const uint64_t col=i%2U,row=i/2U;
+            const uint64_t x=menu_x+18U+col*(card_width+12U);
+            const uint64_t y=row_top+row*63U;
+            graphics_fill_round_rect(x,y,card_width,54U,11U,24U,39U,58U);
+            graphics_draw_round_rect(x,y,card_width,54U,11U,66U,91U,119U);
+            desktop_draw_app_icon(x+12U,y+14U,25U,i);
+            graphics_draw_text(x+49U,y+29U,names[i],1U,235U,243U,250U);
+        }
+    } else {
+        const uint64_t row_top=menu_y+82U;
+        for(size_t i=0U;i<7U;++i) {
+            const uint64_t y=row_top+(uint64_t)i*37U;
+            graphics_fill_round_rect(menu_x+14U,y,menu_width-28U,32U,
+                                     8U,24U,39U,58U);
+            desktop_draw_app_icon(menu_x+21U,y+6U,20U,i);
+            graphics_draw_text(menu_x+52U,y+18U,names[i],1U,
+                               235U,243U,250U);
         }
     }
-    graphics_fill_round_rect(menu_x + 47U, menu_y + menu_height - 29U,
-                              menu_width - 58U, 22U, 7U, 18U, 31U, 49U);
-    graphics_draw_text(menu_x + 54U, menu_y + menu_height - 16U,
-                       "1-7 OPEN APPS     ESC CLOSE", 1U,
-                       160U, 165U, 174U);
+    graphics_draw_text(menu_x+22U,menu_y+menu_height-15U,
+                       "ESC CLOSE   SELECT AN APP TO OPEN",
+                       1U,132U,165U,193U);
 }
 
 static void desktop_draw_startup_animation(void) {
@@ -795,12 +796,12 @@ static void draw_shell(void) {
      * so the 22 px mark remains vertically centered on supported modes. */
     desktop_draw_logo(18U, (top_bar - 22U) / 2U, 22U);
     graphics_draw_text(54U, top_bar / 2U - 4U,
-                       "NEXUS  /  YOUR WORKSPACE", 1U,
+                       "NEXUS  /  DESKTOP", 1U,
                        232U, 243U, 252U);
     char top_uptime[21];
     format_u64(timer_ticks() / 100U, top_uptime);
     graphics_draw_text(width > 170U ? width - 154U : 8U,
-                       top_bar / 2U - 4U, "RUNNING", 1U,
+                       top_bar / 2U - 4U, "ACTIVE", 1U,
                        112U, 222U, 190U);
     graphics_draw_text(width > 102U ? width - 88U : 8U,
                        top_bar / 2U - 4U, top_uptime, 1U,
@@ -827,19 +828,17 @@ static void draw_shell(void) {
 
     graphics_fill_round_rect(panel_x + 7U, panel_y + 10U, panel_width,
                               panel_height, 17U, 1U, 5U, 17U);
-    graphics_fill_gradient_rect(panel_x, panel_y, panel_width, panel_height,
-                                28U, 43U, 63U, 16U, 28U, 45U);
-    graphics_draw_round_rect(panel_x, panel_y, panel_width, panel_height,
-                              17U, 91U, 123U, 157U);
-    /* Indigo-to-cyan title surface with a softly rounded top edge. */
-    graphics_fill_round_rect(panel_x + 1U, panel_y + 1U,
-                             panel_width - 2U, 42U, 15U,
-                             29U, 91U, 166U);
-    graphics_fill_gradient_rect(panel_x + 1U, panel_y + 15U,
-                                panel_width - 2U, 27U,
-                                29U, 91U, 166U, 24U, 69U, 132U);
-    graphics_fill_rect(panel_x + 1U, panel_y + 40U,
-                       panel_width - 2U, 3U, 24U, 69U, 132U);
+    graphics_fill_gradient_rect(panel_x,panel_y,panel_width,panel_height,
+                                24U,36U,54U,13U,22U,37U);
+    graphics_draw_round_rect(panel_x,panel_y,panel_width,panel_height,
+                             20U,75U,98U,124U);
+    /* Shared dark chrome with a restrained aurora accent line. */
+    graphics_fill_round_rect(panel_x+1U,panel_y+1U,panel_width-2U,43U,
+                             18U,26U,42U,62U);
+    graphics_fill_gradient_rect(panel_x+1U,panel_y+16U,panel_width-2U,27U,
+                                26U,42U,62U,19U,32U,49U);
+    graphics_fill_gradient_rect(panel_x+1U,panel_y+41U,panel_width-2U,2U,
+                                69U,170U,207U,139U,111U,225U);
 
     const char *window_title = "NEXUS DESKTOP";
     if (active_view == DESKTOP_FILES) window_title = "FILES";
@@ -847,7 +846,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     if (active_view == DESKTOP_MONITOR) window_title = "SYSTEM MONITOR";
-    if (active_view == DESKTOP_GAMES) window_title = "NEXUS SNAKE ARCADE";
+    if (active_view == DESKTOP_CONTROL_CENTER) window_title = "NEXUS CONTROL CENTER";
     if (active_view == DESKTOP_CALCULATOR) window_title = "NEXUS CALCULATOR";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
     desktop_draw_logo(panel_x + 7U, panel_y + 8U, 22U);
@@ -913,7 +912,7 @@ static void draw_shell(void) {
         const uint64_t card_width = (panel_width - 92U) / 4U;
         const uint64_t card_y = text_y + (panel_height < 360U ? 163U : 181U);
         const uint64_t card_h = panel_height < 360U ? 44U : 54U;
-        const char *card_labels[4] = {"FREE MEM", "UPTIME", "STORAGE", "GAMING"};
+        const char *card_labels[4] = {"MEMORY", "UPTIME", "STORAGE", "NETWORK"};
         char free_mem[21], uptime[21];
         format_u64(memory_free_bytes() / (1024U * 1024U), free_mem);
         format_u64(timer_ticks() / 100U, uptime);
@@ -945,8 +944,8 @@ static void draw_shell(void) {
         }
         uptime_value[uptime_pos] = '\0';
         static const uint8_t card_accent[4][3] = {
-            {45U, 177U, 202U}, {117U, 136U, 244U},
-            {82U, 198U, 155U}, {224U, 154U, 83U}
+            {65U, 190U, 210U}, {132U, 125U, 229U},
+            {73U, 191U, 159U}, {219U, 160U, 102U}
         };
         for (size_t i = 0U; i < 4U; ++i) {
             const uint64_t card_x = panel_x + 28U +
@@ -975,8 +974,12 @@ static void draw_shell(void) {
                 graphics_draw_text(card_x + 11U, card_y + 34U,
                                    storage_label, 1U, 233U, 244U, 252U);
             } else {
+                const uint32_t adapters = netdev_device_count();
+                const char *adapter = adapters == 0U ? "NO ADAPTER" :
+                    netdev_device_name_at(netdev_default_index());
+                if (adapter == NULL) adapter = "UNKNOWN";
                 graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   "SNAKE CORE", 1U, 233U, 244U, 252U);
+                                   adapter, 1U, 233U, 244U, 252U);
             }
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,
@@ -1087,65 +1090,84 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, panel_y + panel_height - 18U,
                            "ESC RETURN HOME   VALUES REFRESH WHEN THE DESKTOP REDRAWS",
                            1U, 151U, 178U, 201U);
-    } else if (active_view == DESKTOP_GAMES) {
-        char score_text[21];
-        format_u64(snake_game.score, score_text);
-        graphics_draw_text(text_x, text_y, "NEXUS SNAKE", 2U,
-                           241U, 248U, 255U);
-        graphics_draw_text(text_x, text_y + 31U,
-                           "CLASSIC ARCADE  /  HIGH SCORE SESSION",
-                           1U, 111U, 207U, 231U);
-        graphics_draw_text(panel_x + panel_width - 135U, text_y + 31U,
-                           "SCORE", 1U, 157U, 187U, 207U);
-        graphics_draw_text(panel_x + panel_width - 82U, text_y + 31U,
-                           score_text, 1U, 245U, 255U, 249U);
-        const uint64_t cell_size = 16U;
-        const uint64_t board_width = NEXUS_SNAKE_WIDTH * cell_size;
-        const uint64_t board_height = NEXUS_SNAKE_HEIGHT * cell_size;
-        const uint64_t board_x = panel_x + (panel_width - board_width) / 2U;
-        const uint64_t board_y = text_y + 55U;
-        graphics_fill_round_rect(board_x - 8U, board_y - 8U,
-                                 board_width + 16U, board_height + 16U,
-                                 10U, 7U, 18U, 29U);
-        graphics_draw_round_rect(board_x - 8U, board_y - 8U,
-                                 board_width + 16U, board_height + 16U,
-                                 10U, 58U, 93U, 111U);
-        for (uint16_t row = 0U; row < NEXUS_SNAKE_HEIGHT; ++row) {
-            for (uint16_t column = 0U; column < NEXUS_SNAKE_WIDTH; ++column) {
-                const uint16_t cell =
-                    (uint16_t)(row * NEXUS_SNAKE_WIDTH + column);
-                const uint64_t x = board_x + (uint64_t)column * cell_size;
-                const uint64_t y = board_y + (uint64_t)row * cell_size;
-                graphics_fill_rect(x + 1U, y + 1U, cell_size - 2U,
-                                   cell_size - 2U, 13U, 29U, 39U);
-                if (nexus_snake_cell_is_food(&snake_game, cell)) {
-                    graphics_fill_round_rect(x + 3U, y + 3U,
-                        cell_size - 6U, cell_size - 6U, 5U,
-                        255U, 113U, 106U);
-                } else if (nexus_snake_cell_is_snake(&snake_game, cell)) {
-                    const bool head = snake_game.body[0] == cell;
-                    graphics_fill_round_rect(x + 1U, y + 1U,
-                        cell_size - 2U, cell_size - 2U, 4U,
-                        head ? 164U : 68U, head ? 245U : 196U,
-                        head ? 180U : 137U);
-                }
-            }
+    } else if (active_view == DESKTOP_CONTROL_CENTER) {
+        graphics_draw_text(text_x,text_y,"CONTROL CENTER",2U,245U,249U,255U);
+        graphics_draw_text(text_x,text_y+30U,
+            "LIVE SYSTEM STATUS  /  QUICK PERSONALIZATION",
+            1U,139U,184U,210U);
+        char memory_text[32],uptime_text[32],number[21];
+        format_u64(memory_free_bytes()/(1024U*1024U),number);
+        size_t pos=0U;
+        while(number[pos]!='\0' && pos<sizeof(memory_text)-1U) {
+            memory_text[pos]=number[pos]; ++pos;
         }
-        const char *game_message =
-            snake_game.state == NEXUS_GAME_READY ? "ENTER TO START" :
-            snake_game.state == NEXUS_GAME_RUNNING ? "ARROWS MOVE  /  SPACE PAUSE" :
-            snake_game.state == NEXUS_GAME_PAUSED ? "PAUSED  /  SPACE TO RESUME" :
-            snake_game.state == NEXUS_GAME_WON ? "YOU WIN  /  R TO PLAY AGAIN" :
-            "GAME OVER  /  R TO RESTART";
-        graphics_draw_text(text_x, board_y + board_height + 22U,
-                           game_message, 1U,
-                           snake_game.state == NEXUS_GAME_RUNNING
-                               ? 119U : 239U,
-                           snake_game.state == NEXUS_GAME_RUNNING
-                               ? 229U : 190U, 211U);
-        graphics_draw_text(text_x, panel_y + panel_height - 18U,
-                           "ARROW KEYS MOVE   SPACE PAUSE   R RESTART   ESC HOME",
-                           1U, 151U, 178U, 201U);
+        const char *memory_suffix=" MiB free";
+        for(size_t i=0U;memory_suffix[i]!='\0' && pos<sizeof(memory_text)-1U;++i)
+            memory_text[pos++]=memory_suffix[i];
+        memory_text[pos]='\0';
+        format_u64(timer_ticks()/100U,number); pos=0U;
+        while(number[pos]!='\0' && pos<sizeof(uptime_text)-2U) {
+            uptime_text[pos]=number[pos]; ++pos;
+        }
+        uptime_text[pos++]='s'; uptime_text[pos]='\0';
+        const uint32_t adapters=netdev_device_count();
+        const char *adapter=adapters==0U?"No supported adapter":
+            netdev_device_name_at(netdev_default_index());
+        if(adapter==NULL) adapter="Adapter detected";
+        const char *storage=vfs_nxfs_mounted() && vfs_nxfs_writable()
+            ?"NXFS writable":(vfs_root_mounted()?"Mounted / read-only":"Volatile RAM only");
+        const char *status_labels[4]={
+            "AVAILABLE MEMORY","SESSION UPTIME","DATA STORAGE","NETWORK ADAPTER"
+        };
+        const char *status_values[4]={memory_text,uptime_text,storage,adapter};
+        const uint64_t status_x=panel_x+24U,status_y=text_y+54U;
+        const uint64_t status_w=(panel_width-64U)/2U;
+        static const uint8_t status_accent[4][3]={
+            {65U,190U,210U},{132U,125U,229U},{73U,191U,159U},{219U,160U,102U}
+        };
+        for(size_t i=0U;i<4U;++i) {
+            const uint64_t col=i%2U,row=i/2U;
+            const uint64_t x=status_x+col*(status_w+16U);
+            const uint64_t y=status_y+row*58U;
+            graphics_fill_round_rect(x,y,status_w,50U,11U,22U,36U,54U);
+            graphics_draw_round_rect(x,y,status_w,50U,11U,62U,88U,116U);
+            graphics_fill_round_rect(x+1U,y+9U,3U,32U,1U,
+                status_accent[i][0],status_accent[i][1],status_accent[i][2]);
+            graphics_draw_text(x+13U,y+15U,status_labels[i],1U,146U,178U,202U);
+            graphics_draw_text(x+13U,y+35U,status_values[i],1U,241U,247U,252U);
+        }
+        graphics_draw_text(text_x,text_y+184U,"QUICK SETTINGS",1U,139U,184U,210U);
+        const char *quick_labels[6]={
+            "COLOR THEME","WALLPAPER","HIGH CONTRAST",
+            "MOTION EFFECTS","TASKBAR STATUS","ALL SETTINGS"
+        };
+        const char *quick_values[6]={
+            settings_theme==0U?"MIDNIGHT":(settings_theme==1U?"OCEAN":"EMBER"),
+            settings_wallpaper==0U?"AURORA":(settings_wallpaper==1U?"GRADIENT":"SOLID"),
+            settings_high_contrast?"ENABLED":"STANDARD",
+            settings_reduce_motion?"REDUCED":"FULL",
+            settings_show_status?"VISIBLE":"HIDDEN",
+            "OPEN SETTINGS"
+        };
+        const uint64_t quick_x=panel_x+24U,quick_y=text_y+198U;
+        const uint64_t quick_w=(panel_width-64U)/3U;
+        for(size_t i=0U;i<6U;++i) {
+            const uint64_t col=i%3U,row=i/3U;
+            const uint64_t x=quick_x+col*(quick_w+8U);
+            const uint64_t y=quick_y+row*62U;
+            const bool selected=(i==2U && settings_high_contrast) ||
+                (i==3U && settings_reduce_motion) ||
+                (i==4U && settings_show_status);
+            graphics_fill_round_rect(x,y,quick_w,54U,10U,
+                selected?34U:25U,selected?65U:43U,selected?82U:62U);
+            graphics_draw_round_rect(x,y,quick_w,54U,10U,
+                selected?108U:72U,selected?154U:105U,selected?170U:133U);
+            graphics_draw_text(x+10U,y+19U,quick_labels[i],1U,157U,190U,213U);
+            graphics_draw_text(x+10U,y+40U,quick_values[i],1U,244U,249U,255U);
+        }
+        graphics_draw_text(text_x,panel_y+panel_height-18U,
+            "1-5 TOGGLE QUICK SETTINGS   ENTER OPENS ALL SETTINGS",
+            1U,141U,173U,198U);
     } else if (active_view == DESKTOP_CALCULATOR) {
         graphics_draw_text(text_x,text_y,"NEXUS CALCULATOR",2U,241U,248U,255U);
         graphics_draw_text(text_x,text_y+30U,
@@ -1802,10 +1824,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     window_animation_offset = 0U;
     settings_persisted = false;
     if (!installer_environment) desktop_load_settings();
-    snake_seed = (uint32_t)timer_ticks() ^ 0x4E455855U;
-    nexus_snake_init(&snake_game, snake_seed);
     calculator_clear();
-    snake_gamepad_buttons = 0U;
     snake_next_tick = timer_ticks() + 12U;
     desktop_draw_startup_animation();
     pointer_x = (int64_t)(screen_width / 2U);
@@ -3508,44 +3527,6 @@ static const char *installer_result_message(
 
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
-    if (event->type == NEXUS_INPUT_GAMEPAD) {
-        if (active_view != DESKTOP_GAMES) {
-            snake_gamepad_buttons=event->gamepad_buttons;
-            return;
-        }
-        const uint32_t pressed=event->gamepad_buttons & ~snake_gamepad_buttons;
-        snake_gamepad_buttons=event->gamepad_buttons;
-        bool changed=false;
-        if (event->gamepad_hat==0) changed=nexus_snake_turn(&snake_game,NEXUS_GAME_UP);
-        else if (event->gamepad_hat==2) changed=nexus_snake_turn(&snake_game,NEXUS_GAME_RIGHT);
-        else if (event->gamepad_hat==4) changed=nexus_snake_turn(&snake_game,NEXUS_GAME_DOWN);
-        else if (event->gamepad_hat==6) changed=nexus_snake_turn(&snake_game,NEXUS_GAME_LEFT);
-        if ((pressed & 1U)!=0U) {
-            if (snake_game.state==NEXUS_GAME_READY) {
-                changed=nexus_snake_start(&snake_game) || changed;
-                snake_next_tick=timer_ticks()+12U;
-            } else if (snake_game.state==NEXUS_GAME_WON ||
-                       snake_game.state==NEXUS_GAME_OVER) {
-                snake_seed+=0x9E3779B9U;
-                nexus_snake_init(&snake_game,snake_seed);
-                changed=nexus_snake_start(&snake_game) || changed;
-                snake_next_tick=timer_ticks()+12U;
-            }
-        }
-        if ((pressed & 2U)!=0U) {
-            nexus_snake_toggle_pause(&snake_game);
-            snake_next_tick=timer_ticks()+12U;
-            changed=true;
-        }
-        if ((pressed & 4U)!=0U) {
-            snake_seed+=0x9E3779B9U;
-            nexus_snake_init(&snake_game,snake_seed);
-            snake_next_tick=timer_ticks()+12U;
-            changed=true;
-        }
-        if (changed) { draw_shell(); draw_pointer(); }
-        return;
-    }
     if (event->type == NEXUS_INPUT_MOUSE) {
         /* Mouse motion updates only the cursor damage region. */
         erase_pointer();
@@ -3565,59 +3546,61 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t taskbar_height = clamp_min(screen_height / 11U, 48U);
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {
-                const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
-                const uint64_t menu_height = 364U;
-                const uint64_t menu_x = 8U;
-                const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
-                uint64_t menu_y = taskbar_top > menu_height
-                    ? taskbar_top - menu_height + 2U : top_limit;
-                if (menu_y < top_limit) menu_y = top_limit;
-                const uint64_t row_top = menu_y + 58U;
-                const uint64_t row_step = 37U;
-                bool menu_item_clicked = false;
-                if (menu_width > 380U) {
-                    const uint64_t tile_x = menu_x + menu_width - 137U;
-                    if ((uint64_t)pointer_x >= tile_x &&
-                        (uint64_t)pointer_x < tile_x + 126U &&
-                        (uint64_t)pointer_y >= menu_y + 64U &&
-                        (uint64_t)pointer_y < menu_y + 64U + 4U * 64U) {
-                        const size_t col = (size_t)(((uint64_t)pointer_x - tile_x) / 63U);
-                        const size_t row = (size_t)(((uint64_t)pointer_y - (menu_y + 64U)) / 64U);
-                        const size_t app = row * 2U + col;
-                        if (app < 7U) {
-                            desktop_open_app(app);
-                            shell_click_handled = true;
-                            menu_item_clicked = true;
+                const uint64_t menu_width=screen_width>500U?460U:screen_width-16U;
+                const uint64_t menu_height=360U;
+                const uint64_t menu_x=(screen_width-menu_width)/2U;
+                const uint64_t top_limit=clamp_min(screen_height/16U,34U)+8U;
+                const uint64_t menu_bottom=screen_height>taskbar_height
+                    ?screen_height-taskbar_height:0U;
+                uint64_t menu_y=menu_bottom>menu_height
+                    ?menu_bottom-menu_height+2U:top_limit;
+                if(menu_y<top_limit) menu_y=top_limit;
+                const uint64_t row_top=menu_y+82U;
+                bool app_clicked=false;
+                if(menu_width>400U) {
+                    const uint64_t cw=(menu_width-54U)/2U;
+                    if((uint64_t)pointer_y>=row_top &&
+                       (uint64_t)pointer_y<row_top+4U*63U &&
+                       (uint64_t)pointer_x>=menu_x+18U) {
+                        const uint64_t rx=(uint64_t)pointer_x-menu_x-18U;
+                        const uint64_t ry=(uint64_t)pointer_y-row_top;
+                        const size_t col=(size_t)(rx/(cw+12U));
+                        const size_t row=(size_t)(ry/63U);
+                        const uint64_t local_x=rx%(cw+12U),local_y=ry%63U;
+                        const size_t app=row*2U+col;
+                        if(col<2U && row<4U && local_x<cw &&
+                           local_y<54U && app<7U) {
+                            desktop_open_app(app); shell_click_handled=true;
+                            app_clicked=true;
                         }
                     }
+                } else if((uint64_t)pointer_x>=menu_x+14U &&
+                          (uint64_t)pointer_x<menu_x+menu_width-14U &&
+                          (uint64_t)pointer_y>=row_top &&
+                          (uint64_t)pointer_y<row_top+7U*37U) {
+                    const size_t app=(size_t)((uint64_t)pointer_y-row_top)/37U;
+                    const uint64_t local_y=((uint64_t)pointer_y-row_top)%37U;
+                    if(app<7U && local_y<32U) {
+                        desktop_open_app(app); shell_click_handled=true;
+                        app_clicked=true;
+                    }
                 }
-                if (!menu_item_clicked &&
-                    (uint64_t)pointer_x >= menu_x + 49U &&
-                    (uint64_t)pointer_x < (menu_width > 380U
-                        ? menu_x + menu_width - 145U : menu_x + menu_width) &&
-                    (uint64_t)pointer_y >= row_top &&
-                    (uint64_t)pointer_y < row_top + 7U * row_step) {
-                    const size_t app = (size_t)((uint64_t)pointer_y - row_top) /
-                                       (size_t)row_step;
-                    desktop_open_app(app);
-                    shell_click_handled = true;
-                    menu_item_clicked = true;
-                }
-                if (!menu_item_clicked) start_menu_open = false;
+                if(!app_clicked) start_menu_open=false;
             }
-            if (!shell_click_handled &&
-                (uint64_t)pointer_y >= taskbar_top) {
-                if ((uint64_t)pointer_x < 52U) {
-                    start_menu_open = !start_menu_open;
-                    shell_click_handled = true;
+            if(!shell_click_handled && (uint64_t)pointer_y>=taskbar_top) {
+                if((uint64_t)pointer_x<56U) {
+                    start_menu_open=!start_menu_open;
+                    shell_click_handled=true;
+                } else if((uint64_t)pointer_x>=desktop_taskbar_control_x() &&
+                          (uint64_t)pointer_x<desktop_taskbar_control_x()+42U) {
+                    desktop_open_view(DESKTOP_CONTROL_CENTER);
+                    shell_click_handled=true;
                 } else {
-                    for (size_t app = 0U; app < 7U; ++app) {
-                        const uint64_t tab_x = 56U + (uint64_t)app * 92U;
-                        if ((uint64_t)pointer_x >= tab_x &&
-                            (uint64_t)pointer_x < tab_x + 88U) {
-                            desktop_open_app(app);
-                            shell_click_handled = true;
-                            break;
+                    const uint64_t apps_start=desktop_taskbar_apps_start();
+                    for(size_t app=0U;app<7U;++app) {
+                        const uint64_t ax=apps_start+(uint64_t)app*42U;
+                        if((uint64_t)pointer_x>=ax && (uint64_t)pointer_x<ax+40U) {
+                            desktop_open_app(app); shell_click_handled=true; break;
                         }
                     }
                 }
@@ -3780,6 +3763,29 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                    (uint64_t)ry%50U<42U) calculator_button(row,col);
             }
             draw_shell(); draw_pointer(); return;
+        }
+        if(clicked && active_view==DESKTOP_CONTROL_CENTER) {
+            const uint64_t top=clamp_min(screen_height/16U,34U);
+            const uint64_t bottom=clamp_min(screen_height/11U,48U);
+            uint64_t pw=screen_width*3U/4U,ph=512U;
+            if(pw>920U) pw=920U;
+            if(pw>screen_width-16U) pw=screen_width-16U;
+            if(ph>screen_height-top-bottom-16U) ph=screen_height-top-bottom-16U;
+            if(window_maximized) { pw=screen_width-32U; ph=screen_height-top-bottom-16U; }
+            const uint64_t px=(screen_width-pw)/2U;
+            const uint64_t py=window_maximized?top+8U:top+(screen_height-top-bottom-ph)/2U;
+            const uint64_t qx=px+24U,qy=py+82U+198U,qw=(pw-64U)/3U;
+            const int64_t rx=pointer_x-(int64_t)qx,ry=pointer_y-(int64_t)qy;
+            if(rx>=0 && ry>=0 && (uint64_t)rx<3U*qw+16U &&
+               (uint64_t)ry<116U) {
+                const size_t col=(size_t)rx/(size_t)(qw+8U);
+                const size_t row=(size_t)ry/62U;
+                const uint64_t local_x=(uint64_t)rx%(qw+8U);
+                if(col<3U && row<2U && local_x<qw && (uint64_t)ry%62U<54U) {
+                    desktop_control_center_activate(row*3U+col);
+                    shell_click_handled=true;
+                }
+            }
         }
         if (clicked && active_view == DESKTOP_SETTINGS) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
@@ -4096,44 +4102,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         draw_pointer();
         return;
     }
-    if (active_view == DESKTOP_GAMES) {
-        if ((event->scancode & 0x80U) != 0U) return;
-        bool changed = true;
-        if (event->scancode == 0x01U) {
-            active_view = DESKTOP_HOME;
-        } else if (event->scancode == 0x13U) {
-            snake_seed += 0x9E3779B9U;
-            nexus_snake_init(&snake_game, snake_seed);
-            snake_next_tick = timer_ticks() + 12U;
-        } else if (event->scancode == 0x1CU) {
-            if (snake_game.state == NEXUS_GAME_READY) {
-                (void)nexus_snake_start(&snake_game);
-            } else if (snake_game.state == NEXUS_GAME_WON ||
-                       snake_game.state == NEXUS_GAME_OVER) {
-                snake_seed += 0x9E3779B9U;
-                nexus_snake_init(&snake_game, snake_seed);
-                (void)nexus_snake_start(&snake_game);
-            }
-            snake_next_tick = timer_ticks() + 12U;
-        } else if (event->scancode == 0x39U) {
-            nexus_snake_toggle_pause(&snake_game);
-            snake_next_tick = timer_ticks() + 12U;
-        } else if (event->scancode == 0x48U) {
-            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_UP);
-        } else if (event->scancode == 0x4DU) {
-            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_RIGHT);
-        } else if (event->scancode == 0x50U) {
-            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_DOWN);
-        } else if (event->scancode == 0x4BU) {
-            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_LEFT);
-        } else {
-            changed = false;
-        }
-        if (changed) {
-            draw_shell();
-            draw_pointer();
-        }
-        return;
+    if (active_view == DESKTOP_CONTROL_CENTER) {
+        if(event->scancode==0x01U) active_view=DESKTOP_HOME;
+        else if(event->scancode>=0x02U && event->scancode<=0x06U)
+            desktop_control_center_activate((size_t)(event->scancode-0x02U));
+        else if(event->scancode==0x1CU) desktop_control_center_activate(5U);
+        else return;
+        draw_shell(); draw_pointer(); return;
     }
     if (active_view == DESKTOP_CALCULATOR) {
         if (event->scancode==0x01U) active_view=DESKTOP_HOME;
@@ -4407,27 +4382,6 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     serial_write("DESKTOP: view changed by keyboard shortcut\r\n");
 }
 
-
-void desktop_poll(void) {
-    if (!desktop_ready || active_view != DESKTOP_GAMES ||
-        snake_game.state != NEXUS_GAME_RUNNING) return;
-    const uint64_t now = timer_ticks();
-    if (now < snake_next_tick) return;
-    uint32_t steps = 0U;
-    while (now >= snake_next_tick && steps < 4U &&
-           snake_game.state == NEXUS_GAME_RUNNING) {
-        (void)nexus_snake_tick(&snake_game);
-        snake_next_tick += 12U;
-        ++steps;
-    }
-    /* Never spend an unbounded amount of desktop time catching up after a
-     * delayed event loop; discard excess elapsed ticks instead. */
-    if (now >= snake_next_tick) snake_next_tick = now + 12U;
-    if (steps != 0U) {
-        draw_shell();
-        draw_pointer();
-    }
-}
 
 enum nexus_desktop_process_test_result
 desktop_run_process_selftest(void) {

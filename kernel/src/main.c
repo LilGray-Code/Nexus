@@ -391,7 +391,6 @@ void kmain(void) {
     for (;;) {
         net_poll();
         xhci_poll();
-        desktop_poll();
         struct nexus_input_event event;
         while (input_pop_event(&event)) {
             desktop_handle_input(&event);

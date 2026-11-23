@@ -207,19 +207,23 @@ bool vfs_enter_directory(const char *name) {
             (entry->attributes & 0x10U) == 0U ||
             entry->first_cluster < 2U) continue;
         const uint32_t child_cluster = entry->first_cluster;
-        for (size_t depth = 0U; depth <= directory_depth; ++depth) {
-            if (directory_stack[depth] == child_cluster) return false;
-        }
-        if (!fat32_read_directory(child_cluster)) return false;
-        directory_stack[++directory_depth] = child_cluster;
+        char selected_name[NEXUS_VFS_NAME_MAX];
         size_t name_length = 0U;
         while (name_length < NEXUS_VFS_NAME_MAX - 1U &&
                entry->name[name_length] != '\0') {
-            directory_names[directory_depth - 1U][name_length] =
-                entry->name[name_length];
+            selected_name[name_length] = entry->name[name_length];
             ++name_length;
         }
-        directory_names[directory_depth - 1U][name_length] = '\0';
+        selected_name[name_length] = '\0';
+        for (size_t depth = 0U; depth <= directory_depth; ++depth) {
+            if (directory_stack[depth] == child_cluster) return false;
+        }
+        /* fat32_read_directory replaces the active entry table, so preserve
+         * the selected name before loading the child directory. */
+        if (!fat32_read_directory(child_cluster)) return false;
+        directory_stack[++directory_depth] = child_cluster;
+        for (size_t i = 0U; i <= name_length; ++i)
+            directory_names[directory_depth - 1U][i] = selected_name[i];
         return true;
     }
     return false;

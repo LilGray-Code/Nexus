@@ -2686,10 +2686,11 @@ static void desktop_draw_window_surface(enum desktop_view view,
             if (chipset == NULL && !usb.has_vendor_specific_interface)
                 continue;
             graphics_draw_text(text_x, text_y + 354U + inventory_row * 20U,
-                "USB WI-FI / VENDOR DEVICE:", 1U, 133U, 188U, 211U);
+                chipset != NULL ? "USB WI-FI ADAPTER:" : "USB VENDOR DEVICE:",
+                1U, 133U, 188U, 211U);
             graphics_draw_text(text_x + 190U,
                 text_y + 354U + inventory_row * 20U,
-                chipset != NULL ? chipset : "UNMATCHED VID:PID (SEE LOG)",
+                chipset != NULL ? chipset : "UNKNOWN DEVICE (SEE LOG)",
                 1U, 233U, 243U, 252U);
             ++inventory_row;
         }

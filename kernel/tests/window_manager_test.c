@@ -177,6 +177,36 @@ static void test_reinitialization_invalidates_old_handles(void) {
     assert(strcmp(info.title, "After reset") == 0);
 }
 
+static void test_live_display_resize(void) {
+    nexus_window_id normal, maximized;
+    struct nexus_window_info info;
+    assert(nexus_wm_init(1280U, 720U));
+    assert(nexus_wm_create(1U, "Normal", 900, 500, 500U, 300U, &normal));
+    assert(nexus_wm_create(2U, "Maximized", 40, 50, 640U, 480U, &maximized));
+    assert(nexus_wm_maximize(maximized));
+    assert(!nexus_wm_set_display_size(0U, 720U));
+    assert(!nexus_wm_set_display_size(1280U, 0U));
+    assert(!nexus_wm_set_display_size(0x80000000U, 720U));
+    assert(nexus_wm_count() == 2U);
+    assert(nexus_wm_set_display_size(800U, 600U));
+    assert(nexus_wm_get(normal, &info));
+    assert(info.x == 300 && info.y == 300);
+    assert(info.width == 500U && info.height == 300U);
+    assert(nexus_wm_get(maximized, &info));
+    assert(info.x == 0 && info.y == 0);
+    assert(info.width == 800U && info.height == 600U);
+    assert((info.flags & NEXUS_WINDOW_MAXIMIZED) != 0U);
+    assert(nexus_wm_unmaximize(maximized));
+    assert(nexus_wm_get(maximized, &info));
+    assert(info.width == 640U && info.height == 480U);
+    assert(info.x == 40 && info.y == 50);
+    assert(nexus_wm_set_display_size(1920U, 1080U));
+    assert(nexus_wm_get(normal, &info));
+    assert(info.x == 300 && info.y == 300);
+    assert(nexus_wm_count() == 2U);
+    assert(nexus_wm_focused() == maximized);
+}
+
 int main(void) {
     test_creation_focus_and_stacking();
     test_geometry_and_bounds();
@@ -185,6 +215,7 @@ int main(void) {
     test_small_display_and_titles();
     test_virtual_desktops();
     test_reinitialization_invalidates_old_handles();
+    test_live_display_resize();
     puts("Nexus window manager core tests passed");
     return 0;
 }

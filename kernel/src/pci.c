@@ -1,4 +1,5 @@
 #include "pci.h"
+#include "wifi_chipset.h"
 
 #include "serial.h"
 
@@ -16,6 +17,7 @@ static uint32_t discovered_device_count;
 static uint32_t storage_device_count;
 static uint32_t display_device_count;
 static uint32_t network_device_count;
+static uint32_t wireless_device_count;
 
 static inline void outl(uint16_t port, uint32_t value) {
     __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port));
@@ -65,7 +67,8 @@ static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
     ++discovered_device_count;
     if (class_code == 0x01) ++storage_device_count;
     if (class_code == 0x03) ++display_device_count;
-    if (class_code == 0x02) ++network_device_count;
+    if (class_code == 0x02U) ++network_device_count;
+    if (class_code == 0x0DU) ++wireless_device_count;
 
     if (stored_device_count < NEXUS_PCI_MAX_STORED_DEVICES) {
         struct nexus_pci_device *saved =
@@ -134,6 +137,7 @@ bool pci_init(void) {
     storage_device_count = 0;
     display_device_count = 0;
     network_device_count = 0;
+    wireless_device_count = 0;
 
     serial_write("PCI: read-only configuration mechanism #1 scan started\r\n");
 
@@ -179,6 +183,8 @@ bool pci_init(void) {
     serial_write_hex(display_device_count);
     serial_write("\r\nPCI: network-class functions: ");
     serial_write_hex(network_device_count);
+    serial_write("\r\nPCI: wireless-controller functions: ");
+    serial_write_hex(wireless_device_count);
     serial_write("\r\n");
 
     const uint32_t printed = stored_device_count < PCI_MAX_PRINTED_DEVICES
@@ -202,6 +208,34 @@ bool pci_init(void) {
         serial_write("\r\n");
     }
 
+    for (uint32_t i = 0U; i < stored_device_count; ++i) {
+        const struct nexus_pci_device *device = &stored_devices[i];
+        if (!pci_is_wireless_lan_candidate(device)) continue;
+        serial_write("PCI: WLAN-CANDIDATE BDF ");
+        serial_write_hex(device->bus);
+        serial_write(":");
+        serial_write_hex(device->slot);
+        serial_write(".");
+        serial_write_hex(device->function);
+        serial_write(" VID:PID ");
+        serial_write_hex(device->vendor_id);
+        serial_write(":");
+        serial_write_hex(device->device_id);
+        serial_write(" class/subclass ");
+        serial_write_hex(device->class_code);
+        serial_write("/");
+        serial_write_hex(device->subclass);
+        const char *chipset = wifi_pci_chipset_name(device->vendor_id,
+                                                    device->device_id);
+        if (chipset != NULL) {
+            serial_write(" chipset=");
+            serial_write(chipset);
+        } else {
+            serial_write(" chipset=UNKNOWN");
+        }
+        serial_write(" status=NO-CHIPSET-DRIVER-BOUND\r\n");
+    }
+
     serial_write("PCI: scan complete; device configuration remains read-only\r\n");
     return discovered_device_count != 0;
 }
@@ -212,6 +246,18 @@ uint32_t pci_device_count(void) {
 
 uint32_t pci_discovered_device_count(void) {
     return discovered_device_count;
+}
+
+uint32_t pci_wireless_device_count(void) {
+    return wireless_device_count;
+}
+
+uint32_t pci_wireless_lan_candidate_count(void) {
+    uint32_t count = 0U;
+    for (uint32_t i = 0U; i < stored_device_count; ++i) {
+        if (pci_is_wireless_lan_candidate(&stored_devices[i])) ++count;
+    }
+    return count;
 }
 
 const struct nexus_pci_device *pci_device_at(uint32_t index) {

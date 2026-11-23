@@ -47,7 +47,16 @@ bool pci_init(void);
 uint32_t pci_device_count(void);
 /* Total discovered PCI functions, including entries beyond storage capacity. */
 uint32_t pci_discovered_device_count(void);
+uint32_t pci_wireless_device_count(void);
+uint32_t pci_wireless_lan_candidate_count(void);
 const struct nexus_pci_device *pci_device_at(uint32_t index);
+
+/* Hardware classification helpers. These identify adapter candidates; they do
+ * not claim that a driver exists or that the radio can connect.
+ */
+bool pci_is_network_controller(const struct nexus_pci_device *device);
+bool pci_is_wireless_controller(const struct nexus_pci_device *device);
+bool pci_is_wireless_lan_candidate(const struct nexus_pci_device *device);
 
 /* Wildcards for the driver-match helper. */
 #define NEXUS_PCI_MATCH_ANY_ID 0xFFFFU

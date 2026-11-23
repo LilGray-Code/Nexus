@@ -690,8 +690,13 @@ bool net_init(void) {
 bool net_select_device(uint32_t index) {
     const uint32_t previous = netdev_default_index();
     if (index >= netdev_device_count()) return false;
-    if (index == previous) return network.ready;
-    if (!netdev_set_default(index)) return false;
+    /* A driver can register after the initial Ethernet probe (for example,
+     * a USB Wi-Fi adapter discovered during xHCI enumeration). Selecting the
+     * already-default interface must still initialize networking when the
+     * stack has not been started yet.
+     */
+    if (index == previous && network.ready) return true;
+    if (index != previous && !netdev_set_default(index)) return false;
     if (net_init()) return true;
 
     /* Keep the previously working interface selected if the new one fails. */

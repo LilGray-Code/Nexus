@@ -153,6 +153,81 @@ static void test_rejects_invalid_configuration_header(void) {
         sizeof(header_longer_than_total), 0xFF, 1, 1, &found));
 }
 
+
+static void test_usb_device_descriptor_identity(void) {
+    const uint8_t device[] = {
+        18,1,0x00,0x02,0,0,0,64,
+        0x86,0x80,0x23,0x27,0x34,0x12,1,2,3,1
+    };
+    struct nexus_usb_device_info info = {0};
+    assert(nexus_usb_parse_device_descriptor(2U, device, sizeof(device), &info));
+    assert(info.port == 2U);
+    assert(info.vendor_id == 0x8086U);
+    assert(info.product_id == 0x2723U);
+    assert(info.device_revision == 0x1234U);
+    assert(info.device_class == 0U);
+    assert(!nexus_usb_parse_device_descriptor(0U, device, sizeof(device), &info));
+    assert(!nexus_usb_parse_device_descriptor(2U, device, 17U, &info));
+
+    uint8_t malformed[sizeof(device)];
+    memcpy(malformed, device, sizeof(device));
+    malformed[1] = 2U;
+    assert(!nexus_usb_parse_device_descriptor(2U, malformed,
+                                               sizeof(malformed), &info));
+    memcpy(malformed, device, sizeof(device));
+    malformed[8] = 0U; malformed[9] = 0U;
+    assert(!nexus_usb_parse_device_descriptor(2U, malformed,
+                                               sizeof(malformed), &info));
+}
+
+static void test_usb_network_interface_inventory(void) {
+    const uint8_t device[] = {
+        18,1,0x00,0x02,0,0,0,64,
+        0x86,0x80,0x23,0x27,0x34,0x12,1,2,3,1
+    };
+    const uint8_t ecm_config[] = {
+        9,2,18,0,1,1,0,0x80,50,
+        9,4,3,0,0,0x02,0x06,0x00,0
+    };
+    const uint8_t vendor_config[] = {
+        9,2,18,0,1,1,0,0x80,50,
+        9,4,0,0,0,0xFF,0x42,1,0
+    };
+    struct nexus_usb_device_info info;
+    nexus_usb_inventory_reset();
+    assert(nexus_usb_inventory_count() == 0U);
+    assert(nexus_usb_inventory_add_device(2U, device, sizeof(device)));
+    assert(nexus_usb_inventory_count() == 1U);
+    assert(nexus_usb_inventory_set_configuration(
+        2U, ecm_config, sizeof(ecm_config)));
+    assert(nexus_usb_inventory_get(0U, &info));
+    assert(info.vendor_id == 0x8086U && info.product_id == 0x2723U);
+    assert(info.network_kind == NEXUS_USB_NETWORK_CDC_ECM);
+    assert(info.network_interface_number == 3U);
+    assert(info.network_interface_class == 0x02U);
+    assert(info.network_interface_subclass == 0x06U);
+    assert(!info.has_vendor_specific_interface);
+
+    assert(nexus_usb_inventory_add_device(3U, device, sizeof(device)));
+    assert(nexus_usb_inventory_set_configuration(
+        3U, vendor_config, sizeof(vendor_config)));
+    assert(nexus_usb_inventory_get(1U, &info));
+    assert(info.port == 3U);
+    assert(info.network_kind == NEXUS_USB_NETWORK_NONE);
+    assert(info.has_vendor_specific_interface);
+
+    assert(!nexus_usb_inventory_get(2U, &info));
+    assert(!nexus_usb_inventory_set_configuration(9U, ecm_config,
+                                                    sizeof(ecm_config)));
+    const uint8_t malformed[] = {9,2,18,0,1,1,0,0x80,50,9,4,0};
+    assert(!nexus_usb_inventory_set_configuration(3U, malformed,
+                                                   sizeof(malformed)));
+    assert(nexus_usb_inventory_add_device(2U, device, sizeof(device)));
+    assert(nexus_usb_inventory_count() == 2U);
+    nexus_usb_inventory_reset();
+    assert(nexus_usb_inventory_count() == 0U);
+}
+
 int main(void) {
     test_bulk_pair_on_matching_interface();
     test_does_not_pair_endpoints_across_interfaces();
@@ -163,6 +238,8 @@ int main(void) {
     test_rejects_reserved_bulk_packet_bits();
     test_rejects_interface_endpoint_count_mismatch();
     test_rejects_invalid_configuration_header();
+    test_usb_device_descriptor_identity();
+    test_usb_network_interface_inventory();
     puts("NEXUS USB BULK INTERFACE DESCRIPTOR TESTS PASSED");
     return 0;
 }

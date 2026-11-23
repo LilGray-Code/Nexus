@@ -7,6 +7,9 @@
 #include "process.h"
 #include "net.h"
 #include "netdev.h"
+#include "pci.h"
+#include "usb_desc.h"
+#include "wifi_chipset.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -20,6 +23,7 @@
 #include "browser_html.h"
 #include "browser_search.h"
 #include "browser_http.h"
+#include "browser_download.h"
 #include "calculator.h"
 #include "launcher.h"
 #include "window_manager.h"
@@ -93,7 +97,7 @@ static const uint8_t desktop_palette_colors[5][6] = {
     {20U, 13U, 42U, 71U, 42U, 120U},  /* Violet */
     {7U, 28U, 28U, 24U, 91U, 67U}     /* Forest */
 };
-static uint8_t settings_theme;
+static uint8_t settings_theme = 3U;
 static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
 static bool settings_high_contrast;
@@ -183,21 +187,28 @@ enum installer_ui_state {
 };
 static enum installer_ui_state installer_ui_state = INSTALLER_UI_SELECT;
 static char installer_confirmed_id[NEXUS_BLOCKDEV_ID_MAX];
-static char installer_input[64];
-static size_t installer_input_length;
 static char installer_status_text[96] = "Select a supported target disk";
 /* Destructive installation remains compile-time locked until end-to-end
  * disposable-disk validation is recorded. */
 
-#define NEXUS_BROWSER_LINE_COUNT 9U
+#define NEXUS_BROWSER_LINE_COUNT 64U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
-static char browser_address[192];
+#define NEXUS_BROWSER_SOURCE_COUNT 5U
+#define NEXUS_BROWSER_RESPONSE_MAX 8192U
+static char browser_address[NEXUS_BROWSER_HTML_LINK_MAX];
 static size_t browser_address_length;
 static char browser_status[80] = "Search the web or enter an HTTP address";
 static bool browser_search_mode;
 static bool browser_has_page;
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
+static size_t browser_scroll_offset;
+static uint8_t browser_response[NEXUS_BROWSER_RESPONSE_MAX];
+static char browser_current_url[NEXUS_BROWSER_SEARCH_URL_MAX];
+static bool browser_download_pending;
+static char browser_sources[NEXUS_BROWSER_SOURCE_COUNT]
+                          [NEXUS_BROWSER_HTML_LINK_MAX];
+static size_t browser_source_count;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -356,11 +367,85 @@ static void desktop_draw_app_icon(uint64_t x, uint64_t y,
                                  size / 5U, size / 5U, size / 10U,
                                  255U, 255U, 255U);
     } else {
-        graphics_draw_text(x + size / 4U, y + size / 3U, "=", 2U,
+        graphics_draw_text_smooth(x + size / 4U, y + size / 3U, "=", 2U,
                            255U, 255U, 255U);
         graphics_fill_rect(x + size / 4U, y + size * 2U / 3U,
                            size / 2U, 2U, 255U, 255U, 255U);
     }
+}
+
+
+static void desktop_draw_card(uint64_t x, uint64_t y, uint64_t width,
+                              uint64_t height, uint8_t accent_red,
+                              uint8_t accent_green, uint8_t accent_blue,
+                              bool highlighted) {
+    if (width < 24U || height < 18U) return;
+    graphics_fill_round_rect(x + 3U, y + 4U, width, height, 11U,
+                             3U, 8U, 17U);
+    graphics_fill_round_rect(x, y, width, height, 11U,
+                             highlighted ? 31U : 19U,
+                             highlighted ? 49U : 34U,
+                             highlighted ? 70U : 51U);
+    if (width > 2U && height > 2U)
+        graphics_fill_gradient_rect(x + 1U, y + 1U, width - 2U,
+            height - 2U,
+            highlighted ? 38U : 25U,
+            highlighted ? 60U : 42U,
+            highlighted ? 82U : 61U,
+            highlighted ? 24U : 15U,
+            highlighted ? 39U : 27U,
+            highlighted ? 58U : 43U);
+    graphics_draw_round_rect(x, y, width, height, 11U,
+                             highlighted ? 112U : 72U,
+                             highlighted ? 154U : 104U,
+                             highlighted ? 184U : 135U);
+    graphics_fill_round_rect(x + 1U, y + 8U, 3U,
+                             height > 16U ? height - 16U : 1U, 1U,
+                             accent_red, accent_green, accent_blue);
+}
+
+static void desktop_draw_pill(uint64_t x, uint64_t y, uint64_t width,
+                              const char *label, bool active,
+                              uint8_t accent_red, uint8_t accent_green,
+                              uint8_t accent_blue) {
+    if (width < 16U) return;
+    graphics_fill_round_rect(x, y, width, 20U, 7U,
+                             active ? 31U : 24U,
+                             active ? 70U : 43U,
+                             active ? 78U : 59U);
+    graphics_draw_round_rect(x, y, width, 20U, 7U,
+                             active ? accent_red : 75U,
+                             active ? accent_green : 103U,
+                             active ? accent_blue : 132U);
+    graphics_draw_text(x + 8U, y + 13U, label, 1U,
+                       active ? 165U : 177U,
+                       active ? 239U : 194U,
+                       active ? 220U : 211U);
+}
+
+static void desktop_draw_section_header(uint64_t x, uint64_t y,
+                                        const char *label,
+                                        uint8_t red, uint8_t green,
+                                        uint8_t blue) {
+    graphics_fill_round_rect(x, y + 3U, 4U, 11U, 2U,
+                             red, green, blue);
+    graphics_draw_text(x + 12U, y + 10U, label, 1U,
+                       157U, 192U, 218U);
+}
+
+static void desktop_draw_meter(uint64_t x, uint64_t y, uint64_t width,
+                               uint64_t height, uint32_t percent,
+                               uint8_t red, uint8_t green, uint8_t blue) {
+    if (width == 0U || height == 0U) return;
+    if (percent > 100U) percent = 100U;
+    graphics_fill_round_rect(x, y, width, height, height / 2U,
+                             9U, 20U, 32U);
+    const uint64_t filled = width * percent / 100U;
+    if (filled != 0U)
+        graphics_fill_round_rect(x, y, filled, height, height / 2U,
+                                 red, green, blue);
+    graphics_draw_round_rect(x, y, width, height, height / 2U,
+                             67U, 92U, 116U);
 }
 
 static void format_ipv4_address(const uint8_t address[4], char output[16]) {
@@ -1037,7 +1122,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     graphics_fill_gradient_rect(menu_x+1U,menu_y+1U,menu_width-2U,3U,
                                  71U,164U,211U,133U,111U,224U);
     desktop_draw_logo(menu_x+20U,menu_y+16U,24U);
-    graphics_draw_text(menu_x+56U,menu_y+19U,"NEXUS",2U,246U,249U,255U);
+    graphics_draw_text_smooth(menu_x+56U,menu_y+19U,"NEXUS", 2U,246U,249U,255U);
     graphics_draw_text(menu_x+57U,menu_y+41U,"FIND YOUR NEXT TASK",1U,
                        151U,181U,205U);
 
@@ -1592,32 +1677,57 @@ static void desktop_draw_window_surface(enum desktop_view view,
         (animate ? window_animation_offset : 0U);
     const uint64_t panel_width = window_width;
     const uint64_t panel_height = window_height;
-    graphics_fill_round_rect(panel_x + 7U, panel_y + 10U, panel_width,
-                              panel_height, 17U, 1U, 5U, 17U);
-    graphics_fill_gradient_rect(panel_x,panel_y,panel_width,panel_height,
-                                24U,36U,54U,13U,22U,37U);
-    graphics_draw_round_rect(panel_x,panel_y,panel_width,panel_height,
-                             20U,75U,98U,124U);
-    /* Shared dark chrome with a restrained aurora accent line. */
-    graphics_fill_round_rect(panel_x+1U,panel_y+1U,panel_width-2U,43U,
-                             18U,26U,42U,62U);
-    graphics_fill_gradient_rect(panel_x+1U,panel_y+16U,panel_width-2U,27U,
-                                26U,42U,62U,19U,32U,49U);
-    graphics_fill_gradient_rect(panel_x+1U,panel_y+41U,panel_width-2U,2U,
-                                69U,170U,207U,139U,111U,225U);
+    graphics_fill_round_rect(panel_x + 9U, panel_y + 12U, panel_width,
+                              panel_height, 19U, 1U, 4U, 13U);
+    graphics_fill_round_rect(panel_x + 3U, panel_y + 5U, panel_width,
+                              panel_height, 18U, 7U, 13U, 24U);
+    graphics_fill_round_rect(panel_x, panel_y, panel_width, panel_height,
+                              18U, 14U, 24U, 38U);
+    graphics_fill_gradient_rect(panel_x + 1U, panel_y + 1U,
+                                panel_width - 2U, panel_height - 2U,
+                                31U, 46U, 65U, 13U, 22U, 36U);
+    graphics_draw_round_rect(panel_x, panel_y, panel_width, panel_height,
+                             18U, 82U, 108U, 137U);
 
+    const uint8_t palette_index = settings_theme < 5U ? settings_theme : 0U;
+    const uint8_t accent_red = desktop_palette_colors[palette_index][3];
+    const uint8_t accent_green = desktop_palette_colors[palette_index][4];
+    const uint8_t accent_blue = desktop_palette_colors[palette_index][5];
+    /* A distinct, theme-aware title rail carries the same identity across
+     * every native application without changing their keyboard bindings. */
+    graphics_fill_round_rect(panel_x + 1U, panel_y + 1U,
+                             panel_width - 2U, 43U, 17U,
+                             25U, 41U, 59U);
+    graphics_fill_gradient_rect(panel_x + 1U, panel_y + 17U,
+                                panel_width - 2U, 26U,
+                                30U, 48U, 67U, 17U, 29U, 46U);
+    graphics_fill_round_rect(panel_x + 1U, panel_y + 41U,
+                             panel_width - 2U, 3U, 1U,
+                             accent_red, accent_green, accent_blue);
     const char *window_title = "NEXUS HOME";
     if (active_view == DESKTOP_FILES) window_title = "FILES";
     if (active_view == DESKTOP_BROWSER) window_title = "NEXUS BROWSER";
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     if (active_view == DESKTOP_MONITOR) window_title = "SYSTEM MONITOR";
-    if (active_view == DESKTOP_CONTROL_CENTER) window_title = "NEXUS CONTROL CENTER";
-    if (active_view == DESKTOP_CALCULATOR) window_title = "NEXUS CALCULATOR";
+    if (active_view == DESKTOP_CONTROL_CENTER) window_title = "CONTROL CENTER";
+    if (active_view == DESKTOP_CALCULATOR) window_title = "CALCULATOR";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
-    desktop_draw_logo(panel_x + 7U, panel_y + 8U, 22U);
-    graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
-                       1U, 234U, 244U, 252U);
+
+    if (active_view >= DESKTOP_FILES && active_view <= DESKTOP_CALCULATOR) {
+        desktop_draw_app_icon(panel_x + 10U, panel_y + 9U, 25U,
+                              (size_t)(active_view - DESKTOP_FILES));
+    } else {
+        desktop_draw_logo(panel_x + 10U, panel_y + 8U, 25U);
+    }
+    graphics_draw_text_smooth(panel_x + 43U, panel_y + 11U, window_title,
+                              2U, 245U, 249U, 255U);
+    graphics_draw_text(panel_x + 44U, panel_y + 29U,
+                       "NEXUS OS  /  NATIVE APPLICATION",
+                       1U, 139U, 178U, 204U);
+    desktop_draw_pill(panel_x + panel_width - 174U, panel_y + 11U,
+                      96U, "NEXUS", true,
+                      accent_red, accent_green, accent_blue);
     /* Custom window controls; close is wired to the shell input handler. */
     const uint64_t controls_x = panel_x + panel_width - 66U;
     graphics_fill_round_rect(controls_x, panel_y + 12U, 14U, 12U,
@@ -1637,8 +1747,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
     const uint64_t text_y = panel_y +
         (active_view == DESKTOP_INSTALLER ? 48U : 82U);
     if (active_view == DESKTOP_HOME) {
-        graphics_draw_text(text_x, text_y, "WELCOME TO YOUR WORKSPACE",
-                           2U, 245U, 249U, 255U);
+        graphics_draw_text_smooth(text_x, text_y, "WELCOME TO YOUR WORKSPACE", 2U, 245U, 249U, 255U);
         graphics_draw_text(text_x + 2U, text_y + 29U,
                            "YOUR TOOLS, FILES AND SYSTEM STATUS IN ONE PLACE",
                            1U, 139U, 190U, 218U);
@@ -1750,7 +1859,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            "F1-F7 OPEN APPS   CTRL+SPACE SEARCH   ALT+TAB SWITCH",
                            1U, 151U, 190U, 213U);
     } else if (active_view == DESKTOP_SETTINGS) {
-        graphics_draw_text(text_x, text_y, "MAKE NEXUS YOURS", 2U, 241U, 248U, 255U);
+        graphics_draw_text_smooth(text_x, text_y, "MAKE NEXUS YOURS", 2U, 241U, 248U, 255U);
         graphics_draw_text(text_x, text_y + 30U,
                            "PERSONALIZATION AND DESKTOP BEHAVIOR", 1U, 111U, 207U, 231U);
         const uint64_t row_x = panel_x + 24U;
@@ -1785,28 +1894,58 @@ static void desktop_draw_window_surface(enum desktop_view view,
                                 "5  SELECT NEXT INSTALLED ADAPTER",
                                 "6  INCREASE TEXT AND CONTROL CONTRAST",
                                 "7  REDUCE APP TRANSITION ANIMATION"};
-        graphics_draw_text(row_x, row_y - 14U, "DISPLAY AND ACCESSIBILITY",
-                           1U, 111U, 207U, 231U);
+        desktop_draw_section_header(row_x, row_y - 26U,
+                                     "PERSONALIZATION  /  DISPLAY  /  ACCESSIBILITY",
+                                     113U, 192U, 228U);
+        const uint64_t swatch_y = row_y - 31U;
+        for (size_t swatch = 0U; swatch < 5U; ++swatch) {
+            const uint64_t sx = row_x + row_w - 5U * 20U - 8U +
+                                (uint64_t)swatch * 20U;
+            graphics_fill_round_rect(sx, swatch_y, 15U, 7U, 3U,
+                desktop_palette_colors[swatch][3],
+                desktop_palette_colors[swatch][4],
+                desktop_palette_colors[swatch][5]);
+            if (swatch == settings_theme)
+                graphics_draw_round_rect(sx - 2U, swatch_y - 2U,
+                                          19U, 11U, 4U, 245U, 249U, 255U);
+        }
         for (size_t i = 0U; i < 7U; ++i) {
             const uint64_t y = row_y + (uint64_t)i * 42U;
-            const uint8_t bg = settings_high_contrast ? 9U : 25U;
-            graphics_fill_round_rect(row_x, y, row_w, 36U, 8U, bg, bg + 18U, bg + 23U);
-            graphics_draw_round_rect(row_x, y, row_w, 36U, 8U,
-                                     settings_high_contrast ? 220U : 88U,
-                                     settings_high_contrast ? 235U : 123U,
-                                     settings_high_contrast ? 255U : 157U);
-            graphics_fill_round_rect(row_x + 1U, y + 6U, 3U, 24U, 1U,
-                                i == 0U ? 45U : (i == 1U ? 117U : (i == 2U ? 82U : 217U)),
-                                i == 0U ? 177U : (i == 1U ? 136U : (i == 2U ? 198U : 164U)),
-                                i == 0U ? 202U : (i == 1U ? 244U : (i == 2U ? 155U : 83U)));
-            graphics_draw_text(row_x + 15U, y + 6U, labels[i], 1U,
-                               settings_high_contrast ? 255U : 180U,
-                               settings_high_contrast ? 255U : 205U, 255U);
-            graphics_draw_text(row_x + row_w / 2U, y + 6U, values[i], 1U, 255U, 255U, 255U);
-            graphics_draw_text(row_x + 15U, y + 23U, hints[i], 1U,
-                               settings_high_contrast ? 230U : 135U,
-                               settings_high_contrast ? 230U : 175U,
-                               settings_high_contrast ? 255U : 205U);
+            const uint8_t ar = i == 0U ? 65U : (i == 1U ? 124U :
+                (i == 2U ? 75U : (i == 3U ? 141U :
+                (i == 4U ? 70U : (i == 5U ? 168U : 93U)))));
+            const uint8_t ag = i == 0U ? 176U : (i == 1U ? 150U :
+                (i == 2U ? 197U : (i == 3U ? 134U :
+                (i == 4U ? 163U : (i == 5U ? 145U : 198U)))));
+            const uint8_t ab = i == 0U ? 211U : (i == 1U ? 230U :
+                (i == 2U ? 164U : (i == 3U ? 211U :
+                (i == 4U ? 224U : (i == 5U ? 235U : 173U)))));
+            desktop_draw_card(row_x, y, row_w, 36U, ar, ag, ab, false);
+            graphics_draw_text(row_x + 15U, y + 7U, labels[i], 1U,
+                               settings_high_contrast ? 255U : 222U,
+                               settings_high_contrast ? 255U : 232U, 247U);
+            graphics_draw_text(row_x + 15U, y + 24U, hints[i], 1U,
+                               settings_high_contrast ? 232U : 145U,
+                               settings_high_contrast ? 232U : 183U,
+                               settings_high_contrast ? 255U : 207U);
+            const uint64_t value_x = row_x + row_w - 156U;
+            const uint64_t value_w = 126U;
+            graphics_fill_round_rect(value_x, y + 8U, value_w, 20U, 7U,
+                                     13U, 29U, 45U);
+            graphics_draw_round_rect(value_x, y + 8U, value_w, 20U, 7U,
+                                     ar, ag, ab);
+            graphics_draw_text(value_x + 9U, y + 21U, values[i], 1U,
+                               244U, 248U, 255U);
+            graphics_fill_round_rect(row_x + row_w - 24U, y + 8U,
+                                     18U, 20U, 6U, 32U, 54U, 75U);
+            graphics_draw_text(row_x + row_w - 19U, y + 21U,
+                               i == 6U ? "7" :
+                               (i == 5U ? "6" :
+                               (i == 4U ? "5" :
+                               (i == 3U ? "4" :
+                               (i == 2U ? "3" :
+                               (i == 1U ? "2" : "1"))))),
+                               1U, 188U, 211U, 232U);
         }
         char display_mode[64] = "FRAMEBUFFER ";
         char display_width[21], display_height[21];
@@ -1829,39 +1968,125 @@ static void desktop_draw_window_surface(enum desktop_view view,
                            "1-7 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_MONITOR) {
-        graphics_draw_text(text_x, text_y, "SYSTEM MONITOR", 2U, 241U, 248U, 255U);
+        graphics_draw_text_smooth(text_x, text_y, "SYSTEM MONITOR", 2U,
+                                  245U, 249U, 255U);
         graphics_draw_text(text_x, text_y + 30U,
-                           "LIVE RESOURCE AND DEVICE OVERVIEW", 1U, 111U, 207U, 231U);
-        char memory_total[21], memory_free[21], uptime[21], device_count[21];
-        format_u64(memory_total_bytes() / (1024U * 1024U), memory_total);
-        format_u64(memory_free_bytes() / (1024U * 1024U), memory_free);
-        format_u64(timer_ticks() / 100U, uptime);
-        format_u64(blockdev_count(), device_count);
-        const char *labels[4] = {"PHYSICAL MEMORY (MiB)", "FREE MEMORY (MiB)",
-                                 "UPTIME (SECONDS)", "BLOCK DEVICES"};
-        const char *values[4] = {memory_total, memory_free, uptime, device_count};
+                           "LIVE HARDWARE, MEMORY, NETWORK AND STORAGE",
+                           1U, 132U, 191U, 219U);
+        const uint64_t total_bytes = memory_total_bytes();
+        const uint64_t free_bytes = memory_free_bytes();
+        const uint64_t used_bytes = total_bytes > free_bytes
+            ? total_bytes - free_bytes : 0U;
+        const uint64_t total_mib = total_bytes / (1024U * 1024U);
+        const uint64_t free_mib = free_bytes / (1024U * 1024U);
+        const uint32_t memory_percent = total_bytes == 0U ? 0U :
+            (uint32_t)((used_bytes * 100U) / total_bytes);
+        char total_text[21], free_text[21], uptime_text[21], disk_text[21];
+        char memory_percent_text[21];
+        format_u64(total_mib, total_text);
+        format_u64(free_mib, free_text);
+        format_u64(timer_ticks() / 100U, uptime_text);
+        format_u64(blockdev_count(), disk_text);
+        format_u64(memory_percent, memory_percent_text);
+
+        const uint64_t stat_x = panel_x + 24U;
+        const uint64_t stat_y = text_y + 58U;
+        const uint64_t stat_gap = 10U;
+        const uint64_t stat_width = (panel_width - 58U) / 2U;
+        const char *stat_labels[4] = {
+            "TOTAL MEMORY", "AVAILABLE MEMORY",
+            "SESSION UPTIME", "STORAGE DEVICES"
+        };
+        const char *stat_values[4] = {
+            total_text, free_text, uptime_text, disk_text
+        };
+        static const uint8_t stat_colors[4][3] = {
+            {81U, 166U, 224U}, {68U, 191U, 165U},
+            {153U, 132U, 232U}, {220U, 163U, 103U}
+        };
         for (size_t i = 0U; i < 4U; ++i) {
-            const uint64_t y = text_y + 66U + (uint64_t)i * 55U;
-            graphics_fill_round_rect(panel_x + 24U, y, panel_width - 48U,
-                                      43U, 9U, 25U, 43U, 66U);
-            graphics_draw_round_rect(panel_x + 24U, y, panel_width - 48U,
-                                     43U, 9U, 68U, 103U, 137U);
-            graphics_draw_text(panel_x + 40U, y + 16U, labels[i],
-                               1U, 145U, 177U, 198U);
-            graphics_draw_text(panel_x + panel_width - 130U, y + 16U, values[i],
-                               1U, 235U, 245U, 252U);
+            const uint64_t col = i % 2U;
+            const uint64_t row = i / 2U;
+            const uint64_t x = stat_x + col * (stat_width + stat_gap);
+            const uint64_t y = stat_y + row * 52U;
+            desktop_draw_card(x, y, stat_width, 46U,
+                              stat_colors[i][0], stat_colors[i][1],
+                              stat_colors[i][2], false);
+            graphics_draw_text(x + 14U, y + 15U, stat_labels[i], 1U,
+                               145U, 182U, 207U);
+            graphics_draw_text_smooth(x + 14U, y + 36U, stat_values[i], 2U,
+                                      245U, 249U, 255U);
+            if (i < 2U)
+                graphics_draw_text(x + stat_width - 36U, y + 36U,
+                                   "MiB", 1U, 143U, 176U, 201U);
         }
-        graphics_draw_text(text_x, text_y + 296U,
-                           vfs_nxfs_mounted() && vfs_nxfs_writable()
-                               ? "DATA VOLUME: NXFS MOUNTED / WRITABLE"
-                               : (vfs_root_mounted() ? "DATA VOLUME: MOUNTED" :
-                                  "DATA VOLUME: VOLATILE RAM"),
-                           1U, 119U, 229U, 211U);
+
+        const uint64_t memory_y = text_y + 170U;
+        desktop_draw_section_header(text_x, memory_y,
+                                    "MEMORY UTILIZATION",
+                                    79U, 190U, 172U);
+        graphics_draw_text(panel_x + panel_width - 116U, memory_y + 10U,
+                           memory_percent_text, 1U, 244U, 248U, 255U);
+        graphics_draw_text(panel_x + panel_width - 92U, memory_y + 10U,
+                           "% USED", 1U, 137U, 176U, 197U);
+        desktop_draw_meter(text_x, memory_y + 19U, panel_width - 64U, 9U,
+                           memory_percent, 64U, 182U, 170U);
+
+        const uint64_t detail_y = text_y + 213U;
+        struct nexus_net_info network_info = {0};
+        const bool have_network_info = net_get_info(&network_info) &&
+                                       network_info.interface_ready;
+        const char *network_name = netdev_device_count() == 0U
+            ? "NO DRIVER BOUND" : netdev_device_name_at(netdev_default_index());
+        if (network_name == NULL) network_name = "UNKNOWN ADAPTER";
+        const char *network_state = !have_network_info ? "NO ACTIVE INTERFACE" :
+            (network_info.ipv4_configured ? "IP CONFIGURED" : "DHCP PENDING");
+        const char *storage_state =
+            vfs_nxfs_mounted() && vfs_nxfs_writable() ? "NXFS / WRITABLE" :
+            (vfs_nxfs_mounted() ? "NXFS / READ ONLY" :
+            (vfs_root_mounted() ? "BOOT VOLUME / READ ONLY" :
+             (vfs_has_filesystem() ? "RAM FILESYSTEM" : "NO FILESYSTEM")));
+        desktop_draw_card(text_x, detail_y, panel_width - 64U, 45U,
+                          73U, 188U, 163U, false);
+        graphics_draw_text(text_x + 14U, detail_y + 15U,
+                           "DATA VOLUME", 1U, 145U, 182U, 207U);
+        graphics_draw_text(text_x + 14U, detail_y + 34U,
+                           storage_state, 1U, 241U, 247U, 252U);
+
+        desktop_draw_card(text_x, detail_y + 52U, panel_width - 64U, 45U,
+                          83U, 166U, 223U, false);
+        graphics_draw_text(text_x + 14U, detail_y + 67U,
+                           "NETWORK INTERFACE", 1U, 145U, 182U, 207U);
+        graphics_draw_text(text_x + 14U, detail_y + 86U,
+                           network_name, 1U, 241U, 247U, 252U);
+        graphics_draw_text(panel_x + panel_width - 190U, detail_y + 86U,
+                           network_state, 1U,
+                           have_network_info && network_info.ipv4_configured
+                               ? 117U : 230U,
+                           have_network_info && network_info.ipv4_configured
+                               ? 224U : 179U,
+                           have_network_info && network_info.ipv4_configured
+                               ? 190U : 129U);
+
+        char pci_count[21], usb_count[21];
+        format_u64(pci_wireless_lan_candidate_count(), pci_count);
+        format_u64(nexus_usb_inventory_count(), usb_count);
+        graphics_draw_text(text_x, detail_y + 110U,
+                           "PCI WI-FI CANDIDATES:", 1U, 145U, 182U, 207U);
+        graphics_draw_text(text_x + 145U, detail_y + 110U,
+                           pci_count, 1U, 241U, 247U, 252U);
+        graphics_draw_text(text_x + 202U, detail_y + 110U,
+                           "USB DEVICES:", 1U, 145U, 182U, 207U);
+        graphics_draw_text(text_x + 295U, detail_y + 110U,
+                           usb_count, 1U, 241U, 247U, 252U);
+        graphics_draw_text(text_x, detail_y + 130U,
+                           "WI-FI RADIO DRIVER: NOT INSTALLED",
+                           1U, 238U, 177U, 127U);
         graphics_draw_text(text_x, panel_y + panel_height - 18U,
-                           "ESC RETURN HOME   VALUES REFRESH WHEN THE DESKTOP REDRAWS",
-                           1U, 151U, 178U, 201U);
+                           "ESC HOME  /  HARDWARE VALUES UPDATE WITH THE DESKTOP",
+                           1U, 151U, 185U, 207U);
     } else if (active_view == DESKTOP_CONTROL_CENTER) {
-        graphics_draw_text(text_x,text_y,"CONTROL CENTER",2U,245U,249U,255U);
+        graphics_draw_text_smooth(text_x,text_y,"CONTROL CENTER", 2U,245U,249U,255U);
         graphics_draw_text(text_x,text_y+30U,
             "LIVE SYSTEM STATUS  /  QUICK PERSONALIZATION",
             1U,139U,184U,210U);
@@ -1911,9 +2136,15 @@ static void desktop_draw_window_surface(enum desktop_view view,
             "COLOR THEME","WALLPAPER","HIGH CONTRAST",
             "MOTION EFFECTS","TASKBAR STATUS","ALL SETTINGS"
         };
+        static const char *const control_theme_names[5]={
+            "MIDNIGHT","OCEAN","EMBER","VIOLET","FOREST"
+        };
+        static const char *const control_wallpaper_names[5]={
+            "AURORA","GRADIENT","SOLID","GRID","ORBIT"
+        };
         const char *quick_values[6]={
-            settings_theme==0U?"MIDNIGHT":(settings_theme==1U?"OCEAN":"EMBER"),
-            settings_wallpaper==0U?"AURORA":(settings_wallpaper==1U?"GRADIENT":"SOLID"),
+            control_theme_names[settings_theme < 5U ? settings_theme : 0U],
+            control_wallpaper_names[settings_wallpaper < 5U ? settings_wallpaper : 0U],
             settings_high_contrast?"ENABLED":"STANDARD",
             settings_reduce_motion?"REDUCED":"FULL",
             settings_show_status?"VISIBLE":"HIDDEN",
@@ -1921,6 +2152,10 @@ static void desktop_draw_window_surface(enum desktop_view view,
         };
         const uint64_t quick_x=panel_x+24U,quick_y=text_y+198U;
         const uint64_t quick_w=(panel_width-64U)/3U;
+        static const uint8_t quick_accent[6][3]={
+            {76U,174U,222U},{89U,194U,184U},{164U,137U,231U},
+            {95U,188U,151U},{222U,164U,103U},{132U,159U,211U}
+        };
         for(size_t i=0U;i<6U;++i) {
             const uint64_t col=i%3U,row=i/3U;
             const uint64_t x=quick_x+col*(quick_w+8U);
@@ -1928,18 +2163,26 @@ static void desktop_draw_window_surface(enum desktop_view view,
             const bool selected=(i==2U && settings_high_contrast) ||
                 (i==3U && settings_reduce_motion) ||
                 (i==4U && settings_show_status);
-            graphics_fill_round_rect(x,y,quick_w,54U,10U,
-                selected?34U:25U,selected?65U:43U,selected?82U:62U);
-            graphics_draw_round_rect(x,y,quick_w,54U,10U,
-                selected?108U:72U,selected?154U:105U,selected?170U:133U);
-            graphics_draw_text(x+10U,y+19U,quick_labels[i],1U,157U,190U,213U);
-            graphics_draw_text(x+10U,y+40U,quick_values[i],1U,244U,249U,255U);
+            desktop_draw_card(x,y,quick_w,54U,
+                quick_accent[i][0],quick_accent[i][1],
+                quick_accent[i][2],selected);
+            graphics_draw_text(x+12U,y+19U,quick_labels[i],1U,
+                               163U,196U,216U);
+            graphics_draw_text(x+12U,y+41U,quick_values[i],1U,
+                               246U,250U,255U);
+            if(i<5U) {
+                graphics_fill_round_rect(x+quick_w-22U,y+7U,14U,14U,
+                                         5U,13U,29U,43U);
+                graphics_draw_text(x+quick_w-18U,y+17U,
+                    i==4U?"5":(i==3U?"4":(i==2U?"3":(i==1U?"2":"1"))),
+                    1U,160U,192U,214U);
+            }
         }
         graphics_draw_text(text_x,panel_y+panel_height-18U,
             "1-5 TOGGLE QUICK SETTINGS   ENTER OPENS ALL SETTINGS",
             1U,141U,173U,198U);
     } else if (active_view == DESKTOP_CALCULATOR) {
-        graphics_draw_text(text_x,text_y,"NEXUS CALCULATOR",2U,241U,248U,255U);
+        graphics_draw_text_smooth(text_x,text_y,"NEXUS CALCULATOR", 2U,241U,248U,255U);
         graphics_draw_text(text_x,text_y+30U,
             "INTEGER MODE  /  PRECEDENCE  /  PARENTHESES",1U,111U,207U,231U);
         const uint64_t display_x=panel_x+24U, display_y=text_y+62U;
@@ -1981,8 +2224,16 @@ static void desktop_draw_window_surface(enum desktop_view view,
             graphics_draw_text(text_x, text_y, "NEXUS INSTALLER - DRIVE SELECTION",
                                2, 239, 249, 255);
             graphics_draw_text(text_x, text_y + 28U,
-                               "READ-ONLY DISCOVERY - SELECT A TARGET",
-                               1, 108, 216, 229);
+                               "WELCOME TO NEXUS  /  CHOOSE WHERE TO INSTALL",
+                               1, 157, 137, 255);
+            graphics_fill_round_rect(text_x - 12U, text_y + 44U,
+                                      548U, 120U, 12U,
+                                      23U, 30U, 52U);
+            graphics_draw_round_rect(text_x - 12U, text_y + 44U,
+                                     548U, 120U, 12U,
+                                     91U, 77U, 145U);
+            graphics_fill_rect(text_x - 12U, text_y + 44U,
+                               548U, 3U, 153U, 104U, 255U);
             const size_t device_count = blockdev_count();
             if (device_count == 0U) {
                 graphics_draw_text(text_x, text_y + 88U,
@@ -2089,12 +2340,35 @@ static void desktop_draw_window_surface(enum desktop_view view,
                                    1, 119, 229, 211);
             }
             if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
+                graphics_fill_rect(text_x - 12U, text_y + 82U, 548U, 150U,
+                                   24U, 29U, 52U);
+                graphics_draw_rect(text_x - 12U, text_y + 82U, 548U, 150U,
+                                   111U, 76U, 166U);
+                graphics_fill_rect(text_x - 12U, text_y + 82U, 548U, 4U,
+                                   153U, 104U, 255U);
                 graphics_draw_text(text_x, text_y + 100U,
-                                   "FINAL CHECK: THIS ERASES THE SELECTED DRIVE",
-                                   1, 239, 177, 119);
-                graphics_draw_text(text_x, text_y + 124U,
-                                   "CHECK THE MODEL AND SIZE, THEN TYPE ERASE",
-                                   1, 239, 177, 119);
+                                   "READY TO INSTALL NEXUS?",
+                                   2, 239, 249, 255);
+                graphics_draw_text(text_x, text_y + 130U,
+                                   "ALL DATA ON THIS DRIVE WILL BE ERASED.",
+                                   1, 255, 166, 154);
+                graphics_draw_text(text_x, text_y + 150U,
+                                   "Check the drive above before continuing.",
+                                   1, 190, 199, 222);
+                graphics_fill_rect(text_x, text_y + 180U, 300U, 42U,
+                                   119U, 78U, 220U);
+                graphics_draw_rect(text_x, text_y + 180U, 300U, 42U,
+                                   178U, 151U, 255U);
+                graphics_draw_text(text_x + 24U, text_y + 197U,
+                                   "CONFIRM & INSTALL",
+                                   1, 255, 255, 255);
+                graphics_fill_rect(text_x + 312U, text_y + 180U, 112U, 42U,
+                                   48U, 57U, 78U);
+                graphics_draw_rect(text_x + 312U, text_y + 180U, 112U, 42U,
+                                   91U, 105U, 137U);
+                graphics_draw_text(text_x + 337U, text_y + 197U,
+                                   "CANCEL",
+                                   1, 232, 237, 248);
             } else if (installer_ui_state == INSTALLER_UI_RUNNING) {
                 graphics_draw_text(text_x, text_y + 116U,
                                    "INSTALLATION IN PROGRESS - DO NOT POWER OFF",
@@ -2121,16 +2395,21 @@ static void desktop_draw_window_surface(enum desktop_view view,
             graphics_draw_text(text_x, text_y + 160U, installer_status_text,
                                1, 170, 225, 190);
             if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
-                graphics_fill_rect(text_x, text_y + 194U, 520U, 30U,
-                                   11, 20, 39);
-                graphics_draw_rect(text_x, text_y + 194U, 520U, 30U,
-                                   56, 88, 119);
-                graphics_draw_text(text_x + 8U, text_y + 204U,
-                                   installer_input, 1, 239, 249, 255);
+                graphics_draw_text(text_x, text_y + 244U,
+                                   "Click Confirm & Install or press ENTER.",
+                                   1, 190, 199, 222);
+                graphics_draw_text(text_x, text_y + 262U,
+                                   "Nothing is changed until you confirm.",
+                                   1, 170, 191, 211);
+            } else if (installer_ui_state == INSTALLER_UI_RUNNING) {
+                graphics_fill_rect(text_x, text_y + 194U, 420U, 8U,
+                                   48U, 57U, 78U);
+                graphics_fill_rect(text_x, text_y + 194U, 110U, 8U,
+                                   153U, 104U, 255U);
+                graphics_draw_text(text_x, text_y + 218U,
+                                   "Please keep the computer powered on.",
+                                   1, 190, 199, 222);
             }
-            graphics_draw_text(text_x, text_y + 260U,
-                               "ENTER CONFIRM  BACKSPACE EDIT  ESC CANCEL",
-                               1, 170, 191, 211);
         }
     } else if (active_view == DESKTOP_FILES) {
         graphics_draw_text(text_x, text_y, "NEXUS FILES",
@@ -2193,12 +2472,30 @@ static void desktop_draw_window_surface(enum desktop_view view,
             graphics_draw_text(text_x, text_y + 340U, files_edit_status,
                                1, 239, 177, 119);
         } else {
-        graphics_draw_text(text_x, text_y + 48U,
-                           "STORAGE DEVICE DISCOVERY IS ACTIVE",
-                           1, 108, 216, 229);
-        graphics_draw_text(text_x, text_y + 78U,
-                           "DISKS ARE CURRENTLY READ ONLY",
-                           1, 233, 243, 252);
+        graphics_draw_text_smooth(text_x, text_y + 47U,
+                                  "FILES AND FOLDERS", 2U,
+                                  242U, 248U, 255U);
+        desktop_draw_pill(panel_x + panel_width - 220U, text_y + 45U,
+            180U, vfs_nxfs_mounted() && vfs_nxfs_writable()
+                ? "PERSISTENT DATA" : "LIMITED STORAGE",
+            vfs_nxfs_mounted() && vfs_nxfs_writable(),
+            72U, 190U, 166U);
+        const uint64_t files_card_y = text_y + 74U;
+        desktop_draw_card(text_x, files_card_y, panel_width - 64U, 30U,
+                          69U, 165U, 209U, false);
+        char item_count_text[21];
+        format_u64(files_listing_count, item_count_text);
+        graphics_draw_text(text_x + 14U, files_card_y + 19U,
+                           "ITEMS", 1U, 145U, 182U, 207U);
+        graphics_draw_text(text_x + 58U, files_card_y + 19U,
+                           item_count_text, 1U, 245U, 249U, 255U);
+        graphics_draw_text(text_x + 142U, files_card_y + 19U,
+                           vfs_nxfs_mounted() && vfs_nxfs_writable()
+                               ? "NXFS READY TO SAVE" :
+                               (vfs_root_mounted()
+                                   ? "BOOT VOLUME READ ONLY"
+                                   : "RAM / SESSION STORAGE"),
+                           1U, 177U, 211U, 229U);
         if (!files_scanned) {
             graphics_draw_text(text_x, text_y + 108U,
                                "PRESS F1 TO SCAN A READ ONLY DISK",
@@ -2328,12 +2625,16 @@ static void desktop_draw_window_surface(enum desktop_view view,
                     graphics_fill_rect(text_x + column * 260U - 6U,
                                        text_y + 321U + line * 24U,
                                        240U, 20U, 34U, 78U, 105U);
-                if (files_listing_types[index] == NEXUS_VFS_DIRECTORY)
-                    graphics_draw_text(text_x + column * 260U,
-                                       text_y + 326U + line * 24U,
-                                       "DIR", 1U, 255U, 190U, 112U);
+                const bool is_directory =
+                    files_listing_types[index] == NEXUS_VFS_DIRECTORY;
+                graphics_draw_text(text_x + column * 260U,
+                                   text_y + 326U + line * 24U,
+                                   is_directory ? "DIR" : "FILE", 1U,
+                                   is_directory ? 255U : 132U,
+                                   is_directory ? 190U : 197U,
+                                   is_directory ? 112U : 222U);
                 graphics_draw_text(text_x + column * 260U +
-                                       (files_listing_types[index] == NEXUS_VFS_DIRECTORY ? 28U : 0U),
+                                       (is_directory ? 28U : 35U),
                                    text_y + 326U + line * 24U,
                                    files_listing[index], 1U,
                                    selected ? 119U : 233U,
@@ -2368,23 +2669,44 @@ static void desktop_draw_window_surface(enum desktop_view view,
         }
         }
     } else if (active_view == DESKTOP_TERMINAL) {
-        graphics_draw_text(text_x, text_y, "NEXUS COMMAND SHELL",
-                           2, 239, 249, 255);
-        graphics_draw_text(text_x, text_y + 42U,
-                           "RAM FILE WRITES ARE VOLATILE",
-                           1, 108, 216, 229);
-        graphics_draw_text(text_x, text_y + 82U, terminal_output,
-                           1, 170, 225, 190);
-        graphics_draw_text(text_x, text_y + 128U, "nexus> ",
-                           1, 119, 229, 211);
-        graphics_draw_text(text_x + 56U, text_y + 128U, terminal_input,
-                           1, 239, 249, 255);
-        graphics_draw_text(text_x, text_y + 180U,
-                           "HELP  ABOUT  MEM  NET  DNS  HTTP  FILES  RAM",
-                           1, 170, 191, 211);
-        graphics_draw_text(text_x, text_y + 210U,
-                           "PRESS ESC TO RETURN HOME",
-                           1, 119, 229, 211);
+        graphics_draw_text_smooth(text_x, text_y, "NEXUS TERMINAL", 2U,
+                                  245U, 249U, 255U);
+        graphics_draw_text(text_x, text_y + 30U,
+                           "NATIVE COMMAND INTERFACE",
+                           1U, 126U, 187U, 211U);
+        desktop_draw_pill(panel_x + panel_width - 174U, text_y + 20U,
+                          138U, "COMMAND MODE", true,
+                          73U, 190U, 166U);
+        const uint64_t terminal_x = panel_x + 24U;
+        const uint64_t terminal_y = text_y + 54U;
+        const uint64_t terminal_width = panel_width - 48U;
+        desktop_draw_card(terminal_x, terminal_y, terminal_width, 174U,
+                          67U, 187U, 170U, false);
+        graphics_draw_text(terminal_x + 16U, terminal_y + 21U,
+                           "NEXUS OS  /  SYSTEM SHELL",
+                           1U, 143U, 194U, 219U);
+        graphics_fill_rect(terminal_x + 14U, terminal_y + 31U,
+                           terminal_width - 28U, 1U, 65U, 91U, 117U);
+        graphics_draw_text(terminal_x + 16U, terminal_y + 58U,
+                           terminal_output[0] ? terminal_output :
+                               "Welcome. Type HELP to list available commands.",
+                           1U, 172U, 231U, 197U);
+        graphics_fill_round_rect(terminal_x + 12U, terminal_y + 105U,
+                                 terminal_width - 24U, 34U, 8U,
+                                 8U, 19U, 30U);
+        graphics_draw_text(terminal_x + 24U, terminal_y + 126U,
+                           "nexus >", 1U, 94U, 213U, 196U);
+        graphics_draw_text(terminal_x + 80U, terminal_y + 126U,
+                           terminal_input, 1U, 246U, 249U, 255U);
+        desktop_draw_pill(terminal_x + 14U, terminal_y + 145U,
+                          132U, "HELP", false, 88U, 166U, 208U);
+        desktop_draw_pill(terminal_x + 154U, terminal_y + 145U,
+                          132U, "MEM", false, 88U, 166U, 208U);
+        desktop_draw_pill(terminal_x + 294U, terminal_y + 145U,
+                          132U, "NET", false, 88U, 166U, 208U);
+        graphics_draw_text(text_x, panel_y + panel_height - 18U,
+                           "ENTER RUNS A COMMAND  /  ESC RETURNS HOME  /  RAM WRITES ARE VOLATILE",
+                           1U, 151U, 185U, 207U);
     } else if (active_view == DESKTOP_BROWSER) {
         /* Modern browser chrome with a real query/address input path. */
         graphics_fill_gradient_rect(panel_x + 18U, text_y - 8U,
@@ -2393,11 +2715,14 @@ static void desktop_draw_window_surface(enum desktop_view view,
             panel_width - 36U, 30U, 8U, 23U, 44U, 65U);
         graphics_fill_round_rect(panel_x + 18U, text_y - 8U,
             4U, 30U, 2U, 79U, 204U, 202U);
-        desktop_draw_logo(panel_x + 28U, text_y - 3U, 20U);
-        graphics_draw_text(panel_x + 56U, text_y + 1U,
-                           "NEXUS BROWSER", 1U, 239U, 249U, 255U);
-        graphics_draw_text(panel_x + panel_width - 170U, text_y + 1U,
-                           "WEB AND SEARCH", 1U, 120U, 210U, 205U);
+        desktop_draw_logo(panel_x + 27U, text_y - 4U, 22U);
+        graphics_draw_text_smooth(panel_x + 57U, text_y - 1U,
+                           "NEXUS BROWSER", 2U, 245U, 249U, 255U);
+        graphics_draw_text(panel_x + 59U, text_y + 20U,
+                           "YOUR WEB, THE NEXUS WAY", 1U, 126U, 187U, 211U);
+        desktop_draw_pill(panel_x + panel_width - 172U, text_y,
+                          138U, "NEXUS WEB", true,
+                          79U, 194U, 203U);
 
         const uint64_t toolbar_y = text_y + 28U;
         graphics_fill_round_rect(panel_x + 18U, toolbar_y,
@@ -2433,47 +2758,80 @@ static void desktop_draw_window_surface(enum desktop_view view,
         graphics_fill_round_rect(panel_x + 18U, content_y,
             panel_width - 36U, content_height, 13U, 244U, 247U, 251U);
         if (!browser_has_page) {
+            const uint64_t hero_x = panel_x + 36U;
+            const uint64_t hero_y = content_y + 15U;
+            const uint64_t hero_w = panel_width - 72U;
+            const uint64_t hero_h = content_height > 130U
+                ? content_height - 78U : content_height - 28U;
+            graphics_fill_round_rect(hero_x, hero_y, hero_w, hero_h,
+                                     17U, 18U, 31U, 49U);
+            graphics_fill_gradient_rect(hero_x + 1U, hero_y + 1U,
+                hero_w - 2U, hero_h - 2U,
+                28U, 54U, 79U, 14U, 24U, 40U);
+            graphics_draw_round_rect(hero_x, hero_y, hero_w, hero_h,
+                                     17U, 74U, 112U, 145U);
+            graphics_fill_round_rect(hero_x + 1U, hero_y + 1U,
+                                     hero_w - 2U, 3U, 1U,
+                                     71U, 194U, 207U);
             const uint64_t center_x = panel_x + panel_width / 2U;
-            desktop_draw_logo(center_x - 24U, content_y + 20U, 48U);
-            graphics_draw_text(center_x - 74U, content_y + 86U,
-                "NEXUS BROWSER", 2U, 29U, 48U, 67U);
-            graphics_draw_text(center_x - 145U, content_y + 111U,
-                "SEARCH THE WEB OR OPEN A WEBSITE", 1U,
-                76U, 104U, 125U);
-            const uint64_t search_x = panel_x + 48U;
-            const uint64_t search_y = content_y + 138U;
-            const uint64_t search_w = panel_width - 96U;
+            desktop_draw_logo(center_x - 25U, hero_y + 18U, 50U);
+            graphics_draw_text_smooth(center_x - 80U, hero_y + 81U,
+                "NEXUS BROWSER", 2U, 246U, 250U, 255U);
+            graphics_draw_text(center_x - 136U, hero_y + 105U,
+                "A NATIVE BROWSER FOR THE NEXUS DESKTOP", 1U,
+                151U, 196U, 216U);
+            const uint64_t search_x = hero_x + 30U;
+            const uint64_t search_y = hero_y + 126U;
+            const uint64_t search_w = hero_w - 60U;
             graphics_fill_round_rect(search_x, search_y,
-                search_w, 42U, 13U, 255U, 255U, 255U);
+                search_w, 43U, 13U, 247U, 250U, 253U);
             graphics_draw_round_rect(search_x, search_y,
-                search_w, 42U, 13U, 115U, 151U, 176U);
-            graphics_fill_round_rect(search_x + 15U, search_y + 13U,
-                12U, 12U, 6U, 60U, 150U, 171U);
-            graphics_draw_text(search_x + 39U, search_y + 25U,
-                "TYPE A QUERY ABOVE AND PRESS ENTER", 1U,
-                73U, 100U, 121U);
-            const uint64_t chip_y = search_y + 62U;
+                search_w, 43U, 13U, 100U, 168U, 188U);
+            graphics_fill_round_rect(search_x + 13U, search_y + 13U,
+                14U, 14U, 7U, 65U, 171U, 184U);
+            graphics_draw_text(search_x + 39U, search_y + 26U,
+                "SEARCH OR ENTER A WEBSITE ADDRESS ABOVE", 1U,
+                46U, 72U, 94U);
+            const uint64_t chip_y = search_y + 57U;
             static const char *const chips[3] = {
-                "WEB SEARCH", "DIRECT HTTP", "NEXUS HELP"
+                "NEXUS START", "DIRECT HTTP", "NATIVE DESKTOP"
             };
             const uint64_t chip_w = (search_w - 24U) / 3U;
             for (size_t i = 0U; i < 3U; ++i) {
                 const uint64_t chip_x = search_x + i * (chip_w + 12U);
-                graphics_fill_round_rect(chip_x, chip_y, chip_w, 27U,
-                    8U, 230U, 237U, 244U);
-                graphics_draw_text(chip_x + 8U, chip_y + 17U,
-                    chips[i], 1U, 61U, 91U, 116U);
+                desktop_draw_pill(chip_x, chip_y, chip_w, chips[i],
+                                  i == 0U, 79U, 194U, 203U);
             }
-            graphics_draw_text(search_x, content_y + content_height - 18U,
-                "HTTPS SEARCH IS BLOCKED UNTIL TLS AND CERTIFICATES ARE READY",
-                1U, 177U, 104U, 73U);
+            graphics_draw_text(search_x, hero_y + hero_h - 25U,
+                "HTTPS AND LIVE SEARCH REQUIRE VERIFIED TLS - NOT YET ENABLED",
+                1U, 246U, 177U, 133U);
         } else {
             graphics_fill_round_rect(panel_x + 32U, content_y + 14U,
                 panel_width - 64U, 27U, 8U, 225U, 234U, 243U);
             graphics_draw_text(panel_x + 46U, content_y + 31U,
-                browser_search_mode ? "SEARCH RESPONSE" : "PAGE CONTENT",
+                browser_search_mode ? "NEXUS SEARCH RESPONSE" :
+                    "NEXUS WEB PAGE  /  ALT+1..5 SOURCES",
                 1U, 48U, 88U, 112U);
-            for (size_t row = 0U; row < browser_line_count; ++row) {
+            desktop_draw_pill(panel_x + panel_width - 158U,
+                              content_y + 17U, 112U, "PLAIN HTTP",
+                              false, 224U, 153U, 110U);
+            const uint64_t row_space = content_height > 64U
+                ? content_height - 64U : 0U;
+            const size_t available_rows = (size_t)((row_space + 19U) / 20U);
+            size_t visible_sources = browser_source_count;
+            const size_t max_source_rows = available_rows > 2U
+                ? available_rows - 2U : 0U;
+            if (visible_sources > max_source_rows)
+                visible_sources = max_source_rows;
+            size_t visible_text_rows = browser_line_count;
+            const size_t text_capacity = available_rows - visible_sources;
+            if (visible_text_rows > text_capacity)
+                visible_text_rows = text_capacity;
+            const size_t max_scroll = browser_line_count > visible_text_rows
+                ? browser_line_count - visible_text_rows : 0U;
+            if (browser_scroll_offset > max_scroll)
+                browser_scroll_offset = max_scroll;
+            for (size_t row = 0U; row < visible_text_rows; ++row) {
                 const uint64_t row_y = content_y + 48U + row * 20U;
                 if (row_y + 16U >= content_y + content_height) break;
                 graphics_fill_round_rect(panel_x + 32U, row_y,
@@ -2482,7 +2840,29 @@ static void desktop_draw_window_surface(enum desktop_view view,
                     (row & 1U) ? 249U : 242U,
                     (row & 1U) ? 251U : 247U);
                 graphics_draw_text(panel_x + 44U, row_y + 12U,
-                    browser_lines[row], 1U, 37U, 57U, 75U);
+                    browser_lines[browser_scroll_offset + row],
+                    1U, 37U, 57U, 75U);
+            }
+            for (size_t source = 0U; source < visible_sources; ++source) {
+                const size_t row = visible_text_rows + source;
+                const uint64_t row_y = content_y + 48U + row * 20U;
+                if (row_y + 16U >= content_y + content_height) break;
+                graphics_fill_round_rect(panel_x + 32U, row_y,
+                    panel_width - 64U, 18U, 4U,
+                    228U, 239U, 248U);
+                char source_line[NEXUS_BROWSER_LINE_WIDTH] = {0};
+                static const char prefix[] = "ALT+";
+                size_t used = 0U;
+                for (size_t n = 0U; n < sizeof(prefix) - 1U; ++n)
+                    source_line[used++] = prefix[n];
+                source_line[used++] = (char)('1' + source);
+                source_line[used++] = ' ';
+                for (size_t n = 0U; browser_sources[source][n] != '\0' &&
+                     used + 1U < sizeof(source_line); ++n)
+                    source_line[used++] = browser_sources[source][n];
+                source_line[used] = '\0';
+                graphics_draw_text(panel_x + 44U, row_y + 12U,
+                    source_line, 1U, 31U, 104U, 166U);
             }
         }
         graphics_fill_round_rect(panel_x + 18U,
@@ -2492,7 +2872,8 @@ static void desktop_draw_window_surface(enum desktop_view view,
             browser_status, 1U, 160U, 207U, 196U);
         graphics_draw_text(panel_x + panel_width - 176U,
             panel_y + panel_height - 19U,
-            browser_search_mode ? "SEARCH" : "HTTP", 1U,
+            browser_source_count != 0U ? "ALT+1..5 LINKS" :
+            (browser_search_mode ? "SEARCH" : "HTTP"), 1U,
             111U, 207U, 231U);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
@@ -2565,10 +2946,55 @@ static void desktop_draw_window_surface(enum desktop_view view,
                                "STORAGE: NO FILESYSTEM MOUNTED",
                                1, 239, 177, 119);
         }
-        graphics_draw_text(text_x, text_y + 282U,
-                           "DISK WRITES ARE DISABLED IN THIS BUILD",
+        graphics_draw_text(text_x, text_y + 258U,
+                           "WI-FI CHIPSET DRIVER: NOT INSTALLED",
                            1, 239, 177, 119);
-        graphics_draw_text(text_x, text_y + 330U,
+        format_labeled_u64("PCI WLAN CANDIDATES: ",
+                           pci_wireless_lan_candidate_count(), line);
+        graphics_draw_text(text_x, text_y + 282U, line,
+                           1, 233, 243, 252);
+        format_labeled_u64("USB DEVICES ENUMERATED: ",
+                           nexus_usb_inventory_count(), line);
+        graphics_draw_text(text_x, text_y + 306U, line,
+                           1, 233, 243, 252);
+        size_t inventory_row = 0U;
+        for (uint32_t i = 0U; i < pci_device_count() &&
+             inventory_row < 3U; ++i) {
+            const struct nexus_pci_device *device = pci_device_at(i);
+            if (!pci_is_wireless_lan_candidate(device)) continue;
+            const char *chipset = wifi_pci_chipset_name(
+                device->vendor_id, device->device_id);
+            graphics_draw_text(text_x, text_y + 354U + inventory_row * 20U,
+                "PCI WI-FI CANDIDATE:", 1U, 133U, 188U, 211U);
+            graphics_draw_text(text_x + 150U,
+                text_y + 354U + inventory_row * 20U,
+                chipset != NULL ? chipset : "UNKNOWN CHIPSET (SEE LOG)",
+                1U, 233U, 243U, 252U);
+            ++inventory_row;
+        }
+        for (size_t i = 0U; i < nexus_usb_inventory_count() &&
+             inventory_row < 3U; ++i) {
+            struct nexus_usb_device_info usb = {0};
+            if (!nexus_usb_inventory_get(i, &usb)) continue;
+            const char *chipset = wifi_usb_chipset_name(
+                usb.vendor_id, usb.product_id);
+            if (chipset == NULL && !usb.has_vendor_specific_interface)
+                continue;
+            graphics_draw_text(text_x, text_y + 354U + inventory_row * 20U,
+                chipset != NULL ? "USB WI-FI ADAPTER:" : "USB VENDOR DEVICE:",
+                1U, 133U, 188U, 211U);
+            graphics_draw_text(text_x + 190U,
+                text_y + 354U + inventory_row * 20U,
+                chipset != NULL ? chipset : "UNKNOWN DEVICE (SEE LOG)",
+                1U, 233U, 243U, 252U);
+            ++inventory_row;
+        }
+        if (inventory_row == 0U) {
+            graphics_draw_text(text_x, text_y + 354U,
+                "NO WI-FI ADAPTER CANDIDATE FOUND",
+                1U, 170U, 191U, 211U);
+        }
+        graphics_draw_text(text_x, text_y + 414U,
                            "ESC RETURNS HOME - STATUS REFRESHES ON INPUT",
                            1, 170, 191, 211);
     }
@@ -3691,6 +4117,7 @@ static void browser_set_status(const char *message) {
 static void browser_clear_page(void) {
     browser_has_page = false;
     browser_line_count = 1U;
+    browser_scroll_offset = 0U;
     for (size_t row = 0; row < NEXUS_BROWSER_LINE_COUNT; ++row) {
         for (size_t column = 0; column < NEXUS_BROWSER_LINE_WIDTH; ++column)
             browser_lines[row][column] = '\0';
@@ -3741,14 +4168,8 @@ static void browser_render_body(const uint8_t *data, size_t length) {
     char text[NEXUS_BROWSER_LINE_COUNT * NEXUS_BROWSER_LINE_WIDTH];
     (void)nexus_browser_html_to_text(data + body, length - body,
                                      text, sizeof(text));
-    for (size_t i = 0U; text[i] != '\0'; ++i) {
+    for (size_t i = 0U; text[i] != '\0'; ++i)
         browser_append_page_char(text[i]);
-        if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT &&
-            i + 1U < sizeof(text) && text[i + 1U] != '\0') {
-            const char *last = browser_lines[NEXUS_BROWSER_LINE_COUNT - 1U];
-            if (last[NEXUS_BROWSER_LINE_WIDTH - 2U] != '\0') break;
-        }
-    }
 }
 
 static bool browser_append_text(char *buffer, size_t capacity,
@@ -3786,6 +4207,7 @@ static bool browser_input_looks_like_host(const char *value, size_t length) {
 
 static void browser_show_notice(const char *line_one, const char *line_two) {
     browser_clear_page();
+    browser_source_count = 0U;
     browser_has_page = true;
     if (line_one != NULL) {
         for (size_t i = 0U; line_one[i] != '\0'; ++i)
@@ -3801,6 +4223,9 @@ static void browser_show_notice(const char *line_one, const char *line_two) {
 static void browser_navigate(void) {
     browser_clear_page();
     browser_search_mode = false;
+    browser_download_pending = false;
+    browser_current_url[0] = '\0';
+    browser_source_count = 0U;
     if (browser_address_length == 0U) {
         browser_set_status("Enter a search query or web address");
         return;
@@ -3894,18 +4319,19 @@ static void browser_navigate(void) {
         return;
     }
 
-    uint8_t response[1536];
+    for (size_t i = 0U; i < sizeof(browser_response); ++i)
+        browser_response[i] = 0U;
     size_t response_length = 0U;
     const uint64_t start = timer_ticks();
     uint64_t last_data = start;
     browser_set_status("Receiving plain HTTP response...");
     while (timer_ticks() - start < 600U &&
            (response_length == 0U || timer_ticks() - last_data < 40U) &&
-           response_length < sizeof(response)) {
+           response_length < sizeof(browser_response)) {
         net_poll();
         const size_t received =
-            net_tcp_receive(response + response_length,
-                            sizeof(response) - response_length);
+            net_tcp_receive(browser_response + response_length,
+                            sizeof(browser_response) - response_length);
         if (received != 0U) {
             response_length += received;
             last_data = timer_ticks();
@@ -3922,7 +4348,7 @@ static void browser_navigate(void) {
     }
 
     struct nexus_browser_http_response parsed;
-    if (!nexus_browser_http_parse(response, response_length, &parsed)) {
+    if (!nexus_browser_http_parse(browser_response, response_length, &parsed)) {
         browser_set_status("Malformed or incomplete HTTP response");
         browser_show_notice("WEBSITE SENT AN INVALID RESPONSE",
                             "NEXUS REJECTED THE RESPONSE HEADERS");
@@ -3934,12 +4360,11 @@ static void browser_navigate(void) {
             parsed.location[2] == 't' && parsed.location[3] == 'p' &&
             parsed.location[4] == 's') {
             browser_set_status("Website redirected to HTTPS; TLS is unavailable");
-            browser_show_notice("THIS WEBSITE REDIRECTS TO HTTPS",
-                                "SECURE CONNECTIONS ARE NOT IMPLEMENTED YET");
+            browser_show_notice("HTTPS REDIRECT TARGET", parsed.location);
         } else {
-            browser_set_status("Website redirected; automatic redirects are not ready");
-            browser_show_notice("REDIRECT RECEIVED",
-                                "OPEN THE LOCATION URL MANUALLY");
+            browser_set_status("Website redirected; open the target manually");
+            browser_show_notice("REDIRECT TARGET", parsed.location[0] != '\0'
+                ? parsed.location : "NO LOCATION HEADER");
         }
         return;
     }
@@ -3947,10 +4372,21 @@ static void browser_navigate(void) {
         browser_set_status("Invalid HTTP body offset");
         return;
     }
-    browser_render_body(response + parsed.body_offset,
+    browser_render_body(browser_response + parsed.body_offset,
                         response_length - parsed.body_offset);
     if (parsed.status_code >= 200U && parsed.status_code < 300U) {
-        browser_set_status("HTTP page loaded; secure web features still limited");
+        browser_source_count = nexus_browser_html_extract_links_with_base(
+            browser_response + parsed.body_offset,
+            response_length - parsed.body_offset, input,
+            browser_sources, NEXUS_BROWSER_SOURCE_COUNT);
+        size_t url_length = 0U;
+        while (input[url_length] != '\0' &&
+               url_length + 1U < sizeof(browser_current_url)) {
+            browser_current_url[url_length] = input[url_length];
+            ++url_length;
+        }
+        browser_current_url[url_length] = '\0';
+        browser_set_status("HTTP page loaded | Ctrl+S saves to Nexus Data");
     } else {
         browser_set_status("HTTP response status is not successful");
     }
@@ -4574,19 +5010,6 @@ static void terminal_execute(void) {
     terminal_input[0]='\0';
 }
 
-static bool installer_text_equal_ci(const char *a, const char *b) {
-    if (a == NULL || b == NULL) return false;
-    size_t i = 0U;
-    while (a[i] != '\0' && b[i] != '\0') {
-        char x = a[i], y = b[i];
-        if (x >= 'a' && x <= 'z') x = (char)(x - 'a' + 'A');
-        if (y >= 'a' && y <= 'z') y = (char)(y - 'a' + 'A');
-        if (x != y) return false;
-        ++i;
-    }
-    return a[i] == '\0' && b[i] == '\0';
-}
-
 static void installer_set_status(const char *message) {
     size_t i = 0U;
     if (message == NULL) message = "";
@@ -4642,6 +5065,38 @@ static const char *installer_result_message(
     }
 }
 #endif
+
+static void installer_start_install(void) {
+    const struct nexus_block_device *device =
+        blockdev_at(installer_selected_device);
+#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
+    installer_ui_state = INSTALLER_UI_RUNNING;
+    installer_set_status("Starting guarded installation");
+    draw_shell();
+    draw_pointer();
+    const enum nexus_installer_runtime_result result =
+        nexus_installer_runtime_apply(
+            device, installer_firmware, installer_confirmed_id,
+            "ERASE", installer_progress_update, NULL);
+    if (result == NEXUS_INSTALL_RESULT_OK) {
+        installer_ui_state = INSTALLER_UI_COMPLETE;
+        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
+    } else {
+        installer_ui_state = INSTALLER_UI_FAILED;
+        installer_set_status(installer_result_message(result));
+        serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
+        serial_write(installer_result_message(result));
+        serial_write("\r\n");
+    }
+#else
+    (void)device;
+    installer_ui_state = INSTALLER_UI_FAILED;
+    installer_set_status(
+        "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
+    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
+#endif
+}
+
 
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
@@ -4807,7 +5262,26 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 desktop_get_current_window_rect(&px, &py, &pw, &ph);
                 (void)pw;
                 (void)ph;
-                if (installer_ui_state == INSTALLER_UI_COMPLETE &&
+                if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE &&
+                    (uint64_t)pointer_x >= px + 32U &&
+                    (uint64_t)pointer_x < px + 32U + 300U &&
+                    (uint64_t)pointer_y >= py + 48U + 180U &&
+                    (uint64_t)pointer_y < py + 48U + 222U) {
+                    installer_start_install();
+                    draw_shell();
+                    draw_pointer();
+                    return;
+                } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE &&
+                    (uint64_t)pointer_x >= px + 32U + 312U &&
+                    (uint64_t)pointer_x < px + 32U + 424U &&
+                    (uint64_t)pointer_y >= py + 48U + 180U &&
+                    (uint64_t)pointer_y < py + 48U + 222U) {
+                    installer_ui_state = INSTALLER_UI_SELECT;
+                    installer_set_status("Select a supported target disk");
+                    draw_shell();
+                    draw_pointer();
+                    return;
+                } else if (installer_ui_state == INSTALLER_UI_COMPLETE &&
                     (uint64_t)pointer_x >= px + 32U &&
                     (uint64_t)pointer_x < px + 276U &&
                     (uint64_t)pointer_y >= py + 48U + 194U &&
@@ -4913,6 +5387,40 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         files_last_click_index = index;
                         files_last_click_tick = now;
                     }
+                }
+            }
+        }
+        if (clicked && active_view == DESKTOP_TERMINAL) {
+            uint64_t px = 0U, py = 0U, pw = 0U, ph = 0U;
+            desktop_get_current_window_rect(&px, &py, &pw, &ph);
+            (void)pw;
+            (void)ph;
+            const uint64_t quick_x = px + 24U + 14U;
+            const uint64_t quick_y = py + 82U + 54U + 145U;
+            const uint64_t quick_width = 132U;
+            const int64_t rx = pointer_x - (int64_t)quick_x;
+            const int64_t ry = pointer_y - (int64_t)quick_y;
+            if (rx >= 0 && ry >= 0 && (uint64_t)ry < 20U) {
+                const size_t index =
+                    (size_t)(uint64_t)rx / (size_t)(quick_width + 8U);
+                const uint64_t local_x =
+                    (uint64_t)rx % (quick_width + 8U);
+                if (index < 3U && local_x < quick_width) {
+                    static const char *const commands[3] = {
+                        "help", "mem", "net"
+                    };
+                    size_t length = 0U;
+                    while (commands[index][length] != '\0' &&
+                           length + 1U < sizeof(terminal_input)) {
+                        terminal_input[length] = commands[index][length];
+                        ++length;
+                    }
+                    terminal_input[length] = '\0';
+                    terminal_input_length = length;
+                    terminal_execute();
+                    draw_shell();
+                    draw_pointer();
+                    return;
                 }
             }
         }
@@ -5315,9 +5823,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 if (!installer_environment) desktop_return_home();
             } else {
                 installer_ui_state = INSTALLER_UI_SELECT;
-                installer_input_length = 0U;
-                installer_input[0] = '\0';
-                installer_set_status("Select a supported target disk");
+                                installer_set_status("Select a supported target disk");
             }
         } else if (installer_ui_state == INSTALLER_UI_SELECT) {
             if (event->scancode == 0x3BU) {
@@ -5359,9 +5865,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     for (size_t i = 0U; i <= id_length; ++i)
                         installer_confirmed_id[i] = device->stable_id[i];
                     installer_ui_state = INSTALLER_UI_CONFIRM_ERASE;
-                    installer_input_length = 0U;
-                    installer_input[0] = '\0';
-                    installer_set_status(
+                                        installer_set_status(
                         "Review the selected drive; nothing has been written");
                 } else {
                     installer_set_status("Target is not eligible for installation");
@@ -5370,49 +5874,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 return;
             }
         } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
-            if (event->scancode == 0x0EU) {
-                if (installer_input_length > 0U)
-                    installer_input[--installer_input_length] = '\0';
-            } else if (event->scancode == 0x1CU) {
-                if (installer_text_equal_ci(installer_input, "ERASE")) {
-                    const struct nexus_block_device *device =
-                        blockdev_at(installer_selected_device);
-#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
-                    installer_ui_state = INSTALLER_UI_RUNNING;
-                    installer_set_status("Starting guarded installation");
-                    draw_shell();
-                    draw_pointer();
-                    const enum nexus_installer_runtime_result result =
-                        nexus_installer_runtime_apply(
-                            device, installer_firmware, installer_confirmed_id,
-                            "ERASE", installer_progress_update, NULL);
-                    if (result == NEXUS_INSTALL_RESULT_OK) {
-                        installer_ui_state = INSTALLER_UI_COMPLETE;
-                        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
-                    } else {
-                        installer_ui_state = INSTALLER_UI_FAILED;
-                        installer_set_status(installer_result_message(result));
-                        serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
-                        serial_write(installer_result_message(result));
-                        serial_write("\r\n");
-                    }
-#else
-                    (void)device;
-                    installer_ui_state = INSTALLER_UI_FAILED;
-                    installer_set_status(
-                        "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
-                    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
-#endif
-                } else {
-                    installer_set_status("Type ERASE exactly to continue");
-                }
+            if (event->scancode == 0x1CU) {
+                installer_start_install();
             } else {
-                const char ch = terminal_scancode_char(event->scancode);
-                if (ch >= 0x20 && ch <= 0x7E &&
-                    installer_input_length < sizeof(installer_input) - 1U) {
-                    installer_input[installer_input_length++] = ch;
-                    installer_input[installer_input_length] = '\0';
-                }
+                return;
             }
         } else if (installer_ui_state == INSTALLER_UI_COMPLETE ||
                    installer_ui_state == INSTALLER_UI_FAILED) {
@@ -5420,9 +5885,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 desktop_reboot_after_install();
             } else if (event->scancode == 0x1CU) {
                 installer_ui_state = INSTALLER_UI_SELECT;
-                installer_input_length = 0U;
-                installer_input[0] = '\0';
-                installer_set_status("Select a supported target disk");
+                                installer_set_status("Select a supported target disk");
                 installer_refresh_plan();
             } else {
                 return;
@@ -5496,6 +5959,134 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
+        if (browser_has_page && !browser_download_pending &&
+            event->scancode == 0x49U) { /* Page Up */
+            browser_scroll_offset = browser_scroll_offset > 4U
+                ? browser_scroll_offset - 4U : 0U;
+            draw_shell(); draw_pointer(); return;
+        }
+        if (browser_has_page && !browser_download_pending &&
+            event->scancode == 0x51U) { /* Page Down */
+            if (browser_scroll_offset + 4U < browser_line_count)
+                browser_scroll_offset += 4U;
+            draw_shell(); draw_pointer(); return;
+        }
+        if (!browser_download_pending && keyboard_alt &&
+            event->scancode >= 0x02U &&
+            event->scancode <= 0x06U) {
+            const size_t source = (size_t)(event->scancode - 0x02U);
+            if (source < browser_source_count) {
+                size_t length = 0U;
+                while (browser_sources[source][length] != '\0' &&
+                       length + 1U < sizeof(browser_address)) {
+                    browser_address[length] = browser_sources[source][length];
+                    ++length;
+                }
+                browser_address[length] = '\0';
+                browser_address_length = length;
+                browser_navigate();
+            } else {
+                browser_set_status("No source link at that shortcut");
+            }
+            draw_shell(); draw_pointer(); return;
+        }
+        if (browser_download_pending) {
+            if (event->scancode == 0x01U) {
+                browser_download_pending = false;
+                browser_set_status("Download cancelled");
+            } else if (event->scancode == 0x1CU) {
+                browser_download_pending = false;
+                char saved_name[NEXUS_VFS_NAME_MAX] = {0};
+                browser_set_status("Downloading over HTTP...");
+                const enum nexus_browser_download_result result =
+                    nexus_browser_download_http(browser_current_url,
+                        saved_name, sizeof(saved_name));
+                switch (result) {
+                    case NEXUS_BROWSER_DOWNLOAD_OK:
+                        browser_show_notice("DOWNLOAD SAVED TO NEXUS DATA",
+                                            saved_name);
+                        browser_set_status("Saved file read-back verification passed");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_HTTPS_BLOCKED:
+                        browser_set_status("HTTPS download blocked: verified TLS is not implemented");
+                        browser_show_notice("SECURE DOWNLOAD UNAVAILABLE",
+                                            "NEXUS REQUIRES VERIFIED TLS");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_NOT_PERSISTENT:
+                        browser_set_status("Persistent Nexus Data storage is unavailable");
+                        browser_show_notice("DOWNLOAD NOT SAVED",
+                                            "RETURN TO FILES ROOT; MOUNT WRITABLE DATA");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_FILE_EXISTS:
+                        browser_set_status("File already exists; Nexus will not overwrite it");
+                        browser_show_notice("FILE ALREADY EXISTS",
+                                            "RENAME OR MOVE THE EXISTING FILE FIRST");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_CHUNKED_UNSUPPORTED:
+                        browser_set_status("Server uses chunked transfer; decoder is not ready");
+                        browser_show_notice("DOWNLOAD FORMAT NOT SUPPORTED",
+                                            "SERVER SENT CHUNKED TRANSFER DATA");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_LENGTH_REQUIRED:
+                        browser_set_status("Server omitted Content-Length");
+                        browser_show_notice("DOWNLOAD SIZE UNKNOWN",
+                                            "NEXUS NEEDS A VERIFIED FILE LENGTH");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_TOO_LARGE:
+                        browser_set_status("Download exceeds the current 1 MiB limit");
+                        browser_show_notice("FILE TOO LARGE",
+                                            "CURRENT DOWNLOAD LIMIT IS 1 MIB");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_INCOMPLETE:
+                        browser_set_status("Download ended early or timed out");
+                        browser_show_notice("DOWNLOAD INCOMPLETE",
+                                            "NO PARTIAL FILE WAS SAVED");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_REDIRECT:
+                        browser_set_status("Download redirected; follow the URL manually");
+                        browser_show_notice("REDIRECT NOT FOLLOWED",
+                                            "HTTPS REDIRECTS REQUIRE VERIFIED TLS");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_DNS_FAILED:
+                        browser_set_status("Download DNS lookup failed");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_CONNECT_FAILED:
+                        browser_set_status("Download TCP connection failed");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_VERIFY_FAILED:
+                        browser_set_status("Saved bytes failed read-back verification");
+                        browser_show_notice("DOWNLOAD VERIFICATION FAILED",
+                                            "THE INVALID FILE WAS REMOVED");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_SAVE_FAILED:
+                        browser_set_status("Could not write the downloaded file");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_REQUEST_FAILED:
+                        browser_set_status("Could not send the download request");
+                        break;
+                    case NEXUS_BROWSER_DOWNLOAD_HEADER_FAILED:
+                        browser_set_status("Invalid or unsuccessful download response");
+                        break;
+                    default:
+                        browser_set_status("Invalid download URL");
+                        break;
+                }
+            } else {
+                return;
+            }
+            draw_shell(); draw_pointer(); return;
+        }
+        if (keyboard_ctrl && event->scancode == 0x1FU) {
+            if (browser_current_url[0] == '\0') {
+                browser_set_status("Load an HTTP page before saving a file");
+            } else {
+                browser_download_pending = true;
+                browser_show_notice("SAVE THIS FILE TO NEXUS DATA?",
+                                    "HTTP IS NOT ENCRYPTED. ENTER SAVES; ESC CANCELS.");
+                browser_set_status("Review HTTP warning; Enter to save or Esc to cancel");
+            }
+            draw_shell(); draw_pointer(); return;
+        }
         if (event->scancode == 0x01U) {
             desktop_return_home();
             draw_shell(); draw_pointer(); return;

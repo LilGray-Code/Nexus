@@ -23,6 +23,28 @@ static const struct glyph font[] = {
     {'U',{17,17,17,17,17,17,14}}, {'V',{17,17,17,17,17,10,4}},
     {'W',{17,17,17,21,21,21,10}}, {'X',{17,17,10,4,10,17,17}},
     {'Y',{17,17,10,4,4,4,4}}, {'Z',{31,1,2,4,8,16,31}},
+    {'a',{0,0,14,1,15,17,15}}, {'b',{16,16,30,17,17,17,30}},
+    {'c',{0,0,14,17,16,17,14}}, {'d',{1,1,15,17,17,17,15}},
+    {'e',{0,0,14,17,31,16,14}}, {'f',{6,9,8,28,8,8,8}},
+    {'g',{0,15,17,17,15,1,14}}, {'h',{16,16,30,17,17,17,17}},
+    {'i',{4,0,12,4,4,4,14}}, {'j',{2,0,6,2,2,18,12}},
+    {'k',{16,16,18,20,24,20,18}}, {'l',{12,4,4,4,4,4,14}},
+    {'m',{0,0,26,21,21,21,21}}, {'n',{0,0,30,17,17,17,17}},
+    {'o',{0,0,14,17,17,17,14}}, {'p',{0,30,17,17,30,16,16}},
+    {'q',{0,15,17,17,15,1,1}}, {'r',{0,0,22,25,16,16,16}},
+    {'s',{0,0,15,16,14,1,30}}, {'t',{8,8,28,8,8,9,6}},
+    {'u',{0,0,17,17,17,19,13}}, {'v',{0,0,17,17,17,10,4}},
+    {'w',{0,0,17,17,21,21,10}}, {'x',{0,0,17,10,4,10,17}},
+    {'y',{0,17,17,17,15,1,14}}, {'z',{0,0,31,2,4,8,31}},
+    {'!',{4,4,4,4,4,0,4}}, {'?',{14,17,1,2,4,0,4}},
+    {'_',{0,0,0,0,0,0,31}}, {'=',{0,0,31,0,31,0,0}},
+    {'+',{0,4,4,31,4,4,0}}, {'*',{0,21,14,31,14,21,0}},
+    {'#',{10,31,10,10,31,10,0}}, {'(',{2,4,8,8,8,4,2}},
+    {')',{8,4,2,2,2,4,8}}, {'[',{14,8,8,8,8,8,14}},
+    {']',{14,2,2,2,2,2,14}}, {',',{0,0,0,0,0,4,8}},
+    {'\'',{4,4,2,0,0,0,0}}, {'"',{10,10,5,0,0,0,0}},
+    {'%',{17,2,4,8,17,0,0}}, {'&',{12,18,20,8,21,18,13}},
+    {'|',{4,4,4,4,4,4,4}}, {'\\',{16,8,8,4,2,2,1}},
     {'0',{14,17,19,21,25,17,14}}, {'1',{4,12,4,4,4,4,14}},
     {'2',{14,17,1,2,4,8,31}}, {'3',{30,1,1,14,1,1,30}},
     {'4',{2,6,10,18,31,2,2}}, {'5',{31,16,16,30,1,1,30}},
@@ -239,14 +261,85 @@ void graphics_draw_round_rect(uint64_t x, uint64_t y, uint64_t width,
 }
 
 static const struct glyph *find_glyph(char character) {
-    if (character >= 'a' && character <= 'z') {
-        character = (char)(character - 'a' + 'A');
-    }
     for (size_t i = 0; i < sizeof(font) / sizeof(font[0]); ++i) {
         if (font[i].character == character) return &font[i];
     }
     return &font[sizeof(font) / sizeof(font[0]) - 1U];
 }
+
+
+static bool glyph_sample(const struct glyph *glyph, int32_t x, int32_t y) {
+    if (x < 0 || x >= 5 || y < 0 || y >= 7) return false;
+    return (glyph->rows[(uint32_t)y] &
+            (1U << (4U - (uint32_t)x))) != 0U;
+}
+
+static uint8_t unpack_channel(uint32_t pixel, uint8_t size, uint8_t shift) {
+    const uint32_t maximum = (1U << size) - 1U;
+    const uint32_t value = (pixel >> shift) & maximum;
+    return (uint8_t)(value * 255U / maximum);
+}
+
+static uint8_t blend_channel(uint8_t foreground, uint8_t background,
+                             uint32_t coverage) {
+    return (uint8_t)(((uint32_t)foreground * coverage +
+        (uint32_t)background * (255U - coverage) + 127U) / 255U);
+}
+
+/* Bilinear coverage rendering for large UI text. It keeps the compact
+ * built-in font but smooths its edges at display scale instead of enlarging
+ * each source bit into a visibly square block. */
+void graphics_draw_text_smooth(uint64_t x, uint64_t y, const char *text,
+                               uint32_t scale, uint8_t red, uint8_t green,
+                               uint8_t blue) {
+    if (!initialized || text == NULL || scale < 2U || scale > 4U) return;
+    const uint32_t step = scale;
+    const uint8_t fr = red, fg = green, fb = blue;
+    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+
+    for (size_t index = 0U; text[index] != '\0'; ++index) {
+        const struct glyph *glyph = find_glyph(text[index]);
+        const uint64_t origin_x = x + (uint64_t)index * 6U * step;
+        for (uint32_t py = 0U; py < 7U * step; ++py) {
+            const uint64_t screen_y = y + py;
+            if (screen_y >= active_surface.height) continue;
+            const int32_t source_y = (int32_t)(py / step);
+            const uint32_t sub_y = py % step;
+            const uint32_t wy1 = (sub_y * 255U + step / 2U) / step;
+            const uint32_t wy0 = 255U - wy1;
+            for (uint32_t px = 0U; px < 5U * step; ++px) {
+                const uint64_t screen_x = origin_x + px;
+                if (screen_x >= active_surface.width) continue;
+                const int32_t source_x = (int32_t)(px / step);
+                const uint32_t sub_x = px % step;
+                const uint32_t wx1 = (sub_x * 255U + step / 2U) / step;
+                const uint32_t wx0 = 255U - wx1;
+                const uint32_t c00 = glyph_sample(glyph, source_x, source_y) ? 255U : 0U;
+                const uint32_t c10 = glyph_sample(glyph, source_x + 1, source_y) ? 255U : 0U;
+                const uint32_t c01 = glyph_sample(glyph, source_x, source_y + 1) ? 255U : 0U;
+                const uint32_t c11 = glyph_sample(glyph, source_x + 1, source_y + 1) ? 255U : 0U;
+                const uint32_t top = (c00 * wx0 + c10 * wx1) / 255U;
+                const uint32_t bottom = (c01 * wx0 + c11 * wx1) / 255U;
+                const uint32_t coverage = (top * wy0 + bottom * wy1) / 255U;
+                if (coverage == 0U) continue;
+                volatile uint32_t *address = (volatile uint32_t *)(uintptr_t)
+                    (base + screen_y * active_surface.pitch + screen_x * 4U);
+                const uint32_t background = *address;
+                const uint8_t br = unpack_channel(background,
+                    active_surface.red_mask_size, active_surface.red_mask_shift);
+                const uint8_t bg = unpack_channel(background,
+                    active_surface.green_mask_size, active_surface.green_mask_shift);
+                const uint8_t bb = unpack_channel(background,
+                    active_surface.blue_mask_size, active_surface.blue_mask_shift);
+                *address = pack_rgb(
+                    blend_channel(fr, br, coverage),
+                    blend_channel(fg, bg, coverage),
+                    blend_channel(fb, bb, coverage));
+            }
+        }
+    }
+}
+
 
 void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
                         uint32_t scale, uint8_t red, uint8_t green,

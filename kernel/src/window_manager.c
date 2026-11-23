@@ -135,6 +135,28 @@ bool nexus_wm_init(uint32_t screen_width, uint32_t screen_height) {
     return true;
 }
 
+bool nexus_wm_set_display_size(uint32_t screen_width, uint32_t screen_height) {
+    if (!manager_ready || screen_width == 0U || screen_height == 0U ||
+        screen_width > 0x7FFFFFFFU || screen_height > 0x7FFFFFFFU)
+        return false;
+
+    display_width = screen_width;
+    display_height = screen_height;
+    for (size_t i = 0U; i < NEXUS_WM_MAX_WINDOWS; ++i) {
+        if (!slots[i].occupied) continue;
+        struct nexus_window_info *info = &slots[i].info;
+        if ((info->flags & NEXUS_WINDOW_MAXIMIZED) != 0U) {
+            info->x = 0;
+            info->y = 0;
+            info->width = display_width;
+            info->height = display_height;
+        } else {
+            clamp_geometry(info);
+        }
+    }
+    return true;
+}
+
 bool nexus_wm_create(uint32_t application_id, const char *title,
                      int32_t x, int32_t y, uint32_t width, uint32_t height,
                      nexus_window_id *out_id) {

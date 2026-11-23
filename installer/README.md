@@ -39,10 +39,11 @@ identification positively establishes that the machine was started from an
 external live medium; ambiguous boot-source identity must fail closed.
 
 The installer discovers eligible block devices and presents the selected
-drive's model, capacity, stable ID, and a read-only layout preview. Press Enter
-to review the chosen drive, then type `ERASE` once to authorize installation.
-Nexus captures the device identity automatically and revalidates it before
-each destructive stage; there is no need to type a long disk ID.
+drive's model, capacity, stable ID, and a read-only layout preview. Select the
+drive, review its identity and layout, then click **Confirm & Install** (or
+press Enter) on the final confirmation screen. No confirmation phrase needs
+to be typed. Nexus captures the selected identity automatically and
+revalidates it before each destructive stage.
 
 After successful deployment, the installer displays a **Restart into Nexus OS**
 action and a reminder to remove the live USB. Pressing Enter or selecting the
@@ -107,7 +108,7 @@ No separate Recovery partition or recovery utility is part of the normal
 installation flow. The installer records its phase in the EFI reserved sectors
 and automatically resumes an interrupted installation when a valid journal
 exists. A missing or damaged old journal does not block a clean install after
-the user confirms the selected disk with `ERASE`. This is transaction
+the user explicitly confirms the selected disk. This is transaction
 resumption, not a claim that every disk or hardware failure can be repaired
 automatically.
 

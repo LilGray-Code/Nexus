@@ -48,6 +48,16 @@ struct nexus_wifi_driver_ops {
                     const char *passphrase);
     void (*disconnect)(void *context);
     void (*poll)(void *context);
+    /*
+     * Optional Ethernet-frame bridge. Supply all three callbacks to expose
+     * this radio as a regular Nexus network adapter named wlan0. The chipset
+     * driver is responsible for 802.11 framing, authentication and encryption;
+     * the IP stack sees only Ethernet frames.
+     */
+    bool (*get_mac)(void *context, uint8_t address[6]);
+    bool (*send_frame)(void *context, const void *frame, size_t length);
+    bool (*receive_frame)(void *context, void *buffer, size_t capacity,
+                          size_t *length);
 };
 
 /* The hardware driver owns radio operations; this layer validates requests
@@ -70,5 +80,6 @@ void wifi_disconnect(void);
 void wifi_poll(void);
 enum nexus_wifi_state wifi_get_state(void);
 bool wifi_available(void);
+bool wifi_network_adapter_registered(void);
 
 #endif

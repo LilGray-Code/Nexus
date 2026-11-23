@@ -7,6 +7,8 @@
 #include "serial.h"
 #include "usb_hid.h"
 #include "usb_hid_gamepad.h"
+#include "usb_desc.h"
+#include "wifi_chipset.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -942,6 +944,11 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         !xhci_update_ep0_packet(xhci, device, descriptor_packet)) goto failed;
     if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U,
                              sizeof(descriptor), descriptor)) goto failed;
+    /* Keep a VID:PID record even when this kernel has no driver for the
+     * peripheral. Identification must not be confused with driver support.
+     */
+    (void)nexus_usb_inventory_add_device(port_number, descriptor,
+                                         sizeof(descriptor));
 
     uint8_t config_header[9] = {0U};
     if (!xhci_get_descriptor(xhci, device, 2U, 0U, 0U,
@@ -959,6 +966,8 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         (void)memory_free_page(config_buffer_physical);
         goto failed;
     }
+    (void)nexus_usb_inventory_set_configuration(
+        port_number, (const uint8_t *)(uintptr_t)config_buffer, total_length);
 
     uint8_t interface_number = 0U;
     uint8_t configuration_value = 0U;
@@ -1082,8 +1091,6 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     xhci->initialized = true;
 
     for (uint8_t port = 1U; port <= xhci->max_ports; ++port) {
-        if (xhci->keyboard_active && xhci->mouse_active &&
-            xhci->gamepad_active) break;
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port, &speed)) continue;
         serial_write("xHCI: connected root port ");
@@ -1115,19 +1122,77 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     if (!xhci->keyboard_active && !xhci->mouse_active &&
         !xhci->gamepad_active) {
         serial_write("xHCI: no supported directly attached HID input found\r\n");
-        return false;
+        /* The controller is still usable for USB inventory. Lack of an HID
+         * driver must not hide a detected USB network adapter.
+         */
     }
     return true;
 }
 
+
+static void xhci_report_usb_inventory(void) {
+    for (size_t i = 0U; i < nexus_usb_inventory_count(); ++i) {
+        struct nexus_usb_device_info info = {0};
+        if (!nexus_usb_inventory_get(i, &info)) continue;
+        serial_write("USB: xHCI port ");
+        serial_write_hex(info.port);
+        serial_write(" VID:PID ");
+        serial_write_hex(info.vendor_id);
+        serial_write(":");
+        serial_write_hex(info.product_id);
+        serial_write(" bcdDevice=");
+        serial_write_hex(info.device_revision);
+        serial_write(" class/subclass/protocol=");
+        serial_write_hex(info.device_class);
+        serial_write("/");
+        serial_write_hex(info.device_subclass);
+        serial_write("/");
+        serial_write_hex(info.device_protocol);
+        const char *wifi_chipset = wifi_usb_chipset_name(
+            info.vendor_id, info.product_id);
+        if (wifi_chipset != NULL) {
+            serial_write(" Wi-Fi chipset=");
+            serial_write(wifi_chipset);
+            serial_write("; native driver not installed");
+        }
+
+        switch (info.network_kind) {
+            case NEXUS_USB_NETWORK_CDC_ECM:
+                serial_write(" CDC-ECM interface; USB network driver unavailable");
+                break;
+            case NEXUS_USB_NETWORK_CDC_NCM:
+                serial_write(" CDC-NCM interface; USB network driver unavailable");
+                break;
+            case NEXUS_USB_NETWORK_MBIM:
+                serial_write(" MBIM interface; USB network driver unavailable");
+                break;
+            case NEXUS_USB_NETWORK_RNDIS:
+                serial_write(" RNDIS interface; USB network driver unavailable");
+                break;
+            default:
+                if (info.has_vendor_specific_interface) {
+                    serial_write(" vendor-specific interface; exact VID:PID driver match required");
+                } else {
+                    serial_write(" enumerated; no matching USB class driver");
+                }
+                break;
+        }
+        serial_write("\r\n");
+    }
+}
+
 bool xhci_init(void) {
     usb_hid_keyboard_reset();
+    nexus_usb_inventory_reset();
     for (uint32_t i = 0U; i < pci_device_count(); ++i) {
         const struct nexus_pci_device *device = pci_device_at(i);
         if (device == NULL || device->class_code != 0x0CU ||
             device->subclass != 0x03U ||
             device->programming_interface != 0x30U) continue;
-        if (xhci_try_controller(device)) return true;
+        if (xhci_try_controller(device)) {
+            xhci_report_usb_inventory();
+            return true;
+        }
     }
     serial_write("USB: no supported xHCI HID keyboard, mouse, or gamepad\r\n");
     return false;

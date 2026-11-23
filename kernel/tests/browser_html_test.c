@@ -17,6 +17,46 @@ static void check(const char *html, const char *expected) {
     assert(strcmp(output, expected) == 0);
 }
 
+
+static void test_extract_absolute_source_links(void) {
+    static const char html[] =
+        "<a href='http://source.example/one'>One</a>"
+        "<a class=\"primary\" href=\"https://source.example/two\">Two</a>"
+        "<a href='/relative/path'>Relative</a>"
+        "<a href='javascript:alert(1)'>Script</a>"
+        "<a href='https://source.example/two'>Duplicate</a>"
+        "<a href=\"https://source.example/query?a=1&amp;b=2\">Query</a>";
+    char links[4][NEXUS_BROWSER_HTML_LINK_MAX] = {{0}};
+    const size_t count = nexus_browser_html_extract_links(
+        (const uint8_t *)html, sizeof(html) - 1U, links, 4U);
+    assert(count == 3U);
+    assert(strcmp(links[0], "http://source.example/one") == 0);
+    assert(strcmp(links[1], "https://source.example/two") == 0);
+    assert(strcmp(links[2], "https://source.example/query?a=1&b=2") == 0);
+    assert(nexus_browser_html_extract_links(NULL, 0U, links, 4U) == 0U);
+}
+
+
+static void test_extract_relative_source_links(void) {
+    static const char html[] =
+        "<a href='/docs/start'>Root</a>"
+        "<a href='../api/index.html'>Parent</a>"
+        "<a href='?page=2'>Query</a>"
+        "<a href='//cdn.example/assets/app.js'>Protocol relative</a>"
+        "<a href='javascript:alert(1)'>Unsafe</a>"
+        "<a href='../api/index.html'>Duplicate</a>";
+    char links[5][NEXUS_BROWSER_HTML_LINK_MAX] = {{0}};
+    const size_t count = nexus_browser_html_extract_links_with_base(
+        (const uint8_t *)html, sizeof(html) - 1U,
+        "http://example.com/guide/reference/page.html?old=1", links, 5U);
+    assert(count == 4U);
+    assert(strcmp(links[0], "http://example.com/docs/start") == 0);
+    assert(strcmp(links[1], "http://example.com/guide/api/index.html") == 0);
+    assert(strcmp(links[2],
+        "http://example.com/guide/reference/page.html?page=2") == 0);
+    assert(strcmp(links[3], "http://cdn.example/assets/app.js") == 0);
+}
+
 int main(void) {
     check("<html><head><title>Title</title><style>hidden css</style></head>"
           "<body><h1>Hello&nbsp;world</h1><script>bad()</script>"
@@ -39,6 +79,9 @@ int main(void) {
           "Heading\nFirst paragraph.\nSecond paragraph with emphasis."
           "\n- One\n- Two");
     check("before<br>after<hr>last", "before\nafter\nlast");
+
+    test_extract_absolute_source_links();
+    test_extract_relative_source_links();
 
     char tiny[5];
     size_t n = nexus_browser_html_to_text((const uint8_t *)"abcdef", 6U,

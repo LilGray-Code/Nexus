@@ -48,11 +48,45 @@ static void test_reject_unsafe_or_ambiguous_inputs(void) {
     assert(!nexus_browser_url_parse("http://example.com/a b", &url));
 }
 
+
+static void check_resolve(const char *base, const char *reference,
+                          const char *expected) {
+    char output[256];
+    assert(nexus_browser_url_resolve(base, reference, output,
+                                     sizeof(output)));
+    assert(strcmp(output, expected) == 0);
+}
+
+static void test_relative_url_resolution(void) {
+    const char *base = "http://example.com/guide/reference/page.html?old=1";
+    check_resolve(base, "../api/./index.html",
+                  "http://example.com/guide/api/index.html");
+    check_resolve(base, "/docs/start?x=1#section",
+                  "http://example.com/docs/start?x=1");
+    check_resolve(base, "?page=2",
+                  "http://example.com/guide/reference/page.html?page=2");
+    check_resolve(base, "//cdn.example/assets/app.js",
+                  "http://cdn.example/assets/app.js");
+    check_resolve(base, "https://secure.example/path",
+                  "https://secure.example/path");
+    check_resolve(base, "../../../../outside",
+                  "http://example.com/outside");
+    assert(!nexus_browser_url_resolve(base, "javascript:alert(1)",
+                                      (char[256]){0}, 256U));
+    assert(!nexus_browser_url_resolve(base, "//bad host/path",
+                                      (char[256]){0}, 256U));
+    assert(!nexus_browser_url_resolve(base, "#only-fragment",
+                                      (char[256]){0}, 256U));
+    assert(!nexus_browser_url_resolve(base, "../bad path",
+                                      (char[256]){0}, 256U));
+}
+
 int main(void) {
     test_http_defaults_and_path();
     test_https_and_explicit_port();
     test_empty_path_and_query();
     test_reject_unsafe_or_ambiguous_inputs();
+    test_relative_url_resolution();
     puts("NEXUS BROWSER URL TESTS PASSED");
     return 0;
 }

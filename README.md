@@ -14,10 +14,17 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal,
   System Monitor, Control Center, and a native Calculator, plus keyboard
-  and mouse input. The modernized shell uses a centered icon dock, a compact
-  two-column Start launcher, shared dark app chrome, Aurora-style accents,
-  and a Control Center with live memory, uptime, storage and adapter status
-  plus working theme, wallpaper, contrast, motion and taskbar quick settings.
+  and mouse input. The upgraded shell uses theme-aware rounded window chrome,
+  a branded Nexus orb and app icons, lowercase antialiased text, layered
+  Aurora artwork, and consistent status cards and section headers. Settings
+  includes five visible palette swatches, clearer value controls, accessibility
+  options and persistent-preference status; Control Center uses quick-setting
+  tiles; System Monitor shows memory utilization, storage state, active network
+  interface, Wi-Fi candidate counts and USB inventory; Files shows item counts
+  and whether user data is persistently writable; Terminal has working
+  mouse-triggered HELP, MEM and NET quick commands; Calculator has a more
+  prominent expression/result display; and the installer uses a clearer
+  destination and destructive-review presentation.
 - The Calculator evaluates bounded integer expressions with precedence,
   parentheses, unary signs, division and modulo; it reports syntax,
   divide-by-zero, nesting and overflow errors. Its keypad accepts mouse input
@@ -90,20 +97,36 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   the source. They use transactional NXFS writes when that volume is writable;
   otherwise only files fitting the 4 KiB RAMFS limit can be copied or moved,
   and those copies are volatile.
-- The Browser accepts plain search queries as queries (rather than mistaking
-  them for hostnames), builds an encoded DuckDuckGo Lite search URL, and
-  provides a dedicated search landing page. Its HTTP response parser validates
-  status lines, bounded headers, content types and redirect locations. Live
-  search and modern websites still require a verified TLS implementation;
-  search requests are not silently downgraded to plaintext. Direct plain-HTTP
-  pages can be fetched and shown as bounded text.
+- Nexus Browser has a first-party branded new-tab screen, Nexus orb/wordmark,
+  native address toolbar and a visible plain-HTTP warning on loaded pages. It
+  accepts plain search queries as queries (rather than mistaking them for
+  hostnames), builds an encoded DuckDuckGo Lite search URL, and provides a
+  dedicated search landing page. Direct HTTP pages use an 8 KiB bounded
+  response buffer, a 64-line text view, and Page Up/Page Down scrolling. The
+  current search provider uses HTTPS;
+  secure search and HTTPS pages remain blocked until Nexus has a verified TLS
+  client and certificate validation. Requests are never downgraded to
+  plaintext. Direct plain-HTTP pages can be fetched and shown as bounded text.
+- Basic direct-HTTP file downloads are available from a successfully loaded
+  page with **Ctrl+S**. Nexus asks for confirmation because HTTP is unencrypted,
+  requires the persistent writable Nexus Data volume, refuses to overwrite an
+  existing file, requires a valid Content-Length, rejects chunked transfer and
+  files larger than 1 MiB, and reads the saved file back to verify its bytes.
+  Downloads are saved in the Nexus Data root. HTTPS downloads, automatic
+  redirects, chunked decoding, resumable/streaming downloads, and files larger
+  than 1 MiB are not implemented.
 - The Browser's HTML text extraction retains block separation for headings
   and paragraphs, line breaks, and list bullets, while suppressing comments,
-  script/style contents, and decoding common HTML entities. This remains a
-  text-only page viewer, not a modern browser engine.
-- An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, and a plain
-  HTTP text viewer. This is limited network access, not a general-purpose
-  internet/browser implementation.
+  script/style contents, and decoding common HTML entities. It can collect up
+  to five distinct absolute HTTP(S) anchor URLs from a loaded page; press
+  **Alt+1** through **Alt+5** to open them. Use **Page Up/Page Down** to
+  scroll the retained text view. Root-relative, path-relative,
+  protocol-relative and query-only HTTP(S) links resolve against the current
+  page. CSS layout and JavaScript execution are not implemented. This remains
+  a limited text browser, not a modern browser engine.
+- An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, a plain-HTTP
+  page viewer, and bounded direct-HTTP downloads. This is limited network
+  access, not a general-purpose internet/browser implementation.
 
 The desktop applications and current system services are integrated into the
 kernel. The presence of an ELF loader and ring-3 execution tests does **not**
@@ -112,10 +135,11 @@ manager, or ordinary preemptive multitasking.
 
 ## Installer safety
 
-The installer asks the user to choose a target disk, review its model, capacity
-and stable ID, then type `ERASE` once. Nexus captures the selected identity
-automatically and revalidates it before destructive writes; the user does not
-need to type a long device ID. A two-copy, checksummed transaction journal lives
+The installer asks the user to choose a target disk and review its model,
+capacity, stable ID and proposed layout. A clear **Confirm & Install** button
+(or Enter) authorizes the destructive operation; no confirmation phrase needs
+to be typed. Nexus captures the selected identity automatically and
+revalidates it before destructive writes. A two-copy, checksummed transaction journal lives
 in reserved EFI sectors. There is no separate Recovery partition or required
 recovery setup. If power is interrupted, a later install attempt automatically
 resumes from a valid journal. If an old journal is missing or damaged, the user
@@ -154,15 +178,16 @@ the latest run attached to the current branch.
 - No physical PC installation or hardware-compatibility matrix has been
   completed. Hardware testing remains required.
 - Secure Boot is not supported.
-- The built-in Browser now has a native search landing page, query-to-search
-  URL handling, bounded HTTP response parsing and redirect detection. Search
-  providers require HTTPS, so live public search results remain unavailable
-  until TLS and certificate validation are implemented. Its current direct
-  page viewer still supports only plain HTTP text. Modern web rendering,
-  Wi-Fi, and broad
-  network-adapter support are not implemented. Google Chrome cannot run on
-  the current freestanding kernel: Nexus still lacks the Linux/POSIX runtime,
-  dynamic userspace, graphics and system interfaces Chrome depends on.
+- The built-in Browser can fetch limited plain-HTTP text pages and save
+  bounded plain-HTTP downloads to persistent Nexus Data storage. It cannot
+  fetch live public search results or HTTPS sources until a complete TLS
+  client, trusted certificate store, certificate-chain validation, hostname
+  verification, and secure random generation are implemented. It does not
+  yet retain clickable source links, render CSS, execute JavaScript, manage
+  cookies, or provide multiple independent browsing tabs. Google Chrome
+  cannot run on the current freestanding kernel: Nexus still lacks the
+  Linux/POSIX runtime, dynamic userspace, graphics and system interfaces
+  Chrome depends on.
 - The E1000/DHCP stack is exercised with emulated networking in QEMU; actual
   public-internet access on physical hardware has not yet been validated.
 - Game downloads and third-party launchers are not supported yet. Nexus has no

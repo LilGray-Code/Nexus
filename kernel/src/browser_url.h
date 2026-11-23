@@ -26,4 +26,10 @@ struct nexus_browser_url {
 bool nexus_browser_url_parse(const char *input,
                              struct nexus_browser_url *output);
 
+/* Resolve an HTTP(S) reference against an absolute HTTP(S) base URL.
+ * Supports absolute, protocol-relative, root-relative, path-relative and
+ * query-only references. Fragments are removed from request URLs. */
+bool nexus_browser_url_resolve(const char *base_url, const char *reference,
+                               char *output, size_t output_capacity);
+
 #endif

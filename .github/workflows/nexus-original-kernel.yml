@@ -5,6 +5,7 @@ on:
     branches:
       - nexus-original-kernel-roadmap
       - nexus-installed-desktop-separation
+      - nexus-installer-one-click-redesign
     paths:
       - "kernel/**"
       - "boot/**"
@@ -14,6 +15,7 @@ on:
   pull_request:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-installed-desktop-separation
   workflow_dispatch:
 
 permissions:
@@ -36,6 +38,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file dosfstools mtools
+
+      - name: Test Nexus framebuffer graphics and text rendering
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/graphics.c kernel/tests/graphics_test.c \
+            -o /tmp/nexus-graphics-test
+          /tmp/nexus-graphics-test
 
       - name: Test Nexus desktop window manager core
         run: |
@@ -66,6 +75,14 @@ jobs:
             installer/tests/installer_journal_test.c \
             -o /tmp/nexus-installer-journal-test
           /tmp/nexus-installer-journal-test
+
+      - name: Test NXFS v3 capacity-aware layout prototype (no disk writes)
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/nxfs_v3_layout.c \
+            kernel/tests/nxfs_v3_layout_test.c \
+            -o /tmp/nexus-nxfs-v3-layout-test
+          /tmp/nexus-nxfs-v3-layout-test
 
       - name: Test Nexus installer partition planner (host-only, no disk writes)
         run: |
@@ -124,7 +141,7 @@ jobs:
             -o /tmp/nexus-browser-url-test
           /tmp/nexus-browser-url-test
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/browser_html.c \
+            -Ikernel/src kernel/src/browser_url.c kernel/src/browser_html.c \
             kernel/tests/browser_html_test.c \
             -o /tmp/nexus-browser-html-test
           /tmp/nexus-browser-html-test
@@ -136,6 +153,9 @@ jobs:
             -Ikernel/src kernel/src/browser_http.c \
             kernel/tests/browser_http_test.c -o /tmp/nexus-browser-http-test
           /tmp/nexus-browser-http-test
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/src -Ikernel/include -c kernel/src/browser_download.c \
+            -o /tmp/nexus-browser-download.o
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src kernel/src/sha256.c kernel/tests/sha256_test.c \
             -o /tmp/nexus-sha256-test
@@ -152,7 +172,7 @@ jobs:
       - name: Test wireless interface state manager
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/wifi.c \
+            -Ikernel/src kernel/src/wifi.c kernel/src/netdev.c \
             kernel/tests/wifi_test.c \
             -o /tmp/nexus-wifi-test
           /tmp/nexus-wifi-test
@@ -165,6 +185,14 @@ jobs:
             -o /tmp/nexus-wifi-80211-test
           /tmp/nexus-wifi-80211-test
 
+      - name: Test exact Wi-Fi chipset identification
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi_chipset.c \
+            kernel/tests/wifi_chipset_test.c \
+            -o /tmp/nexus-wifi-chipset-test
+          /tmp/nexus-wifi-chipset-test
+
       - name: Test ELF64 dynamic metadata parser
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
@@ -176,7 +204,7 @@ jobs:
       - name: Test PCI driver matching rules
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/pci_match.c \
+            -Ikernel/src kernel/src/pci_match.c kernel/src/wifi_chipset.c \
             kernel/tests/pci_match_test.c \
             -o /tmp/nexus-pci-match-test
           /tmp/nexus-pci-match-test

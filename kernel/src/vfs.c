@@ -369,6 +369,8 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
             const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
             if (entry == NULL || !name_equal(entry->name, name)) continue;
             file->filesystem_entry = entry;
+            file->nxfs_snapshot = *entry;
+            file->nxfs_snapshot_valid = true;
             file->offset = 0U;
             file->open = true;
             file->nxfs_file = true;
@@ -403,9 +405,9 @@ bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
         return true;
     }
     if (file->nxfs_file) {
-        const struct nexus_nxfs_entry *entry =
-            (const struct nexus_nxfs_entry *)file->filesystem_entry;
-        if (!nxfs_root_mounted || entry == NULL || !entry->used) return false;
+        const struct nexus_nxfs_entry *entry = &file->nxfs_snapshot;
+        if (!nxfs_root_mounted || !file->nxfs_snapshot_valid ||
+            !entry->used) return false;
         *size = entry->size;
         return true;
     }
@@ -438,10 +440,9 @@ bool vfs_read(struct nexus_vfs_file *file, void *buffer,
     }
 
     if (file->nxfs_file) {
-        const struct nexus_nxfs_entry *entry =
-            (const struct nexus_nxfs_entry *)file->filesystem_entry;
-        if (!nxfs_root_mounted || entry == NULL || !entry->used ||
-            file->offset > entry->size) return false;
+        const struct nexus_nxfs_entry *entry = &file->nxfs_snapshot;
+        if (!nxfs_root_mounted || !file->nxfs_snapshot_valid ||
+            !entry->used || file->offset > entry->size) return false;
         size_t amount = requested;
         const uint32_t remaining = entry->size - file->offset;
         if (amount > remaining) amount = remaining;

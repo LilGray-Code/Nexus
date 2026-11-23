@@ -512,7 +512,9 @@ static void desktop_open_app(size_t app_index) {
 }
 
 static uint64_t desktop_taskbar_apps_start(void) {
-    const uint64_t apps_width = 7U * 42U;
+    /* Six pinned apps in the dock; Control Center has its own right-side
+     * quick-access surface so it is not duplicated in the icon row. */
+    const uint64_t apps_width = 6U * 42U;
     return screen_width > apps_width + 96U
         ? (screen_width - apps_width) / 2U : 56U;
 }
@@ -537,7 +539,9 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 
     const uint64_t apps_start=desktop_taskbar_apps_start();
     for(size_t i=0U;i<7U;++i) {
-        const uint64_t x=apps_start+(uint64_t)i*42U;
+        if(i==5U) continue;
+        const size_t visible_index=i<5U?i:i-1U;
+        const uint64_t x=apps_start+(uint64_t)visible_index*42U;
         const bool selected=active_view==desktop_view_for_app(i);
         graphics_fill_round_rect(x+2U,button_y+3U,36U,
             button_h>8U?button_h-8U:button_h,10U,
@@ -3597,7 +3601,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 } else {
                     const uint64_t apps_start=desktop_taskbar_apps_start();
                     for(size_t app=0U;app<7U;++app) {
-                        const uint64_t ax=apps_start+(uint64_t)app*42U;
+                        if(app==5U) continue;
+                        const size_t visible_index=app<5U?app:app-1U;
+                        const uint64_t ax=apps_start+(uint64_t)visible_index*42U;
                         if((uint64_t)pointer_x>=ax && (uint64_t)pointer_x<ax+40U) {
                             desktop_open_app(app); shell_click_handled=true; break;
                         }

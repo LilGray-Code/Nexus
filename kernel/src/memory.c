@@ -200,13 +200,41 @@ bool memory_free_page(uint64_t physical_address) {
     return true;
 }
 
+bool memory_page_is_allocated(uint64_t physical_address) {
+    if (!initialized ||
+        (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U) return false;
+
+    bool within_allocated_region = false;
+    for (size_t i = 0U; i < usable_region_count; ++i) {
+        const struct memory_region *region = &usable_regions[i];
+        if (physical_address >= region->start &&
+            physical_address < region->next &&
+            region->next - physical_address >= NEXUS_PAGE_SIZE &&
+            physical_address < region->end) {
+            within_allocated_region = true;
+            break;
+        }
+    }
+    if (!within_allocated_region) return false;
+
+    for (size_t i = 0U; i < freed_page_count; ++i) {
+        if (freed_pages[i] == physical_address) return false;
+    }
+    return true;
+}
+
 bool memory_allocator_selftest(void) {
     uint64_t first, second, reused;
     if (!memory_alloc_page(&first) || !memory_alloc_page(&second)) return false;
-    if (first == second || !memory_free_page(first)) return false;
-    if (memory_free_page(first)) return false;
-    if (!memory_alloc_page(&reused) || reused != first) return false;
-    return memory_free_page(second) && memory_free_page(reused);
+    if (first == second || !memory_page_is_allocated(first) ||
+        !memory_page_is_allocated(second) || !memory_free_page(first))
+        return false;
+    if (memory_page_is_allocated(first) || memory_free_page(first)) return false;
+    if (!memory_alloc_page(&reused) || reused != first ||
+        !memory_page_is_allocated(reused)) return false;
+    if (!memory_free_page(second) || !memory_free_page(reused)) return false;
+    return !memory_page_is_allocated(first) &&
+           !memory_page_is_allocated(second);
 }
 
 void *memory_phys_to_virt(uint64_t physical_address) {

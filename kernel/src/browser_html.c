@@ -130,7 +130,8 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             while (tag_start + name_length < length) {
                 uint8_t c = html[tag_start + name_length];
                 if (!((c >= 'a' && c <= 'z') ||
-                      (c >= 'A' && c <= 'Z'))) break;
+                      (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '-')) break;
                 ++name_length;
             }
             /* Match complete tag names: <scripture> is not <script>, and

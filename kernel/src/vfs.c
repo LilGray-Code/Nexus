@@ -579,7 +579,29 @@ bool vfs_ramfs_selftest(void) {
     for (size_t i = 0; i < bytes_read; ++i) {
         if (buffer[i] != (uint8_t)payload[i]) return false;
     }
-    if (!vfs_remove_file("NXRAM.TST")) return false;
+    if (!vfs_copy_file("NXRAM.TST", "NXRAM-COPY.TST") ||
+        !vfs_open_readonly("NXRAM-COPY.TST", &file)) {
+        (void)vfs_remove_file("NXRAM.TST");
+        return false;
+    }
+    bytes_read = 0U;
+    const bool copy_read_ok = vfs_read(&file, buffer, sizeof(buffer),
+                                       &bytes_read);
+    vfs_close(&file);
+    if (!copy_read_ok || bytes_read != sizeof(payload) - 1U) {
+        (void)vfs_remove_file("NXRAM-COPY.TST");
+        (void)vfs_remove_file("NXRAM.TST");
+        return false;
+    }
+    for (size_t i = 0U; i < bytes_read; ++i) {
+        if (buffer[i] != (uint8_t)payload[i]) {
+            (void)vfs_remove_file("NXRAM-COPY.TST");
+            (void)vfs_remove_file("NXRAM.TST");
+            return false;
+        }
+    }
+    if (!vfs_remove_file("NXRAM-COPY.TST") ||
+        !vfs_remove_file("NXRAM.TST")) return false;
     if (vfs_open_readonly("NXRAM.TST", &file)) {
         vfs_close(&file);
         return false;

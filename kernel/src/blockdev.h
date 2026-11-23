@@ -78,9 +78,9 @@ bool blockdev_boot_media_detection_complete(void);
 bool blockdev_boot_source_is_external(void);
 bool blockdev_is_boot_media(const struct nexus_block_device *device);
 bool blockdev_is_mounted(const struct nexus_block_device *device);
-/* Ordinary filesystem writes are authorized only for the validated Nexus data
- * partition on the positively identified boot disk. This never grants access
- * to GPT, ESP, system, recovery, or other partitions. */
+/* Ordinary filesystem writes are authorized only for the validated last
+ * Nexus NXFS Data partition on the positively identified boot disk. This
+ * never grants access to GPT, ESP, System, or other partitions. */
 bool blockdev_nexus_data_write_enable(
     const struct nexus_block_device *device,
     uint64_t first_lba, uint64_t last_lba);

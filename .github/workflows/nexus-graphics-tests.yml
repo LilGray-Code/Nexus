@@ -1,0 +1,35 @@
+name: Nexus framebuffer graphics regression tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/graphics.c"
+      - "kernel/src/graphics.h"
+      - "kernel/tests/graphics_test.c"
+      - ".github/workflows/nexus-graphics-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+
+permissions:
+  contents: read
+
+jobs:
+  framebuffer-host-tests:
+    name: Framebuffer clipping and format validation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Compile framebuffer renderer with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/graphics.c \
+            kernel/tests/graphics_test.c \
+            -o /tmp/nexus-graphics-test
+
+      - name: Run framebuffer safety regressions
+        run: /tmp/nexus-graphics-test

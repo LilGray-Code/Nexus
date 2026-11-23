@@ -1,13 +1,19 @@
 #include "wifi.h"
+#include "netdev.h"
 
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 struct mock_driver {
     unsigned starts, scans, connects, disconnects, polls;
     bool fail_scan;
     bool fail_connect;
+    unsigned frame_sends;
+    unsigned frame_receives;
+    size_t last_frame_length;
+    size_t next_receive_length;
 };
 
 static bool mock_start(void *context) {
@@ -34,15 +40,74 @@ static void mock_poll(void *context) {
     ((struct mock_driver *)context)->polls++;
 }
 
+
+static bool mock_get_mac(void *context, uint8_t address[6]) {
+    (void)context;
+    static const uint8_t mac[6] = {0x02U,0x11U,0x22U,0x33U,0x44U,0x55U};
+    memcpy(address, mac, sizeof(mac));
+    return true;
+}
+static bool mock_send_frame(void *context, const void *frame, size_t length) {
+    struct mock_driver *m = context;
+    if (frame == NULL) return false;
+    ++m->frame_sends;
+    m->last_frame_length = length;
+    return true;
+}
+static bool mock_receive_frame(void *context, void *buffer, size_t capacity,
+                               size_t *length) {
+    struct mock_driver *m = context;
+    if (length == NULL) return false;
+    *length = 0U;
+    if (buffer == NULL || m->next_receive_length > capacity) return false;
+    memset(buffer, 0xA5, m->next_receive_length);
+    *length = m->next_receive_length;
+    ++m->frame_receives;
+    return true;
+}
+
 int main(void) {
     struct mock_driver mock = {0};
+    const struct nexus_wifi_driver_ops incomplete_network_ops = {
+        .start = mock_start,
+        .scan = mock_scan,
+        .connect = mock_connect,
+        .disconnect = mock_disconnect,
+        .poll = mock_poll,
+        .get_mac = mock_get_mac
+    };
     const struct nexus_wifi_driver_ops ops = {
-        mock_start, mock_scan, mock_connect, mock_disconnect, mock_poll
+        .start = mock_start,
+        .scan = mock_scan,
+        .connect = mock_connect,
+        .disconnect = mock_disconnect,
+        .poll = mock_poll,
+        .get_mac = mock_get_mac,
+        .send_frame = mock_send_frame,
+        .receive_frame = mock_receive_frame
     };
     assert(!wifi_available());
     assert(wifi_get_state() == NEXUS_WIFI_UNAVAILABLE);
     assert(!wifi_scan());
+    assert(netdev_device_count() == 0U);
+    assert(!wifi_register_driver(&incomplete_network_ops, &mock));
+    assert(!wifi_available());
     assert(wifi_register_driver(&ops, &mock));
+    assert(wifi_network_adapter_registered());
+    assert(netdev_device_count() == 1U);
+    assert(netdev_default_index() == 0U);
+    assert(strcmp(netdev_device_name_at(0U), "wlan0") == 0);
+    uint8_t mac[6] = {0};
+    assert(netdev_get_mac(mac));
+    assert(mac[0] == 0x02U && mac[5] == 0x55U);
+    uint8_t frame[64] = {0};
+    assert(netdev_send_frame(frame, 14U));
+    assert(mock.frame_sends == 1U && mock.last_frame_length == 14U);
+    size_t received = 0U;
+    mock.next_receive_length = 60U;
+    assert(netdev_receive_frame(frame, sizeof(frame), &received));
+    assert(received == 60U && frame[0] == 0xA5U);
+    assert(mock.frame_receives == 1U);
     assert(!wifi_register_driver(&ops, &mock));
     assert(wifi_available());
     assert(wifi_get_state() == NEXUS_WIFI_READY);

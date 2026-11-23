@@ -203,6 +203,12 @@ void kmain(void) {
     }
     serial_write("NEXUS PAGE RECLAIM READY\r\n");
 
+    if (!paging_user_address_space_selftest()) {
+        serial_write("ERROR: user address-space isolation self-test failed\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS USER ADDRESS-SPACE ISOLATION READY\r\n");
+
     uint64_t first_page = 0;
     if (!memory_alloc_page(&first_page) ||
         memory_phys_to_virt(first_page) == NULL) {

@@ -32,6 +32,17 @@ void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
 void graphics_draw_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,
                         uint8_t blue);
+void graphics_fill_gradient_rect(uint64_t x, uint64_t y,
+                                 uint64_t width, uint64_t height,
+                                 uint8_t top_red, uint8_t top_green,
+                                 uint8_t top_blue, uint8_t bottom_red,
+                                 uint8_t bottom_green, uint8_t bottom_blue);
+void graphics_fill_round_rect(uint64_t x, uint64_t y, uint64_t width,
+                              uint64_t height, uint64_t radius,
+                              uint8_t red, uint8_t green, uint8_t blue);
+void graphics_draw_round_rect(uint64_t x, uint64_t y, uint64_t width,
+                              uint64_t height, uint64_t radius,
+                              uint8_t red, uint8_t green, uint8_t blue);
 void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
                         uint32_t scale, uint8_t red, uint8_t green,
                         uint8_t blue);

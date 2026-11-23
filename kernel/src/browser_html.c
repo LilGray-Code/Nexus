@@ -178,7 +178,7 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             }
             if (block && !html_append_break(output, capacity, &used))
                 break;
-            pending_space = false;
+            if (block) pending_space = false;
             continue;
         }
         if (html[i] == '&') {
@@ -208,6 +208,9 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
             break;
         ++i;
     }
+    while (used != 0U &&
+           (output[used - 1U] == '\n' || output[used - 1U] == ' '))
+        --used;
     output[used] = '\0';
     return used;
 }

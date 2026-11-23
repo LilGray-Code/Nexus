@@ -183,6 +183,14 @@ jobs:
             -o /tmp/nexus-usb-hid-keyboard-test
           /tmp/nexus-usb-hid-keyboard-test
 
+      - name: Test generic USB HID gamepad descriptors and reports
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hid_gamepad.c \
+            kernel/tests/usb_hid_gamepad_test.c \
+            -o /tmp/nexus-usb-hid-gamepad-test
+          /tmp/nexus-usb-hid-gamepad-test
+
       - name: Test USB HID boot-mouse decoder
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

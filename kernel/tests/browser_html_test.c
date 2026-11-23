@@ -59,6 +59,8 @@ int main(void) {
           "\n- One\n- Two");
     check("before<br>after<hr>last", "before\nafter\nlast");
 
+    test_extract_absolute_source_links();
+
     char tiny[5];
     size_t n = nexus_browser_html_to_text((const uint8_t *)"abcdef", 6U,
                                           tiny, sizeof(tiny));

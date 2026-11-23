@@ -13,20 +13,25 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - A framebuffer desktop with Home, Files, Browser, Settings, and Terminal,
-  plus keyboard and mouse input. The installed desktop displays an animated
-  Nexus startup splash before showing the workspace and does not expose the
+  plus keyboard and mouse input. The installed desktop uses a Windows 10-inspired
+  taskbar, Start menu, app buttons, blue window chrome, and blue wallpaper.
+  It displays an animated Nexus startup splash and does not expose the live
   installer as an application or launcher item.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.
 - GPT, FAT32, NXFS, and a virtual filesystem layer.
-- A separate full-screen live-media installer. Booting the USB opens the
-  installer directly; booting the installed disk opens the normal desktop.
-  The installer builds a GPT layout with an EFI System Partition, Nexus
+- Separate live-installer and installed-OS kernel images. The ISO boots
+  `nexus-installer.elf` and carries `nexus-os.elf` as a separate deployment
+  payload. The installed image is compiled with installer mode disabled and
+  without the destructive installer-write build flag. Booting the USB opens
+  the full-screen installer; booting the installed disk opens the normal
+  desktop. The installer builds a GPT layout with an EFI System Partition, Nexus
   System volume, Recovery journal partition, and separate Nexus Data volume;
   BIOS installs also include a BIOS Boot partition. After successful
-  deployment, Enter requests a reboot so the firmware can start the installed
-  OS after the USB is removed.
+  deployment, the completion screen offers **Restart into Nexus OS**. Remove
+  the installation USB before activating restart so firmware boots the target
+  drive rather than returning to the installer.
 - A Files view with a flat root listing (up to 128 indexed entries, six
   visible at once), keyboard/mouse selection, create/open/edit/delete, names
   up to 31 characters, and a scrollable 4 KiB ASCII text editor. The desktop
@@ -69,7 +74,9 @@ and the installer-enabled kernel and exercise:
   the edited file on the NVMe Data volume;
 - host-side installer fault injection across simulated power cycles, journal
   recovery, and NXFS unmount/remount/edit/remount persistence;
-- dual-mode ISO construction and a boot check of the distributable ISO.
+- dual-mode ISO construction and a boot check of the distributable ISO;
+- separate installer/OS ELF validation and installed UEFI/BIOS boot checks
+  that verify the installed runtime reports installer mode disabled.
 
 These are virtual-machine and host-test results. They do not demonstrate
 physical power-loss behavior, compatibility with every controller or

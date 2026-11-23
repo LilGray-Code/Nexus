@@ -809,11 +809,11 @@ static void draw_shell(void) {
 
         graphics_draw_text(text_x, text_y + (panel_height < 360U ? 146U : 164U), "AT A GLANCE",
                            1U, 133U, 164U, 190U);
-        const uint64_t card_gap = 10U;
-        const uint64_t card_width = (panel_width - 84U) / 3U;
+        const uint64_t card_gap = 8U;
+        const uint64_t card_width = (panel_width - 92U) / 4U;
         const uint64_t card_y = text_y + (panel_height < 360U ? 163U : 181U);
         const uint64_t card_h = panel_height < 360U ? 44U : 54U;
-        const char *card_labels[3] = {"FREE MEMORY", "UPTIME", "STORAGE"};
+        const char *card_labels[4] = {"FREE MEM", "UPTIME", "STORAGE", "GAMING"};
         char free_mem[21], uptime[21];
         format_u64(memory_free_bytes() / (1024U * 1024U), free_mem);
         format_u64(timer_ticks() / 100U, uptime);
@@ -847,7 +847,7 @@ static void draw_shell(void) {
         static const uint8_t card_accent[3][3] = {
             {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U}
         };
-        for (size_t i = 0U; i < 3U; ++i) {
+        for (size_t i = 0U; i < 4U; ++i) {
             const uint64_t card_x = panel_x + 28U +
                                     (uint64_t)i * (card_width + card_gap);
             graphics_fill_round_rect(card_x, card_y, card_width, card_h,
@@ -866,13 +866,16 @@ static void draw_shell(void) {
             } else if (i == 1U) {
                 graphics_draw_text(card_x + 11U, card_y + 34U,
                                    uptime_value, 1U, 233U, 244U, 252U);
-            } else {
+            } else if (i == 2U) {
                 const char *storage_label =
                     vfs_nxfs_mounted() && vfs_nxfs_writable()
                         ? "NXFS READY"
                         : (vfs_root_mounted() ? "MOUNTED" : "RAM ONLY");
                 graphics_draw_text(card_x + 11U, card_y + 34U,
                                    storage_label, 1U, 233U, 244U, 252U);
+            } else {
+                graphics_draw_text(card_x + 11U, card_y + 34U,
+                                   "SNAKE CORE", 1U, 233U, 244U, 252U);
             }
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,

@@ -593,8 +593,8 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-          # Open Install (F5), select the single NVMe target, and confirm its
-          # exact stable identifier followed by the separate ERASE phrase.
+          # Open Install (F5), verify the discovered NVMe target, then use
+          # one review action and one final ERASE confirmation.
           key("f5")
           time.sleep(0.4)
           import re
@@ -611,10 +611,7 @@ jobs:
               print(log)
               raise SystemExit("Installer did not expose the selected disk's stable ID")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
-          key("ret")
-          for char in stable_id:
-              key("minus" if char == "-" else char)
-          key("ret")
+          key("ret")  # Review the drive; Nexus captures its ID automatically.
           time.sleep(0.4)
           for name in ["e","r","a","s","e"]:
               key(name)
@@ -803,10 +800,7 @@ jobs:
           if not stable_id.startswith("sata-"):
               raise SystemExit(f"Installer selected the wrong disk: {stable_id}")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
-          key("ret")
-          for char in stable_id:
-              key("minus" if char == "-" else char)
-          key("ret")
+          key("ret")  # Review the drive; Nexus captures its ID automatically.
           time.sleep(0.4)
           for name in ["e","r","a","s","e"]:
               key(name)

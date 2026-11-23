@@ -472,10 +472,6 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     static const char *const labels[5] = {
         "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR"
     };
-    static const uint8_t accents[5][3] = {
-        {0U, 120U, 215U}, {0U, 153U, 188U}, {16U, 124U, 16U},
-        {202U, 80U, 16U}, {104U, 33U, 122U}
-    };
     const uint64_t tab_width = 88U;
     const uint64_t tab_step = 92U;
     for (size_t i = 0U; i < 5U; ++i) {

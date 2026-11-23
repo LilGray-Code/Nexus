@@ -120,6 +120,50 @@ static void test_small_display_and_titles(void) {
     assert(nexus_wm_hit_test(95U, 63U) == id);
 }
 
+static void test_virtual_desktops(void) {
+    nexus_window_id a, b, order;
+    struct nexus_window_info info;
+    assert(nexus_wm_init(1280U, 720U));
+    assert(nexus_wm_active_workspace() == 0U);
+    assert(!nexus_wm_switch_workspace(NEXUS_WM_MAX_WORKSPACES));
+    assert(nexus_wm_create(1U, "Workspace A", 20, 20, 500U, 400U, &a));
+    assert(nexus_wm_workspace_count(0U) == 1U);
+    assert(nexus_wm_switch_workspace(1U));
+    assert(nexus_wm_active_workspace() == 1U);
+    assert(nexus_wm_focused() == 0U);
+    assert(nexus_wm_hit_test(40U, 40U) == 0U);
+    assert(nexus_wm_get(a, &info));
+    assert(info.workspace == 0U);
+    assert((info.flags & NEXUS_WINDOW_VISIBLE) == 0U);
+    assert(!nexus_wm_focus(a));
+    assert(!nexus_wm_restore(a));
+    assert(nexus_wm_create(2U, "Workspace B", 60, 60, 600U, 420U, &b));
+    assert(nexus_wm_active_workspace() == 1U);
+    assert(nexus_wm_focused() == b);
+    assert(nexus_wm_workspace_count(0U) == 1U);
+    assert(nexus_wm_workspace_count(1U) == 1U);
+    assert(nexus_wm_count() == 2U);
+    assert(nexus_wm_workspace_z_order(1U, 0U, &order) && order == b);
+    assert(!nexus_wm_workspace_z_order(1U, 1U, &order));
+    assert(nexus_wm_switch_workspace(0U));
+    assert(nexus_wm_focused() == a);
+    assert(nexus_wm_hit_test(80U, 80U) == a);
+    assert(nexus_wm_get(b, &info));
+    assert((info.flags & NEXUS_WINDOW_VISIBLE) == 0U);
+    assert(nexus_wm_switch_workspace(1U));
+    assert(nexus_wm_focused() == b);
+    assert(nexus_wm_move_to_workspace(b, 2U));
+    assert(nexus_wm_active_workspace() == 1U);
+    assert(nexus_wm_focused() == 0U);
+    assert(nexus_wm_workspace_count(1U) == 0U);
+    assert(nexus_wm_workspace_count(2U) == 1U);
+    assert(nexus_wm_move_to_workspace(b, 1U));
+    assert(nexus_wm_focused() == b);
+    assert(nexus_wm_workspace_count(1U) == 1U);
+    assert(nexus_wm_workspace_count(2U) == 0U);
+    assert(!nexus_wm_move_to_workspace(b, NEXUS_WM_MAX_WORKSPACES));
+}
+
 static void test_reinitialization_invalidates_old_handles(void) {
     nexus_window_id before, after;
     struct nexus_window_info info;
@@ -139,6 +183,7 @@ int main(void) {
     test_minimize_restore_maximize();
     test_lifetime_capacity_and_stale_handles();
     test_small_display_and_titles();
+    test_virtual_desktops();
     test_reinitialization_invalidates_old_handles();
     puts("Nexus window manager core tests passed");
     return 0;

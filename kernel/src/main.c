@@ -242,12 +242,13 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("NEXUS PCI DISCOVERY READY\r\n");
-    serial_write("PCI: retained network controllers (class 02):\\r\\n");
-    uint32_t pci_index = 0U;
-    const struct nexus_pci_device *network_controller;
-    while ((network_controller = pci_find_class(0x02U, 0x00U,
-                                                   pci_index,
-                                                   &pci_index)) != NULL) {
+    serial_write("PCI: retained network controllers (class 02):\r\n");
+    for (uint32_t pci_index = 0U;
+         pci_index < pci_stored_device_count(); ++pci_index) {
+        const struct nexus_pci_device *network_controller =
+            pci_device_at(pci_index);
+        if (network_controller == NULL ||
+            network_controller->class_code != 0x02U) continue;
         serial_write("PCI NET: ");
         serial_write_hex(network_controller->bus);
         serial_write(":");
@@ -258,16 +259,17 @@ void kmain(void) {
         serial_write_hex(network_controller->vendor_id);
         serial_write("/");
         serial_write_hex(network_controller->device_id);
-        serial_write(" prog-if=");
+        serial_write(" subclass/prog-if=");
+        serial_write_hex(network_controller->subclass);
+        serial_write("/");
         serial_write_hex(network_controller->programming_interface);
-        serial_write("\\r\\n");
-        ++pci_index;
+        serial_write("\r\n");
     }
     serial_write("PCI: retained functions=");
     serial_write_hex(pci_stored_device_count());
     serial_write(" total discovered=");
     serial_write_hex(pci_device_count());
-    serial_write("\\r\\n");
+    serial_write("\r\n");
 
     netdev_init();
     if (e1000_init()) {

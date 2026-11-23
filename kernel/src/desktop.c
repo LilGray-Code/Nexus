@@ -490,11 +490,12 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
                                      button_h > 8U ? button_h - 8U : button_h,
                                      9U, 72U, 126U, 174U);
         }
-        graphics_fill_round_rect(x + 9U, button_y + 11U, 5U,
-                                 button_h > 24U ? button_h - 22U : 8U, 2U,
-                                 accents[i][0], accents[i][1], accents[i][2]);
-        graphics_draw_text(x + 20U, button_y + button_h / 2U - 4U,
-                           labels[i], 1U, 235U, 238U, 242U);
+        desktop_draw_app_icon(x + 7U,
+                               button_y + (button_h > 18U
+                                   ? (button_h - 18U) / 2U : 1U),
+                               18U, i);
+        graphics_draw_text(x + 30U, button_y + button_h / 2U - 4U,
+                           labels[i], 1U, 235U, 242U, 250U);
     }
 
     char uptime[21];

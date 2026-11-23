@@ -24,6 +24,88 @@ struct hid_local {
     uint32_t usage_max;
 };
 
+bool nexus_hid_gamepad_find_interface(
+    const uint8_t *configuration, size_t length,
+    struct nexus_hid_gamepad_interface *interface) {
+    if (configuration == NULL || interface == NULL || length < 9U ||
+        configuration[0] < 9U || configuration[1] != 2U ||
+        configuration[0] > length || configuration[4] == 0U ||
+        configuration[5] == 0U) return false;
+
+    const uint16_t total_length = (uint16_t)(
+        configuration[2] | ((uint16_t)configuration[3] << 8));
+    if (total_length < configuration[0] || total_length > length)
+        return false;
+
+    bool gamepad_interface = false;
+    bool have_report_descriptor = false;
+    uint8_t current_interface = 0U;
+    uint16_t current_report_length = 0U;
+    for (size_t offset = configuration[0]; offset < total_length;) {
+        if (total_length - offset < 2U) return false;
+        const uint8_t descriptor_length = configuration[offset];
+        const uint8_t descriptor_type = configuration[offset + 1U];
+        if (descriptor_length < 2U ||
+            descriptor_length > total_length - offset) return false;
+
+        if (descriptor_type == 4U) {
+            if (descriptor_length < 9U) return false;
+            gamepad_interface = configuration[offset + 3U] == 0U &&
+                configuration[offset + 5U] == 3U &&
+                configuration[offset + 6U] == 0U;
+            current_interface = gamepad_interface
+                ? configuration[offset + 2U] : 0U;
+            have_report_descriptor = false;
+            current_report_length = 0U;
+        } else if (descriptor_type == 0x21U && gamepad_interface) {
+            if (descriptor_length < 6U) return false;
+            const uint8_t count = configuration[offset + 5U];
+            if ((size_t)count > (descriptor_length - 6U) / 3U)
+                return false;
+            for (uint8_t i = 0U; i < count; ++i) {
+                const size_t item = offset + 6U + (size_t)i * 3U;
+                if (configuration[item] != 0x22U) continue;
+                const uint16_t report_length = (uint16_t)(
+                    configuration[item + 1U] |
+                    ((uint16_t)configuration[item + 2U] << 8));
+                if (report_length == 0U ||
+                    report_length > NEXUS_HID_GAMEPAD_MAX_DESCRIPTOR_BYTES)
+                    return false;
+                current_report_length = report_length;
+                have_report_descriptor = true;
+                break;
+            }
+        } else if (descriptor_type == 5U && gamepad_interface &&
+                   have_report_descriptor) {
+            if (descriptor_length < 7U) return false;
+            const uint8_t address = configuration[offset + 2U];
+            const uint8_t attributes = configuration[offset + 3U] & 0x03U;
+            const uint16_t raw_packet = (uint16_t)(
+                configuration[offset + 4U] |
+                ((uint16_t)configuration[offset + 5U] << 8));
+            const uint16_t packet = raw_packet & 0x07FFU;
+            const uint8_t interval = configuration[offset + 6U];
+            if ((address & 0x80U) != 0U && (address & 0x0FU) != 0U &&
+                attributes == 3U && (raw_packet & 0xF800U) == 0U &&
+                packet != 0U && packet <= NEXUS_HID_GAMEPAD_MAX_REPORT_BYTES &&
+                interval != 0U) {
+                const struct nexus_hid_gamepad_interface parsed = {
+                    .interface_number = current_interface,
+                    .configuration_value = configuration[5],
+                    .endpoint_address = address,
+                    .interval = interval,
+                    .max_packet = packet,
+                    .report_descriptor_length = current_report_length
+                };
+                *interface = parsed;
+                return true;
+            }
+        }
+        offset += descriptor_length;
+    }
+    return false;
+}
+
 static uint32_t read_unsigned(const uint8_t *p, uint8_t n) {
     uint32_t value = 0U;
     for (uint8_t i = 0U; i < n; ++i) value |= (uint32_t)p[i] << (8U * i);
@@ -122,7 +204,7 @@ bool nexus_hid_gamepad_parse_descriptor(
     const uint8_t *descriptor, size_t length,
     struct nexus_hid_gamepad_layout *layout) {
     if (descriptor == NULL || layout == NULL || length == 0U ||
-        length > 4096U) return false;
+        length > NEXUS_HID_GAMEPAD_MAX_DESCRIPTOR_BYTES) return false;
 
     struct nexus_hid_gamepad_layout parsed = {0};
     struct hid_globals globals = {0};

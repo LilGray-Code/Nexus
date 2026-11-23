@@ -72,6 +72,83 @@ static void test_rejects_invalid_gamepad_logical_ranges(void) {
         invalid_hat_range, sizeof(invalid_hat_range), &layout));
 }
 
+static void test_find_report_protocol_gamepad_interface(void) {
+    const uint8_t configuration[] = {
+        9,0x02, 34,0, 1,1,0,0x80,50,
+        9,0x04, 2,0,1,3,0,0,0,
+        9,0x21, 0x11,0x01,0,1,0x22,
+        (uint8_t)sizeof(standard_gamepad),0,
+        7,0x05, 0x81,3,64,0,4
+    };
+    struct nexus_hid_gamepad_interface interface = {0};
+    assert(nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+    assert(interface.interface_number == 2U);
+    assert(interface.configuration_value == 1U);
+    assert(interface.endpoint_address == 0x81U);
+    assert(interface.max_packet == 64U);
+    assert(interface.interval == 4U);
+    assert(interface.report_descriptor_length == sizeof(standard_gamepad));
+}
+
+static void test_reject_unsupported_hid_interface_endpoints(void) {
+    const uint8_t valid[] = {
+        9,0x02, 34,0, 1,1,0,0x80,50,
+        9,0x04, 2,0,1,3,0,0,0,
+        9,0x21, 0x11,0x01,0,1,0x22,
+        (uint8_t)sizeof(standard_gamepad),0,
+        7,0x05, 0x81,3,64,0,4
+    };
+    uint8_t configuration[sizeof(valid)];
+    struct nexus_hid_gamepad_interface interface = {0};
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[29] = 0x01U; /* OUT endpoint. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[30] = 2U; /* Bulk rather than interrupt. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[31] = 127U; /* Packet larger than supported HID reports. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration) - 1U, &interface));
+}
+
+static void test_reject_malformed_gamepad_hid_descriptors(void) {
+    const uint8_t valid[] = {
+        9,0x02, 34,0, 1,1,0,0x80,50,
+        9,0x04, 2,0,1,3,0,0,0,
+        9,0x21, 0x11,0x01,0,1,0x22,
+        (uint8_t)sizeof(standard_gamepad),0,
+        7,0x05, 0x81,3,64,0,4
+    };
+    uint8_t configuration[sizeof(valid)];
+    struct nexus_hid_gamepad_interface interface = {0};
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[18] = 8U; /* HID descriptor is truncated. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[5] = 0U; /* Configuration value zero is invalid. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+
+    memcpy(configuration, valid, sizeof(valid));
+    configuration[2] = 35U; /* wTotalLength exceeds the buffer. */
+    assert(!nexus_hid_gamepad_find_interface(
+        configuration, sizeof(configuration), &interface));
+}
+
 static void test_rejects_truncated_and_oversized_descriptors(void) {
     struct nexus_hid_gamepad_layout layout = {0};
     const uint8_t truncated[] = {0x05U};
@@ -98,6 +175,9 @@ static void test_decode_rejects_bad_length_without_mutating_state(void) {
 int main(void) {
     test_standard_gamepad();
     test_signed_axes_and_report_id();
+    test_find_report_protocol_gamepad_interface();
+    test_reject_unsupported_hid_interface_endpoints();
+    test_reject_malformed_gamepad_hid_descriptors();
     test_rejects_invalid_gamepad_logical_ranges();
     test_rejects_truncated_and_oversized_descriptors();
     test_decode_rejects_bad_length_without_mutating_state();

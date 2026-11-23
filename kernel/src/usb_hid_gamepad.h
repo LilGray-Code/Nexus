@@ -8,6 +8,16 @@
 #define NEXUS_HID_GAMEPAD_MAX_AXES 8U
 #define NEXUS_HID_GAMEPAD_MAX_BUTTONS 32U
 #define NEXUS_HID_GAMEPAD_MAX_REPORT_BYTES 64U
+#define NEXUS_HID_GAMEPAD_MAX_DESCRIPTOR_BYTES 4096U
+
+struct nexus_hid_gamepad_interface {
+    uint8_t interface_number;
+    uint8_t configuration_value;
+    uint8_t endpoint_address;
+    uint8_t interval;
+    uint16_t max_packet;
+    uint16_t report_descriptor_length;
+};
 
 struct nexus_hid_gamepad_axis {
     uint16_t bit_offset;
@@ -37,6 +47,12 @@ struct nexus_hid_gamepad_state {
     uint32_t buttons;
     int32_t hat;
 };
+
+/* Find a report-protocol HID interface with a supported interrupt-IN
+ * endpoint. Parse its report descriptor separately before using reports. */
+bool nexus_hid_gamepad_find_interface(
+    const uint8_t *configuration, size_t length,
+    struct nexus_hid_gamepad_interface *interface);
 
 /* Parse one bounded HID game-controller report descriptor. Unsupported or
  * ambiguous layouts are rejected rather than guessed. */

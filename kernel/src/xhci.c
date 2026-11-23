@@ -135,7 +135,7 @@ struct xhci_controller {
     uint64_t erst_physical;
     struct xhci_mmio_mapping mappings[XHCI_MAX_MMIO_PAGES];
     size_t mapping_count;
-    /* One directly attached boot keyboard and one directly attached boot mouse. */
+    /* One directly attached keyboard, mouse, and supported gamepad. */
     struct xhci_hid_device keyboard;
     struct xhci_hid_device mouse;
     struct xhci_hid_device gamepad;
@@ -816,74 +816,6 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
     return found && *configuration_value != 0U && *kind != XHCI_HID_NONE;
 }
 
-/* Locate a report-protocol HID interface with an interrupt-IN endpoint. */
-static bool xhci_find_hid_gamepad(const uint8_t *configuration, size_t length,
-                                  uint8_t *interface_number,
-                                  uint8_t *configuration_value,
-                                  uint8_t *endpoint_address,
-                                  uint16_t *max_packet, uint8_t *interval,
-                                  uint16_t *report_descriptor_length) {
-    if (configuration == NULL || length < 9U || interface_number == NULL ||
-        configuration_value == NULL || endpoint_address == NULL ||
-        max_packet == NULL || interval == NULL ||
-        report_descriptor_length == NULL) return false;
-    *configuration_value = configuration[5];
-    bool selected_interface = false;
-    bool have_report_descriptor = false;
-    uint8_t current_interface = 0U;
-    uint16_t current_report_length = 0U;
-    for (size_t offset = 0U; offset + 2U <= length;) {
-        const uint8_t descriptor_length = configuration[offset];
-        const uint8_t descriptor_type = configuration[offset + 1U];
-        if (descriptor_length < 2U || descriptor_length > length - offset)
-            return false;
-        if (descriptor_type == 4U) {
-            selected_interface = descriptor_length >= 9U &&
-                configuration[offset + 3U] == 0U &&
-                configuration[offset + 5U] == 3U &&
-                configuration[offset + 6U] == 0U;
-            current_interface = selected_interface
-                ? configuration[offset + 2U] : 0U;
-            have_report_descriptor = false;
-            current_report_length = 0U;
-        } else if (descriptor_type == 0x21U && selected_interface &&
-                   descriptor_length >= 9U) {
-            const uint8_t count = configuration[offset + 5U];
-            if ((size_t)count > (descriptor_length - 6U) / 3U) return false;
-            for (uint8_t i = 0U; i < count; ++i) {
-                const size_t item = offset + 6U + (size_t)i * 3U;
-                if (configuration[item] != 0x22U) continue;
-                const uint16_t report_length = (uint16_t)(
-                    configuration[item + 1U] |
-                    ((uint16_t)configuration[item + 2U] << 8));
-                if (report_length == 0U || report_length > XHCI_PAGE_SIZE)
-                    return false;
-                current_report_length = report_length;
-                have_report_descriptor = true;
-                break;
-            }
-        } else if (descriptor_type == 5U && selected_interface &&
-                   have_report_descriptor && descriptor_length >= 7U) {
-            const uint8_t address = configuration[offset + 2U];
-            const uint8_t attributes = configuration[offset + 3U] & 0x03U;
-            const uint16_t packet = (uint16_t)(
-                configuration[offset + 4U] |
-                ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
-            if ((address & 0x80U) != 0U && (address & 0x0FU) != 0U &&
-                attributes == 3U && packet != 0U && packet <= 64U) {
-                *interface_number = current_interface;
-                *endpoint_address = address;
-                *max_packet = packet;
-                *interval = configuration[offset + 6U];
-                *report_descriptor_length = current_report_length;
-                return *configuration_value != 0U;
-            }
-        }
-        offset += descriptor_length;
-    }
-    return false;
-}
-
 static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
     if (interval == 0U) interval = 1U;
     if (speed >= 3U) {
@@ -1033,16 +965,23 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     uint8_t endpoint_address = 0U;
     uint16_t max_packet = 0U;
     uint8_t interval = 0U;
-    uint16_t report_descriptor_length = 0U;
+    struct nexus_hid_gamepad_interface report_interface = {0};
     enum xhci_hid_kind kind = XHCI_HID_NONE;
     const bool boot_hid = xhci_find_boot_hid(
         (const uint8_t *)(uintptr_t)config_buffer, total_length,
         &interface_number, &configuration_value, &endpoint_address,
         &max_packet, &interval, &kind);
-    const bool report_hid = !boot_hid && xhci_find_hid_gamepad(
-        (const uint8_t *)(uintptr_t)config_buffer, total_length,
-        &interface_number, &configuration_value, &endpoint_address,
-        &max_packet, &interval, &report_descriptor_length);
+    const bool report_hid = !boot_hid &&
+        nexus_hid_gamepad_find_interface(
+            (const uint8_t *)(uintptr_t)config_buffer, total_length,
+            &report_interface);
+    if (report_hid) {
+        interface_number = report_interface.interface_number;
+        configuration_value = report_interface.configuration_value;
+        endpoint_address = report_interface.endpoint_address;
+        max_packet = report_interface.max_packet;
+        interval = report_interface.interval;
+    }
     if (!boot_hid && !report_hid) {
         (void)memory_free_page(config_buffer_physical);
         goto failed;
@@ -1057,10 +996,10 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         if (!xhci_control_transfer(xhci, device, 0x81U, 0x06U, 0x2200U,
                                    interface_number,
                                    (void *)(uintptr_t)config_buffer,
-                                   report_descriptor_length) ||
+                                   report_interface.report_descriptor_length) ||
             !nexus_hid_gamepad_parse_descriptor(
                 (const uint8_t *)(uintptr_t)config_buffer,
-                report_descriptor_length, &layout)) {
+                report_interface.report_descriptor_length, &layout)) {
             (void)memory_free_page(config_buffer_physical);
             goto failed;
         }
@@ -1188,7 +1127,7 @@ bool xhci_init(void) {
             device->programming_interface != 0x30U) continue;
         if (xhci_try_controller(device)) return true;
     }
-    serial_write("USB: no usable xHCI HID keyboard or mouse\r\n");
+    serial_write("USB: no supported xHCI HID keyboard, mouse, or gamepad\r\n");
     return false;
 }
 
@@ -1274,7 +1213,9 @@ void xhci_poll(void) {
         if (!xhci_schedule_interrupt_read(xhci, device)) {
             serial_write(device->kind == XHCI_HID_KEYBOARD
                 ? "xHCI: unable to re-arm USB keyboard endpoint\r\n"
-                : "xHCI: unable to re-arm USB mouse endpoint\r\n");
+                : device->kind == XHCI_HID_MOUSE
+                    ? "xHCI: unable to re-arm USB mouse endpoint\r\n"
+                    : "xHCI: unable to re-arm USB gamepad endpoint\r\n");
             device->active = false;
             if (device->kind == XHCI_HID_KEYBOARD)
                 xhci->keyboard_active = false;

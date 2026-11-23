@@ -79,12 +79,12 @@ static bool find_partition_kind(const struct nexus_partition_plan *plan,
     return false;
 }
 
-static bool old_recovery_pending(
+static bool old_install_pending(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity) {
-    static const uint8_t recovery_guid[16] = {
-        0x4EU,0x58U,0x52U,0x43U,0x01U,0x00U,0x58U,0x4EU,
-        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x52U,0x43U
+    static const uint8_t esp_guid[16] = {
+        0x28U,0x73U,0x2AU,0xC1U,0x1FU,0xF8U,0xD2U,0x11U,
+        0xBAU,0x4BU,0x00U,0xA0U,0xC9U,0x3EU,0xC9U,0x3BU
     };
     if (!gpt_scan_device(device)) return false;
     for (size_t i = 0U; i < gpt_partition_count(); ++i) {
@@ -92,16 +92,34 @@ static bool old_recovery_pending(
         if (part == NULL) continue;
         bool match = true;
         for (size_t b = 0U; b < 16U; ++b)
-            if (part->type_guid[b] != recovery_guid[b]) match = false;
+            if (part->type_guid[b] != esp_guid[b]) match = false;
         if (!match) continue;
-        struct nexus_gpt_partition recovery = *part;
+        struct nexus_gpt_partition esp = *part;
         struct nexus_installer_journal_record record;
         const enum nexus_installer_journal_result result =
             nexus_installer_load_recovery_record(device, identity,
-                                                  &recovery, &record);
-        if (result == NEXUS_JOURNAL_NO_RECORD) return false;
-        if (result != NEXUS_JOURNAL_OK) return true;
-        return record.phase != NEXUS_JOURNAL_COMPLETE;
+                                                  &esp, &record);
+        if (result != NEXUS_JOURNAL_OK) return false;
+        if (record.phase == NEXUS_JOURNAL_COMPLETE) return false;
+        if (record.completed_steps < 1U || record.completed_steps > 5U ||
+            (record.phase != NEXUS_JOURNAL_RECOVERY_REQUIRED &&
+             record.phase != NEXUS_JOURNAL_GPT_WRITTEN &&
+             record.phase != NEXUS_JOURNAL_FILESYSTEMS_FORMATTED &&
+             record.phase != NEXUS_JOURNAL_PAYLOAD_DEPLOYED &&
+             record.phase != NEXUS_JOURNAL_BOOTLOADER_INSTALLED))
+            return false;
+        if (record.phase != NEXUS_JOURNAL_RECOVERY_REQUIRED) {
+            const uint32_t expected_steps =
+                record.phase == NEXUS_JOURNAL_GPT_WRITTEN ? 1U :
+                (record.phase == NEXUS_JOURNAL_FILESYSTEMS_FORMATTED ? 2U :
+                (record.phase == NEXUS_JOURNAL_PAYLOAD_DEPLOYED ? 3U : 4U));
+            if (record.completed_steps != expected_steps) return false;
+        }
+        if (record.firmware_mode != NEXUS_FIRMWARE_UEFI &&
+            record.firmware_mode != NEXUS_FIRMWARE_LEGACY_BIOS &&
+            record.firmware_mode != NEXUS_FIRMWARE_DUAL)
+            return false;
+        return true;
     }
     return false;
 }
@@ -110,16 +128,16 @@ static bool journal_commit(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
     const char *typed_id, const char *typed_erase,
-    const struct nexus_gpt_partition *recovery,
+    const struct nexus_gpt_partition *esp,
     struct nexus_installer_journal_record *record,
     enum nexus_installer_journal_phase phase) {
-    if (record == NULL || recovery == NULL) return false;
+    if (record == NULL || esp == NULL) return false;
     if (record->sequence == UINT64_MAX) return false;
     ++record->sequence;
     record->phase = phase;
     ++record->completed_steps;
     return nexus_installer_store_recovery_record(
-        device, identity, typed_id, typed_erase, recovery, record) ==
+        device, identity, typed_id, typed_erase, esp, record) ==
         NEXUS_JOURNAL_OK;
 }
 
@@ -127,14 +145,14 @@ static void journal_require_recovery(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
     const char *typed_id, const char *typed_erase,
-    const struct nexus_gpt_partition *recovery,
+    const struct nexus_gpt_partition *esp,
     struct nexus_installer_journal_record *record) {
-    if (record == NULL || recovery == NULL || record->sequence == UINT64_MAX)
+    if (record == NULL || esp == NULL || record->sequence == UINT64_MAX)
         return;
     ++record->sequence;
     record->phase = NEXUS_JOURNAL_RECOVERY_REQUIRED;
     (void)nexus_installer_store_recovery_record(
-        device, identity, typed_id, typed_erase, recovery, record);
+        device, identity, typed_id, typed_erase, esp, record);
 }
 
 static enum nexus_installer_runtime_result apply_remaining_stages(
@@ -145,12 +163,11 @@ static enum nexus_installer_runtime_result apply_remaining_stages(
     const struct nexus_gpt_partition *esp,
     const struct nexus_gpt_partition *system,
     const struct nexus_gpt_partition *data,
-    const struct nexus_gpt_partition *recovery,
     const struct nexus_gpt_partition *bios,
     struct nexus_installer_journal_record *journal,
     nexus_installer_progress_fn progress, void *progress_context) {
     if (device == NULL || identity == NULL || esp == NULL ||
-        system == NULL || data == NULL || recovery == NULL ||
+        system == NULL || data == NULL ||
         journal == NULL || journal->completed_steps < 1U ||
         journal->completed_steps > 5U)
         return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
@@ -170,7 +187,7 @@ static enum nexus_installer_runtime_result apply_remaining_stages(
             typed_erase, esp->first_lba, esp_blocks, volume_id) !=
             NEXUS_FAT32_FORMAT_OK) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_ESP_FORMAT;
         }
         report(progress, progress_context, NEXUS_INSTALL_PHASE_FORMATTING,
@@ -180,13 +197,13 @@ static enum nexus_installer_runtime_result apply_remaining_stages(
             !nexus_installer_format_nxfs(device, identity, typed_id,
             typed_erase, data)) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_SYSTEM_FORMAT;
         }
         if (!journal_commit(device, identity, typed_id, typed_erase,
-            recovery, journal, NEXUS_JOURNAL_FILESYSTEMS_FORMATTED)) {
+            esp, journal, NEXUS_JOURNAL_FILESYSTEMS_FORMATTED)) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_JOURNAL;
         }
     }
@@ -197,19 +214,19 @@ static enum nexus_installer_runtime_result apply_remaining_stages(
         if (nexus_installer_deploy_system_payload(device, identity,
             typed_id, typed_erase, system) != NEXUS_SYSTEM_PAYLOAD_OK) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_SYSTEM_PAYLOAD;
         }
         if (!nexus_installer_deploy_boot_payloads(device, identity,
             typed_id, typed_erase, esp->first_lba, esp_blocks)) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_BOOT_PAYLOAD;
         }
         if (!journal_commit(device, identity, typed_id, typed_erase,
-            recovery, journal, NEXUS_JOURNAL_PAYLOAD_DEPLOYED)) {
+            esp, journal, NEXUS_JOURNAL_PAYLOAD_DEPLOYED)) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_JOURNAL;
         }
     }
@@ -221,22 +238,22 @@ static enum nexus_installer_runtime_result apply_remaining_stages(
             !nexus_installer_install_bios_bootloader(device, identity,
                 typed_id, typed_erase, bios))) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_BIOS_BOOTLOADER;
         }
         if (!journal_commit(device, identity, typed_id, typed_erase,
-            recovery, journal, NEXUS_JOURNAL_BOOTLOADER_INSTALLED)) {
+            esp, journal, NEXUS_JOURNAL_BOOTLOADER_INSTALLED)) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_JOURNAL;
         }
     }
 
     if (journal->completed_steps < 5U) {
         if (!journal_commit(device, identity, typed_id, typed_erase,
-            recovery, journal, NEXUS_JOURNAL_COMPLETE)) {
+            esp, journal, NEXUS_JOURNAL_COMPLETE)) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_JOURNAL;
         }
     } else if (journal->phase != NEXUS_JOURNAL_COMPLETE) {
@@ -245,9 +262,9 @@ static enum nexus_installer_runtime_result apply_remaining_stages(
         ++journal->sequence;
         journal->phase = NEXUS_JOURNAL_COMPLETE;
         if (nexus_installer_store_recovery_record(device, identity,
-            typed_id, typed_erase, recovery, journal) != NEXUS_JOURNAL_OK) {
+            typed_id, typed_erase, esp, journal) != NEXUS_JOURNAL_OK) {
             journal_require_recovery(device, identity, typed_id, typed_erase,
-                                     recovery, journal);
+                                     esp, journal);
             return NEXUS_INSTALL_RESULT_JOURNAL;
         }
     }
@@ -292,7 +309,7 @@ enum nexus_installer_runtime_result nexus_installer_runtime_apply(
     identity.block_count = device->block_count;
     identity.block_size = device->block_size;
 
-    if (old_recovery_pending(device, &identity))
+    if (old_install_pending(device, &identity))
         return nexus_installer_runtime_recover(device, typed_stable_id,
             typed_erase_phrase, progress, progress_context);
 
@@ -333,11 +350,9 @@ enum nexus_installer_runtime_result nexus_installer_runtime_apply(
         partitions[i] = *part;
     }
 
-    struct nexus_gpt_partition esp, system, recovery, data, bios;
+    struct nexus_gpt_partition esp, system, data, bios;
     if (!find_partition_kind(&plan, partitions, NEXUS_PARTITION_ESP, &esp) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_SYSTEM, &system) ||
-        !find_partition_kind(&plan, partitions, NEXUS_PARTITION_RECOVERY,
-                             &recovery) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_DATA, &data))
         return NEXUS_INSTALL_RESULT_PARTITION_VERIFY;
     const bool needs_bios = firmware != NEXUS_FIRMWARE_UEFI;
@@ -361,12 +376,12 @@ enum nexus_installer_runtime_result nexus_installer_runtime_apply(
     if (scanned_guid == NULL) return NEXUS_INSTALL_RESULT_PARTITION_VERIFY;
     for (size_t i = 0U; i < 16U; ++i) journal.disk_guid[i] = scanned_guid[i];
     if (nexus_installer_store_recovery_record(device, &identity,
-        typed_stable_id, typed_erase_phrase, &recovery, &journal) !=
+        typed_stable_id, typed_erase_phrase, &esp, &journal) !=
         NEXUS_JOURNAL_OK)
         return NEXUS_INSTALL_RESULT_JOURNAL;
 
     return apply_remaining_stages(device, &identity, typed_stable_id,
-        typed_erase_phrase, firmware, &esp, &system, &data, &recovery,
+        typed_erase_phrase, firmware, &esp, &system, &data,
         needs_bios ? &bios : NULL, &journal, progress, progress_context);
 }
 
@@ -378,9 +393,9 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
     const char *typed_erase_phrase,
     nexus_installer_progress_fn progress,
     void *progress_context) {
-    static const uint8_t recovery_guid[16] = {
-        0x4EU,0x58U,0x52U,0x43U,0x01U,0x00U,0x58U,0x4EU,
-        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x52U,0x43U
+    static const uint8_t esp_guid[16] = {
+        0x28U,0x73U,0x2AU,0xC1U,0x1FU,0xF8U,0xD2U,0x11U,
+        0xBAU,0x4BU,0x00U,0xA0U,0xC9U,0x3EU,0xC9U,0x3BU
     };
     if (device == NULL || typed_stable_id == NULL ||
         typed_erase_phrase == NULL)
@@ -405,24 +420,24 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
     identity.block_size = device->block_size;
 
     report(progress, progress_context, NEXUS_INSTALL_PHASE_PREFLIGHT,
-           "Validating the interrupted installation and recovery journal");
+           "Validating saved installer progress");
     if (!gpt_scan_device(device))
         return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
-    struct nexus_gpt_partition recovery = {0};
-    bool found_recovery = false;
+    struct nexus_gpt_partition esp = {0};
+    bool found_esp = false;
     for (size_t i = 0U; i < gpt_partition_count(); ++i) {
         const struct nexus_gpt_partition *part = gpt_partition_at(i);
         if (part == NULL) continue;
         bool match = true;
         for (size_t b = 0U; b < 16U; ++b)
-            if (part->type_guid[b] != recovery_guid[b]) match = false;
+            if (part->type_guid[b] != esp_guid[b]) match = false;
         if (match) {
-            recovery = *part;
-            found_recovery = true;
+            esp = *part;
+            found_esp = true;
             break;
         }
     }
-    if (!found_recovery) return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
+    if (!found_esp) return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
 
     uint8_t actual_disk_guid[16];
     const uint8_t *scanned_guid = gpt_scanned_disk_guid();
@@ -430,7 +445,7 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
     for (size_t i = 0U; i < 16U; ++i) actual_disk_guid[i] = scanned_guid[i];
 
     struct nexus_installer_journal_record journal = {0};
-    if (nexus_installer_load_recovery_record(device, &identity, &recovery,
+    if (nexus_installer_load_recovery_record(device, &identity, &esp,
         &journal) != NEXUS_JOURNAL_OK)
         return NEXUS_INSTALL_RESULT_EXISTING_RECOVERY;
     if (!exact_case_insensitive(journal.stable_id, identity.stable_id,
@@ -493,7 +508,7 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
         partitions[i] = *part;
     }
 
-    struct nexus_gpt_partition esp, system, data, bios;
+    struct nexus_gpt_partition system, data, bios;
     if (!find_partition_kind(&plan, partitions, NEXUS_PARTITION_ESP, &esp) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_SYSTEM, &system) ||
         !find_partition_kind(&plan, partitions, NEXUS_PARTITION_DATA, &data))
@@ -507,6 +522,6 @@ enum nexus_installer_runtime_result nexus_installer_runtime_recover(
     report(progress, progress_context, NEXUS_INSTALL_PHASE_RECOVERY,
            "Resuming from the last verified installer journal phase");
     return apply_remaining_stages(device, &identity, typed_stable_id,
-        typed_erase_phrase, firmware, &esp, &system, &data, &recovery,
+        typed_erase_phrase, firmware, &esp, &system, &data,
         needs_bios ? &bios : NULL, &journal, progress, progress_context);
 }

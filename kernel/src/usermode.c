@@ -50,6 +50,17 @@ uintptr_t usermode_saved_rsp;
 volatile uint64_t usermode_exit_status = UINT64_MAX;
 volatile bool usermode_exit_seen;
 volatile bool usermode_write_rejected;
+volatile bool usermode_fault_seen;
+volatile uint64_t usermode_fault_vector;
+volatile uint64_t usermode_fault_error;
+
+void usermode_record_exception(uint64_t vector, uint64_t error_code) {
+    usermode_fault_seen = true;
+    usermode_fault_vector = vector;
+    usermode_fault_error = error_code;
+    /* The process record retains the exception vector as its failure status. */
+    usermode_exit_status = vector;
+}
 
 extern void nexus_enter_user(uint64_t root_physical,
                              uint64_t entry_point,
@@ -220,16 +231,20 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
     usermode_exit_status = UINT64_MAX;
     usermode_exit_seen = false;
     usermode_write_rejected = false;
+    usermode_fault_seen = false;
+    usermode_fault_vector = UINT64_MAX;
+    usermode_fault_error = 0U;
 
     nexus_enter_user(root_physical, entry_point, stack_pointer,
                      kernel_stack_top);
 
     const bool exited = usermode_exit_seen;
+    const bool faulted = usermode_fault_seen;
     const uint64_t status = usermode_exit_status;
     usermode_close_all_files();
     const bool stack_restored = gdt_set_kernel_stack(previous_kernel_stack);
     *exit_status = status;
-    return exited && stack_restored;
+    return exited && !faulted && stack_restored;
 }
 
 bool usermode_run_selftest(void) {
@@ -245,7 +260,37 @@ bool usermode_run_selftest(void) {
     const bool executed = process_run(pid, &exit_status);
     const bool result_ok = executed && exit_status == USER_EXIT_STATUS &&
                            usermode_write_rejected;
-    return process_reap(pid) && result_ok;
+    if (!process_reap(pid) || !result_ok) return false;
+
+    /*
+     * A user-mode UD2 must fail only that process. The exception path returns
+     * through nexus_user_return, allowing the manager to reclaim its pages.
+     */
+    if (!build_test_elf(&elf_file_size)) return false;
+    usermode_test_elf[0x1000U] = 0x0FU;
+    usermode_test_elf[0x1001U] = 0x0BU;
+    uint32_t fault_pid = 0U;
+    if (!process_spawn_elf("FAULTTEST", usermode_test_elf, elf_file_size,
+                           &fault_pid)) return false;
+
+    uint64_t fault_status = UINT64_MAX;
+    const bool fault_process_executed = process_run(fault_pid, &fault_status);
+    struct nexus_process_info fault_info;
+    bool found_failed_record = false;
+    for (size_t slot = 0U; slot < NEXUS_PROCESS_MAX; ++slot) {
+        if (process_get_info(slot, &fault_info) &&
+            fault_info.pid == fault_pid &&
+            fault_info.state == NEXUS_PROCESS_FAILED &&
+            fault_info.exit_status == 6U) {
+            found_failed_record = true;
+            break;
+        }
+    }
+    if (!process_reap(fault_pid) || fault_process_executed ||
+        fault_status != 6U || !found_failed_record) return false;
+
+    serial_write("NEXUS USER FAULT ISOLATION READY\r\n");
+    return true;
 }
 
 bool usermode_sys_write(uint64_t user_address, uint64_t length) {

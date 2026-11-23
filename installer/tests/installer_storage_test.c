@@ -15,7 +15,7 @@
 #define DISK_BLOCKS (16ULL * 1024ULL * 1024ULL * 1024ULL / 512ULL)
 #define EDGE_BLOCKS 64U
 #define FORMAT_BASE 2048U
-#define FORMAT_BLOCKS 4096U
+#define FORMAT_BLOCKS 32768U
 #define NXFS_TEST_AREA_BLOCKS 16384U
 #define BIOS_TEST_AREA_BLOCKS 4096U
 
@@ -26,8 +26,6 @@ struct mock_disk {
     uint64_t nxfs_base;
     uint64_t data_base;
     uint8_t data_area[NXFS_TEST_AREA_BLOCKS * 512U];
-    uint64_t recovery_base;
-    uint8_t recovery_area[2U * 512U];
     uint8_t nxfs_area[NXFS_TEST_AREA_BLOCKS * 512U];
     uint64_t bios_base;
     uint8_t bios_area[BIOS_TEST_AREA_BLOCKS * 512U];
@@ -59,11 +57,6 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
     if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
         lba + count <= disk->nxfs_base + NXFS_TEST_AREA_BLOCKS) {
         *base = disk->nxfs_area + (lba - disk->nxfs_base) * 512ULL;
-        return true;
-    }
-    if (disk->recovery_base != 0U && lba >= disk->recovery_base &&
-        lba + count <= disk->recovery_base + 2U) {
-        *base = disk->recovery_area + (lba - disk->recovery_base) * 512ULL;
         return true;
     }
     if (lba >= DISK_BLOCKS - EDGE_BLOCKS) {
@@ -131,7 +124,6 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
     if(ok&&disk->nxfs_base!=0U)ok=fseek(f,(long)(disk->nxfs_base*512ULL),SEEK_SET)==0&&fwrite(disk->nxfs_area,1U,sizeof(disk->nxfs_area),f)==sizeof(disk->nxfs_area);
     if(ok&&disk->data_base!=0U)ok=fseek(f,(long)(disk->data_base*512ULL),SEEK_SET)==0&&fwrite(disk->data_area,1U,sizeof(disk->data_area),f)==sizeof(disk->data_area);
     if(ok&&disk->bios_base!=0U)ok=fseek(f,(long)(disk->bios_base*512ULL),SEEK_SET)==0&&fwrite(disk->bios_area,1U,sizeof(disk->bios_area),f)==sizeof(disk->bios_area);
-    if(ok&&disk->recovery_base!=0U)ok=fseek(f,(long)(disk->recovery_base*512ULL),SEEK_SET)==0&&fwrite(disk->recovery_area,1U,sizeof(disk->recovery_area),f)==sizeof(disk->recovery_area);
     if(ok)ok=fseek(f,(long)((DISK_BLOCKS-EDGE_BLOCKS)*512ULL),SEEK_SET)==0&&fwrite(disk->last,1U,sizeof(disk->last),f)==sizeof(disk->last);
     if(fclose(f)!=0)ok=false;
     return ok;
@@ -140,14 +132,15 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
 uint64_t timer_ticks(void) { return 123456U; }
 
 int main(int argc,char **argv) {
-    uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios_hdd=NULL,*external_bios_sys=NULL;
-    uint32_t external_kernel_size=0U,external_uefi_size=0U,external_bios_hdd_size=0U,external_bios_sys_size=0U;
-    if(argc!=1&&argc!=6)return 2;
-    if(argc==6){
+    uint8_t *external_kernel=NULL,*external_installer=NULL,*external_uefi=NULL,*external_bios_hdd=NULL,*external_bios_sys=NULL;
+    uint32_t external_kernel_size=0U,external_installer_size=0U,external_uefi_size=0U,external_bios_hdd_size=0U,external_bios_sys_size=0U;
+    if(argc!=1&&argc!=7)return 2;
+    if(argc==7){
         assert(load_payload_file(argv[1],&external_kernel,&external_kernel_size));
-        assert(load_payload_file(argv[2],&external_uefi,&external_uefi_size));
-        assert(load_payload_file(argv[3],&external_bios_hdd,&external_bios_hdd_size));
-        assert(load_payload_file(argv[4],&external_bios_sys,&external_bios_sys_size));
+        assert(load_payload_file(argv[2],&external_installer,&external_installer_size));
+        assert(load_payload_file(argv[3],&external_uefi,&external_uefi_size));
+        assert(load_payload_file(argv[4],&external_bios_hdd,&external_bios_hdd_size));
+        assert(load_payload_file(argv[5],&external_bios_sys,&external_bios_sys_size));
     }
     static struct mock_disk boot = {0};
     static struct mock_disk target = {0};
@@ -252,24 +245,28 @@ int main(int argc,char **argv) {
     static uint8_t fake_bios_sys[512] = {0};
     fake_bios_hdd[510]=0x55U;fake_bios_hdd[511]=0xAAU;
     fake_uefi[0x3c]=0x40U;fake_uefi[0x40]='P';fake_uefi[0x41]='E';
-    uint8_t *kernel_payload=argc==6?external_kernel:fake_kernel;
-    uint8_t *uefi_payload=argc==6?external_uefi:fake_uefi;
-    uint8_t *bios_hdd_payload=argc==6?external_bios_hdd:fake_bios_hdd;
-    uint8_t *bios_sys_payload=argc==6?external_bios_sys:fake_bios_sys;
-    uint32_t kernel_payload_size=argc==6?external_kernel_size:(uint32_t)sizeof(fake_kernel);
-    uint32_t uefi_payload_size=argc==6?external_uefi_size:(uint32_t)sizeof(fake_uefi);
-    uint32_t bios_hdd_payload_size=argc==6?external_bios_hdd_size:(uint32_t)sizeof(fake_bios_hdd);
-    uint32_t bios_sys_payload_size=argc==6?external_bios_sys_size:(uint32_t)sizeof(fake_bios_sys);
-    struct limine_file kernel_file={.address=kernel_payload,.size=kernel_payload_size};
+    uint8_t *kernel_payload=argc==7?external_kernel:fake_kernel;
+    uint8_t *installer_payload=argc==7?external_installer:fake_kernel;
+    uint8_t *uefi_payload=argc==7?external_uefi:fake_uefi;
+    uint8_t *bios_hdd_payload=argc==7?external_bios_hdd:fake_bios_hdd;
+    uint8_t *bios_sys_payload=argc==7?external_bios_sys:fake_bios_sys;
+    uint32_t kernel_payload_size=argc==7?external_kernel_size:(uint32_t)sizeof(fake_kernel);
+    uint32_t installer_payload_size=argc==7?external_installer_size:(uint32_t)sizeof(fake_kernel);
+    uint32_t uefi_payload_size=argc==7?external_uefi_size:(uint32_t)sizeof(fake_uefi);
+    uint32_t bios_hdd_payload_size=argc==7?external_bios_hdd_size:(uint32_t)sizeof(fake_bios_hdd);
+    uint32_t bios_sys_payload_size=argc==7?external_bios_sys_size:(uint32_t)sizeof(fake_bios_sys);
+    struct limine_file kernel_file={.address=kernel_payload,.size=kernel_payload_size,
+        .path="boot():/boot/nexus-os.elf"};
+    struct limine_file installer_file={.address=installer_payload,.size=installer_payload_size};
     struct limine_file uefi_file={.address=uefi_payload,.size=uefi_payload_size,
         .path="boot():/EFI/BOOT/BOOTX64.EFI"};
     struct limine_file bios_hdd_file={.address=bios_hdd_payload,.size=bios_hdd_payload_size,
         .path="boot():/boot/limine/limine-bios-hdd.bin"};
     struct limine_file bios_sys_file={.address=bios_sys_payload,.size=bios_sys_payload_size,
         .path="boot():/boot/limine/limine-bios.sys"};
-    struct limine_file *module_files[3]={&uefi_file,&bios_hdd_file,&bios_sys_file};
-    struct limine_module_response module_response={.module_count=3U,.modules=module_files};
-    struct limine_executable_file_response executable_response={.executable_file=&kernel_file};
+    struct limine_file *module_files[4]={&kernel_file,&uefi_file,&bios_hdd_file,&bios_sys_file};
+    struct limine_module_response module_response={.module_count=4U,.modules=module_files};
+    struct limine_executable_file_response executable_response={.executable_file=&installer_file};
     assert(nexus_boot_payloads_init(&module_response,&executable_response));
     assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks));
@@ -291,14 +288,13 @@ int main(int argc,char **argv) {
     assert(target.first[510U]==0x55U&&target.first[511U]==0xAAU);
     assert(memcmp(target.first+440U,boot_image.protective_mbr+440U,70U)==0);
 
-    /* Persist installer recovery records in the authenticated GPT recovery
-     * partition through the same guarded block-device write gate. */
-    assert(plan.partitions[3].kind==NEXUS_PARTITION_RECOVERY);
-    target.recovery_base=plan.partitions[3].first_lba;
+    /* Persist the transaction journal in reserved sectors 8 and 9 of the
+     * authenticated EFI System Partition using the guarded write gate. */
+    assert(plan.partitions[0].kind==NEXUS_PARTITION_ESP);
     assert(gpt_scan_device(target_handle));
-    const struct nexus_gpt_partition *recovery_part=gpt_partition_at(3U);
-    assert(recovery_part!=NULL);
-    struct nexus_gpt_partition recovery_copy=*recovery_part;
+    const struct nexus_gpt_partition *esp_part=gpt_partition_at(0U);
+    assert(esp_part!=NULL);
+    struct nexus_gpt_partition esp_copy=*esp_part;
     struct nexus_installer_journal_record journal={0},journal_readback;
     journal.sequence=1U;journal.phase=NEXUS_JOURNAL_PREPARED;
     journal.disk_block_count=target_handle->block_count;
@@ -310,23 +306,26 @@ int main(int argc,char **argv) {
                    target_handle->model);
     memcpy(journal.disk_guid,disk_guid,sizeof(journal.disk_guid));
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
-        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_OK);
+        identity.stable_id,"ERASE",&esp_copy,&journal)==NEXUS_JOURNAL_OK);
     assert(nexus_installer_load_recovery_record(target_handle,&identity,
-        &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
+        &esp_copy,&journal_readback)==NEXUS_JOURNAL_OK);
     assert(journal_readback.sequence==1U&&
            journal_readback.phase==NEXUS_JOURNAL_PREPARED);
     journal.sequence=2U;journal.phase=NEXUS_JOURNAL_GPT_WRITTEN;
     journal.completed_steps=1U;
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
-        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_OK);
+        identity.stable_id,"ERASE",&esp_copy,&journal)==NEXUS_JOURNAL_OK);
     assert(nexus_installer_load_recovery_record(target_handle,&identity,
-        &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
+        &esp_copy,&journal_readback)==NEXUS_JOURNAL_OK);
     assert(journal_readback.sequence==2U&&
            journal_readback.phase==NEXUS_JOURNAL_GPT_WRITTEN);
+    const size_t journal_offset =
+        (size_t)(esp_part->first_lba - FORMAT_BASE + 8U) * 512U;
+    assert(memcmp(target.format_area + journal_offset, "NXJNL01", 7U) == 0);
     assert(target.flushes==33U);
     journal.disk_guid[0]^=0xFFU;
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
-        identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_INVALID);
+        identity.stable_id,"ERASE",&esp_copy,&journal)==NEXUS_JOURNAL_INVALID);
     journal.disk_guid[0]^=0xFFU;
 
     const uint32_t bps=512U;
@@ -431,7 +430,7 @@ int main(int argc,char **argv) {
     assert(payload_result==NEXUS_SYSTEM_PAYLOAD_OK);
     assert(target.flushes==50U);
     assert(gpt_scan_device(target_handle));
-    const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
+    const struct nexus_gpt_partition *data_part=gpt_partition_at(3U);
     assert(data_part!=NULL);
     struct nexus_gpt_partition data_copy = *data_part;
     /* Deploy a large system file through a one-operation installer session. */
@@ -583,8 +582,6 @@ int main(int argc,char **argv) {
             target.nxfs_base = part->first_lba;
         else if (part->kind == NEXUS_PARTITION_DATA)
             target.data_base = part->first_lba;
-        else if (part->kind == NEXUS_PARTITION_RECOVERY)
-            target.recovery_base = part->first_lba;
         else if (part->kind == NEXUS_PARTITION_BIOS_BOOT)
             target.bios_base = part->first_lba;
     }
@@ -593,14 +590,14 @@ int main(int argc,char **argv) {
         NEXUS_INSTALL_RESULT_OK);
     assert(gpt_scan_device(target_handle));
     assert(gpt_partition_count() == runtime_plan.partition_count);
-    struct nexus_gpt_partition runtime_recovery =
-        *gpt_partition_at(3U);
+    struct nexus_gpt_partition runtime_esp =
+        *gpt_partition_at(0U);
     struct nexus_installer_journal_record runtime_journal;
     assert(nexus_installer_load_recovery_record(target_handle, &identity,
-        &runtime_recovery, &runtime_journal) == NEXUS_JOURNAL_OK);
+        &runtime_esp, &runtime_journal) == NEXUS_JOURNAL_OK);
     assert(runtime_journal.phase == NEXUS_JOURNAL_COMPLETE);
     assert(runtime_journal.completed_steps == 5U);
-    if(argc==6)assert(dump_installed_disk(argv[5],&target));
+    if(argc==7)assert(dump_installed_disk(argv[6],&target));
 
     /* MBR provenance must also be unique across all registered disks. */
     blockdev_init();
@@ -644,6 +641,6 @@ int main(int argc,char **argv) {
     assert(!blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
 
     puts("NEXUS KERNEL INSTALLER STORAGE ADAPTER TESTS PASSED");
-    free(external_kernel);free(external_uefi);free(external_bios_hdd);free(external_bios_sys);
+    free(external_kernel);free(external_installer);free(external_uefi);free(external_bios_hdd);free(external_bios_sys);
     return 0;
 }

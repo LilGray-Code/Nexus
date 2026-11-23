@@ -24,6 +24,15 @@ struct nexus_pci_device {
     uint32_t bars[NEXUS_PCI_BAR_COUNT];
 };
 
+struct nexus_pci_msi_info {
+    bool present;
+    bool enabled;
+    bool supports_64bit_address;
+    bool per_vector_masking;
+    uint8_t maximum_message_exponent;
+    uint16_t maximum_message_count;
+};
+
 struct nexus_pci_bar {
     bool present;
     bool assigned;
@@ -34,8 +43,34 @@ struct nexus_pci_bar {
 };
 
 bool pci_init(void);
+/* Number of entries addressable through pci_device_at(). */
 uint32_t pci_device_count(void);
+/* Total discovered PCI functions, including entries beyond storage capacity. */
+uint32_t pci_discovered_device_count(void);
 const struct nexus_pci_device *pci_device_at(uint32_t index);
+
+/* Wildcards for the driver-match helper. */
+#define NEXUS_PCI_MATCH_ANY_ID 0xFFFFU
+#define NEXUS_PCI_MATCH_ANY_CLASS 0xFFU
+
+/* Match any supplied subset of PCI identity and class fields. */
+bool pci_device_matches(const struct nexus_pci_device *device,
+                        uint16_t vendor_id, uint16_t device_id,
+                        uint8_t class_code, uint8_t subclass,
+                        uint8_t programming_interface);
+/* Return the first enumerated device matching the supplied fields. */
+const struct nexus_pci_device *pci_find_matching_device(
+    uint16_t vendor_id, uint16_t device_id, uint8_t class_code,
+    uint8_t subclass, uint8_t programming_interface);
+
+/* Find a conventional PCI capability (for example MSI or PCI Express).
+ * Returns its config-space offset; traversal is bounded and read-only.
+ */
+bool pci_find_capability(const struct nexus_pci_device *device,
+                         uint8_t capability_id, uint8_t *offset);
+/* Read MSI capability properties without enabling or modifying interrupts. */
+bool pci_get_msi_info(const struct nexus_pci_device *device,
+                      struct nexus_pci_msi_info *info);
 
 /* Decode the raw BAR value captured during enumeration; never writes config. */
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,

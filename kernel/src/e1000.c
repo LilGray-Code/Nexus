@@ -1,4 +1,5 @@
 #include "e1000.h"
+#include "netdev.h"
 
 #include "memory.h"
 #include "paging.h"
@@ -98,6 +99,18 @@ struct e1000_state {
 };
 
 static struct e1000_state state;
+
+static bool e1000_netdev_get_mac(void *context, uint8_t address[6]);
+static bool e1000_netdev_send_frame(void *context, const void *frame,
+                                    size_t length);
+static bool e1000_netdev_receive_frame(void *context, void *buffer,
+                                       size_t capacity, size_t *length);
+static const struct nexus_net_device_ops e1000_netdev_ops = {
+    .get_mac = e1000_netdev_get_mac,
+    .send_frame = e1000_netdev_send_frame,
+    .receive_frame = e1000_netdev_receive_frame
+};
+
 
 static void zero_bytes(void *destination, size_t length) {
     uint8_t *bytes = (uint8_t *)destination;
@@ -347,6 +360,14 @@ bool e1000_init(void) {
     }
 
     state.ready = true;
+    if (!netdev_register("e1000", &e1000_netdev_ops, &state)) {
+        state.ready = false;
+        (void)register_write(E1000_REG_RCTL, 0U);
+        (void)register_write(E1000_REG_TCTL, 0U);
+        release_dma_resources();
+        serial_write("E1000: network-device registration failed\r\n");
+        return false;
+    }
     serial_write("E1000: initialized in polling mode; MAC=");
     for (size_t i = 0; i < 6U; ++i) {
         serial_write_hex(state.mac[i]);
@@ -456,4 +477,21 @@ bool e1000_send_arp_probe(void) {
     packet[38] = 10U; packet[39] = 0U;
     packet[40] = 2U; packet[41] = 2U;
     return e1000_send_frame(packet, sizeof(packet));
+}
+
+static bool e1000_netdev_get_mac(void *context, uint8_t address[6]) {
+    (void)context;
+    return e1000_get_mac(address);
+}
+
+static bool e1000_netdev_send_frame(void *context, const void *frame,
+                                    size_t length) {
+    (void)context;
+    return e1000_send_frame(frame, length);
+}
+
+static bool e1000_netdev_receive_frame(void *context, void *buffer,
+                                       size_t capacity, size_t *length) {
+    (void)context;
+    return e1000_receive_frame(buffer, capacity, length);
 }

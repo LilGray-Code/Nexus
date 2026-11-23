@@ -79,7 +79,8 @@ enum nexus_installer_error nexus_installer_confirm_target(
 enum nexus_installer_error nexus_installer_confirm_destructive(
     struct nexus_installer_context *context, const char *typed_phrase) {
     if (context == NULL ||
-        context->state != NEXUS_INSTALLER_TARGET_CONFIRMED)
+        (context->state != NEXUS_INSTALLER_PLAN_READY &&
+         context->state != NEXUS_INSTALLER_TARGET_CONFIRMED))
         return NEXUS_INSTALLER_ERROR_STATE;
     if (!exact_string("ERASE", typed_phrase, 8U))
         return NEXUS_INSTALLER_ERROR_CONFIRMATION;
@@ -101,7 +102,7 @@ enum nexus_installer_error nexus_installer_revalidate_target(
         context->target.block_count != current_target->block_count ||
         context->target.block_size != current_target->block_size) {
         context->target_revalidated = false;
-        context->state = NEXUS_INSTALLER_RECOVERY_REQUIRED;
+        context->state = NEXUS_INSTALLER_FAILED;
         return NEXUS_INSTALLER_ERROR_CHANGED_TARGET;
     }
     context->target_revalidated = true;
@@ -129,7 +130,7 @@ enum nexus_installer_error nexus_installer_finish_apply(
     if (context == NULL || context->state != NEXUS_INSTALLER_APPLYING)
         return NEXUS_INSTALLER_ERROR_STATE;
     context->state = success ? NEXUS_INSTALLER_COMPLETE
-                             : NEXUS_INSTALLER_RECOVERY_REQUIRED;
+                             : NEXUS_INSTALLER_FAILED;
     return NEXUS_INSTALLER_ERROR_NONE;
 }
 

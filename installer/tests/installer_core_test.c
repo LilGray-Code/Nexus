@@ -24,11 +24,8 @@ static void test_full_confirmation_state_machine(void) {
            NEXUS_INSTALLER_ERROR_NONE);
     assert(nexus_installer_create_plan(&context, NEXUS_FIRMWARE_UEFI) ==
            NEXUS_INSTALLER_ERROR_NONE);
-    assert(nexus_installer_confirm_target(&context, "wrong-id") ==
-           NEXUS_INSTALLER_ERROR_CONFIRMATION);
-    assert(context.state == NEXUS_INSTALLER_PLAN_READY);
-    assert(nexus_installer_confirm_target(&context,
-               "nvme:serial:NEXUS-TEST-0001") == NEXUS_INSTALLER_ERROR_NONE);
+    /* The selected target identity is already captured by the UI; only one
+     * final typed ERASE confirmation is required from the user. */
     assert(nexus_installer_confirm_destructive(&context, "ERASE NOW") ==
            NEXUS_INSTALLER_ERROR_CONFIRMATION);
     assert(nexus_installer_confirm_destructive(&context, "ERASE") ==
@@ -70,14 +67,12 @@ static void test_changed_target_requires_recovery(void) {
            NEXUS_INSTALLER_ERROR_NONE);
     assert(nexus_installer_create_plan(&context, NEXUS_FIRMWARE_LEGACY_BIOS) ==
            NEXUS_INSTALLER_ERROR_NONE);
-    assert(nexus_installer_confirm_target(&context,
-               "nvme:serial:NEXUS-TEST-0001") == NEXUS_INSTALLER_ERROR_NONE);
     assert(nexus_installer_confirm_destructive(&context, "ERASE") ==
            NEXUS_INSTALLER_ERROR_NONE);
     target.block_count -= 1U;
     assert(nexus_installer_revalidate_target(&context, &target) ==
            NEXUS_INSTALLER_ERROR_CHANGED_TARGET);
-    assert(context.state == NEXUS_INSTALLER_RECOVERY_REQUIRED);
+    assert(context.state == NEXUS_INSTALLER_FAILED);
     assert(!nexus_installer_can_apply(&context));
 }
 
@@ -103,7 +98,7 @@ static void test_cancel_and_failed_apply(void) {
     assert(nexus_installer_begin_apply(&context) == NEXUS_INSTALLER_ERROR_NONE);
     assert(nexus_installer_finish_apply(&context, false) ==
            NEXUS_INSTALLER_ERROR_NONE);
-    assert(context.state == NEXUS_INSTALLER_RECOVERY_REQUIRED);
+    assert(context.state == NEXUS_INSTALLER_FAILED);
 }
 
 int main(void) {

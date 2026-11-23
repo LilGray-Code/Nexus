@@ -207,6 +207,10 @@ bool pci_init(void) {
 }
 
 uint32_t pci_device_count(void) {
+    return stored_device_count;
+}
+
+uint32_t pci_discovered_device_count(void) {
     return discovered_device_count;
 }
 
@@ -215,55 +219,87 @@ const struct nexus_pci_device *pci_device_at(uint32_t index) {
     return &stored_devices[index];
 }
 
-bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,
-                    struct nexus_pci_bar *bar) {
-    if (device == NULL || bar == NULL || index >= NEXUS_PCI_BAR_COUNT)
-        return false;
 
-    *bar = (struct nexus_pci_bar){0};
-
-    /* A 64-bit BAR consumes the following BAR slot as its upper dword. */
-    for (uint8_t i = 0; i < index; ++i) {
-        const uint32_t previous = device->bars[i];
-        if (previous != 0 && (previous & 1U) == 0 &&
-            ((previous >> 1) & 3U) == 2U) {
-            if ((uint8_t)(i + 1U) == index) return false;
-            ++i;
+const struct nexus_pci_device *pci_find_matching_device(
+    uint16_t vendor_id, uint16_t device_id, uint8_t class_code,
+    uint8_t subclass, uint8_t programming_interface) {
+    for (uint32_t i = 0U; i < stored_device_count; ++i) {
+        if (pci_device_matches(&stored_devices[i], vendor_id, device_id,
+                               class_code, subclass,
+                               programming_interface)) {
+            return &stored_devices[i];
         }
     }
+    return NULL;
+}
 
-    const uint32_t raw = device->bars[index];
-    if (raw == 0 || raw == UINT32_MAX) return false;
 
-    bar->present = true;
-    if ((raw & 1U) != 0) {
-        bar->io_space = true;
-        bar->base = (uint64_t)(raw & ~3U);
-        bar->assigned = bar->base != 0;
-        return true;
-    }
 
-    const uint32_t memory_type = (raw >> 1) & 3U;
-    if (memory_type == 3U) {
-        *bar = (struct nexus_pci_bar){0};
+bool pci_find_capability(const struct nexus_pci_device *device,
+                         uint8_t capability_id, uint8_t *offset) {
+    if (device == NULL || offset == NULL ||
+        (device->status & 0x0010U) == 0U) {
         return false;
     }
 
-    bar->prefetchable = (raw & 8U) != 0;
-    if (memory_type == 2U) {
-        if (index + 1U >= NEXUS_PCI_BAR_COUNT) {
-            *bar = (struct nexus_pci_bar){0};
+    /* Status bit 4 advertises a conventional capability list. */
+    uint8_t cursor = (uint8_t)pci_config_read(
+        device->bus, device->slot, device->function, 0x34U);
+
+    /* Config space from 0x40 through 0xFC contains at most 48 dwords.
+     * The hard bound also makes malformed/cyclic lists harmless.
+     */
+    for (uint8_t step = 0U; step < 48U; ++step) {
+        if (cursor < 0x40U || cursor > 0xFCU ||
+            (cursor & 0x03U) != 0U) {
             return false;
         }
-        bar->is_64bit = true;
-        bar->base = ((uint64_t)device->bars[index + 1U] << 32) |
-                    (uint64_t)(raw & ~0xFU);
-    } else if (memory_type == 1U) {
-        bar->base = (uint64_t)(raw & 0x000FFFF0U);
-    } else {
-        bar->base = (uint64_t)(raw & ~0xFU);
+
+        const uint32_t capability = pci_config_read(
+            device->bus, device->slot, device->function, cursor);
+        if (capability == UINT32_MAX) return false;
+
+        if ((uint8_t)capability == capability_id) {
+            *offset = cursor;
+            return true;
+        }
+
+        const uint8_t next = (uint8_t)(capability >> 8);
+        if (next == 0U) return false;
+        cursor = next;
     }
 
-    bar->assigned = bar->base != 0;
+    /* More than 48 entries implies a corrupt or cyclic list. */
+    return false;
+}
+
+
+bool pci_get_msi_info(const struct nexus_pci_device *device,
+                      struct nexus_pci_msi_info *info) {
+    if (device == NULL || info == NULL) return false;
+
+    *info = (struct nexus_pci_msi_info){0};
+
+    uint8_t capability_offset = 0U;
+    /* PCI_CAP_ID_MSI is 0x05 in the conventional capability list. */
+    if (!pci_find_capability(device, 0x05U, &capability_offset)) {
+        return false;
+    }
+
+    const uint32_t control_register = pci_config_read(
+        device->bus, device->slot, device->function,
+        (uint8_t)(capability_offset + 0x00U));
+    if (control_register == UINT32_MAX) return false;
+
+    const uint16_t message_control = (uint16_t)(control_register >> 16);
+    const uint8_t message_exponent =
+        (uint8_t)((message_control >> 1) & 0x07U);
+
+    info->present = true;
+    info->enabled = (message_control & 0x0001U) != 0U;
+    info->maximum_message_exponent = message_exponent;
+    info->maximum_message_count = (uint16_t)(1U << message_exponent);
+    info->supports_64bit_address = (message_control & 0x0080U) != 0U;
+    info->per_vector_masking = (message_control & 0x0100U) != 0U;
     return true;
 }

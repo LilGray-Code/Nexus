@@ -48,17 +48,21 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
     struct limine_executable_file_response *executable = executable_response;
     payloads_ready = false;
     if (modules == NULL || executable == NULL ||
-        modules->module_count < 3U || modules->module_count > 16U ||
+        modules->module_count < 4U || modules->module_count > 16U ||
         modules->modules == NULL || executable->executable_file == NULL)
         return false;
 
+    struct limine_file *kernel = NULL;
     struct limine_file *uefi = NULL;
     struct limine_file *bios_hdd = NULL;
     struct limine_file *bios_sys = NULL;
     for (uint64_t i = 0U; i < modules->module_count; ++i) {
         struct limine_file *file = modules->modules[i];
         if (file == NULL || file->path == NULL) continue;
-        if (path_is(file->path, "boot():/EFI/BOOT/BOOTX64.EFI")) {
+        if (path_is(file->path, "boot():/boot/nexus-os.elf")) {
+            if (kernel != NULL) return false;
+            kernel = file;
+        } else if (path_is(file->path, "boot():/EFI/BOOT/BOOTX64.EFI")) {
             if (uefi != NULL) return false;
             uefi = file;
         } else if (path_is(file->path, "boot():/boot/limine/limine-bios-hdd.bin")) {
@@ -69,9 +73,10 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
             bios_sys = file;
         }
     }
-    struct limine_file *kernel = executable->executable_file;
-    if (uefi == NULL || bios_hdd == NULL || bios_sys == NULL ||
+    struct limine_file *installer = executable->executable_file;
+    if (kernel == NULL || uefi == NULL || bios_hdd == NULL || bios_sys == NULL ||
         !blob_from_file(kernel, &payloads.kernel_elf, 64U) ||
+        !blob_from_file(installer, &payloads.installer_elf, 64U) ||
         !blob_from_file(uefi, &payloads.uefi_loader, 512U) ||
         !blob_from_file(bios_hdd, &payloads.bios_hdd_image, 512U) ||
         !blob_from_file(bios_sys, &payloads.bios_sys, 512U)) return false;
@@ -79,6 +84,9 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
     const uint8_t *k = payloads.kernel_elf.data;
     if (k[0] != 0x7fU || k[1] != 'E' || k[2] != 'L' || k[3] != 'F' ||
         k[4] != 2U || k[5] != 1U) return false;
+    const uint8_t *ik = payloads.installer_elf.data;
+    if (ik[0] != 0x7fU || ik[1] != 'E' || ik[2] != 'L' || ik[3] != 'F' ||
+        ik[4] != 2U || ik[5] != 1U) return false;
     const uint8_t *e = payloads.uefi_loader.data;
     if (e[0] != 'M' || e[1] != 'Z') return false;
     uint32_t pe = (uint32_t)e[0x3c] | ((uint32_t)e[0x3d] << 8) |

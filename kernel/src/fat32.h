@@ -8,11 +8,11 @@
 #include "blockdev.h"
 #include "gpt.h"
 
-#define NEXUS_FAT32_MAX_ROOT_ENTRIES 32U
+#define NEXUS_FAT32_MAX_ROOT_ENTRIES 128U
 #define NEXUS_FAT32_MAX_READ_BYTES 4096U
 
 struct nexus_fat32_entry {
-    char name[13];
+    char name[32];
     uint8_t attributes;
     uint32_t first_cluster;
     uint32_t size;
@@ -20,6 +20,9 @@ struct nexus_fat32_entry {
 
 bool fat32_mount(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition);
+/* Load a FAT32 directory cluster chain into the bounded directory cache. */
+uint32_t fat32_root_cluster(void);
+bool fat32_read_directory(uint32_t first_cluster);
 size_t fat32_root_entry_count(void);
 const struct nexus_fat32_entry *fat32_root_entry_at(size_t index);
 bool fat32_read_file(const struct nexus_fat32_entry *entry,

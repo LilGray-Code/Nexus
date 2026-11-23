@@ -76,8 +76,8 @@ static void test_uefi_image(void) {
         assert(image.primary_entries[i] == image.backup_entries[i]);
     assert(image.primary_entries[0] == 0x28U); /* EFI System GUID */
     assert(image.primary_entries[128] == 0x46U); /* Nexus system NXFS */
-    assert(image.primary_entries[256] == 0x4EU); /* Nexus recovery */
-    assert(image.primary_entries[384] == 0x46U); /* Nexus data NXFS */
+    assert(image.primary_entries[256] == 0x46U); /* Nexus data NXFS */
+    assert(image.primary_entries[384] == 0U);    /* No Recovery partition */
 }
 
 static void test_dual_firmware_image(void) {
@@ -91,8 +91,8 @@ static void test_dual_firmware_image(void) {
     assert(image.primary_entries[0]==0x28U);
     assert(image.primary_entries[128]=='H');
     assert(image.primary_entries[256]==0x46U);
-    assert(image.primary_entries[384]==0x4EU);
-    assert(image.primary_entries[512]==0x46U);
+    assert(image.primary_entries[384]==0x46U);
+    assert(image.primary_entries[512]==0U);
     for(size_t i=0U;i<NEXUS_GPT_IMAGE_ENTRY_BYTES;i++)
         assert(image.primary_entries[i]==image.backup_entries[i]);
 }

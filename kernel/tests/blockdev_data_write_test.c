@@ -12,7 +12,7 @@
 #define SYSTEM_FIRST 4096U
 #define SYSTEM_LAST 11263U
 
-static struct nexus_gpt_partition partitions[4];
+static struct nexus_gpt_partition partitions[3];
 static const struct nexus_block_device *gpt_device;
 static uint32_t write_calls;
 static uint32_t flush_calls;
@@ -20,10 +20,6 @@ static uint32_t flush_calls;
 static const uint8_t nxfs_guid[16] = {
     0x46U,0x53U,0x58U,0x4EU,0x01U,0x00U,0x58U,0x4EU,
     0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x46U,0x53U
-};
-static const uint8_t recovery_guid[16] = {
-    0x4EU,0x58U,0x52U,0x43U,0x01U,0x00U,0x58U,0x4EU,
-    0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x52U,0x43U
 };
 static const uint8_t esp_guid[16] = {
     0x28U,0x73U,0x2AU,0xC1U,0x1FU,0xF8U,0xD2U,0x11U,
@@ -59,9 +55,9 @@ const uint8_t *gpt_scanned_disk_guid(void) {
     static const uint8_t disk_guid[16] = {1U};
     return disk_guid;
 }
-size_t gpt_partition_count(void) { return 4U; }
+size_t gpt_partition_count(void) { return 3U; }
 const struct nexus_gpt_partition *gpt_partition_at(size_t index) {
-    return index < 4U ? &partitions[index] : NULL;
+    return index < 3U ? &partitions[index] : NULL;
 }
 
 static void setup_partitions(void) {
@@ -73,12 +69,9 @@ static void setup_partitions(void) {
     memcpy(partitions[1].type_guid, nxfs_guid, 16U);
     partitions[1].first_lba = SYSTEM_FIRST;
     partitions[1].last_lba = SYSTEM_LAST;
-    memcpy(partitions[2].type_guid, recovery_guid, 16U);
-    partitions[2].first_lba = 12288U - 1024U;
-    partitions[2].last_lba = 12287U;
-    memcpy(partitions[3].type_guid, nxfs_guid, 16U);
-    partitions[3].first_lba = DATA_FIRST;
-    partitions[3].last_lba = DATA_LAST;
+    memcpy(partitions[2].type_guid, nxfs_guid, 16U);
+    partitions[2].first_lba = DATA_FIRST;
+    partitions[2].last_lba = DATA_LAST;
 }
 
 static struct nexus_block_device make_device(const char *name,

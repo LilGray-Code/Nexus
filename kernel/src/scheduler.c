@@ -80,12 +80,17 @@ bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
 
     const bool restore_if = (interrupt_flags() & RFLAGS_INTERRUPT_ENABLE) != 0U;
     __asm__ volatile ("cli" : : : "memory");
-    if (thread_count >= NEXUS_MAX_THREADS) {
-        restore_interrupt_state(restore_if);
-        return false;
+    /* Reclaim completed slots; thread_count is the initialized-slot high-water mark. */
+    size_t slot = 0U;
+    while (slot < thread_count && !threads[slot].finished) ++slot;
+    if (slot == thread_count) {
+        if (thread_count >= NEXUS_MAX_THREADS) {
+            restore_interrupt_state(restore_if);
+            return false;
+        }
     }
 
-    struct nexus_thread *thread = &threads[thread_count];
+    struct nexus_thread *thread = &threads[slot];
     thread->entry = entry;
     thread->argument = argument;
     thread->finished = false;
@@ -106,7 +111,8 @@ bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
     initial_stack[7] = 0U;
     thread->saved_stack = (uintptr_t)initial_stack;
 
-    ++thread_count;
+    /* Only a newly initialized slot grows the high-water mark. */
+    if (slot == thread_count) ++thread_count;
     restore_interrupt_state(restore_if);
     return true;
 }

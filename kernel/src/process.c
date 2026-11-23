@@ -65,6 +65,25 @@ static struct nexus_process *find_available_slot(void) {
     return NULL;
 }
 
+/*
+ * PIDs are externally visible process identities.  After uint32_t wrap,
+ * never reuse an ID that still belongs to a live or unreaped process.
+ * At most NEXUS_PROCESS_MAX IDs can be occupied, so MAX+1 candidates suffice.
+ */
+static bool allocate_pid(uint32_t *pid) {
+    if (pid == NULL) return false;
+    for (size_t attempt = 0; attempt <= NEXUS_PROCESS_MAX; ++attempt) {
+        uint32_t candidate = next_pid++;
+        if (next_pid == 0U) next_pid = 1U;
+        if (candidate == 0U) continue;
+        if (find_process(candidate) == NULL) {
+            *pid = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool has_available_slot(void) {
     for (size_t i = 0; i < NEXUS_PROCESS_MAX; ++i) {
         if (processes[i].state == NEXUS_PROCESS_FREE ||
@@ -119,13 +138,14 @@ bool process_spawn_elf(const char *name, const void *image, size_t image_size,
         return false;
     }
 
-    process->pid = next_pid++;
-    if (next_pid == 0U) next_pid = 1U;
-    if (process->pid == 0U) {
-        process->pid = next_pid++;
-        if (next_pid == 0U) next_pid = 1U;
+    uint32_t process_pid = 0U;
+    if (!allocate_pid(&process_pid)) {
+        (void)paging_destroy_user_address_space(address_space);
+        clear_slot(process);
+        return false;
     }
 
+    process->pid = process_pid;
     process->state = NEXUS_PROCESS_READY;
     process->address_space = address_space;
     process->entry_point = entry_point;

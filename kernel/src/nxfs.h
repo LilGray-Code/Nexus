@@ -39,6 +39,7 @@ bool nxfs_mount(const struct nexus_block_device *device,
 void nxfs_unmount(void);
 bool nxfs_is_mounted(void);
 bool nxfs_is_writable(void);
+bool nxfs_entry_is_current(const struct nexus_nxfs_entry *entry);
 size_t nxfs_entry_count(void);
 const struct nexus_nxfs_entry *nxfs_entry_at(size_t index);
 bool nxfs_read_file(const struct nexus_nxfs_entry *entry,

@@ -129,12 +129,35 @@ static void syscall_frame_trace(const char *phase,
     serial_write("\r\n");
 }
 
-__attribute__((noreturn))
 void exception_dispatch(const struct interrupt_frame *frame) {
     uint16_t current_cs = 0U;
     uint16_t current_ss = 0U;
     __asm__ volatile ("mov %%cs, %0" : "=r"(current_cs));
     __asm__ volatile ("mov %%ss, %0" : "=r"(current_ss));
+
+    if ((frame->code_segment & 3U) == 3U &&
+        frame->vector != 2U && frame->vector != 8U &&
+        frame->vector != 18U) {
+        struct interrupt_frame *mutable_frame =
+            (struct interrupt_frame *)(uintptr_t)frame;
+        serial_write("\r\nNEXUS USER PROCESS FAULT: vector=");
+        serial_write_hex(frame->vector);
+        serial_write(" error=");
+        serial_write_hex(frame->error_code);
+        serial_write(" rip=");
+        serial_write_hex(frame->instruction_pointer);
+        serial_write("\r\n");
+        usermode_record_exception(frame->vector, frame->error_code);
+
+        /* Return to the kernel trampoline, never to the faulting user RIP. */
+        mutable_frame->instruction_pointer =
+            (uint64_t)(uintptr_t)nexus_user_return;
+        mutable_frame->code_segment = 0x08U;
+        mutable_frame->user_stack_pointer = gdt_get_kernel_stack();
+        mutable_frame->user_stack_segment = 0x10U;
+        mutable_frame->flags &= ~0x200ULL;
+        return;
+    }
 
     serial_write("\r\nNEXUS CPU EXCEPTION\r\n");
     serial_write("Vector: ");

@@ -15,6 +15,7 @@
 #define FAT32_MAX_CHAIN_SKIP 65536U
 
 static struct nexus_fat32_entry root_entries[NEXUS_FAT32_MAX_ROOT_ENTRIES];
+static struct nexus_fat32_entry directory_backup[NEXUS_FAT32_MAX_ROOT_ENTRIES];
 static size_t root_entry_count;
 static uint8_t sector_buffer[FAT32_MAX_SECTOR_SIZE];
 static uint32_t fat_start;
@@ -25,7 +26,69 @@ static uint32_t cluster_count;
 static uint32_t root_cluster;
 static uint64_t partition_start;
 static uint64_t partition_sectors;
+static uint32_t volume_sectors;
 static const struct nexus_block_device *mounted_device;
+
+static uint16_t le16(const uint8_t *p);
+static uint16_t lfn_chars[40];
+static uint8_t lfn_checksum;
+static uint8_t lfn_expected;
+static bool lfn_active;
+
+static void reset_lfn(void) {
+    for (size_t i = 0; i < 40U; ++i) lfn_chars[i] = 0xFFFFU;
+    lfn_checksum = 0U;
+    lfn_expected = 0U;
+    lfn_active = false;
+}
+
+static uint8_t short_name_checksum(const uint8_t *name) {
+    uint8_t sum = 0U;
+    for (size_t i = 0; i < 11U; ++i)
+        sum = (uint8_t)(((sum & 1U) ? 0x80U : 0U) + (sum >> 1) + name[i]);
+    return sum;
+}
+
+static void decode_lfn_part(const uint8_t *raw) {
+    static const uint8_t offsets[13] = {
+        1U,3U,5U,7U,9U,14U,16U,18U,20U,22U,24U,28U,30U
+    };
+    const uint8_t ordinal = raw[0] & 0x1FU;
+    if ((raw[0] & 0x40U) != 0U) {
+        reset_lfn();
+        if (ordinal == 0U || ordinal > 3U) return;
+        lfn_active = true;
+        lfn_expected = ordinal;
+        lfn_checksum = raw[13U];
+    }
+    if (!lfn_active || ordinal == 0U || ordinal != lfn_expected ||
+        raw[11U] != FAT32_ATTR_LONG_NAME || raw[12U] != 0U ||
+        le16(raw + 26U) != 0U || raw[13U] != lfn_checksum) {
+        reset_lfn();
+        return;
+    }
+    const size_t base = (size_t)(ordinal - 1U) * 13U;
+    for (size_t i = 0; i < 13U; ++i) {
+        const uint16_t ch = le16(raw + offsets[i]);
+        if (base + i < 40U) lfn_chars[base + i] = ch;
+    }
+    --lfn_expected;
+}
+
+static bool copy_lfn_name(char output[32], const uint8_t *short_name) {
+    if (!lfn_active || lfn_expected != 0U ||
+        short_name_checksum(short_name) != lfn_checksum) return false;
+    size_t out = 0U;
+    for (size_t i = 0U; i < 40U; ++i) {
+        const uint16_t ch = lfn_chars[i];
+        if (ch == 0U || ch == 0xFFFFU) break;
+        if (ch < 0x20U || ch > 0x7EU || out >= 31U) return false;
+        output[out++] = (char)ch;
+    }
+    if (out == 0U) return false;
+    output[out] = '\0';
+    return true;
+}
 
 static uint16_t le16(const uint8_t *p) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
@@ -45,7 +108,8 @@ static bool valid_cluster(uint32_t cluster) {
 }
 
 static bool read_volume_sector(uint32_t relative_lba, uint8_t *buffer) {
-    if (mounted_device == NULL || relative_lba >= partition_sectors)
+    if (mounted_device == NULL || relative_lba >= partition_sectors ||
+        (volume_sectors != 0U && relative_lba >= volume_sectors))
         return false;
     return blockdev_read(mounted_device, partition_start + relative_lba,
                          1U, buffer);
@@ -64,11 +128,11 @@ static bool fat_next_cluster(uint32_t cluster, uint32_t *next) {
     return true;
 }
 
-static void decode_short_name(const uint8_t *raw, char name[13]) {
+static void decode_short_name(const uint8_t *raw, char name[32]) {
     size_t out = 0;
     size_t base_end = 8U;
     while (base_end > 0U && raw[base_end - 1U] == ' ') --base_end;
-    for (size_t i = 0; i < base_end && out < 12U; ++i)
+    for (size_t i = 0; i < base_end && out < 31U; ++i)
         name[out++] = (char)raw[i];
     size_t ext_end = 3U;
     while (ext_end > 0U && raw[8U + ext_end - 1U] == ' ') --ext_end;
@@ -79,14 +143,21 @@ static void decode_short_name(const uint8_t *raw, char name[13]) {
 }
 
 static bool add_directory_entry(const uint8_t *raw) {
-    if (raw[0] == 0x00U) return false;
-    if (raw[0] == 0xE5U || raw[0] == '.' ||
-        raw[11] == FAT32_ATTR_LONG_NAME ||
-        (raw[11] & FAT32_ATTR_VOLUME_ID) != 0U) return true;
+    if (raw[0] == 0x00U) { reset_lfn(); return false; }
+    if (raw[0] == 0xE5U) { reset_lfn(); return true; }
+    if (raw[11] == FAT32_ATTR_LONG_NAME) {
+        decode_lfn_part(raw);
+        return true;
+    }
+    if (raw[0] == '.' || (raw[11] & FAT32_ATTR_VOLUME_ID) != 0U) {
+        reset_lfn();
+        return true;
+    }
     if (root_entry_count >= NEXUS_FAT32_MAX_ROOT_ENTRIES) return true;
 
     struct nexus_fat32_entry *entry = &root_entries[root_entry_count++];
-    decode_short_name(raw, entry->name);
+    if (!copy_lfn_name(entry->name, raw)) decode_short_name(raw, entry->name);
+    reset_lfn();
     entry->attributes = raw[11];
     entry->first_cluster =
         ((uint32_t)le16(raw + 20U) << 16) | le16(raw + 26U);
@@ -98,6 +169,7 @@ bool fat32_mount(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition) {
     mounted_device = NULL;
     root_entry_count = 0;
+    reset_lfn();
     uint32_t mount_stage = 0U;
     if (device == NULL || partition == NULL ||
         (device->block_size != 512U && device->block_size != 4096U) ||
@@ -107,6 +179,7 @@ bool fat32_mount(const struct nexus_block_device *device,
     mounted_device = device;
     partition_start = partition->first_lba;
     partition_sectors = partition->last_lba - partition->first_lba + 1U;
+    volume_sectors = 0U;
     if (!read_volume_sector(0U, sector_buffer)) goto fail;
     mount_stage = 1U;
 
@@ -130,6 +203,7 @@ bool fat32_mount(const struct nexus_block_device *device,
         total32 == 0U || fat32 == 0U || fs_version != 0U ||
         root < 2U || total32 > partition_sectors) goto fail;
     mount_stage = 2U;
+    volume_sectors = total32;
     serial_write("FAT32: BPB sectors=");
     serial_write_hex(total32);
     serial_write(" partition sectors=");
@@ -161,34 +235,11 @@ bool fat32_mount(const struct nexus_block_device *device,
     serial_write("\r\n");
     root_cluster = root;
 
-    uint32_t cluster = root_cluster;
-    for (uint32_t chain = 0; chain < FAT32_MAX_ROOT_CLUSTERS; ++chain) {
-        if (!valid_cluster(cluster)) goto fail;
-        const uint64_t first_sector = (uint64_t)data_start +
-            (uint64_t)(cluster - 2U) * sectors_per_cluster;
-        for (uint32_t s = 0; s < sectors_per_cluster; ++s) {
-            if (first_sector + s >= total32 ||
-                !read_volume_sector((uint32_t)(first_sector + s),
-                                    sector_buffer)) goto fail;
-            for (uint32_t offset = 0; offset + 32U <= device->block_size;
-                 offset += 32U) {
-                if (!add_directory_entry(sector_buffer + offset)) {
-                    if (sector_buffer[offset] == 0x00U) {
-                        serial_write("FAT32: root entries=");
-                        serial_write_hex(root_entry_count);
-                        serial_write("\r\n");
-                        return true;
-                    }
-                    goto fail;
-                }
-            }
-        }
-        uint32_t next = 0;
-        if (!fat_next_cluster(cluster, &next)) goto fail;
-        if (next >= FAT32_EOC_MIN) return true;
-        if (!valid_cluster(next) || next == FAT32_BAD_CLUSTER) goto fail;
-        cluster = next;
-    }
+    if (!fat32_read_directory(root_cluster)) goto fail;
+    serial_write("FAT32: root entries=");
+    serial_write_hex(root_entry_count);
+    serial_write("\r\n");
+    return true;
 
 fail:
     serial_write("FAT32: mount failed at stage=");
@@ -196,6 +247,63 @@ fail:
     serial_write("\r\n");
     mounted_device = NULL;
     root_entry_count = 0;
+    volume_sectors = 0U;
+    return false;
+}
+
+uint32_t fat32_root_cluster(void) {
+    return mounted_device == NULL ? 0U : root_cluster;
+}
+
+static bool fat32_read_directory_impl(uint32_t first_cluster) {
+    if (mounted_device == NULL || !valid_cluster(first_cluster)) return false;
+    root_entry_count = 0U;
+    reset_lfn();
+    uint32_t cluster = first_cluster;
+    uint32_t visited[FAT32_MAX_ROOT_CLUSTERS];
+    size_t visited_count = 0U;
+    for (uint32_t chain = 0U; chain < FAT32_MAX_ROOT_CLUSTERS; ++chain) {
+        if (!valid_cluster(cluster)) return false;
+        for (size_t prior = 0U; prior < visited_count; ++prior) {
+            if (visited[prior] == cluster) return false;
+        }
+        visited[visited_count++] = cluster;
+        const uint64_t first_sector = (uint64_t)data_start +
+            (uint64_t)(cluster - 2U) * sectors_per_cluster;
+        for (uint32_t sector = 0U; sector < sectors_per_cluster; ++sector) {
+            if (first_sector + sector >= volume_sectors ||
+                !read_volume_sector((uint32_t)(first_sector + sector),
+                                    sector_buffer)) return false;
+            for (uint32_t offset = 0U;
+                 offset + 32U <= mounted_device->block_size; offset += 32U) {
+                if (!add_directory_entry(sector_buffer + offset)) {
+                    if (sector_buffer[offset] == 0x00U) return true;
+                    return false;
+                }
+            }
+        }
+        uint32_t next = 0U;
+        if (!fat_next_cluster(cluster, &next)) return false;
+        if (next >= FAT32_EOC_MIN) return true;
+        if (!valid_cluster(next) || next == FAT32_BAD_CLUSTER ||
+            next == cluster) return false;
+        cluster = next;
+    }
+    return false;
+}
+
+bool fat32_read_directory(uint32_t first_cluster) {
+    const size_t previous_count = root_entry_count;
+    for (size_t i = 0U; i < previous_count; ++i)
+        directory_backup[i] = root_entries[i];
+
+    if (fat32_read_directory_impl(first_cluster)) return true;
+
+    /* A failed child-directory read must not destroy the visible parent. */
+    root_entry_count = previous_count;
+    for (size_t i = 0U; i < previous_count; ++i)
+        root_entries[i] = directory_backup[i];
+    reset_lfn();
     return false;
 }
 
@@ -208,17 +316,11 @@ const struct nexus_fat32_entry *fat32_root_entry_at(size_t index) {
     return &root_entries[index];
 }
 
-static bool owns_root_entry(const struct nexus_fat32_entry *entry) {
-    if (entry == NULL) return false;
-    for (size_t i = 0; i < root_entry_count; ++i) {
-        if (&root_entries[i] == entry) return true;
-    }
-    return false;
-}
-
 bool fat32_read_file(const struct nexus_fat32_entry *entry,
                      uint32_t offset, uint32_t length, void *buffer) {
-    if (mounted_device == NULL || !owns_root_entry(entry) ||
+    /* Entries may be copied into stable open-file handles by the VFS.
+     * Do not require pointer identity with the mutable directory cache. */
+    if (mounted_device == NULL || entry == NULL ||
         (entry->attributes & FAT32_ATTR_DIRECTORY) != 0U ||
         (length != 0U && buffer == NULL) ||
         length > NEXUS_FAT32_MAX_READ_BYTES ||
@@ -262,7 +364,7 @@ bool fat32_read_file(const struct nexus_fat32_entry *entry,
 
         for (uint32_t sector = first_sector_index;
              sector < sectors_per_cluster && copied < length; ++sector) {
-            if (first_sector + sector >= partition_sectors ||
+            if (first_sector + sector >= volume_sectors ||
                 !read_volume_sector((uint32_t)(first_sector + sector),
                                     sector_buffer)) return false;
             uint32_t available = bytes_per_sector - sector_offset;

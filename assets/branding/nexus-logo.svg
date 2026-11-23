@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Nexus</title>
+  <desc id="desc">A glowing violet orb with two soft white vertical eyes on a midnight background.</desc>
+  <defs>
+    <radialGradient id="glow"><stop offset=".48" stop-color="#7c35ff" stop-opacity=".42"/><stop offset="1" stop-color="#7c35ff" stop-opacity="0"/></radialGradient>
+    <radialGradient id="orb" cx="36%" cy="28%" r="76%">
+      <stop offset="0" stop-color="#6625ff"/>
+      <stop offset=".58" stop-color="#5220f4"/>
+      <stop offset=".84" stop-color="#7650f4"/>
+      <stop offset="1" stop-color="#c2a2ff"/>
+    </radialGradient>
+    <filter id="blur" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="22"/></filter>
+    <filter id="eye" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="2"/></filter>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#090b1e"/>
+  <circle cx="256" cy="256" r="210" fill="url(#glow)" filter="url(#blur)"/>
+  <circle cx="256" cy="256" r="168" fill="#4c20dd" opacity=".22" filter="url(#blur)"/>
+  <circle cx="256" cy="256" r="164" fill="url(#orb)" stroke="#a78bfa" stroke-opacity=".72" stroke-width="2"/>
+  <g fill="#fff">
+    <rect x="193" y="193" width="31" height="73" rx="15.5"/>
+    <rect x="290" y="191" width="32" height="76" rx="16"/>
+  </g>
+</svg>

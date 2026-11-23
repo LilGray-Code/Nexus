@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-installed-desktop-separation
     paths:
       - "kernel/**"
       - "boot/**"
@@ -35,6 +36,28 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file dosfstools mtools
+
+      - name: Test Nexus desktop window manager core
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/window_manager.c \
+            kernel/tests/window_manager_test.c \
+            -o /tmp/nexus-window-manager-test
+          /tmp/nexus-window-manager-test
+
+      - name: Test Nexus calculator expression engine
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/calculator.c \
+            kernel/tests/calculator_test.c -o /tmp/nexus-calculator-test
+          /tmp/nexus-calculator-test
+
+      - name: Test Nexus app launcher search and filtering
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/launcher.c \
+            kernel/tests/launcher_test.c -o /tmp/nexus-launcher-test
+          /tmp/nexus-launcher-test
 
       - name: Test durable installer recovery journal (host-only mock disk)
         run: |
@@ -85,6 +108,103 @@ jobs:
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test
 
+      - name: Test FAT32 mount and volume boundaries
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/fat32.c \
+            kernel/tests/fat32_mount_test.c \
+            -o /tmp/nexus-fat32-mount-test
+          /tmp/nexus-fat32-mount-test
+
+      - name: Test Nexus Browser URL parser
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_url.c \
+            kernel/tests/browser_url_test.c \
+            -o /tmp/nexus-browser-url-test
+          /tmp/nexus-browser-url-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_html.c \
+            kernel/tests/browser_html_test.c \
+            -o /tmp/nexus-browser-html-test
+          /tmp/nexus-browser-html-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_search.c \
+            kernel/tests/browser_search_test.c -o /tmp/nexus-browser-search-test
+          /tmp/nexus-browser-search-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_http.c \
+            kernel/tests/browser_http_test.c -o /tmp/nexus-browser-http-test
+          /tmp/nexus-browser-http-test
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/sha256.c kernel/tests/sha256_test.c \
+            -o /tmp/nexus-sha256-test
+          /tmp/nexus-sha256-test
+
+      - name: Test generic network-device frame boundary
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/netdev.c \
+            kernel/tests/netdev_test.c \
+            -o /tmp/nexus-netdev-test
+          /tmp/nexus-netdev-test
+
+      - name: Test wireless interface state manager
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi.c \
+            kernel/tests/wifi_test.c \
+            -o /tmp/nexus-wifi-test
+          /tmp/nexus-wifi-test
+
+      - name: Test 802.11 beacon and probe-response parsing
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi_80211.c \
+            kernel/tests/wifi_80211_test.c \
+            -o /tmp/nexus-wifi-80211-test
+          /tmp/nexus-wifi-80211-test
+
+      - name: Test ELF64 dynamic metadata parser
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/elf64_dynamic.c \
+            kernel/tests/elf64_dynamic_test.c \
+            -o /tmp/nexus-elf64-dynamic-test
+          /tmp/nexus-elf64-dynamic-test
+
+      - name: Test PCI driver matching rules
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/pci_match.c \
+            kernel/tests/pci_match_test.c \
+            -o /tmp/nexus-pci-match-test
+          /tmp/nexus-pci-match-test
+
+      - name: Test PCI BAR decoding
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/pci_bar.c \
+            kernel/tests/pci_bar_test.c \
+            -o /tmp/nexus-pci-bar-test
+          /tmp/nexus-pci-bar-test
+
+      - name: Test generic USB bulk interface descriptor discovery
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_desc.c \
+            kernel/tests/usb_desc_test.c \
+            -o /tmp/nexus-usb-desc-test
+          /tmp/nexus-usb-desc-test
+
+      - name: Test xHCI bulk endpoint context and transfer TRB builders
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_xhci.c \
+            kernel/tests/usb_xhci_bulk_test.c \
+            -o /tmp/nexus-usb-xhci-bulk-test
+          /tmp/nexus-usb-xhci-bulk-test
+
       - name: Test USB HID boot-keyboard decoder
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
@@ -92,6 +212,14 @@ jobs:
             kernel/tests/usb_hid_keyboard_test.c \
             -o /tmp/nexus-usb-hid-keyboard-test
           /tmp/nexus-usb-hid-keyboard-test
+
+      - name: Test generic USB HID gamepad descriptors and reports
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hid_gamepad.c \
+            kernel/tests/usb_hid_gamepad_test.c \
+            -o /tmp/nexus-usb-hid-gamepad-test
+          /tmp/nexus-usb-hid-gamepad-test
 
       - name: Test USB HID boot-mouse decoder
         run: |
@@ -101,12 +229,21 @@ jobs:
             -o /tmp/nexus-usb-hid-mouse-test
           /tmp/nexus-usb-hid-mouse-test
 
+      - name: Test USB gamepad desktop input queue
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_INPUT_HOST_TEST -Ikernel/src \
+            kernel/src/input.c kernel/src/usb_hid.c \
+            kernel/src/usb_hid_gamepad.c kernel/tests/usb_hid_gamepad_input_test.c \
+            -o /tmp/nexus-usb-gamepad-input-test
+          /tmp/nexus-usb-gamepad-input-test
+
       - name: Test USB mouse desktop input queue
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -DNEXUS_INPUT_HOST_TEST -Ikernel/src \
             kernel/src/input.c kernel/src/usb_hid.c \
-            kernel/tests/usb_mouse_input_test.c \
+            kernel/src/usb_hid_gamepad.c kernel/tests/usb_mouse_input_test.c \
             -o /tmp/nexus-usb-mouse-input-test
           /tmp/nexus-usb-mouse-input-test
 
@@ -148,7 +285,7 @@ jobs:
       - name: Install boot payloads to a disposable disk and boot installed UEFI target via USB mass storage
         shell: bash
         run: |
-          /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
+          /tmp/nexus-installer-storage-test build/nexus-kernel.elf build/nexus-installer.elf \
             build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios-hdd.bin \
             build/limine-binary/limine-bios.sys /tmp/nexus-installed-uefi.img
           echo "Installed disk MBR:"
@@ -181,7 +318,11 @@ jobs:
             exit "$status"
           fi
           cat installed-uefi-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" installed-uefi-serial.log
+          grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installed-uefi-serial.log
+          if grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installed-uefi-serial.log; then
+            echo "Installed OS unexpectedly enabled installer writes"
+            exit 1
+          fi
           grep -q "NEXUS K0 BOOT COMPLETE" installed-uefi-serial.log
 
       - name: Boot the installed legacy BIOS target disk (SeaBIOS)
@@ -200,14 +341,24 @@ jobs:
             exit "$status"
           fi
           cat installed-bios-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" installed-bios-serial.log
+          grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installed-bios-serial.log
+          if grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installed-bios-serial.log; then
+            echo "Installed OS unexpectedly enabled installer writes"
+            exit 1
+          fi
           grep -q "NEXUS K0 BOOT COMPLETE" installed-bios-serial.log
 
       - name: Verify kernel ELF and ISO
         run: |
-          file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso
+          file build/nexus-kernel.elf build/nexus-installer.elf release/NexusOS-OriginalKernel-x86_64.iso
+          if cmp -s build/nexus-kernel.elf build/nexus-installer.elf; then
+            echo "Installer and installed OS binaries must be distinct"
+            exit 1
+          fi
           readelf -h build/nexus-kernel.elf
           readelf -l build/nexus-kernel.elf
+          readelf -h build/nexus-installer.elf
+          readelf -l build/nexus-installer.elf
           (cd release && sha256sum --check SHA256SUMS.txt)
 
       - name: Boot test - UEFI (OVMF)
@@ -240,9 +391,10 @@ jobs:
           cat uefi-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" uefi-serial.log
+          grep -q "INSTALLER: separate installed OS and live-installer images verified" uefi-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
+          grep -q "NEXUS USER FAULT ISOLATION READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
           grep -q "NEXUS FILE EXEC OK" uefi-serial.log
@@ -293,6 +445,7 @@ jobs:
           grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log
           grep -q "NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY" uefi-serial.log
+          grep -q "K2: four concurrent thread slots and capacity guard passed" uefi-serial.log
           grep -q "NEXUS DESKTOP FRAMEBUFFER READY" uefi-serial.log
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
@@ -318,7 +471,7 @@ jobs:
               raise SystemExit(0)
           target = int(matches[-1], 16)
           symbols = subprocess.check_output(
-              ["nm", "-n", "build/nexus-kernel.elf"], text=True
+              ["nm", "-n", "build/nexus-installer.elf"], text=True
           ).splitlines()
           previous = None
           following = None
@@ -340,7 +493,7 @@ jobs:
           print("Next symbol:", following)
           print("addr2line:")
           print(subprocess.check_output(
-              ["addr2line", "-f", "-C", "-e", "build/nexus-kernel.elf",
+              ["addr2line", "-f", "-C", "-e", "build/nexus-installer.elf",
                hex(target)], text=True
           ))
           PY
@@ -365,9 +518,10 @@ jobs:
           cat bios-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" bios-serial.log
           grep -q "NEXUS GDT TSS READY" bios-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" bios-serial.log
+          grep -q "INSTALLER: separate installed OS and live-installer images verified" bios-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
+          grep -q "NEXUS USER FAULT ISOLATION READY" bios-serial.log
           grep -q "NEXUS RAMFS READY" bios-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" bios-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" bios-serial.log
@@ -387,6 +541,7 @@ jobs:
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log
           grep -q "STORAGE: controller " bios-serial.log
           grep -q "NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY" bios-serial.log
+          grep -q "K2: four concurrent thread slots and capacity guard passed" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 
       - name: Test the graphical installer on a disposable NVMe target
@@ -406,7 +561,7 @@ jobs:
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso -boot order=d \
             -display none -serial file:installer-ui-serial.log \
             -qmp unix:/tmp/nexus-installer-qmp.sock,server,nowait \
-            -monitor none -no-reboot -no-shutdown >/tmp/nexus-ui-qemu.log 2>&1 &
+            -monitor none -no-shutdown >/tmp/nexus-ui-qemu.log 2>&1 &
           QEMU_PID=$!
           trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
           python3 - <<'PY'
@@ -417,7 +572,9 @@ jobs:
           while time.time() < deadline:
               if os.path.exists(log_path):
                   log = open(log_path, encoding="utf-8", errors="replace").read()
-                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS DESKTOP FRAMEBUFFER READY" in log:
+                  if ("NEXUS K0 BOOT COMPLETE" in log and
+                      "NEXUS DESKTOP FRAMEBUFFER READY" in log and
+                      "NEXUS NVME BLOCK DEVICE READY" in log):
                       break
               time.sleep(1)
           else:
@@ -448,8 +605,8 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-          # Open Install (F5), select the single NVMe target, and confirm its
-          # exact stable identifier followed by the separate ERASE phrase.
+          # Open Install (F5), verify the discovered NVMe target, then use
+          # one review action and one final ERASE confirmation.
           key("f5")
           time.sleep(0.4)
           import re
@@ -463,12 +620,10 @@ jobs:
                   break
               time.sleep(0.2)
           if stable_id is None:
+              print(log)
               raise SystemExit("Installer did not expose the selected disk's stable ID")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
-          key("ret")
-          for char in stable_id:
-              key("minus" if char == "-" else char)
-          key("ret")
+          key("ret")  # Review the drive; Nexus captures its ID automatically.
           time.sleep(0.4)
           for name in ["e","r","a","s","e"]:
               key(name)
@@ -486,9 +641,53 @@ jobs:
           else:
               print(open(log_path, encoding="utf-8", errors="replace").read())
               raise SystemExit("Graphical installer did not finish within 120 seconds")
+
+          # Simulate physically removing the live installer medium before
+          # reboot. Merely changing the next-boot order leaves OVMF's existing
+          # DVD Boot#### entry ahead of the installed disk, so eject the only
+          # removable block device and verify it has no inserted medium.
+          blocks = command({"execute": "query-block"})
+          optical = [item for item in blocks
+                     if item.get("removable") and item.get("inserted") is not None]
+          if len(optical) != 1:
+              print(blocks)
+              raise SystemExit("Could not identify the single live installer medium")
+          optical_device = optical[0].get("device")
+          if not optical_device:
+              print(optical[0])
+              raise SystemExit("QEMU did not expose a removable-media device name")
+          command({"execute": "human-monitor-command",
+                   "arguments": {"command-line": f"eject -f {optical_device}"}})
+          blocks = command({"execute": "query-block"})
+          optical_after = next((item for item in blocks
+                                if item.get("device") == optical_device), None)
+          if optical_after is None or optical_after.get("inserted") is not None:
+              print(blocks)
+              raise SystemExit("Live installer medium was not ejected")
+
+          # Make the installed target the next boot choice, then exercise the
+          # installer's actual Enter-to-restart path in this same VM.
+          command({"execute": "human-monitor-command",
+                   "arguments": {"command-line": "boot_set order=c"}})
+          key("ret")
+          deadline = time.time() + 90
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              if ("NEXUS INSTALLER: restart requested" in log and
+                  "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" in log and
+                  "NEXUS DESKTOP FRAMEBUFFER READY" in log and
+                  log.count("NEXUS OS KERNEL STARTED") >= 2):
+                  break
+              time.sleep(0.5)
+          else:
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit("Installer restart did not boot the installed Nexus desktop")
           sock.close()
           PY
           cat installer-ui-serial.log
+          grep -q "NEXUS INSTALLER: restart requested" installer-ui-serial.log
+          grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installer-ui-serial.log
+          grep -q "NEXUS DESKTOP FRAMEBUFFER READY" installer-ui-serial.log
           grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installer-ui-serial.log
           grep -q "NEXUS INSTALLER RESULT: SUCCESS" installer-ui-serial.log
           kill "$QEMU_PID" 2>/dev/null || true
@@ -613,10 +812,7 @@ jobs:
           if not stable_id.startswith("sata-"):
               raise SystemExit(f"Installer selected the wrong disk: {stable_id}")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
-          key("ret")
-          for char in stable_id:
-              key("minus" if char == "-" else char)
-          key("ret")
+          key("ret")  # Review the drive; Nexus captures its ID automatically.
           time.sleep(0.4)
           for name in ["e","r","a","s","e"]:
               key(name)
@@ -1288,7 +1484,7 @@ jobs:
       - name: Build installable distributable ISO without CI-only disk read
         run: |
           EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" ./build/build-iso.sh
-          file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso
+          file build/nexus-kernel.elf build/nexus-installer.elf release/NexusOS-OriginalKernel-x86_64.iso
           (cd release && sha256sum --check SHA256SUMS.txt)
 
       - name: Boot-check distributable ISO without automatic sector reads
@@ -1334,5 +1530,6 @@ jobs:
             release/NexusOS-OriginalKernel-x86_64.iso
             release/SHA256SUMS.txt
             build/nexus-kernel.elf
+            build/nexus-installer.elf
           if-no-files-found: error
           retention-days: 30

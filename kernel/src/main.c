@@ -61,6 +61,18 @@ static volatile uint32_t scheduler_count_a;
 static volatile uint32_t scheduler_count_b;
 static volatile uint8_t scheduler_trace[6];
 static volatile uint32_t scheduler_trace_count;
+static volatile uint32_t scheduler_reuse_count;
+static volatile uint32_t scheduler_capacity_count;
+
+static void scheduler_reuse_worker(void *argument) {
+    (void)argument;
+    ++scheduler_reuse_count;
+}
+
+static void scheduler_capacity_worker(void *argument) {
+    (void)argument;
+    ++scheduler_capacity_count;
+}
 
 static void scheduler_worker_a(void *argument) {
     (void)argument;
@@ -115,7 +127,7 @@ static bool boot_media_provenance_init(void) {
            (const uint8_t *)&file->gpt_part_uuid,
            (const uint8_t *)&file->gpt_disk_uuid,
            file->mbr_disk_id)){
-        serial_write("BOOT MEDIA: generic source identity does not match any registered disk\\r\\n");
+        serial_write("BOOT MEDIA: generic source identity does not match any registered disk\r\n");
         return true;
     }
     if(file->media_type==LIMINE_MEDIA_TYPE_OPTICAL&&blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL)){
@@ -146,35 +158,9 @@ void kmain(void) {
         halt_forever();
     }
 
-    if (nexus_boot_payloads_init((void *)module_request.response,
-                                 (void *)executable_file_request.response)) {
-        serial_write("INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available\\r\\n");
-    } else {
-        serial_write("INSTALLER: boot payload set unavailable or invalid; deployment disabled\\r\\n");
-        struct limine_module_response *mods =
-            (struct limine_module_response *)module_request.response;
-        if (mods == NULL) {
-            serial_write("INSTALLER DEBUG: module response is null\\r\\n");
-        } else {
-            serial_write("INSTALLER DEBUG: module count ");
-            serial_write_hex(mods->module_count);
-            serial_write("\r\n");
-            if (mods->modules == NULL) {
-                serial_write("INSTALLER DEBUG: module array is null\r\n");
-            } else {
-                uint64_t limit = mods->module_count < 8U ? mods->module_count : 8U;
-                for (uint64_t i = 0U; i < limit; ++i) {
-                    struct limine_file *file = mods->modules[i];
-                    serial_write("INSTALLER DEBUG: module path ");
-                    if (file != NULL && file->path != NULL)
-                        serial_write(file->path);
-                    else
-                        serial_write("(null)");
-                    serial_write("\r\n");
-                }
-            }
-        }
-    }
+    const bool boot_payloads_ready = nexus_boot_payloads_init(
+        (void *)module_request.response,
+        (void *)executable_file_request.response);
 
     if (!gdt_init()) {
         serial_write("ERROR: Nexus GDT/TSS initialization failed\r\n");
@@ -263,11 +249,30 @@ void kmain(void) {
     serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
     const bool boot_media_identity_ready = boot_media_provenance_init();
     if (!boot_media_identity_ready) {
-        serial_write("INSTALLER: destructive writes locked until boot source is identified\\r\\n");
+        serial_write("INSTALLER: destructive writes locked until boot source is identified\r\n");
     }
+#if defined(NEXUS_INSTALLER_BUILD)
+    if (!boot_media_identity_ready || !blockdev_boot_source_is_external()) {
+        serial_write("INSTALLER ERROR: live-media boot source was not positively identified\r\n");
+        halt_forever();
+    }
+    if (!boot_payloads_ready) {
+        serial_write("INSTALLER ERROR: separate installed-OS payload is missing or invalid\r\n");
+        halt_forever();
+    }
+    serial_write("INSTALLER: separate installed OS and live-installer images verified\r\n");
+#elif defined(NEXUS_INSTALLED_OS_BUILD)
+    (void)boot_payloads_ready;
+    serial_write("NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled\r\n");
+#else
+    if (boot_payloads_ready)
+        serial_write("INSTALLER: boot payload set verified\r\n");
+    else
+        serial_write("INSTALLER: boot payload set unavailable; deployment disabled\r\n");
+#endif
 #ifdef NEXUS_STORAGE_SELFTEST
     if (!storage_run_selftests()) {
-        serial_write("ERROR: post-provenance storage write self-test failed\\r\\n");
+        serial_write("ERROR: post-provenance storage write self-test failed\r\n");
         halt_forever();
     }
 #endif
@@ -318,6 +323,46 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("K2: preemptive kernel-thread test passed (timer-driven A/B alternation)\r\n");
+
+    /* All four worker slots can be active; a fifth must be rejected. */
+    scheduler_capacity_count = 0U;
+    bool scheduler_capacity_ok = true;
+    for (uint32_t i = 0U; i < 4U; ++i) {
+        if (!scheduler_create_thread(scheduler_capacity_worker, NULL)) {
+            scheduler_capacity_ok = false;
+            break;
+        }
+    }
+    if (scheduler_capacity_ok &&
+        scheduler_create_thread(scheduler_capacity_worker, NULL)) {
+        scheduler_capacity_ok = false;
+    }
+    if (scheduler_capacity_ok) scheduler_wait();
+    if (!scheduler_capacity_ok || scheduler_capacity_count != 4U) {
+        serial_write("ERROR: scheduler four-slot capacity test failed\r\n");
+        halt_forever();
+    }
+    serial_write("K2: four concurrent thread slots and capacity guard passed\r\n");
+
+    /* More sequential workers than slots verifies finished-slot reclamation. */
+    scheduler_reuse_count = 0U;
+    bool scheduler_reuse_ok = true;
+    for (uint32_t i = 0U; i < 12U; ++i) {
+        if (!scheduler_create_thread(scheduler_reuse_worker, NULL)) {
+            scheduler_reuse_ok = false;
+            break;
+        }
+        scheduler_yield();
+        if (scheduler_reuse_count != i + 1U) {
+            scheduler_reuse_ok = false;
+            break;
+        }
+    }
+    if (!scheduler_reuse_ok) {
+        serial_write("ERROR: scheduler thread-slot reuse test failed\\r\\n");
+        halt_forever();
+    }
+    serial_write("K2: scheduler reclaims finished thread slots (12 sequential workers)\\r\\n");
 
     if (framebuffer_request.response != NULL &&
         framebuffer_request.response->framebuffer_count > 0) {

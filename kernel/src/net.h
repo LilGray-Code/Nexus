@@ -16,6 +16,8 @@ struct nexus_net_info {
 };
 
 bool net_init(void);
+/* Switch the active network interface and restart DHCP on the new device. */
+bool net_select_device(uint32_t index);
 void net_poll(void);
 bool net_get_info(struct nexus_net_info *info);
 bool net_dns_resolve(const char *hostname, uint8_t result[4],

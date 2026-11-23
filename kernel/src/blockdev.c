@@ -20,10 +20,6 @@ static const uint8_t nexus_nxfs_type_guid[16] = {
     0x46U, 0x53U, 0x58U, 0x4EU, 0x01U, 0x00U, 0x58U, 0x4EU,
     0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x46U, 0x53U
 };
-static const uint8_t nexus_recovery_type_guid[16] = {
-    0x4EU, 0x58U, 0x52U, 0x43U, 0x01U, 0x00U, 0x58U, 0x4EU,
-    0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x52U, 0x43U
-};
 
 static bool guid_equal(const uint8_t a[16], const uint8_t b[16]) {
     for (size_t i = 0U; i < 16U; ++i)
@@ -383,6 +379,10 @@ bool blockdev_boot_media_detection_complete(void) {
     return boot_media_detection_complete;
 }
 
+bool blockdev_boot_source_is_external(void) {
+    return boot_media_detection_complete && boot_media_device == NULL;
+}
+
 bool blockdev_is_boot_media(const struct nexus_block_device *device) {
     return blockdev_is_registered(device) && device == boot_media_device;
 }
@@ -405,18 +405,21 @@ bool blockdev_nexus_data_write_enable(
         first_lba > last_lba || last_lba >= device->block_count ||
         !gpt_scan_device(device)) return false;
 
-    size_t matches = 0U;
-    for (size_t i = 1U; i < gpt_partition_count(); ++i) {
+    /* Only the last of at least two NXFS partitions is user Data. The
+     * preceding NXFS partition is the read-only installed System volume;
+     * no Recovery partition or adjacency marker is required. */
+    size_t nxfs_count = 0U;
+    const struct nexus_gpt_partition *last_nxfs = NULL;
+    for (size_t i = 0U; i < gpt_partition_count(); ++i) {
         const struct nexus_gpt_partition *part = gpt_partition_at(i);
-        const struct nexus_gpt_partition *previous = gpt_partition_at(i - 1U);
-        if (part == NULL || previous == NULL ||
-            part->first_lba != first_lba || part->last_lba != last_lba ||
-            !guid_equal(part->type_guid, nexus_nxfs_type_guid) ||
-            !guid_equal(previous->type_guid, nexus_recovery_type_guid))
-            continue;
-        ++matches;
+        if (part == NULL ||
+            !guid_equal(part->type_guid, nexus_nxfs_type_guid)) continue;
+        ++nxfs_count;
+        last_nxfs = part;
     }
-    if (matches != 1U) return false;
+    if (nxfs_count < 2U || last_nxfs == NULL ||
+        last_nxfs->first_lba != first_lba ||
+        last_nxfs->last_lba != last_lba) return false;
 
     nexus_data_write_device = device;
     nexus_data_write_first_lba = first_lba;
@@ -556,7 +559,13 @@ bool blockdev_install_session_begin(const struct nexus_block_device *device,
 
 static bool blockdev_install_session_valid(
     const struct nexus_block_device *device) {
+    const size_t index = blockdev_index(device);
+    /* Recheck kernel-owned exclusion state for every write and flush. A
+     * target that becomes mounted, or is later identified as the boot medium,
+     * must immediately lose destructive-write authorization. */
     return device != NULL && device == install_session_device &&
+        boot_media_detection_complete && device != boot_media_device &&
+        index != NEXUS_BLOCKDEV_MAX_DEVICES && !mounted_devices[index] &&
         blockdev_matches_identity(device, install_session_id,
                                   install_session_model,
                                   install_session_block_count,

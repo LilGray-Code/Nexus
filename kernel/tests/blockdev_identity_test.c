@@ -181,6 +181,23 @@ int main(void) {
     assert(blockdev_register(&nonboot_disk));
     assert(blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL));
     assert(blockdev_boot_media_detection_complete());
-    assert(!blockdev_is_boot_media(blockdev_at(0U)));
+    const struct nexus_block_device *eligible_target = blockdev_at(0U);
+    assert(!blockdev_is_boot_media(eligible_target));
+
+    /* Authorization is revoked immediately if the selected target becomes
+     * mounted after the installer session has opened. */
+    uint8_t install_sector[512] = {0};
+    assert(blockdev_install_session_begin(eligible_target,
+        "NVME-DATA-001", "ERASE"));
+    assert(blockdev_install_write(eligible_target, 16U, 1U, install_sector));
+    assert(write_calls == 1U);
+    assert(blockdev_install_flush(eligible_target));
+    assert(flush_calls == 1U);
+    assert(blockdev_set_mounted(eligible_target, true));
+    assert(!blockdev_install_write(eligible_target, 17U, 1U, install_sector));
+    assert(!blockdev_install_flush(eligible_target));
+    assert(write_calls == 1U && flush_calls == 1U);
+    assert(blockdev_set_mounted(eligible_target, false));
+
     return 0;
 }

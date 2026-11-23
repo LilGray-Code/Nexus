@@ -3,6 +3,7 @@
 #include "serial.h"
 #include "timer.h"
 #include "usb_hid.h"
+#include "usb_hid_gamepad.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -251,4 +252,26 @@ void input_usb_mouse_report(const uint8_t report[3]) {
     };
     queue_event(&event);
     input_interrupt_restore(interrupt_flags);
+}
+
+
+bool input_usb_gamepad_report(
+    const struct nexus_hid_gamepad_layout *layout,
+    const uint8_t *report, size_t length) {
+    struct nexus_hid_gamepad_state decoded = {0};
+    if (!nexus_hid_gamepad_decode_report(layout, report, length, &decoded))
+        return false;
+
+    const uint64_t interrupt_flags = input_interrupt_save();
+    struct nexus_input_event event = {
+        .type = NEXUS_INPUT_GAMEPAD,
+        .gamepad_axis_count = layout->axis_count,
+        .gamepad_buttons = decoded.buttons,
+        .gamepad_hat = layout->has_hat ? decoded.hat : -1
+    };
+    for (uint8_t i = 0U; i < layout->axis_count; ++i)
+        event.gamepad_axes[i] = decoded.axes[i];
+    queue_event(&event);
+    input_interrupt_restore(interrupt_flags);
+    return true;
 }

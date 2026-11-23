@@ -107,7 +107,7 @@ No separate Recovery partition or recovery utility is part of the normal
 installation flow. The installer records its phase in the EFI reserved sectors
 and automatically resumes an interrupted installation when a valid journal
 exists. A missing or damaged old journal does not block a clean install after
-the user confirms the selected disk with `ERASE`. This is transaction
+the user explicitly confirms the selected disk. This is transaction
 resumption, not a claim that every disk or hardware failure can be repaired
 automatically.
 

@@ -25,6 +25,12 @@ static struct ramfs_entry ramfs[NEXUS_VFS_RAM_MAX_FILES];
 /* A single bounded copy workspace avoids large kernel-stack allocations. */
 static uint8_t vfs_copy_buffer[NEXUS_NXFS_MAX_FILE_BYTES];
 
+static void vfs_copy_wipe(size_t length) {
+    if (length > sizeof(vfs_copy_buffer)) length = sizeof(vfs_copy_buffer);
+    volatile uint8_t *buffer = vfs_copy_buffer;
+    for (size_t i = 0U; i < length; ++i) buffer[i] = 0U;
+}
+
 static char ascii_upper(char value) {
     if (value >= 'a' && value <= 'z')
         return (char)(value - 'a' + 'A');
@@ -321,15 +327,21 @@ bool vfs_copy_file(const char *source_name,
         copied += received;
     }
     vfs_close(&source);
-    if (!read_ok || copied != size) return false;
+    if (!read_ok || copied != size) {
+        vfs_copy_wipe(copied);
+        return false;
+    }
 
     /* Copying from a nested FAT32 folder writes only to the Nexus root
      * volume. FAT32 remains read-only and never receives copy writes. */
-    if (nxfs_root_mounted && nxfs_is_writable())
-        return nxfs_write_file(destination_name, vfs_copy_buffer, size);
-
-    if (size > NEXUS_VFS_RAM_MAX_FILE_SIZE) return false;
-    return vfs_ramfs_write(destination_name, vfs_copy_buffer, size);
+    bool write_ok = false;
+    if (nxfs_root_mounted && nxfs_is_writable()) {
+        write_ok = nxfs_write_file(destination_name, vfs_copy_buffer, size);
+    } else if (size <= NEXUS_VFS_RAM_MAX_FILE_SIZE) {
+        write_ok = vfs_ramfs_write(destination_name, vfs_copy_buffer, size);
+    }
+    vfs_copy_wipe(size);
+    return write_ok;
 }
 
 /* Higher-priority writable layers hide lower-layer names, matching open(). */

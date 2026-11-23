@@ -8,6 +8,7 @@
 static unsigned send_calls;
 static unsigned receive_calls;
 static size_t receive_capacity_seen;
+static bool report_oversized_frame;
 static uint8_t received_frame[64];
 
 static bool fake_send(void *context, const void *frame, size_t length) {
@@ -26,7 +27,8 @@ static bool fake_receive(void *context, void *buffer, size_t capacity,
     if (capacity < sizeof(received_frame)) return false;
     for (size_t i = 0; i < sizeof(received_frame); ++i)
         ((uint8_t *)buffer)[i] = received_frame[i];
-    *length = sizeof(received_frame);
+    *length = report_oversized_frame ? capacity + 1U :
+                                      sizeof(received_frame);
     return true;
 }
 
@@ -74,5 +76,10 @@ int main(void) {
     assert(receive_calls == 1U);
     assert(receive_capacity_seen == 128U);
     assert(length == sizeof(received_frame));
+
+    report_oversized_frame = true;
+    length = 99U;
+    assert(!netdev_receive_frame(frame, sizeof(frame), &length));
+    assert(length == 0U);
     return 0;
 }

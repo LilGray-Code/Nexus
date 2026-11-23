@@ -1815,6 +1815,18 @@ static void files_editor_set_status(const char *message) {
     files_edit_status[i] = '\0';
 }
 
+static bool files_names_equal(const char *left, const char *right) {
+    if (left == NULL || right == NULL) return false;
+    for (size_t i = 0U; i < NEXUS_VFS_NAME_MAX; ++i) {
+        char a = left[i], b = right[i];
+        if (a >= 'a' && a <= 'z') a = (char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = (char)(b - 'a' + 'A');
+        if (a != b) return false;
+        if (a == '\0') return true;
+    }
+    return false;
+}
+
 static void files_editor_begin_rename(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
@@ -1954,7 +1966,8 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         files_rename_source[0] = '\0';
         return;
     }
-    if (files_editor_state == FILES_EDITOR_NAME) {
+    if (files_editor_state == FILES_EDITOR_NAME ||
+        files_editor_state == FILES_EDITOR_RENAME) {
         if (event->scancode == 0x0EU) {
             if (files_edit_name_length != 0U)
                 files_edit_name[--files_edit_name_length] = '\0';
@@ -1967,9 +1980,9 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                 }
             } else if (files_editor_state == FILES_EDITOR_RENAME) {
                 if (files_editor_name_exists() &&
-                    !name_equal(files_edit_name, files_rename_source)) {
+                    !files_names_equal(files_edit_name, files_rename_source)) {
                     files_editor_set_status("DESTINATION ALREADY EXISTS");
-                } else if (name_equal(files_edit_name, files_rename_source)) {
+                } else if (files_names_equal(files_edit_name, files_rename_source)) {
                     files_editor_set_status("NAME IS UNCHANGED");
                 } else if (vfs_move_file(files_rename_source, files_edit_name)) {
                     serial_write("FILES: renamed ");

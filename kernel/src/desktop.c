@@ -68,6 +68,7 @@ static uint64_t files_last_click_tick;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
 static bool keyboard_alt;
+static bool keyboard_ctrl;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
@@ -843,27 +844,38 @@ static void draw_shell(void) {
                                      settings_theme == 2U ? 76U : 198U);
         }
     }
-    graphics_fill_gradient_rect(0U, 0U, width, top_bar,
-                                11U, 19U, 35U, 18U, 30U, 49U);
-    graphics_fill_rect(0U, top_bar - 2U, width, 2U,
-                        settings_theme == 0U ? 65U : (settings_theme == 1U ? 35U : 204U),
-                        settings_theme == 0U ? 150U : (settings_theme == 1U ? 194U : 104U),
-                        settings_theme == 0U ? 232U : (settings_theme == 1U ? 207U : 57U));
-    /* Keep the shell identity consistent with the boot splash, launcher,
-     * taskbar and first-party app chrome. The top bar is at least 34 px tall,
-     * so the 22 px mark remains vertically centered on supported modes. */
+    /* Floating system bar: keeps the wallpaper visible and clarifies the
+     * home, workspace and live-status hierarchy. */
+    graphics_fill_round_rect(10U, 4U, width - 20U, top_bar - 8U,
+                             11U, 11U, 20U, 36U);
+    graphics_draw_round_rect(10U, 4U, width - 20U, top_bar - 8U,
+                             11U, 62U, 91U, 125U);
+    graphics_fill_round_rect(18U, 6U, width - 36U, 2U, 1U,
+                             55U, 125U, 164U);
     desktop_draw_logo(18U, (top_bar - 22U) / 2U, 22U);
     graphics_draw_text(54U, top_bar / 2U - 4U,
-                       "NEXUS  /  DESKTOP", 1U,
-                       232U, 243U, 252U);
+                       "NEXUS OS", 1U, 245U, 249U, 255U);
+    graphics_draw_text(122U, top_bar / 2U - 4U,
+                       "WORKSPACE 01", 1U, 111U, 207U, 231U);
     char top_uptime[21];
     format_u64(timer_ticks() / 100U, top_uptime);
-    graphics_draw_text(width > 170U ? width - 154U : 8U,
-                       top_bar / 2U - 4U, "ACTIVE", 1U,
-                       112U, 222U, 190U);
-    graphics_draw_text(width > 102U ? width - 88U : 8U,
-                       top_bar / 2U - 4U, top_uptime, 1U,
-                       166U, 194U, 216U);
+    const uint64_t status_x = width > 270U ? width - 176U : 8U;
+    graphics_fill_round_rect(status_x, 7U, width > 270U ? 158U : 90U,
+                             top_bar - 14U, 8U, 19U, 42U, 57U);
+    graphics_draw_text(status_x + 10U, top_bar / 2U - 4U,
+                       "UP", 1U, 111U, 207U, 231U);
+    graphics_draw_text(status_x + 34U, top_bar / 2U - 4U,
+                       top_uptime, 1U, 242U, 247U, 252U);
+    if (width > 270U) {
+        const uint32_t adapter_count = netdev_device_count();
+        graphics_fill_rect(status_x + 103U, 10U, 1U,
+                           top_bar - 20U, 65U, 89U, 111U);
+        graphics_draw_text(status_x + 111U, top_bar / 2U - 4U,
+                           adapter_count ? "NET" : "OFF", 1U,
+                           adapter_count ? 112U : 238U,
+                           adapter_count ? 222U : 177U,
+                           adapter_count ? 190U : 119U);
+    }
 
     uint64_t panel_width = width * 3U / 4U;
     uint64_t panel_height = active_view == DESKTOP_HOME
@@ -898,7 +910,7 @@ static void draw_shell(void) {
     graphics_fill_gradient_rect(panel_x+1U,panel_y+41U,panel_width-2U,2U,
                                 69U,170U,207U,139U,111U,225U);
 
-    const char *window_title = "NEXUS DESKTOP";
+    const char *window_title = "NEXUS HOME";
     if (active_view == DESKTOP_FILES) window_title = "FILES";
     if (active_view == DESKTOP_BROWSER) window_title = "NEXUS BROWSER";
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
@@ -929,48 +941,61 @@ static void draw_shell(void) {
     const uint64_t text_y = panel_y +
         (active_view == DESKTOP_INSTALLER ? 48U : 82U);
     if (active_view == DESKTOP_HOME) {
-        graphics_draw_text(text_x, text_y, "YOUR NEXUS WORKSPACE",
-                           2U, 241U, 248U, 255U);
-        graphics_draw_text(text_x + 2U, text_y + 30U,
-                           "A CUSTOM DESKTOP. YOUR TOOLS. YOUR FILES.",
-                           1U, 111U, 207U, 231U);
+        graphics_draw_text(text_x, text_y, "WELCOME TO YOUR WORKSPACE",
+                           2U, 245U, 249U, 255U);
+        graphics_draw_text(text_x + 2U, text_y + 29U,
+                           "YOUR TOOLS, FILES AND SYSTEM STATUS IN ONE PLACE",
+                           1U, 139U, 190U, 218U);
+        graphics_fill_round_rect(text_x, text_y + 43U, 146U, 18U, 8U,
+                                 22U, 64U, 76U);
+        graphics_draw_text(text_x + 9U, text_y + 48U,
+                           "NEXUS WORKSPACE", 1U, 130U, 232U, 218U);
 
-        const uint64_t tile_y = text_y + 76U;
-        uint64_t tile_width = (panel_width > 100U
-            ? panel_width - 100U : 24U) / 7U;
-        if (tile_width > 130U) tile_width = 130U;
+        /* Responsive four-column app deck with large, consistent targets. */
+        const uint64_t tile_y = text_y + 68U;
+        const uint64_t tile_gap = 8U;
+        const uint64_t tile_width = (panel_width - 56U - 3U * tile_gap) / 4U;
         static const char *const labels[7] = {
-            "FILES", "BROWSER", "SETTINGS", "TERMINAL",
-            "MONITOR", "CONTROL", "CALC"
+            "FILES", "WEB", "SETTINGS", "TERMINAL",
+            "MONITOR", "CONTROL", "CALCULATOR"
+        };
+        static const uint8_t label_widths[7] = {
+            40U, 24U, 64U, 64U, 56U, 56U, 72U
         };
         static const uint8_t accent[7][3] = {
-            {71U, 153U, 232U}, {45U, 185U, 202U},
-            {133U, 117U, 230U}, {224U, 151U, 93U},
-            {66U, 188U, 151U}, {151U, 117U, 224U},
-            {85U, 157U, 215U}
+            {75U, 166U, 235U}, {56U, 194U, 210U},
+            {150U, 129U, 238U}, {232U, 157U, 99U},
+            {77U, 202U, 165U}, {165U, 134U, 232U},
+            {95U, 174U, 232U}
         };
-        /* Seven compact first-party launch tiles share mouse hit geometry. */
-        for (uint32_t i = 0U; i < 7U; ++i) {
-            const uint64_t tile_x = panel_x + 28U +
-                                    (uint64_t)i * (tile_width + 6U);
-            graphics_fill_round_rect(tile_x, tile_y, tile_width, 74U,
-                                      11U, 25U, 45U, 70U);
-            graphics_draw_round_rect(tile_x, tile_y, tile_width, 74U,
-                                     11U, 76U, 111U, 146U);
-            graphics_fill_round_rect(tile_x + 1U, tile_y + 12U, 3U, 50U,
-                                     1U, accent[i][0], accent[i][1], accent[i][2]);
-            desktop_draw_app_icon(tile_x + 13U, tile_y + 12U, 25U, i);
-            graphics_draw_text(tile_x + 13U, tile_y + 51U, labels[i],
-                               1U, 235U, 245U, 252U);
+        for (size_t app = 0U; app < 7U; ++app) {
+            const uint64_t col = app % 4U;
+            const uint64_t row = app / 4U;
+            const uint64_t x = panel_x + 28U + col * (tile_width + tile_gap);
+            const uint64_t y = tile_y + row * 56U;
+            graphics_fill_round_rect(x, y, tile_width, 50U, 11U,
+                                     22U, 40U, 62U);
+            graphics_draw_round_rect(x, y, tile_width, 50U, 11U,
+                                     68U, 104U, 140U);
+            graphics_fill_round_rect(x + 1U, y + 8U, 3U, 34U, 1U,
+                                     accent[app][0], accent[app][1],
+                                     accent[app][2]);
+            desktop_draw_app_icon(x + 10U, y + 12U, 25U, app);
+            const uint64_t label_x = x + (tile_width > label_widths[app]
+                ? (tile_width - label_widths[app]) / 2U : 5U);
+            graphics_draw_text(label_x, y + 43U, labels[app],
+                               1U, 239U, 246U, 253U);
         }
 
-        graphics_draw_text(text_x, text_y + (panel_height < 360U ? 146U : 164U), "AT A GLANCE",
-                           1U, 133U, 164U, 190U);
+        graphics_draw_text(text_x, text_y + 184U, "LIVE SYSTEM SNAPSHOT",
+                           1U, 139U, 190U, 218U);
         const uint64_t card_gap = 8U;
         const uint64_t card_width = (panel_width - 92U) / 4U;
-        const uint64_t card_y = text_y + (panel_height < 360U ? 163U : 181U);
-        const uint64_t card_h = panel_height < 360U ? 44U : 54U;
-        const char *card_labels[4] = {"MEMORY", "UPTIME", "STORAGE", "NETWORK"};
+        const uint64_t card_y = text_y + 201U;
+        const uint64_t card_h = 48U;
+        const char *card_labels[4] = {
+            "MEMORY AVAILABLE", "SESSION UPTIME", "DATA VOLUME", "NETWORK"
+        };
         char free_mem[21], uptime[21];
         format_u64(memory_free_bytes() / (1024U * 1024U), free_mem);
         format_u64(timer_ticks() / 100U, uptime);
@@ -981,68 +1006,51 @@ static void draw_shell(void) {
             memory_value[memory_pos] = free_mem[memory_pos];
             ++memory_pos;
         }
-        const char *memory_suffix = " MiB FREE";
+        const char *memory_suffix = " MiB";
         for (size_t n = 0U; memory_suffix[n] != '\0' &&
-             memory_pos < sizeof(memory_value) - 1U; ++n) {
+             memory_pos < sizeof(memory_value) - 1U; ++n)
             memory_value[memory_pos++] = memory_suffix[n];
-        }
         memory_value[memory_pos] = '\0';
-
         char uptime_value[40] = "";
         size_t uptime_pos = 0U;
         while (uptime[uptime_pos] != '\0' &&
-               uptime_pos < sizeof(uptime_value) - 1U) {
-            uptime_value[uptime_pos] = uptime[uptime_pos];
-            ++uptime_pos;
-        }
-        const char *seconds_suffix = "s";
-        for (size_t n = 0U; seconds_suffix[n] != '\0' &&
-             uptime_pos < sizeof(uptime_value) - 1U; ++n) {
-            uptime_value[uptime_pos++] = seconds_suffix[n];
-        }
+               uptime_pos < sizeof(uptime_value) - 2U)
+            uptime_value[uptime_pos++] = uptime[uptime_pos];
+        uptime_value[uptime_pos++] = 's';
         uptime_value[uptime_pos] = '\0';
+        const char *storage_label =
+            vfs_nxfs_mounted() && vfs_nxfs_writable() ? "NXFS WRITABLE" :
+            (vfs_root_mounted() ? "MOUNTED" : "VOLATILE RAM");
+        const uint32_t adapters = netdev_device_count();
+        const char *adapter = adapters == 0U ? "NO ADAPTER" :
+            netdev_device_name_at(netdev_default_index());
+        if (adapter == NULL) adapter = "UNKNOWN";
+        const char *card_values[4] = {
+            memory_value, uptime_value, storage_label, adapter
+        };
         static const uint8_t card_accent[4][3] = {
             {65U, 190U, 210U}, {132U, 125U, 229U},
             {73U, 191U, 159U}, {219U, 160U, 102U}
         };
         for (size_t i = 0U; i < 4U; ++i) {
-            const uint64_t card_x = panel_x + 28U +
-                                    (uint64_t)i * (card_width + card_gap);
-            graphics_fill_round_rect(card_x, card_y, card_width, card_h,
-                                      9U, 25U, 43U, 66U);
-            graphics_draw_round_rect(card_x, card_y, card_width, card_h,
-                                     9U, 68U, 103U, 137U);
-            graphics_fill_round_rect(card_x + 1U, card_y + 8U, 3U,
+            const uint64_t x = panel_x + 28U + (uint64_t)i *
+                               (card_width + card_gap);
+            graphics_fill_round_rect(x, card_y, card_width, card_h,
+                                     9U, 20U, 37U, 57U);
+            graphics_draw_round_rect(x, card_y, card_width, card_h,
+                                     9U, 68U, 105U, 139U);
+            graphics_fill_round_rect(x + 1U, card_y + 8U, 3U,
                                      card_h - 16U, 1U,
                                      card_accent[i][0], card_accent[i][1],
                                      card_accent[i][2]);
-            graphics_draw_text(card_x + 11U, card_y + 13U,
-                               card_labels[i], 1U, 148U, 177U, 198U);
-            if (i == 0U) {
-                graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   memory_value, 1U, 233U, 244U, 252U);
-            } else if (i == 1U) {
-                graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   uptime_value, 1U, 233U, 244U, 252U);
-            } else if (i == 2U) {
-                const char *storage_label =
-                    vfs_nxfs_mounted() && vfs_nxfs_writable()
-                        ? "NXFS READY"
-                        : (vfs_root_mounted() ? "MOUNTED" : "RAM ONLY");
-                graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   storage_label, 1U, 233U, 244U, 252U);
-            } else {
-                const uint32_t adapters = netdev_device_count();
-                const char *adapter = adapters == 0U ? "NO ADAPTER" :
-                    netdev_device_name_at(netdev_default_index());
-                if (adapter == NULL) adapter = "UNKNOWN";
-                graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   adapter, 1U, 233U, 244U, 252U);
-            }
+            graphics_draw_text(x + 10U, card_y + 14U, card_labels[i],
+                               1U, 147U, 183U, 205U);
+            graphics_draw_text(x + 10U, card_y + 35U, card_values[i],
+                               1U, 242U, 247U, 252U);
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,
-                           "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL",
-                           1U, 151U, 178U, 201U);
+                           "F1-F7 OPEN APPS   CTRL+SPACE SEARCH   ALT+TAB SWITCH",
+                           1U, 151U, 190U, 213U);
     } else if (active_view == DESKTOP_SETTINGS) {
         graphics_draw_text(text_x, text_y, "MAKE NEXUS YOURS", 2U, 241U, 248U, 255U);
         graphics_draw_text(text_x, text_y + 30U,
@@ -1874,6 +1882,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     keyboard_left_shift = false;
     keyboard_right_shift = false;
     keyboard_alt = false;
+    keyboard_ctrl = false;
     keyboard_caps_lock = false;
     keyboard_caps_lock_down = false;
     pointer_under_valid = false;

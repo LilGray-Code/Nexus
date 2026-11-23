@@ -5,6 +5,8 @@
 #include <stdint.h>
 
 /* NXFS v3 layout prototype. This planner does not format or write a disk. */
+/* Keep it separate from the v2 formatter until v3 codecs, journal replay,
+ * migration fixtures, and fault-injection tests are complete. */
 #define NEXUS_NXFS_V3_VERSION 3U
 #define NEXUS_NXFS_V3_JOURNAL_BLOCKS 256U
 #define NEXUS_NXFS_V3_MAX_INODES 16384U

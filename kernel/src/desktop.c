@@ -98,6 +98,7 @@ static bool files_delete_pending;
 static char files_delete_name[NEXUS_VFS_NAME_MAX];
 static bool files_search_active;
 static char files_search_query[NEXUS_VFS_NAME_MAX];
+static char files_search_input[NEXUS_VFS_NAME_MAX];
 static char files_edit_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
@@ -1301,7 +1302,7 @@ static void draw_shell(void) {
                                    "SEARCH (ENTER APPLY / ESC CANCEL):",
                                    1U, 255U, 190U, 112U);
                 graphics_draw_text(text_x + 220U, text_y + 414U,
-                                   files_search_query, 1U,
+                                   files_search_input, 1U,
                                    239U, 249U, 255U);
             } else if (files_search_query[0] != '\0') {
                 graphics_draw_text(text_x, text_y + 414U,
@@ -3693,22 +3694,24 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 files_search_active = false;
             } else if (event->scancode == 0x1CU) {
                 files_search_active = false;
+                for (size_t i = 0U; i < sizeof(files_search_query); ++i)
+                    files_search_query[i] = files_search_input[i];
                 refresh_files_listing();
             } else if (event->scancode == 0x0EU) {
                 size_t length = 0U;
-                while (length < sizeof(files_search_query) - 1U &&
-                       files_search_query[length] != '\0') ++length;
-                if (length != 0U) files_search_query[length - 1U] = '\0';
+                while (length < sizeof(files_search_input) - 1U &&
+                       files_search_input[length] != '\0') ++length;
+                if (length != 0U) files_search_input[length - 1U] = '\0';
             } else {
                 const char ch = terminal_scancode_char(event->scancode);
                 size_t length = 0U;
-                while (length < sizeof(files_search_query) - 1U &&
-                       files_search_query[length] != '\0') ++length;
+                while (length < sizeof(files_search_input) - 1U &&
+                       files_search_input[length] != '\0') ++length;
                 if (ch >= 0x20 && ch <= 0x7E &&
-                    length < sizeof(files_search_query) - 1U) {
-                    files_search_query[length] = ch >= 'A' && ch <= 'Z'
+                    length < sizeof(files_search_input) - 1U) {
+                    files_search_input[length] = ch >= 'A' && ch <= 'Z'
                         ? (char)(ch - 'A' + 'a') : ch;
-                    files_search_query[length + 1U] = '\0';
+                    files_search_input[length + 1U] = '\0';
                 }
             }
             draw_shell();
@@ -3731,6 +3734,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x35U) {
             files_search_active = true;
+            for (size_t i = 0U; i < sizeof(files_search_query); ++i)
+                files_search_input[i] = files_search_query[i];
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x31U) {

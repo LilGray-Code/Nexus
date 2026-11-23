@@ -188,9 +188,10 @@ static char installer_status_text[96] = "Select a supported target disk";
 /* Destructive installation remains compile-time locked until end-to-end
  * disposable-disk validation is recorded. */
 
-#define NEXUS_BROWSER_LINE_COUNT 9U
+#define NEXUS_BROWSER_LINE_COUNT 64U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
 #define NEXUS_BROWSER_SOURCE_COUNT 5U
+#define NEXUS_BROWSER_RESPONSE_MAX 8192U
 static char browser_address[NEXUS_BROWSER_HTML_LINK_MAX];
 static size_t browser_address_length;
 static char browser_status[80] = "Search the web or enter an HTTP address";
@@ -198,6 +199,8 @@ static bool browser_search_mode;
 static bool browser_has_page;
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
+static size_t browser_scroll_offset;
+static uint8_t browser_response[NEXUS_BROWSER_RESPONSE_MAX];
 static char browser_current_url[NEXUS_BROWSER_SEARCH_URL_MAX];
 static bool browser_download_pending;
 static char browser_sources[NEXUS_BROWSER_SOURCE_COUNT]
@@ -2526,6 +2529,10 @@ static void desktop_draw_window_surface(enum desktop_view view,
             const size_t text_capacity = available_rows - visible_sources;
             if (visible_text_rows > text_capacity)
                 visible_text_rows = text_capacity;
+            const size_t max_scroll = browser_line_count > visible_text_rows
+                ? browser_line_count - visible_text_rows : 0U;
+            if (browser_scroll_offset > max_scroll)
+                browser_scroll_offset = max_scroll;
             for (size_t row = 0U; row < visible_text_rows; ++row) {
                 const uint64_t row_y = content_y + 48U + row * 20U;
                 if (row_y + 16U >= content_y + content_height) break;
@@ -2535,10 +2542,11 @@ static void desktop_draw_window_surface(enum desktop_view view,
                     (row & 1U) ? 249U : 242U,
                     (row & 1U) ? 251U : 247U);
                 graphics_draw_text(panel_x + 44U, row_y + 12U,
-                    browser_lines[row], 1U, 37U, 57U, 75U);
+                    browser_lines[browser_scroll_offset + row],
+                    1U, 37U, 57U, 75U);
             }
             for (size_t source = 0U; source < visible_sources; ++source) {
-                const size_t row = browser_line_count + source;
+                const size_t row = visible_text_rows + source;
                 const uint64_t row_y = content_y + 48U + row * 20U;
                 if (row_y + 16U >= content_y + content_height) break;
                 graphics_fill_round_rect(panel_x + 32U, row_y,
@@ -3766,6 +3774,7 @@ static void browser_set_status(const char *message) {
 static void browser_clear_page(void) {
     browser_has_page = false;
     browser_line_count = 1U;
+    browser_scroll_offset = 0U;
     for (size_t row = 0; row < NEXUS_BROWSER_LINE_COUNT; ++row) {
         for (size_t column = 0; column < NEXUS_BROWSER_LINE_WIDTH; ++column)
             browser_lines[row][column] = '\0';
@@ -3816,14 +3825,8 @@ static void browser_render_body(const uint8_t *data, size_t length) {
     char text[NEXUS_BROWSER_LINE_COUNT * NEXUS_BROWSER_LINE_WIDTH];
     (void)nexus_browser_html_to_text(data + body, length - body,
                                      text, sizeof(text));
-    for (size_t i = 0U; text[i] != '\0'; ++i) {
+    for (size_t i = 0U; text[i] != '\0'; ++i)
         browser_append_page_char(text[i]);
-        if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT &&
-            i + 1U < sizeof(text) && text[i + 1U] != '\0') {
-            const char *last = browser_lines[NEXUS_BROWSER_LINE_COUNT - 1U];
-            if (last[NEXUS_BROWSER_LINE_WIDTH - 2U] != '\0') break;
-        }
-    }
 }
 
 static bool browser_append_text(char *buffer, size_t capacity,
@@ -3972,18 +3975,19 @@ static void browser_navigate(void) {
         return;
     }
 
-    uint8_t response[1536];
+    for (size_t i = 0U; i < sizeof(browser_response); ++i)
+        browser_response[i] = 0U;
     size_t response_length = 0U;
     const uint64_t start = timer_ticks();
     uint64_t last_data = start;
     browser_set_status("Receiving plain HTTP response...");
     while (timer_ticks() - start < 600U &&
            (response_length == 0U || timer_ticks() - last_data < 40U) &&
-           response_length < sizeof(response)) {
+           response_length < sizeof(browser_response)) {
         net_poll();
         const size_t received =
-            net_tcp_receive(response + response_length,
-                            sizeof(response) - response_length);
+            net_tcp_receive(browser_response + response_length,
+                            sizeof(browser_response) - response_length);
         if (received != 0U) {
             response_length += received;
             last_data = timer_ticks();
@@ -4000,7 +4004,7 @@ static void browser_navigate(void) {
     }
 
     struct nexus_browser_http_response parsed;
-    if (!nexus_browser_http_parse(response, response_length, &parsed)) {
+    if (!nexus_browser_http_parse(browser_response, response_length, &parsed)) {
         browser_set_status("Malformed or incomplete HTTP response");
         browser_show_notice("WEBSITE SENT AN INVALID RESPONSE",
                             "NEXUS REJECTED THE RESPONSE HEADERS");
@@ -4024,11 +4028,11 @@ static void browser_navigate(void) {
         browser_set_status("Invalid HTTP body offset");
         return;
     }
-    browser_render_body(response + parsed.body_offset,
+    browser_render_body(browser_response + parsed.body_offset,
                         response_length - parsed.body_offset);
     if (parsed.status_code >= 200U && parsed.status_code < 300U) {
         browser_source_count = nexus_browser_html_extract_links(
-            response + parsed.body_offset,
+            browser_response + parsed.body_offset,
             response_length - parsed.body_offset,
             browser_sources, NEXUS_BROWSER_SOURCE_COUNT);
         size_t url_length = 0U;
@@ -5577,6 +5581,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
+        if (browser_has_page && !browser_download_pending &&
+            event->scancode == 0x49U) { /* Page Up */
+            browser_scroll_offset = browser_scroll_offset > 4U
+                ? browser_scroll_offset - 4U : 0U;
+            draw_shell(); draw_pointer(); return;
+        }
+        if (browser_has_page && !browser_download_pending &&
+            event->scancode == 0x51U) { /* Page Down */
+            if (browser_scroll_offset + 4U < browser_line_count)
+                browser_scroll_offset += 4U;
+            draw_shell(); draw_pointer(); return;
+        }
         if (!browser_download_pending && keyboard_alt &&
             event->scancode >= 0x02U &&
             event->scancode <= 0x06U) {

@@ -93,7 +93,7 @@ static const uint8_t desktop_palette_colors[5][6] = {
     {20U, 13U, 42U, 71U, 42U, 120U},  /* Violet */
     {7U, 28U, 28U, 24U, 91U, 67U}     /* Forest */
 };
-static uint8_t settings_theme;
+static uint8_t settings_theme = 3U;
 static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
 static bool settings_high_contrast;
@@ -1614,8 +1614,8 @@ static void desktop_draw_window_surface(enum desktop_view view,
     if (active_view == DESKTOP_CALCULATOR) window_title = "NEXUS CALCULATOR";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
     desktop_draw_logo(panel_x + 7U, panel_y + 8U, 22U);
-    graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
-                       1U, 234U, 244U, 252U);
+    graphics_draw_text_smooth(panel_x + 33U, panel_y + 13U, window_title,
+                              2U, 242U, 246U, 255U);
     /* Custom window controls; close is wired to the shell input handler. */
     const uint64_t controls_x = panel_x + panel_width - 66U;
     graphics_fill_round_rect(controls_x, panel_y + 12U, 14U, 12U,
@@ -2737,8 +2737,8 @@ static void draw_shell(void) {
     graphics_fill_round_rect(18U, 6U, width - 36U, 2U, 1U,
                              accent_r, accent_g, accent_b);
     desktop_draw_logo(18U, (top_bar - 22U) / 2U, 22U);
-    graphics_draw_text(54U, top_bar / 2U - 4U,
-                       "NEXUS OS", 1U, 245U, 249U, 255U);
+    graphics_draw_text_smooth(54U, top_bar / 2U - 7U,
+                              "NEXUS OS", 2U, 245U, 249U, 255U);
     desktop_draw_workspace_switcher(top_bar);
     char top_uptime[21];
     format_u64(timer_ticks() / 100U, top_uptime);

@@ -343,7 +343,12 @@ bool paging_user_address_space_selftest(void) {
     if (paging_map_user_page(test_root_physical, 0x00800000ULL,
                              user_page, true, false)) valid = false;
     if (paging_map_user_page(test_root_physical, 0x00C00000ULL,
-                             0x00100000ULL, true, false)) valid = false;
+                             test_root_physical, true, false)) valid = false;
+    if (paging_map_user_page(test_root_physical, 0x00E00000ULL,
+                             test_root[0] & PAGE_ADDRESS_MASK,
+                             true, false)) valid = false;
+    if (paging_map_user_page(test_root_physical, 0x01000000ULL,
+                             0x00001000ULL, true, false)) valid = false;
 
     uint64_t duplicate_page = 0U;
     if (!memory_alloc_page(&duplicate_page)) {
@@ -376,6 +381,24 @@ bool paging_user_address_space_selftest(void) {
 
     if (!paging_destroy_user_address_space(test_root_physical)) return false;
     return valid;
+}
+
+static bool user_page_table_contains_table_page(uint64_t table_physical,
+                                                      unsigned int level,
+                                                      uint64_t target_page) {
+    if (level == 0U || table_physical == target_page) return true;
+    volatile uint64_t *table =
+        (volatile uint64_t *)memory_phys_to_virt(table_physical);
+    if (table == NULL) return false;
+
+    for (size_t i = 0U; i < 512U; ++i) {
+        const uint64_t entry = table[i];
+        if ((entry & PAGE_PRESENT) == 0U || level == 1U) continue;
+        if (user_page_table_contains_table_page(
+                entry & PAGE_ADDRESS_MASK, level - 1U, target_page))
+            return true;
+    }
+    return false;
 }
 
 static bool user_page_table_contains_physical(uint64_t table_physical,
@@ -414,7 +437,8 @@ bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
     const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
     const unsigned int user_bits = levels == 5U ? 56U : 47U;
-    if (virtual_address >= (1ULL << user_bits)) return false;
+    if (virtual_address >= (1ULL << user_bits) ||
+        page_physical == root_physical) return false;
 
     uint64_t current_cr3;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(current_cr3));
@@ -435,8 +459,10 @@ bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
         if ((root_entry & PAGE_USER) == 0U ||
             (root_entry & PAGE_LARGE) != 0U) return false;
         const uint64_t subtree = root_entry & PAGE_ADDRESS_MASK;
-        if (!validate_user_page_table(subtree, levels - 1U)) return false;
-        if (user_page_table_contains_physical(
+        if (!validate_user_page_table(subtree, levels - 1U) ||
+            user_page_table_contains_table_page(
+                subtree, levels - 1U, page_physical) ||
+            user_page_table_contains_physical(
                 subtree, levels - 1U, page_physical)) return false;
     }
 

@@ -210,9 +210,29 @@ uint32_t pci_device_count(void) {
     return discovered_device_count;
 }
 
+uint32_t pci_stored_device_count(void) {
+    return stored_device_count;
+}
+
 const struct nexus_pci_device *pci_device_at(uint32_t index) {
     if (index >= stored_device_count) return NULL;
     return &stored_devices[index];
+}
+
+const struct nexus_pci_device *pci_find_class(uint8_t class_code,
+                                               uint8_t subclass,
+                                               uint32_t start_index,
+                                               uint32_t *found_index) {
+    if (found_index != NULL) *found_index = UINT32_MAX;
+    if (start_index >= stored_device_count) return NULL;
+    for (uint32_t i = start_index; i < stored_device_count; ++i) {
+        if (stored_devices[i].class_code == class_code &&
+            stored_devices[i].subclass == subclass) {
+            if (found_index != NULL) *found_index = i;
+            return &stored_devices[i];
+        }
+    }
+    return NULL;
 }
 
 bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,

@@ -48,40 +48,18 @@ static bool installer_is_exact_esp_partition(
 static bool installer_is_exact_nxfs_partition(
     const struct nexus_block_device *device,
     const struct nexus_gpt_partition *requested) {
-    static const uint8_t recovery_guid[16]={
-        0x4EU,0x58U,0x52U,0x43U,0x01U,0x00U,0x58U,0x4EU,
-        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x52U,0x43U
-    };
     if (device == NULL || requested == NULL ||
         !nxfs_partition_type_matches(requested) ||
         !gpt_scan_device(device)) return false;
-    for (size_t i=0U;i<gpt_partition_count();++i) {
-        const struct nexus_gpt_partition *part=gpt_partition_at(i);
+    for (size_t i = 0U; i < gpt_partition_count(); ++i) {
+        const struct nexus_gpt_partition *part = gpt_partition_at(i);
         if (part == NULL || part->first_lba != requested->first_lba ||
             part->last_lba != requested->last_lba) continue;
-        bool equal=true;
-        for (size_t b=0U;b<16U;++b) {
+        for (size_t b = 0U; b < 16U; ++b)
             if (part->type_guid[b] != requested->type_guid[b] ||
                 part->unique_guid[b] != requested->unique_guid[b])
-                equal=false;
-        }
-        if (!equal) return false;
-
-        /* The system NXFS volume is immediately before the recovery
-         * partition; the data NXFS volume is immediately after it. */
-        const struct nexus_gpt_partition *previous =
-            i > 0U ? gpt_partition_at(i-1U) : NULL;
-        const struct nexus_gpt_partition *next =
-            i+1U < gpt_partition_count() ? gpt_partition_at(i+1U) : NULL;
-        bool previous_is_recovery = previous != NULL;
-        bool next_is_recovery = next != NULL;
-        for (size_t b=0U;b<16U;++b) {
-            if (previous == NULL || previous->type_guid[b] != recovery_guid[b])
-                previous_is_recovery = false;
-            if (next == NULL || next->type_guid[b] != recovery_guid[b])
-                next_is_recovery = false;
-        }
-        return previous_is_recovery || next_is_recovery;
+                return false;
+        return true;
     }
     return false;
 }
@@ -142,24 +120,28 @@ enum nexus_fat32_file_result nexus_installer_write_efi_file(
 }
 
 
-static bool installer_is_exact_recovery_partition(
+/* Installer transaction records occupy two alternating sectors in the
+ * FAT32 reserved region of the EFI System Partition. FAT32 metadata uses
+ * reserved sectors 0, 1, 6 and 7; relative sectors 8 and 9 remain reserved. */
+#define NEXUS_INSTALLER_JOURNAL_ESP_OFFSET 8U
+
+static bool installer_is_exact_journal_esp(
     const struct nexus_block_device *device,
     const struct nexus_gpt_partition *requested) {
-    static const uint8_t recovery_guid[16]={
-        0x4EU,0x58U,0x52U,0x43U,0x01U,0x00U,0x58U,0x4EU,
-        0x9AU,0x11U,0x4EU,0x58U,0x55U,0x53U,0x52U,0x43U
-    };
-    if(device==NULL||requested==NULL||
-       requested->last_lba<requested->first_lba||
-       requested->last_lba-requested->first_lba<1U||
-       !gpt_scan_device(device))return false;
-    for(size_t i=0U;i<gpt_partition_count();++i){
-        const struct nexus_gpt_partition *part=gpt_partition_at(i);
-        if(part==NULL||part->first_lba!=requested->first_lba||
-           part->last_lba!=requested->last_lba)continue;
-        for(size_t b=0U;b<16U;++b)
-            if(part->type_guid[b]!=recovery_guid[b]||
-               part->unique_guid[b]!=requested->unique_guid[b])return false;
+    if (device == NULL || requested == NULL ||
+        requested->last_lba < requested->first_lba ||
+        requested->last_lba - requested->first_lba < 9U ||
+        !installer_is_exact_esp_partition(device, requested->first_lba,
+            requested->last_lba - requested->first_lba + 1U))
+        return false;
+    for (size_t i = 0U; i < gpt_partition_count(); ++i) {
+        const struct nexus_gpt_partition *part = gpt_partition_at(i);
+        if (part == NULL || part->first_lba != requested->first_lba ||
+            part->last_lba != requested->last_lba)
+            continue;
+        for (size_t b = 0U; b < 16U; ++b)
+            if (part->unique_guid[b] != requested->unique_guid[b])
+                return false;
         return true;
     }
     return false;
@@ -180,33 +162,36 @@ static bool journal_target_flush(void *context) {
 enum nexus_installer_journal_result nexus_installer_load_recovery_record(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
-    const struct nexus_gpt_partition *recovery_partition,
+    const struct nexus_gpt_partition *esp_partition,
     struct nexus_installer_journal_record *record) {
-    if(device==NULL||identity==NULL||record==NULL||
-       !blockdev_matches_identity(device,identity->stable_id,identity->model,
-          identity->block_count,identity->block_size)||
-       !installer_is_exact_recovery_partition(device,recovery_partition))
+    if (device == NULL || identity == NULL || record == NULL ||
+        !blockdev_matches_identity(device, identity->stable_id, identity->model,
+            identity->block_count, identity->block_size) ||
+        !installer_is_exact_journal_esp(device, esp_partition))
         return NEXUS_JOURNAL_INVALID;
-    const struct nexus_installer_journal_device target={
-        .block_count=device->block_count,.block_size=device->block_size,
-        .max_blocks_per_request=device->max_blocks_per_request,
-        .context=(void*)device,.read=journal_target_read,
-        .write=journal_target_write,.flush=journal_target_flush
+    const struct nexus_installer_journal_device target = {
+        .block_count = device->block_count, .block_size = device->block_size,
+        .max_blocks_per_request = device->max_blocks_per_request,
+        .context = (void *)device, .read = journal_target_read,
+        .write = journal_target_write, .flush = journal_target_flush
     };
-    const enum nexus_installer_journal_result result=
-        nexus_installer_journal_load(&target,recovery_partition->first_lba,
-                                     record);
-    if(result!=NEXUS_JOURNAL_OK)return result;
-    const uint8_t *disk_guid=gpt_scanned_disk_guid();
-    if(disk_guid==NULL||record->disk_block_count!=identity->block_count||
-       record->block_size!=identity->block_size)return NEXUS_JOURNAL_CORRUPT;
-    for(size_t i=0U;i<16U;++i)
-        if(record->disk_guid[i]!=disk_guid[i])return NEXUS_JOURNAL_CORRUPT;
-    for(size_t i=0U;i<NEXUS_BLOCKDEV_ID_MAX;++i)
-        if(record->stable_id[i]!=identity->stable_id[i])
+    const enum nexus_installer_journal_result result =
+        nexus_installer_journal_load(&target,
+            esp_partition->first_lba + NEXUS_INSTALLER_JOURNAL_ESP_OFFSET,
+            record);
+    if (result != NEXUS_JOURNAL_OK) return result;
+    const uint8_t *disk_guid = gpt_scanned_disk_guid();
+    if (disk_guid == NULL || record->disk_block_count != identity->block_count ||
+        record->block_size != identity->block_size)
+        return NEXUS_JOURNAL_CORRUPT;
+    for (size_t i = 0U; i < 16U; ++i)
+        if (record->disk_guid[i] != disk_guid[i])
             return NEXUS_JOURNAL_CORRUPT;
-    for(size_t i=0U;i<NEXUS_BLOCKDEV_MODEL_MAX;++i)
-        if(record->model[i]!=identity->model[i])
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_ID_MAX; ++i)
+        if (record->stable_id[i] != identity->stable_id[i])
+            return NEXUS_JOURNAL_CORRUPT;
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_MODEL_MAX; ++i)
+        if (record->model[i] != identity->model[i])
             return NEXUS_JOURNAL_CORRUPT;
     return NEXUS_JOURNAL_OK;
 }
@@ -214,37 +199,39 @@ enum nexus_installer_journal_result nexus_installer_load_recovery_record(
 enum nexus_installer_journal_result nexus_installer_store_recovery_record(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
-    const char *typed_id,const char *typed_erase,
-    const struct nexus_gpt_partition *recovery_partition,
+    const char *typed_id, const char *typed_erase,
+    const struct nexus_gpt_partition *esp_partition,
     const struct nexus_installer_journal_record *record) {
-    if(device==NULL||identity==NULL||record==NULL||
-       !blockdev_matches_identity(device,identity->stable_id,identity->model,
-          identity->block_count,identity->block_size)||
-       !installer_is_exact_recovery_partition(device,recovery_partition)||
-       record->disk_block_count!=identity->block_count||
-       record->block_size!=identity->block_size)
+    if (device == NULL || identity == NULL || record == NULL ||
+        !blockdev_matches_identity(device, identity->stable_id, identity->model,
+            identity->block_count, identity->block_size) ||
+        !installer_is_exact_journal_esp(device, esp_partition) ||
+        record->disk_block_count != identity->block_count ||
+        record->block_size != identity->block_size)
         return NEXUS_JOURNAL_INVALID;
-    const uint8_t *disk_guid=gpt_scanned_disk_guid();
-    if(disk_guid==NULL)return NEXUS_JOURNAL_INVALID;
-    for(size_t i=0U;i<16U;++i)
-        if(record->disk_guid[i]!=disk_guid[i])return NEXUS_JOURNAL_INVALID;
-    for(size_t i=0U;i<NEXUS_BLOCKDEV_ID_MAX;++i)
-        if(record->stable_id[i]!=identity->stable_id[i])
+    const uint8_t *disk_guid = gpt_scanned_disk_guid();
+    if (disk_guid == NULL) return NEXUS_JOURNAL_INVALID;
+    for (size_t i = 0U; i < 16U; ++i)
+        if (record->disk_guid[i] != disk_guid[i])
             return NEXUS_JOURNAL_INVALID;
-    for(size_t i=0U;i<NEXUS_BLOCKDEV_MODEL_MAX;++i)
-        if(record->model[i]!=identity->model[i])
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_ID_MAX; ++i)
+        if (record->stable_id[i] != identity->stable_id[i])
             return NEXUS_JOURNAL_INVALID;
-    if(!blockdev_install_session_begin(device,typed_id,typed_erase))
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_MODEL_MAX; ++i)
+        if (record->model[i] != identity->model[i])
+            return NEXUS_JOURNAL_INVALID;
+    if (!blockdev_install_session_begin(device, typed_id, typed_erase))
         return NEXUS_JOURNAL_INVALID;
-    const struct nexus_installer_journal_device target={
-        .block_count=device->block_count,.block_size=device->block_size,
-        .max_blocks_per_request=device->max_blocks_per_request,
-        .context=(void*)device,.read=journal_target_read,
-        .write=journal_target_write,.flush=journal_target_flush
+    const struct nexus_installer_journal_device target = {
+        .block_count = device->block_count, .block_size = device->block_size,
+        .max_blocks_per_request = device->max_blocks_per_request,
+        .context = (void *)device, .read = journal_target_read,
+        .write = journal_target_write, .flush = journal_target_flush
     };
-    const enum nexus_installer_journal_result result=
-        nexus_installer_journal_commit(&target,recovery_partition->first_lba,
-                                       record);
+    const enum nexus_installer_journal_result result =
+        nexus_installer_journal_commit(&target,
+            esp_partition->first_lba + NEXUS_INSTALLER_JOURNAL_ESP_OFFSET,
+            record);
     blockdev_install_session_end();
     return result;
 }

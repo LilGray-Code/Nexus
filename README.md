@@ -12,8 +12,15 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 ## What is implemented
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
-- A framebuffer desktop with Home, Files, Browser, Settings, and Terminal,
-  plus keyboard and mouse input. The installed desktop uses a Windows 10-inspired
+- A framebuffer desktop with Home, Files, Browser, Settings, Terminal,
+  System Monitor, and a playable native Snake arcade app, plus keyboard and
+  mouse input. The Snake game is timer-driven, supports arrow-key movement,
+  pause/resume, restart, scoring, and win/game-over states.
+- A bounded 12-window state-management core with generation-safe handles,
+  focus and z-order, hit-testing, clamped movement/resizing, minimize,
+  maximize/restore, and lifecycle tests. This is a kernel foundation only:
+  independent application surfaces, rendering/compositing, and user-facing
+  drag-to-move window interaction are not yet integrated. The installed desktop uses a Windows 10-inspired
   taskbar, Start menu, app buttons, blue window chrome, and blue wallpaper.
   It displays an animated Nexus startup splash and does not expose the live
   installer as an application or launcher item. Alt+Tab cycles through the

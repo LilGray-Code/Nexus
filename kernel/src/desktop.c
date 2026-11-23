@@ -18,6 +18,7 @@
 #include "installer_runtime.h"
 #include "browser_url.h"
 #include "browser_html.h"
+#include "native_game.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -29,6 +30,7 @@ enum desktop_view {
     DESKTOP_SETTINGS,
     DESKTOP_TERMINAL,
     DESKTOP_MONITOR,
+    DESKTOP_GAMES,
     DESKTOP_INSTALLER
 };
 
@@ -45,6 +47,9 @@ static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
 static bool settings_high_contrast;
 static bool settings_reduce_motion;
+static struct nexus_snake_game snake_game;
+static uint64_t snake_next_tick;
+static uint32_t snake_seed = 0x4E455855U;
 static bool mouse_left_was_down;
 static bool files_last_click_valid;
 static size_t files_last_click_index;
@@ -229,11 +234,11 @@ static void desktop_draw_logo(uint64_t x, uint64_t y, uint64_t size) {
 
 static void desktop_draw_app_icon(uint64_t x, uint64_t y,
                                      uint64_t size, size_t app) {
-    static const uint8_t accent[5][3] = {
+    static const uint8_t accent[6][3] = {
         {63U, 157U, 239U}, {49U, 190U, 210U}, {123U, 143U, 255U},
-        {239U, 151U, 84U}, {164U, 119U, 238U}
+        {239U, 151U, 84U}, {164U, 119U, 238U}, {74U, 196U, 137U}
     };
-    if (app >= 5U || size < 12U) return;
+    if (app >= 6U || size < 12U) return;
     graphics_fill_round_rect(x, y, size, size, size / 4U,
                              accent[app][0], accent[app][1], accent[app][2]);
     const uint64_t pad = size / 5U;
@@ -267,7 +272,7 @@ static void desktop_draw_app_icon(uint64_t x, uint64_t y,
         graphics_draw_text(x + pad + size / 8U,
                            y + size / 2U - 3U, ">", 1U,
                            137U, 225U, 205U);
-    } else {
+    } else if (app == 4U) {
         graphics_fill_round_rect(x + pad, y + pad, inner,
                                  inner * 2U / 3U, size / 10U,
                                  20U, 36U, 59U);
@@ -279,6 +284,16 @@ static void desktop_draw_app_icon(uint64_t x, uint64_t y,
                            size / 8U, size / 3U, 131U, 231U, 207U);
         graphics_fill_rect(x + size / 3U, y + size * 4U / 5U,
                            size / 3U, 2U, 245U, 253U, 255U);
+    } else {
+        /* A bright, angular snake mark for the native arcade app. */
+        graphics_fill_rect(x + pad, y + size / 3U, inner * 2U / 3U, size / 7U,
+                           245U, 255U, 249U);
+        graphics_fill_rect(x + size / 2U, y + size / 3U, size / 7U,
+                           size / 3U, 245U, 255U, 249U);
+        graphics_fill_rect(x + size / 2U, y + size * 3U / 5U,
+                           inner / 2U, size / 7U, 245U, 255U, 249U);
+        graphics_fill_rect(x + size * 3U / 4U, y + size * 3U / 5U,
+                           size / 7U, size / 7U, 245U, 255U, 249U);
     }
 }
 
@@ -354,6 +369,7 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
         case 2U: return DESKTOP_SETTINGS;
         case 3U: return DESKTOP_TERMINAL;
         case 4U: return DESKTOP_MONITOR;
+        case 5U: return DESKTOP_GAMES;
         default: return DESKTOP_INSTALLER;
     }
 }
@@ -460,7 +476,7 @@ static void desktop_open_view(enum desktop_view view) {
 }
 
 static void desktop_open_app(size_t app_index) {
-    if (app_index >= 5U) return;
+    if (app_index >= 6U) return;
     desktop_open_view(desktop_view_for_app(app_index));
 }
 
@@ -483,12 +499,12 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
                              start_menu_open ? 150U : 61U);
     desktop_draw_logo(15U, button_y + (button_h > 24U ? 11U : 4U), 22U);
 
-    static const char *const labels[5] = {
-        "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR"
+    static const char *const labels[6] = {
+        "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR", "GAMES"
     };
     const uint64_t tab_width = 88U;
     const uint64_t tab_step = 92U;
-    for (size_t i = 0U; i < 5U; ++i) {
+    for (size_t i = 0U; i < 6U; ++i) {
         const uint64_t x = 56U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 96U) break;
         const bool selected = active_view == desktop_view_for_app(i);
@@ -522,7 +538,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
     if (!start_menu_open) return;
     const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
-    const uint64_t menu_height = 292U;
+    const uint64_t menu_height = 324U;
     const uint64_t menu_x = 8U;
     uint64_t menu_y = screen_height - bottom_bar - menu_height + 2U;
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
@@ -543,17 +559,17 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
     graphics_draw_text(menu_x + 55U, menu_y + 46U,
                        "MOST USED", 1U, 160U, 165U, 174U);
 
-    static const char *const names[5] = {
+    static const char *const names[6] = {
         "File Explorer", "Nexus Browser", "Settings",
-        "Terminal", "System Monitor"
+        "Terminal", "System Monitor", "Nexus Snake"
     };
-    static const uint8_t accents[5][3] = {
+    static const uint8_t accents[6][3] = {
         {0U, 120U, 215U}, {0U, 153U, 188U}, {16U, 124U, 16U},
-        {202U, 80U, 16U}, {104U, 33U, 122U}
+        {202U, 80U, 16U}, {104U, 33U, 122U}, {39U, 154U, 104U}
     };
     const uint64_t row_top = menu_y + 58U;
     const uint64_t row_step = 37U;
-    for (size_t i = 0U; i < 5U; ++i) {
+    for (size_t i = 0U; i < 6U; ++i) {
         const uint64_t row_y = row_top + (uint64_t)i * row_step;
         graphics_fill_round_rect(menu_x + 49U, row_y, menu_width - 58U,
                                   32U, 7U, 25U, 42U, 65U);
@@ -566,10 +582,10 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         const uint64_t tile_x = menu_x + menu_width - 137U;
         graphics_draw_text(tile_x, menu_y + 47U, "PINNED", 1U,
                            160U, 165U, 174U);
-        static const char *const tile_names[5] = {
-            "FILES", "WEB", "SET", "TERM", "MON"
+        static const char *const tile_names[6] = {
+            "FILES", "WEB", "SET", "TERM", "MON", "SNAKE"
         };
-        for (size_t i = 0U; i < 5U; ++i) {
+        for (size_t i = 0U; i < 6U; ++i) {
             const uint64_t col = i % 2U;
             const uint64_t row = i / 2U;
             const uint64_t x = tile_x + col * 63U;
@@ -585,7 +601,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
     graphics_fill_round_rect(menu_x + 47U, menu_y + menu_height - 29U,
                               menu_width - 58U, 22U, 7U, 18U, 31U, 49U);
     graphics_draw_text(menu_x + 54U, menu_y + menu_height - 16U,
-                       "1-5 OPEN APPS     ESC CLOSE", 1U,
+                       "1-6 OPEN APPS     ESC CLOSE", 1U,
                        160U, 165U, 174U);
 }
 
@@ -751,6 +767,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     if (active_view == DESKTOP_MONITOR) window_title = "SYSTEM MONITOR";
+    if (active_view == DESKTOP_GAMES) window_title = "NEXUS SNAKE ARCADE";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
     desktop_draw_logo(panel_x + 7U, panel_y + 8U, 22U);
     graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
@@ -989,6 +1006,65 @@ static void draw_shell(void) {
                            1U, 119U, 229U, 211U);
         graphics_draw_text(text_x, panel_y + panel_height - 18U,
                            "ESC RETURN HOME   VALUES REFRESH WHEN THE DESKTOP REDRAWS",
+                           1U, 151U, 178U, 201U);
+    } else if (active_view == DESKTOP_GAMES) {
+        char score_text[21];
+        format_u64(snake_game.score, score_text);
+        graphics_draw_text(text_x, text_y, "NEXUS SNAKE", 2U,
+                           241U, 248U, 255U);
+        graphics_draw_text(text_x, text_y + 31U,
+                           "CLASSIC ARCADE  /  HIGH SCORE SESSION",
+                           1U, 111U, 207U, 231U);
+        graphics_draw_text(panel_x + panel_width - 135U, text_y + 31U,
+                           "SCORE", 1U, 157U, 187U, 207U);
+        graphics_draw_text(panel_x + panel_width - 82U, text_y + 31U,
+                           score_text, 1U, 245U, 255U, 249U);
+        const uint64_t cell_size = 16U;
+        const uint64_t board_width = NEXUS_SNAKE_WIDTH * cell_size;
+        const uint64_t board_height = NEXUS_SNAKE_HEIGHT * cell_size;
+        const uint64_t board_x = panel_x + (panel_width - board_width) / 2U;
+        const uint64_t board_y = text_y + 55U;
+        graphics_fill_round_rect(board_x - 8U, board_y - 8U,
+                                 board_width + 16U, board_height + 16U,
+                                 10U, 7U, 18U, 29U);
+        graphics_draw_round_rect(board_x - 8U, board_y - 8U,
+                                 board_width + 16U, board_height + 16U,
+                                 10U, 58U, 93U, 111U);
+        for (uint16_t row = 0U; row < NEXUS_SNAKE_HEIGHT; ++row) {
+            for (uint16_t column = 0U; column < NEXUS_SNAKE_WIDTH; ++column) {
+                const uint16_t cell =
+                    (uint16_t)(row * NEXUS_SNAKE_WIDTH + column);
+                const uint64_t x = board_x + (uint64_t)column * cell_size;
+                const uint64_t y = board_y + (uint64_t)row * cell_size;
+                graphics_fill_rect(x + 1U, y + 1U, cell_size - 2U,
+                                   cell_size - 2U, 13U, 29U, 39U);
+                if (nexus_snake_cell_is_food(&snake_game, cell)) {
+                    graphics_fill_round_rect(x + 3U, y + 3U,
+                        cell_size - 6U, cell_size - 6U, 5U,
+                        255U, 113U, 106U);
+                } else if (nexus_snake_cell_is_snake(&snake_game, cell)) {
+                    const bool head = snake_game.body[0] == cell;
+                    graphics_fill_round_rect(x + 1U, y + 1U,
+                        cell_size - 2U, cell_size - 2U, 4U,
+                        head ? 164U : 68U, head ? 245U : 196U,
+                        head ? 180U : 137U);
+                }
+            }
+        }
+        const char *game_message =
+            snake_game.state == NEXUS_GAME_READY ? "ENTER TO START" :
+            snake_game.state == NEXUS_GAME_RUNNING ? "ARROWS MOVE  /  SPACE PAUSE" :
+            snake_game.state == NEXUS_GAME_PAUSED ? "PAUSED  /  SPACE TO RESUME" :
+            snake_game.state == NEXUS_GAME_WON ? "YOU WIN  /  R TO PLAY AGAIN" :
+            "GAME OVER  /  R TO RESTART";
+        graphics_draw_text(text_x, board_y + board_height + 22U,
+                           game_message, 1U,
+                           snake_game.state == NEXUS_GAME_RUNNING
+                               ? 119U : 239U,
+                           snake_game.state == NEXUS_GAME_RUNNING
+                               ? 229U : 190U, 211U);
+        graphics_draw_text(text_x, panel_y + panel_height - 18U,
+                           "ARROW KEYS MOVE   SPACE PAUSE   R RESTART   ESC HOME",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
@@ -1608,6 +1684,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     window_animation_offset = 0U;
     settings_persisted = false;
     if (!installer_environment) desktop_load_settings();
+    snake_seed = (uint32_t)timer_ticks() ^ 0x4E455855U;
+    nexus_snake_init(&snake_game, snake_seed);
+    snake_next_tick = timer_ticks() + 12U;
     desktop_draw_startup_animation();
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
@@ -3346,7 +3425,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         const size_t col = (size_t)(((uint64_t)pointer_x - tile_x) / 63U);
                         const size_t row = (size_t)(((uint64_t)pointer_y - (menu_y + 64U)) / 64U);
                         const size_t app = row * 2U + col;
-                        if (app < 5U) {
+                        if (app < 6U) {
                             desktop_open_app(app);
                             shell_click_handled = true;
                             menu_item_clicked = true;
@@ -3358,7 +3437,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     (uint64_t)pointer_x < (menu_width > 380U
                         ? menu_x + menu_width - 145U : menu_x + menu_width) &&
                     (uint64_t)pointer_y >= row_top &&
-                    (uint64_t)pointer_y < row_top + 5U * row_step) {
+                    (uint64_t)pointer_y < row_top + 6U * row_step) {
                     const size_t app = (size_t)((uint64_t)pointer_y - row_top) /
                                        (size_t)row_step;
                     desktop_open_app(app);
@@ -3373,7 +3452,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     start_menu_open = !start_menu_open;
                     shell_click_handled = true;
                 } else {
-                    for (size_t app = 0U; app < 5U; ++app) {
+                    for (size_t app = 0U; app < 6U; ++app) {
                         const uint64_t tab_x = 56U + (uint64_t)app * 92U;
                         if ((uint64_t)pointer_x >= tab_x &&
                             (uint64_t)pointer_x < tab_x + 88U) {
@@ -3621,9 +3700,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (keyboard_alt && key_code == 0x0FU &&
         active_view != DESKTOP_INSTALLER) {
         const size_t app_count =
-            (size_t)(DESKTOP_MONITOR - DESKTOP_FILES) + 1U;
+            (size_t)(DESKTOP_GAMES - DESKTOP_FILES) + 1U;
         size_t app = active_view >= DESKTOP_FILES &&
-                     active_view <= DESKTOP_MONITOR
+                     active_view <= DESKTOP_GAMES
             ? (size_t)(active_view - DESKTOP_FILES) : 0U;
         if (keyboard_left_shift || keyboard_right_shift) {
             app = app == 0U ? app_count - 1U : app - 1U;
@@ -3666,7 +3745,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_pointer();
             return;
         }
-        if (event->scancode >= 0x02U && event->scancode <= 0x06U) {
+        if (event->scancode >= 0x02U && event->scancode <= 0x07U) {
             desktop_open_app((size_t)(event->scancode - 0x02U));
             draw_shell();
             draw_pointer();
@@ -3831,6 +3910,44 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         draw_shell();
         draw_pointer();
+        return;
+    }
+    if (active_view == DESKTOP_GAMES) {
+        if ((event->scancode & 0x80U) != 0U) return;
+        bool changed = true;
+        if (event->scancode == 0x01U) {
+            active_view = DESKTOP_HOME;
+        } else if (event->scancode == 0x13U) {
+            snake_seed += 0x9E3779B9U;
+            nexus_snake_init(&snake_game, snake_seed);
+            snake_next_tick = timer_ticks() + 12U;
+        } else if (event->scancode == 0x1CU) {
+            if (snake_game.state == NEXUS_GAME_READY) {
+                (void)nexus_snake_start(&snake_game);
+            } else if (snake_game.state == NEXUS_GAME_WON ||
+                       snake_game.state == NEXUS_GAME_OVER) {
+                snake_seed += 0x9E3779B9U;
+                nexus_snake_init(&snake_game, snake_seed);
+                (void)nexus_snake_start(&snake_game);
+            }
+            snake_next_tick = timer_ticks() + 12U;
+        } else if (event->scancode == 0x39U) {
+            nexus_snake_toggle_pause(&snake_game);
+        } else if (event->scancode == 0x48U) {
+            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_UP);
+        } else if (event->scancode == 0x4DU) {
+            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_RIGHT);
+        } else if (event->scancode == 0x50U) {
+            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_DOWN);
+        } else if (event->scancode == 0x4BU) {
+            (void)nexus_snake_turn(&snake_game, NEXUS_GAME_LEFT);
+        } else {
+            changed = false;
+        }
+        if (changed) {
+            draw_shell();
+            draw_pointer();
+        }
         return;
     }
     if (active_view == DESKTOP_MONITOR) {
@@ -4093,6 +4210,27 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     serial_write("DESKTOP: view changed by keyboard shortcut\r\n");
 }
 
+
+void desktop_poll(void) {
+    if (!desktop_ready || active_view != DESKTOP_GAMES ||
+        snake_game.state != NEXUS_GAME_RUNNING) return;
+    const uint64_t now = timer_ticks();
+    if (now < snake_next_tick) return;
+    uint32_t steps = 0U;
+    while (now >= snake_next_tick && steps < 4U &&
+           snake_game.state == NEXUS_GAME_RUNNING) {
+        (void)nexus_snake_tick(&snake_game);
+        snake_next_tick += 12U;
+        ++steps;
+    }
+    /* Never spend an unbounded amount of desktop time catching up after a
+     * delayed event loop; discard excess elapsed ticks instead. */
+    if (now >= snake_next_tick) snake_next_tick = now + 12U;
+    if (steps != 0U) {
+        draw_shell();
+        draw_pointer();
+    }
+}
 
 enum nexus_desktop_process_test_result
 desktop_run_process_selftest(void) {

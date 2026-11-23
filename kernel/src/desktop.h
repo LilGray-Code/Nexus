@@ -15,5 +15,6 @@ enum nexus_desktop_process_test_result {
 enum nexus_desktop_process_test_result desktop_run_process_selftest(void);
 bool desktop_show(const struct limine_framebuffer *framebuffer);
 void desktop_handle_input(const struct nexus_input_event *event);
+void desktop_poll(void);
 
 #endif

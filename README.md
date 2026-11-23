@@ -22,19 +22,28 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   parentheses, unary signs, division and modulo; it reports syntax,
   divide-by-zero, nesting and overflow errors. Its keypad accepts mouse input
   as well as keyboard entry.
-- A bounded 12-window state-management core with generation-safe handles,
-  focus and z-order, hit-testing, clamped movement/resizing, minimize,
-  maximize/restore, and lifecycle tests. This is a kernel foundation only:
-  independent application surfaces, rendering/compositing, and user-facing
-  drag-to-move window interaction are not yet integrated. The installed desktop uses a dark Aurora palette, centered icon dock,
-  rounded app surfaces, a redesigned Start launcher and Control Center.
-  It displays an animated Nexus startup splash and does not expose the live
-  installer as an application or launcher item. Alt+Tab cycles through the
-  built-in Files, Browser, Settings, Terminal, and System Monitor views;
-  Shift+Alt+Tab cycles in reverse. F11 toggles the active app frame between
-  its centered and maximized desktop-work-area layouts, and the choice is
-  saved in desktop settings. These features switch the active full-screen app
-  view; they are not independent overlapping-window multitasking.
+- A native multi-window desktop shell with a 12-window manager, generation-
+  safe handles, z-order, focus, hit-testing, window movement/resizing,
+  minimize/maximize/restore, title-bar controls, taskbar app switching, and
+  overlapping built-in app windows. Each built-in app currently has one live
+  window instance; this is not yet a general third-party application runtime.
+- Four real virtual desktops. The top-bar desktop tabs switch workspace
+  visibility and focus without closing windows. Task View is available from
+  the top-bar button or `Ctrl+Alt+Tab`; use arrow keys and Enter to select a
+  desktop, or click a desktop card. `Ctrl+Alt+PageUp/PageDown` switches to
+  the previous/next desktop. `Ctrl+Shift+PageUp/PageDown` moves the focused
+  window to the neighboring desktop. Alt+Tab cycles windows on the current
+  desktop, and Shift+Alt+Tab cycles in reverse.
+- Window snapping includes left/right halves, four corner layouts, drag-to-
+  edge snapping, double-click title-bar maximize, and F11 maximize/restore.
+  Use `Ctrl+Alt+Left/Right` for halves, `Ctrl+Alt+Up/Down` for maximize/
+  restore, and `Ctrl+Alt+1..4` for corner layouts.
+- The installed desktop uses a dark Aurora palette, centered icon dock,
+  rounded app surfaces, a searchable Start launcher, a Control Center with
+  live memory/uptime/storage/adapter status, quick personalization settings,
+  five color themes, and five wallpaper styles. It displays an animated
+  Nexus startup splash and does not expose the live installer as an app or
+  launcher item.
 - PS/2 input, xHCI USB HID boot-keyboard / boot-mouse support, and
   report-protocol USB gamepad discovery with bounded HID report parsing and
   interrupt-IN input decoding for supported controller layouts. Unsupported

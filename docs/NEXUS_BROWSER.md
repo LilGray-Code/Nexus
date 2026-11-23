@@ -14,6 +14,8 @@ The desktop contains an early text-oriented HTTP client:
 - an address field and a small fixed text display;
 - DNS lookup and one active TCP connection;
 - HTTP/1.0 GET requests and bounded HTTP response-header parsing;
+- an 8 KiB bounded HTTP response buffer and a 64-line text view with Page Up
+  and Page Down scrolling;
 - basic HTML-to-text extraction and up to five distinct absolute HTTP(S)
   anchor targets, opened with Alt+1 through Alt+5;
 - a plain-HTTP download action (Ctrl+S) that asks for confirmation,

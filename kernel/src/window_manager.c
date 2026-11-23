@@ -17,6 +17,7 @@ static size_t window_count;
 static uint32_t display_width;
 static uint32_t display_height;
 static nexus_window_id focused_id;
+static uint8_t active_workspace;
 static bool manager_ready;
 
 static nexus_window_id make_id(size_t slot, uint32_t generation) {
@@ -90,6 +91,7 @@ static void focus_topmost(void) {
     for (size_t i = window_count; i > 0U; --i) {
         struct window_slot *slot = &slots[z_order[i - 1U]];
         if (slot->occupied &&
+            slot->info.workspace == active_workspace &&
             (slot->info.flags & NEXUS_WINDOW_MINIMIZED) == 0U) {
             focused_id = slot->info.id;
             return;
@@ -115,6 +117,7 @@ bool nexus_wm_init(uint32_t screen_width, uint32_t screen_height) {
     display_height = screen_height;
     window_count = 0U;
     focused_id = 0U;
+    active_workspace = 0U;
     const bool was_initialized = manager_ready;
     for (size_t i = 0U; i < NEXUS_WM_MAX_WINDOWS; ++i) {
         slots[i].occupied = false;
@@ -155,6 +158,7 @@ bool nexus_wm_create(uint32_t application_id, const char *title,
     info->restore_width = width;
     info->restore_height = height;
     info->flags = NEXUS_WINDOW_VISIBLE;
+    info->workspace = active_workspace;
     copy_title(info->title, title);
     clamp_geometry(info);
 
@@ -212,6 +216,7 @@ bool nexus_wm_resize(nexus_window_id id, uint32_t width, uint32_t height) {
 bool nexus_wm_focus(nexus_window_id id) {
     size_t index;
     if (!decode_id(id, &index) ||
+        slots[index].info.workspace != active_workspace ||
         (slots[index].info.flags & NEXUS_WINDOW_MINIMIZED) != 0U)
         return false;
     bring_to_front(index);
@@ -228,7 +233,8 @@ bool nexus_wm_minimize(nexus_window_id id) {
 
 bool nexus_wm_restore(nexus_window_id id) {
     size_t index;
-    if (!decode_id(id, &index)) return false;
+    if (!decode_id(id, &index) ||
+        slots[index].info.workspace != active_workspace) return false;
     slots[index].info.flags &= ~NEXUS_WINDOW_MINIMIZED;
     bring_to_front(index);
     return true;
@@ -236,7 +242,8 @@ bool nexus_wm_restore(nexus_window_id id) {
 
 bool nexus_wm_maximize(nexus_window_id id) {
     size_t index;
-    if (!decode_id(id, &index)) return false;
+    if (!decode_id(id, &index) ||
+        slots[index].info.workspace != active_workspace) return false;
     struct nexus_window_info *info = &slots[index].info;
     if ((info->flags & NEXUS_WINDOW_MAXIMIZED) == 0U) {
         info->restore_x = info->x;
@@ -274,7 +281,8 @@ bool nexus_wm_get(nexus_window_id id, struct nexus_window_info *out_info) {
     *out_info = slots[index].info;
     if (focused_id == id) out_info->flags |= NEXUS_WINDOW_FOCUSED;
     else out_info->flags &= ~NEXUS_WINDOW_FOCUSED;
-    if ((out_info->flags & NEXUS_WINDOW_MINIMIZED) == 0U)
+    if ((out_info->flags & NEXUS_WINDOW_MINIMIZED) == 0U &&
+        out_info->workspace == active_workspace)
         out_info->flags |= NEXUS_WINDOW_VISIBLE;
     else
         out_info->flags &= ~NEXUS_WINDOW_VISIBLE;
@@ -291,7 +299,7 @@ nexus_window_id nexus_wm_hit_test(uint32_t x, uint32_t y) {
     for (size_t i = window_count; i > 0U; --i) {
         const struct window_slot *slot = &slots[z_order[i - 1U]];
         const struct nexus_window_info *info = &slot->info;
-        if (!slot->occupied ||
+        if (!slot->occupied || info->workspace != active_workspace ||
             (info->flags & NEXUS_WINDOW_MINIMIZED) != 0U) continue;
         if (x >= (uint32_t)info->x && y >= (uint32_t)info->y &&
             x - (uint32_t)info->x < info->width &&
@@ -302,6 +310,62 @@ nexus_window_id nexus_wm_hit_test(uint32_t x, uint32_t y) {
 
 size_t nexus_wm_count(void) {
     return manager_ready ? window_count : 0U;
+}
+
+uint8_t nexus_wm_active_workspace(void) {
+    return manager_ready ? active_workspace : 0U;
+}
+
+bool nexus_wm_switch_workspace(uint8_t workspace) {
+    if (!manager_ready || workspace >= NEXUS_WM_MAX_WORKSPACES)
+        return false;
+    if (workspace == active_workspace) return true;
+    active_workspace = workspace;
+    focus_topmost();
+    return true;
+}
+
+bool nexus_wm_move_to_workspace(nexus_window_id id, uint8_t workspace) {
+    size_t index;
+    if (workspace >= NEXUS_WM_MAX_WORKSPACES ||
+        !decode_id(id, &index)) return false;
+    if (slots[index].info.workspace == workspace) return true;
+
+    const bool was_focused = focused_id == id;
+    slots[index].info.workspace = workspace;
+    if (workspace == active_workspace) {
+        bring_to_front(index);
+    } else if (was_focused) {
+        focus_topmost();
+    }
+    return true;
+}
+
+size_t nexus_wm_workspace_count(uint8_t workspace) {
+    if (!manager_ready || workspace >= NEXUS_WM_MAX_WORKSPACES) return 0U;
+    size_t count = 0U;
+    for (size_t i = 0U; i < NEXUS_WM_MAX_WINDOWS; ++i)
+        if (slots[i].occupied && slots[i].info.workspace == workspace)
+            ++count;
+    return count;
+}
+
+bool nexus_wm_workspace_z_order(uint8_t workspace,
+                                size_t bottom_to_top_index,
+                                nexus_window_id *out_id) {
+    if (!manager_ready || workspace >= NEXUS_WM_MAX_WORKSPACES ||
+        out_id == NULL) return false;
+    size_t visible_index = 0U;
+    for (size_t i = 0U; i < window_count; ++i) {
+        const struct window_slot *slot = &slots[z_order[i]];
+        if (!slot->occupied || slot->info.workspace != workspace) continue;
+        if (visible_index == bottom_to_top_index) {
+            *out_id = slot->info.id;
+            return true;
+        }
+        ++visible_index;
+    }
+    return false;
 }
 
 bool nexus_wm_z_order(size_t bottom_to_top_index, nexus_window_id *out_id) {

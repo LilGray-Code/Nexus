@@ -214,6 +214,61 @@ static void desktop_draw_logo(uint64_t x, uint64_t y, uint64_t size) {
     }
 }
 
+static void desktop_draw_app_icon(uint64_t x, uint64_t y,
+                                     uint64_t size, size_t app) {
+    static const uint8_t accent[5][3] = {
+        {63U, 157U, 239U}, {49U, 190U, 210U}, {123U, 143U, 255U},
+        {239U, 151U, 84U}, {164U, 119U, 238U}
+    };
+    if (app >= 5U || size < 12U) return;
+    graphics_fill_round_rect(x, y, size, size, size / 4U,
+                             accent[app][0], accent[app][1], accent[app][2]);
+    const uint64_t pad = size / 5U;
+    const uint64_t inner = size - pad * 2U;
+    if (app == 0U) {
+        graphics_fill_round_rect(x + pad, y + size / 3U,
+                                 inner, size / 2U, size / 10U,
+                                 239U, 248U, 255U);
+        graphics_fill_round_rect(x + pad, y + size / 4U,
+                                 inner / 2U, size / 5U, size / 12U,
+                                 239U, 248U, 255U);
+    } else if (app == 1U) {
+        graphics_draw_round_rect(x + pad, y + pad, inner, inner,
+                                 size / 9U, 245U, 253U, 255U);
+        graphics_fill_rect(x + pad + 1U, y + pad + inner / 3U,
+                           inner - 2U, size / 12U, 245U, 253U, 255U);
+        graphics_fill_rect(x + size / 2U - 1U, y + pad + inner / 2U,
+                           2U, inner / 2U, 245U, 253U, 255U);
+        graphics_fill_rect(x + pad, y + size / 2U,
+                           inner, 2U, 245U, 253U, 255U);
+    } else if (app == 2U) {
+        graphics_draw_round_rect(x + pad, y + pad, inner, inner,
+                                 size / 3U, 248U, 250U, 255U);
+        graphics_fill_round_rect(x + size / 2U - size / 9U,
+                                 y + size / 2U - size / 9U,
+                                 size / 4U, size / 4U, size / 8U,
+                                 248U, 250U, 255U);
+    } else if (app == 3U) {
+        graphics_fill_round_rect(x + pad, y + pad, inner, inner,
+                                 size / 10U, 18U, 35U, 58U);
+        graphics_draw_text(x + pad + size / 8U,
+                           y + size / 2U - 3U, ">", 1U,
+                           137U, 225U, 205U);
+    } else {
+        graphics_fill_round_rect(x + pad, y + pad, inner,
+                                 inner * 2U / 3U, size / 10U,
+                                 20U, 36U, 59U);
+        graphics_fill_rect(x + pad + size / 7U, y + size * 3U / 5U,
+                           size / 8U, size / 6U, 131U, 231U, 207U);
+        graphics_fill_rect(x + size / 2U, y + size / 2U,
+                           size / 8U, size / 4U, 131U, 231U, 207U);
+        graphics_fill_rect(x + size * 2U / 3U, y + size * 5U / 12U,
+                           size / 8U, size / 3U, 131U, 231U, 207U);
+        graphics_fill_rect(x + size / 3U, y + size * 4U / 5U,
+                           size / 3U, 2U, 245U, 253U, 255U);
+    }
+}
+
 static void format_ipv4_address(const uint8_t address[4], char output[16]) {
     size_t length = 0U;
     for (size_t part = 0; part < 4U; ++part) {
@@ -491,9 +546,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         const uint64_t row_y = row_top + (uint64_t)i * row_step;
         graphics_fill_round_rect(menu_x + 49U, row_y, menu_width - 58U,
                                   32U, 7U, 25U, 42U, 65U);
-        graphics_fill_round_rect(menu_x + 57U, row_y + 7U,
-                                 18U, 18U, 5U,
-                                 accents[i][0], accents[i][1], accents[i][2]);
+        desktop_draw_app_icon(menu_x + 56U, row_y + 6U, 20U, i);
         graphics_draw_text(menu_x + 85U, row_y + 12U,
                            names[i], 1U, 238U, 240U, 244U);
     }
@@ -740,10 +793,7 @@ static void draw_shell(void) {
                                58U, 91U, 121U);
             graphics_fill_rect(tile_x, tile_y, 4U, 74U,
                                accent[i][0], accent[i][1], accent[i][2]);
-            graphics_fill_rect(tile_x + 13U, tile_y + 12U, 25U, 25U,
-                               accent[i][0], accent[i][1], accent[i][2]);
-            graphics_draw_text(tile_x + 20U, tile_y + 21U, "N", 1U,
-                               8U, 25U, 43U);
+            desktop_draw_app_icon(tile_x + 13U, tile_y + 12U, 25U, i);
             graphics_draw_text(tile_x + 13U, tile_y + 51U, labels[i],
                                1U, 235U, 245U, 252U);
         }

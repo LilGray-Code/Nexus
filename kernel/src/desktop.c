@@ -1261,13 +1261,19 @@ static void draw_shell(void) {
                 graphics_draw_text(action_x + 9U, text_y + 279U,
                                    actions[action], 1U, 234U, 244U, 252U);
             }
-            graphics_draw_text(text_x, text_y + 304U,
-                                files_search_query[0] != '\0'
-                                    ? "FILTERED FILE VIEW  /  SEARCH ACTIVE"
-                                    : (files_scan_ok
-                                        ? "PERSISTENT FILES  /  FAT32 + NXFS + RAM"
-                                        : "RAM FILES  /  VOLATILE UNTIL SAVED"),
-                                1U, 108U, 216U, 229U);
+            char files_path_display[128];
+            if (vfs_current_path(files_path_display,
+                                 sizeof(files_path_display))) {
+                graphics_draw_text(text_x, text_y + 304U,
+                                   "LOCATION:", 1U, 108U, 216U, 229U);
+                graphics_draw_text(text_x + 82U, text_y + 304U,
+                                   files_path_display, 1U,
+                                   239U, 249U, 255U);
+            } else {
+                graphics_draw_text(text_x, text_y + 304U,
+                                   "LOCATION UNAVAILABLE", 1U,
+                                   255U, 177U, 119U);
+            }
             for (size_t slot = 0U; slot < FILES_LISTING_VISIBLE; ++slot) {
                 const size_t index = files_listing_first_index + slot;
                 if (index >= files_listing_count) break;
@@ -3680,8 +3686,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         draw_pointer();
         return;
     }
-    if (active_view == DESKTOP_FILES && event->scancode == 0x01U &&
-        vfs_directory_depth() != 0U) {
+    if (active_view == DESKTOP_FILES &&
+        (event->scancode == 0x01U || event->scancode == 0x0EU) &&
+        vfs_directory_depth() != 0U && !files_search_active) {
         if (vfs_parent_directory()) refresh_files_listing();
         draw_shell();
         draw_pointer();

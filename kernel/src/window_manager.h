@@ -39,7 +39,7 @@ struct nexus_window_info {
  * zero is the bottom-most window. This module owns metadata only, not pixels
  * or application surfaces.
  */
-bool nexus_wm_init(uint32_t screen_width, uint32_t screen_height);
+bool nexus_wm_init(uint32_t screen_width, uint32_t screen_height);\n/* Update framebuffer dimensions without discarding live windows. */\nbool nexus_wm_set_display_size(uint32_t screen_width, uint32_t screen_height);
 bool nexus_wm_create(uint32_t application_id, const char *title,
                      int32_t x, int32_t y, uint32_t width, uint32_t height,
                      nexus_window_id *out_id);

@@ -430,7 +430,7 @@ int main(int argc,char **argv) {
     assert(payload_result==NEXUS_SYSTEM_PAYLOAD_OK);
     assert(target.flushes==50U);
     assert(gpt_scan_device(target_handle));
-    const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
+    const struct nexus_gpt_partition *data_part=gpt_partition_at(3U);
     assert(data_part!=NULL);
     struct nexus_gpt_partition data_copy = *data_part;
     /* Deploy a large system file through a one-operation installer session. */

@@ -1,4 +1,5 @@
 #include "wifi.h"
+#include "netdev.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -8,6 +9,35 @@ static void *driver_context;
 static enum nexus_wifi_state state = NEXUS_WIFI_UNAVAILABLE;
 static struct nexus_wifi_network scan_results[NEXUS_WIFI_MAX_SCAN_RESULTS];
 static size_t scan_count;
+static bool network_adapter_registered;
+
+
+static bool wifi_netdev_get_mac(void *context, uint8_t address[6]) {
+    return context == driver_context && driver_ops != NULL &&
+           driver_ops->get_mac != NULL &&
+           driver_ops->get_mac(driver_context, address);
+}
+
+static bool wifi_netdev_send_frame(void *context, const void *frame,
+                                   size_t length) {
+    return context == driver_context && driver_ops != NULL &&
+           driver_ops->send_frame != NULL &&
+           driver_ops->send_frame(driver_context, frame, length);
+}
+
+static bool wifi_netdev_receive_frame(void *context, void *buffer,
+                                      size_t capacity, size_t *length) {
+    if (length != NULL) *length = 0U;
+    return context == driver_context && driver_ops != NULL &&
+           driver_ops->receive_frame != NULL &&
+           driver_ops->receive_frame(driver_context, buffer, capacity, length);
+}
+
+static const struct nexus_net_device_ops wifi_netdev_ops = {
+    .get_mac = wifi_netdev_get_mac,
+    .send_frame = wifi_netdev_send_frame,
+    .receive_frame = wifi_netdev_receive_frame
+};
 
 static bool valid_network(const struct nexus_wifi_network *network) {
     if (network == NULL || network->ssid_length == 0U ||
@@ -22,10 +52,30 @@ bool wifi_register_driver(const struct nexus_wifi_driver_ops *ops,
     if (driver_ops != NULL || ops == NULL || ops->start == NULL ||
         ops->scan == NULL || ops->connect == NULL ||
         ops->disconnect == NULL || ops->poll == NULL) return false;
+
+    const bool has_any_frame_callback =
+        ops->get_mac != NULL || ops->send_frame != NULL ||
+        ops->receive_frame != NULL;
+    const bool has_all_frame_callbacks =
+        ops->get_mac != NULL && ops->send_frame != NULL &&
+        ops->receive_frame != NULL;
+    if (has_any_frame_callback && !has_all_frame_callbacks) return false;
+
     driver_ops = ops;
     driver_context = context;
     state = NEXUS_WIFI_READY;
     scan_count = 0U;
+    network_adapter_registered = false;
+
+    if (has_all_frame_callbacks) {
+        if (!netdev_register("wlan0", &wifi_netdev_ops, context)) {
+            driver_ops = NULL;
+            driver_context = NULL;
+            state = NEXUS_WIFI_UNAVAILABLE;
+            return false;
+        }
+        network_adapter_registered = true;
+    }
     return true;
 }
 
@@ -126,3 +176,6 @@ void wifi_poll(void) {
 
 enum nexus_wifi_state wifi_get_state(void) { return state; }
 bool wifi_available(void) { return driver_ops != NULL; }
+bool wifi_network_adapter_registered(void) {
+    return network_adapter_registered;
+}

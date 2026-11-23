@@ -3566,7 +3566,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {
                 const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
-                const uint64_t menu_height = 324U;
+                const uint64_t menu_height = 364U;
                 const uint64_t menu_x = 8U;
                 const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
                 uint64_t menu_y = taskbar_top > menu_height
@@ -3831,7 +3831,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             uint64_t tw = (pw > 100U ? pw - 100U : 24U) / 7U;
             if (tw > 130U) tw = 130U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (size_t app = 0U; app < 6U; ++app) {
+                for (size_t app = 0U; app < 7U; ++app) {
                     const uint64_t tx = px + 28U + (uint64_t)app * (tw + 6U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {

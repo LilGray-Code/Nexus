@@ -4670,20 +4670,20 @@ static void installer_start_install(void) {
             "ERASE", installer_progress_update, NULL);
     if (result == NEXUS_INSTALL_RESULT_OK) {
         installer_ui_state = INSTALLER_UI_COMPLETE;
-        serial_write("NEXUS INSTALLER RESULT: SUCCESS\\r\\n");
+        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
     } else {
         installer_ui_state = INSTALLER_UI_FAILED;
         installer_set_status(installer_result_message(result));
         serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
         serial_write(installer_result_message(result));
-        serial_write("\\r\\n");
+        serial_write("\r\n");
     }
 #else
     (void)device;
     installer_ui_state = INSTALLER_UI_FAILED;
     installer_set_status(
         "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
-    serial_write("NEXUS INSTALLER RESULT: LOCKED\\r\\n");
+    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
 #endif
 }
 

@@ -4539,6 +4539,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         bool shell_click_handled = false;
         if (clicked) {
+            if (workspace_overview_open) {
+                desktop_workspace_overview_click();
+                draw_shell();
+                draw_pointer();
+                return;
+            }
             const uint64_t taskbar_height = clamp_min(screen_height / 11U, 48U);
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {
@@ -4602,15 +4608,39 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
             if (!shell_click_handled &&
                 (uint64_t)pointer_y < clamp_min(screen_height / 16U, 34U)) {
-                if ((uint64_t)pointer_x < 108U) {
+                const uint64_t topbar_height =
+                    clamp_min(screen_height / 16U, 34U);
+                const uint64_t x = (uint64_t)pointer_x;
+                if (screen_width >= 500U && x >= desktop_workspace_tab_x(0U) &&
+                    x < desktop_workspace_tab_x(0U) +
+                        NEXUS_WM_MAX_WORKSPACES * 34U) {
+                    for (uint8_t workspace = 0U;
+                         workspace < NEXUS_WM_MAX_WORKSPACES; ++workspace) {
+                        const uint64_t tab_x = desktop_workspace_tab_x(workspace);
+                        if (x >= tab_x && x < tab_x + 28U) {
+                            desktop_switch_workspace(workspace);
+                            shell_click_handled = true;
+                            break;
+                        }
+                    }
+                } else if (screen_width >= 500U &&
+                           x >= desktop_workspace_overview_x() &&
+                           x < desktop_workspace_overview_x() + 82U) {
+                    workspace_overview_open = true;
+                    workspace_overview_selected = nexus_wm_active_workspace();
+                    start_menu_open = false;
+                    desktop_launcher_reset();
+                    shell_click_handled = true;
+                } else if (x < 108U) {
                     desktop_open_view(DESKTOP_HOME);
                     shell_click_handled = true;
                 } else if (screen_width > 620U &&
-                           (uint64_t)pointer_x >= screen_width - 176U &&
-                           (uint64_t)pointer_x < screen_width - 18U) {
+                           x >= screen_width - 176U &&
+                           x < screen_width - 18U) {
                     desktop_open_view(DESKTOP_CONTROL_CENTER);
                     shell_click_handled = true;
                 }
+                (void)topbar_height;
             }
             if(!shell_click_handled && (uint64_t)pointer_y>=taskbar_top) {
                 if((uint64_t)pointer_x<56U) {

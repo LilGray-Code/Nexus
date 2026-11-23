@@ -37,6 +37,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential binutils curl git xorriso qemu-system-x86 ovmf file dosfstools mtools
 
+      - name: Test Nexus desktop window manager core
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/window_manager.c \
+            kernel/tests/window_manager_test.c \
+            -o /tmp/nexus-window-manager-test
+          /tmp/nexus-window-manager-test
+
       - name: Test durable installer recovery journal (host-only mock disk)
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

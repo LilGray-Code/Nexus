@@ -2658,7 +2658,7 @@ static void desktop_draw_window_surface(enum desktop_view view,
         graphics_draw_text(text_x, text_y + 282U, line,
                            1, 233, 243, 252);
         format_labeled_u64("USB DEVICES ENUMERATED: ",
-                           usb_inventory_count(), line);
+                           nexus_usb_inventory_count(), line);
         graphics_draw_text(text_x, text_y + 306U, line,
                            1, 233, 243, 252);
         graphics_draw_text(text_x, text_y + 330U,

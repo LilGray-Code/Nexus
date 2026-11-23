@@ -44,9 +44,13 @@ confirms the selected device's stable identity and separately types `ERASE`.
 The kernel revalidates the device immediately before each destructive stage.
 
 After successful deployment, the installer displays a **Restart into Nexus OS**
-action and a reminder to remove the live USB. Selecting it requests a hardware
-reset. Remove the installer USB before triggering the reset; firmware should
-then boot the installed target into the ordinary Nexus desktop. The software
+action and a reminder to remove the live USB. Pressing Enter or selecting the
+restart action requests a hardware reset using chipset, keyboard-controller,
+and triple-fault reset fallbacks. Remove the installer USB before triggering
+the reset; firmware should then boot the installed target into the ordinary
+Nexus desktop. The QEMU installation test exercises this restart path in the
+same VM and verifies that the installed-system kernel reaches its desktop; it
+does not stop and manually relaunch a second VM for that handoff. The software
 does not assume it can control every machine's firmware boot order or
 physically eject removable media. The live boot medium, mounted devices, and
 devices with ambiguous identity are rejected as installation targets.

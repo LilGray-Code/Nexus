@@ -542,7 +542,7 @@ jobs:
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso -boot order=d \
             -display none -serial file:installer-ui-serial.log \
             -qmp unix:/tmp/nexus-installer-qmp.sock,server,nowait \
-            -monitor none -no-reboot -no-shutdown >/tmp/nexus-ui-qemu.log 2>&1 &
+            -monitor none -no-shutdown >/tmp/nexus-ui-qemu.log 2>&1 &
           QEMU_PID=$!
           trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
           python3 - <<'PY'
@@ -625,9 +625,33 @@ jobs:
           else:
               print(open(log_path, encoding="utf-8", errors="replace").read())
               raise SystemExit("Graphical installer did not finish within 120 seconds")
+
+          # Simulate removing the live USB by selecting the installed disk as
+          # the next firmware boot device, then exercise the installer's real
+          # Enter-to-restart path. The same QEMU instance must boot the
+          # installed-system kernel and reach its desktop without a manual VM
+          # shutdown/relaunch.
+          command({"execute": "human-monitor-command",
+                   "arguments": {"command-line": "boot_set order=c"}})
+          key("ret")
+          deadline = time.time() + 90
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              if ("NEXUS INSTALLER: restart requested" in log and
+                  "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" in log and
+                  "NEXUS DESKTOP FRAMEBUFFER READY" in log and
+                  log.count("NEXUS OS KERNEL STARTED") >= 2):
+                  break
+              time.sleep(0.5)
+          else:
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit("Installer restart did not boot the installed Nexus desktop")
           sock.close()
           PY
           cat installer-ui-serial.log
+          grep -q "NEXUS INSTALLER: restart requested" installer-ui-serial.log
+          grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installer-ui-serial.log
+          grep -q "NEXUS DESKTOP FRAMEBUFFER READY" installer-ui-serial.log
           grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installer-ui-serial.log
           grep -q "NEXUS INSTALLER RESULT: SUCCESS" installer-ui-serial.log
           kill "$QEMU_PID" 2>/dev/null || true

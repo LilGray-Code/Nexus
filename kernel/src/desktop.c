@@ -1210,7 +1210,7 @@ static void draw_shell(void) {
         graphics_draw_text(text_x,panel_y+panel_height-18U,
             "KEYBOARD OR MOUSE  /  ENTER EVALUATE  /  ESC HOME",
             1U,151U,178U,201U);
-    } else if (active_view == DESKTOP_INSTALLER) {    } else if (active_view == DESKTOP_INSTALLER) {
+    } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
             graphics_draw_text(text_x, text_y, "NEXUS INSTALLER - DRIVE SELECTION",
                                2, 239, 249, 255);
@@ -1349,7 +1349,7 @@ static void draw_shell(void) {
                                    "RESTART INTO NEXUS OS",
                                    1, 255, 255, 255);
                 graphics_draw_text(text_x, text_y + 248U,
-                                   "REMOVE THE INSTALL USB BEFORE RESTARTING",
+                                   "REMOVE INSTALL USB, THEN PRESS ENTER OR CLICK RESTART",
                                    1, 239, 177, 119);
             } else if (installer_ui_state == INSTALLER_UI_FAILED) {
                 graphics_draw_text(text_x, text_y + 116U,
@@ -1846,9 +1846,34 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 }
 
 static void desktop_reboot_after_install(void) {
-    /* Request a hardware reset through the legacy 8042 controller. */
-    const uint8_t reset_command = 0xFEU;
-    __asm__ volatile ("cli; outb %0, %1" : : "a"(reset_command), "Nd"((uint16_t)0x64U));
+    /*
+     * The live installer and installed desktop are separate boot images.
+     * Once the user confirms the reboot, reset the machine so firmware can
+     * load the Nexus System partition. Try the common chipset reset port and
+     * legacy keyboard-controller reset, then force a triple-fault reset as a
+     * final x86 fallback for machines without a usable 8042 controller.
+     */
+    serial_write("NEXUS INSTALLER: restart requested; booting installed Nexus OS after live-media removal\\r\\n");
+    __asm__ volatile ("cli" : : : "memory");
+
+    const uint8_t chipset_reset_prepare = 0x02U;
+    const uint8_t chipset_reset = 0x06U;
+    const uint8_t keyboard_reset = 0xFEU;
+    __asm__ volatile ("outb %0, %1" :
+                      : "a"(chipset_reset_prepare), "Nd"((uint16_t)0xCF9U));
+    __asm__ volatile ("outb %0, %1" :
+                      : "a"(chipset_reset), "Nd"((uint16_t)0xCF9U));
+    __asm__ volatile ("outb %0, %1" :
+                      : "a"(keyboard_reset), "Nd"((uint16_t)0x64U));
+
+    /* With a null IDT, the deliberate exception delivery escalates to a
+     * triple fault, which resets x86 platforms if the I/O reset methods did
+     * not already take effect. */
+    struct __attribute__((packed)) {
+        uint16_t limit;
+        uint64_t base;
+    } invalid_idt = {0U, 0U};
+    __asm__ volatile ("lidt %0; int3" : : "m"(invalid_idt) : "memory");
     for (;;) __asm__ volatile ("hlt" ::: "memory");
 }
 

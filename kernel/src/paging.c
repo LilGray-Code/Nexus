@@ -349,6 +349,23 @@ bool paging_user_address_space_selftest(void) {
 
     if (paging_map_user_page(test_root_physical, 1ULL << user_bits,
                              duplicate_page, true, false)) valid = false;
+    if (paging_map_user_page(kernel_root_physical, 0x00800000ULL,
+                             duplicate_page, true, false)) valid = false;
+
+    /*
+     * Put a deliberately malformed supervisor-only entry at the last user
+     * root slot. Teardown must reject the entire tree before freeing any of
+     * the valid lower-index mappings.
+     */
+    const uint64_t free_before_rejected_destroy = memory_free_bytes();
+    test_root[255] = PAGE_PRESENT;
+    const bool rejected_partial_destroy =
+        !paging_destroy_user_address_space(test_root_physical) &&
+        memory_free_bytes() == free_before_rejected_destroy;
+    test_root[255] = 0U;
+    if (!rejected_partial_destroy ||
+        (test_root[0] & PAGE_PRESENT) == 0U ||
+        (test_root[1] & PAGE_PRESENT) == 0U) valid = false;
 
     if (!paging_destroy_user_address_space(test_root_physical)) return false;
     return valid;

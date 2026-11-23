@@ -57,6 +57,8 @@ static uint64_t screen_height;
 static bool desktop_ready;
 static bool installer_environment;
 static bool start_menu_open;
+static bool workspace_overview_open;
+static uint8_t workspace_overview_selected;
 static char launcher_search[32];
 static size_t launcher_visible_apps[7];
 static size_t launcher_visible_count;
@@ -584,6 +586,42 @@ static void desktop_sync_focused_window(void) {
     window_maximized = false;
 }
 
+static void desktop_switch_workspace(uint8_t workspace) {
+    if (!desktop_window_manager_ready ||
+        !nexus_wm_switch_workspace(workspace)) return;
+    start_menu_open = false;
+    workspace_overview_open = false;
+    desktop_window_drag_mode = DESKTOP_WINDOW_DRAG_NONE;
+    desktop_dragged_window = 0U;
+    desktop_sync_focused_window();
+    desktop_animate_view();
+}
+
+static void desktop_cycle_workspace(int direction) {
+    const uint8_t current = nexus_wm_active_workspace();
+    const uint8_t next = direction < 0
+        ? (uint8_t)((current + NEXUS_WM_MAX_WORKSPACES - 1U) %
+                    NEXUS_WM_MAX_WORKSPACES)
+        : (uint8_t)((current + 1U) % NEXUS_WM_MAX_WORKSPACES);
+    desktop_switch_workspace(next);
+}
+
+static void desktop_move_focused_workspace(int direction) {
+    const nexus_window_id focused = nexus_wm_focused();
+    struct nexus_window_info info;
+    if (focused == 0U || !nexus_wm_get(focused, &info)) return;
+    const uint8_t current = info.workspace;
+    const uint8_t target = direction < 0
+        ? (uint8_t)((current + NEXUS_WM_MAX_WORKSPACES - 1U) %
+                    NEXUS_WM_MAX_WORKSPACES)
+        : (uint8_t)((current + 1U) % NEXUS_WM_MAX_WORKSPACES);
+    if (nexus_wm_move_to_workspace(focused, target)) {
+        workspace_overview_selected = target;
+        desktop_sync_focused_window();
+        desktop_animate_view();
+    }
+}
+
 static void desktop_get_current_window_rect(uint64_t *x, uint64_t *y,
                                             uint64_t *width,
                                             uint64_t *height) {
@@ -632,6 +670,7 @@ static void desktop_return_home(void) {
             nexus_window_id id = 0U;
             struct nexus_window_info info;
             if (nexus_wm_z_order(i, &id) && nexus_wm_get(id, &info) &&
+                info.workspace == nexus_wm_active_workspace() &&
                 (info.flags & NEXUS_WINDOW_MINIMIZED) == 0U)
                 (void)nexus_wm_minimize(id);
         }
@@ -669,6 +708,10 @@ static void desktop_toggle_app(size_t app) {
     if (!desktop_app_window_info(app, &info)) {
         desktop_open_app(app);
         return;
+    }
+    if (info.workspace != nexus_wm_active_workspace()) {
+        desktop_switch_workspace(info.workspace);
+        if (!desktop_app_window_info(app, &info)) return;
     }
     if (info.id == nexus_wm_focused() &&
         (info.flags & NEXUS_WINDOW_MINIMIZED) == 0U) {
@@ -835,10 +878,15 @@ static void desktop_open_view(enum desktop_view view) {
                                  &desktop_app_windows[app])) {
                 desktop_window_manager_ready = false;
             }
-        } else if ((info.flags & NEXUS_WINDOW_MINIMIZED) != 0U) {
-            (void)nexus_wm_restore(info.id);
         } else {
-            (void)nexus_wm_focus(info.id);
+            if (info.workspace != nexus_wm_active_workspace()) {
+                desktop_switch_workspace(info.workspace);
+                (void)desktop_app_window_info(app, &info);
+            }
+            if ((info.flags & NEXUS_WINDOW_MINIMIZED) != 0U)
+                (void)nexus_wm_restore(info.id);
+            else
+                (void)nexus_wm_focus(info.id);
         }
         struct nexus_window_info focused_info;
         if (desktop_window_manager_ready &&
@@ -927,6 +975,8 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         const uint64_t x=apps_start+(uint64_t)visible_index*42U;
         struct nexus_window_info app_info;
         const bool running = desktop_app_window_info(i, &app_info);
+        const bool other_workspace = running &&
+            app_info.workspace != nexus_wm_active_workspace();
         const bool selected = active_view == desktop_view_for_app(i) &&
             running && app_info.id == nexus_wm_focused();
         graphics_fill_round_rect(x+2U,button_y+3U,36U,
@@ -936,13 +986,16 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
             selected?94U:(running?70U:53U));
         if(selected || running) graphics_draw_round_rect(x+2U,button_y+3U,36U,
             button_h>8U?button_h-8U:button_h,10U,
-            selected?101U:72U,selected?143U:111U,selected?184U:145U);
+            selected?101U:(other_workspace?139U:72U),
+            selected?143U:(other_workspace?105U:111U),
+            selected?184U:(other_workspace?205U:145U));
         desktop_draw_app_icon(x+10U,
             button_y+(button_h>22U?(button_h-20U)/2U:1U),20U,i);
         if(selected) graphics_fill_round_rect(x+13U,y+bottom_bar-6U,
                                                14U,2U,1U,108U,215U,235U);
         else if(running) graphics_fill_round_rect(x+17U,y+bottom_bar-6U,
-                                                  6U,2U,1U,106U,173U,204U);
+            6U,2U,1U,other_workspace?177U:106U,
+            other_workspace?132U:173U,other_workspace?220U:204U);
     }
     const uint64_t control_x=desktop_taskbar_control_x();
     graphics_fill_round_rect(control_x+2U,button_y+3U,38U,
@@ -959,9 +1012,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         graphics_draw_text(screen_width-119U,button_y+16U,uptime,
                            1U,235U,243U,250U);
     }
-}
-
-static void desktop_draw_start_menu(uint64_t bottom_bar) {
+}static void desktop_draw_start_menu(uint64_t bottom_bar) {
     if(!start_menu_open) return;
     const uint64_t menu_width=screen_width>500U?460U:screen_width-16U;
     const uint64_t menu_height=360U;
@@ -2317,7 +2368,7 @@ static bool desktop_draw_managed_windows(uint64_t top_bar) {
         nexus_window_id id = 0U;
         struct nexus_window_info info;
         if (!nexus_wm_z_order(z, &id) || !nexus_wm_get(id, &info) ||
-            (info.flags & NEXUS_WINDOW_MINIMIZED) != 0U ||
+            (info.flags & NEXUS_WINDOW_VISIBLE) == 0U ||
             info.application_id < (uint32_t)DESKTOP_FILES ||
             info.application_id > (uint32_t)DESKTOP_CALCULATOR) continue;
         desktop_draw_window_surface((enum desktop_view)info.application_id,

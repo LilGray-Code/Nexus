@@ -28,6 +28,10 @@ void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
 void graphics_draw_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,
                         uint8_t blue);
+/* Alpha-blend an RGB color over the clipped destination rectangle. */
+void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
+                         uint64_t height, uint8_t red, uint8_t green,
+                         uint8_t blue, uint8_t alpha);
 void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
                         uint32_t scale, uint8_t red, uint8_t green,
                         uint8_t blue);

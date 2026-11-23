@@ -41,6 +41,20 @@ int main(void) {
     assert(guarded[1U + (HEIGHT - 1U) * WIDTH + (WIDTH - 1U)] ==
            0x0000FF00U);
 
+    /* Alpha blending preserves transparent pixels and composites opaque ones. */
+    graphics_clear(0U, 0U, 0U);
+    graphics_blend_rect(0U, 0U, 1U, 1U, 255U, 0U, 0U, 0U);
+    assert(guarded[1U] == 0U);
+    graphics_blend_rect(0U, 0U, 1U, 1U, 255U, 0U, 0U, 255U);
+    assert(guarded[1U] == 0x00FF0000U);
+    graphics_blend_rect(0U, 0U, 1U, 1U, 0U, 0U, 255U, 128U);
+    assert(((guarded[1U] >> 16) & 0xFFU) >= 126U &&
+           ((guarded[1U] >> 16) & 0xFFU) <= 127U);
+    assert(((guarded[1U]) & 0xFFU) >= 128U &&
+           ((guarded[1U]) & 0xFFU) <= 129U);
+    graphics_blend_rect(7U, 5U, UINT64_MAX, UINT64_MAX,
+                        0U, 255U, 0U, 128U);
+
     /* Extreme text scale and origin must remain clipped to the surface. */
     graphics_draw_text(0U, 0U, "NEXUS", UINT32_MAX, 255U, 255U, 255U);
     graphics_draw_text(UINT64_MAX - 2U, UINT64_MAX - 2U, "X",

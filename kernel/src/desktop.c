@@ -43,6 +43,8 @@ static uint64_t window_animation_offset;
 static uint8_t settings_theme;
 static uint8_t settings_wallpaper;
 static bool settings_show_status = true;
+static bool settings_high_contrast;
+static bool settings_reduce_motion;
 static bool mouse_left_was_down;
 static bool files_last_click_valid;
 static size_t files_last_click_index;
@@ -369,11 +371,13 @@ static uint8_t desktop_settings_checksum(const uint8_t *record, size_t length) {
 
 static bool desktop_save_settings(void) {
     if (!vfs_nxfs_writable()) return false;
-    uint8_t record[9] = {
-        'N', 'X', 'S', '1', settings_theme, settings_wallpaper,
-        settings_show_status ? 1U : 0U, window_maximized ? 1U : 0U, 0U
+    uint8_t record[11] = {
+        'N', 'X', 'S', '2', settings_theme, settings_wallpaper,
+        settings_show_status ? 1U : 0U, window_maximized ? 1U : 0U,
+        settings_high_contrast ? 1U : 0U,
+        settings_reduce_motion ? 1U : 0U, 0U
     };
-    record[8] = desktop_settings_checksum(record, 8U);
+    record[10] = desktop_settings_checksum(record, 10U);
     const bool saved = vfs_write_file("desktop.cfg", record, sizeof(record));
     settings_persisted = saved;
     if (saved) serial_write("DESKTOP: settings saved to persistent NXFS\r\n");
@@ -383,33 +387,26 @@ static bool desktop_save_settings(void) {
 
 static void desktop_settings_activate(size_t option) {
     switch (option) {
-        case 0U:
-            settings_theme = (uint8_t)((settings_theme + 1U) % 3U);
-            break;
-        case 1U:
-            settings_wallpaper = (uint8_t)((settings_wallpaper + 1U) % 3U);
-            break;
-        case 2U:
-            settings_show_status = !settings_show_status;
-            break;
-        case 3U:
-            window_maximized = !window_maximized;
-            break;
+        case 0U: settings_theme = (uint8_t)((settings_theme + 1U) % 3U); break;
+        case 1U: settings_wallpaper = (uint8_t)((settings_wallpaper + 1U) % 3U); break;
+        case 2U: settings_show_status = !settings_show_status; break;
+        case 3U: window_maximized = !window_maximized; break;
         case 4U: {
             const uint32_t count = netdev_device_count();
             if (count > 1U) {
                 const uint32_t next = (netdev_default_index() + 1U) % count;
                 if (!net_select_device(next))
-                    serial_write("NETWORK: adapter switch failed; previous interface restored\\r\\n");
+                    serial_write("NETWORK: adapter switch failed; previous interface restored\r\n");
             } else if (count == 1U) {
                 (void)net_select_device(0U);
             } else {
-                serial_write("NETWORK: no supported adapter driver is installed\\r\\n");
+                serial_write("NETWORK: no supported adapter driver is installed\r\n");
             }
             break;
         }
-        default:
-            return;
+        case 5U: settings_high_contrast = !settings_high_contrast; break;
+        case 6U: settings_reduce_motion = !settings_reduce_motion; break;
+        default: return;
     }
     (void)desktop_save_settings();
 }
@@ -420,17 +417,21 @@ static void desktop_load_settings(void) {
     struct nexus_vfs_file file;
     if (!vfs_open_readonly("desktop.cfg", &file)) return;
     uint32_t size = 0U;
-    uint8_t record[9] = {0U};
+    uint8_t record[11] = {0U};
     size_t received = 0U;
-    const bool valid_size = vfs_file_size(&file, &size) && size == sizeof(record);
-    const bool read_ok = valid_size && vfs_read(&file, record, sizeof(record), &received);
+    const bool size_ok = vfs_file_size(&file, &size) &&
+                         (size == 9U || size == sizeof(record));
+    const bool read_ok = size_ok && vfs_read(&file, record, size, &received);
     vfs_close(&file);
-    if (!read_ok || received != sizeof(record) ||
-        record[0] != 'N' || record[1] != 'X' ||
-        record[2] != 'S' || record[3] != '1' ||
-        record[4] > 2U || record[5] > 2U ||
+    const bool legacy = size == 9U && record[3] == '1';
+    const bool current = size == sizeof(record) && record[3] == '2';
+    const size_t checksum_offset = legacy ? 8U : 10U;
+    if (!read_ok || received != size ||
+        record[0] != 'N' || record[1] != 'X' || record[2] != 'S' ||
+        (!legacy && !current) || record[4] > 2U || record[5] > 2U ||
         record[6] > 1U || record[7] > 1U ||
-        record[8] != desktop_settings_checksum(record, 8U)) {
+        (current && (record[8] > 1U || record[9] > 1U)) ||
+        record[checksum_offset] != desktop_settings_checksum(record, checksum_offset)) {
         serial_write("DESKTOP: ignored invalid settings record\r\n");
         return;
     }
@@ -438,6 +439,8 @@ static void desktop_load_settings(void) {
     settings_wallpaper = record[5];
     settings_show_status = record[6] != 0U;
     window_maximized = record[7] != 0U;
+    settings_high_contrast = current && record[8] != 0U;
+    settings_reduce_motion = current && record[9] != 0U;
     settings_persisted = true;
     serial_write("DESKTOP: restored settings from persistent NXFS\r\n");
 }
@@ -900,33 +903,60 @@ static void draw_shell(void) {
         const char *network_name = network_count == 0U ? "NO ADAPTER" :
             netdev_device_name_at(network_index);
         if (network_name == NULL) network_name = "UNKNOWN";
-        const char *labels[5] = {"COLOR THEME", "WALLPAPER", "TASKBAR STATUS",
-                                 "WINDOW SIZE", "NETWORK ADAPTER"};
-        const char *values[5] = {theme_name, wallpaper_name, status_name,
-                                 window_name, network_name};
-        const char *hints[5] = {"1  CYCLE COLOR PALETTE", "2  CHANGE BACKGROUND STYLE",
+        const char *contrast_name = settings_high_contrast ? "ON" : "OFF";
+        const char *motion_name = settings_reduce_motion ? "REDUCED" : "STANDARD";
+        const char *labels[7] = {"COLOR THEME", "WALLPAPER", "TASKBAR STATUS",
+                                 "WINDOW SIZE", "NETWORK ADAPTER",
+                                 "HIGH CONTRAST", "MOTION EFFECTS"};
+        const char *values[7] = {theme_name, wallpaper_name, status_name,
+                                 window_name, network_name, contrast_name, motion_name};
+        const char *hints[7] = {"1  CYCLE COLOR PALETTE", "2  CHANGE BACKGROUND STYLE",
                                 "3  SHOW OR HIDE UPTIME", "4  TOGGLE WINDOW SIZE",
-                                "5  SELECT NEXT INSTALLED ADAPTER"};
-        for (size_t i = 0U; i < 5U; ++i) {
-            const uint64_t y = row_y + (uint64_t)i * 44U;
-            graphics_fill_round_rect(row_x, y, row_w, 38U, 8U,
-                                      25U, 43U, 66U);
-            graphics_draw_round_rect(row_x, y, row_w, 38U, 8U,
-                                     68U, 103U, 137U);
-            graphics_fill_round_rect(row_x + 1U, y + 7U, 3U, 24U, 1U,
-                               i == 0U ? 45U : (i == 1U ? 117U : (i == 2U ? 82U : 217U)),
-                               i == 0U ? 177U : (i == 1U ? 136U : (i == 2U ? 198U : 164U)),
-                               i == 0U ? 202U : (i == 1U ? 244U : (i == 2U ? 155U : 83U)));
-            graphics_draw_text(row_x + 15U, y + 8U, labels[i], 1U, 145U, 177U, 198U);
-            graphics_draw_text(row_x + row_w / 2U, y + 8U, values[i], 1U, 235U, 245U, 252U);
-            graphics_draw_text(row_x + 15U, y + 25U, hints[i], 1U, 119U, 157U, 184U);
+                                "5  SELECT NEXT INSTALLED ADAPTER",
+                                "6  INCREASE TEXT AND CONTROL CONTRAST",
+                                "7  REDUCE APP TRANSITION ANIMATION"};
+        graphics_draw_text(row_x, row_y - 14U, "DISPLAY AND ACCESSIBILITY",
+                           1U, 111U, 207U, 231U);
+        for (size_t i = 0U; i < 7U; ++i) {
+            const uint64_t y = row_y + (uint64_t)i * 42U;
+            const uint8_t bg = settings_high_contrast ? 9U : 25U;
+            graphics_fill_round_rect(row_x, y, row_w, 36U, 8U, bg, bg + 18U, bg + 23U);
+            graphics_draw_round_rect(row_x, y, row_w, 36U, 8U,
+                                     settings_high_contrast ? 220U : 88U,
+                                     settings_high_contrast ? 235U : 123U,
+                                     settings_high_contrast ? 255U : 157U);
+            graphics_fill_round_rect(row_x + 1U, y + 6U, 3U, 24U, 1U,
+                                i == 0U ? 45U : (i == 1U ? 117U : (i == 2U ? 82U : 217U)),
+                                i == 0U ? 177U : (i == 1U ? 136U : (i == 2U ? 198U : 164U)),
+                                i == 0U ? 202U : (i == 1U ? 244U : (i == 2U ? 155U : 83U)));
+            graphics_draw_text(row_x + 15U, y + 6U, labels[i], 1U,
+                               settings_high_contrast ? 255U : 180U,
+                               settings_high_contrast ? 255U : 205U, 255U);
+            graphics_draw_text(row_x + row_w / 2U, y + 6U, values[i], 1U, 255U, 255U, 255U);
+            graphics_draw_text(row_x + 15U, y + 23U, hints[i], 1U,
+                               settings_high_contrast ? 230U : 135U,
+                               settings_high_contrast ? 230U : 175U,
+                               settings_high_contrast ? 255U : 205U);
         }
+        char display_mode[64] = "FRAMEBUFFER ";
+        char display_width[21], display_height[21];
+        format_u64(screen_width, display_width);
+        format_u64(screen_height, display_height);
+        size_t display_pos = 11U;
+        for (size_t n = 0U; display_width[n] != '\0' && display_pos < 58U; ++n)
+            display_mode[display_pos++] = display_width[n];
+        display_mode[display_pos++] = 'X';
+        for (size_t n = 0U; display_height[n] != '\0' && display_pos < 62U; ++n)
+            display_mode[display_pos++] = display_height[n];
+        display_mode[display_pos] = '\0';
+        graphics_draw_text(row_x, row_y + 7U * 42U + 2U, display_mode,
+                           1U, 111U, 207U, 231U);
         graphics_draw_text(text_x, panel_y + panel_height - 34U,
                            settings_persisted ? "PREFERENCES SAVED ON THIS DEVICE" : "SESSION ONLY - PERSISTENT NXFS NOT AVAILABLE",
                            1U, settings_persisted ? 112U : 226U,
                            settings_persisted ? 222U : 177U, settings_persisted ? 190U : 112U);
         graphics_draw_text(text_x, panel_y + panel_height - 18U,
-                           "1-5 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
+                           "1-7 CHANGE OPTIONS   ESC RETURN HOME   SETTINGS APPLY IMMEDIATELY",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_MONITOR) {
         graphics_draw_text(text_x, text_y, "SYSTEM MONITOR", 2U, 241U, 248U, 255U);
@@ -1613,6 +1643,12 @@ static void erase_pointer(void) {
 }
 
 static void desktop_animate_view(void) {
+    if (settings_reduce_motion) {
+        window_animation_offset = 0U;
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     /* A short upward settle animates the app window without blocking input
      * for long or depending on a compositor that Nexus does not yet have. */
     if (screen_width < 240U || screen_height < 220U) {
@@ -3503,10 +3539,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t row_w = pw - 48U;
             if ((uint64_t)pointer_x >= row_x &&
                 (uint64_t)pointer_x < row_x + row_w) {
-                for (size_t option = 0U; option < 5U; ++option) {
-                    const uint64_t y = row_y + (uint64_t)option * 44U;
+                for (size_t option = 0U; option < 7U; ++option) {
+                    const uint64_t y = row_y + (uint64_t)option * 42U;
                     if ((uint64_t)pointer_y >= y &&
-                        (uint64_t)pointer_y < y + 38U) {
+                        (uint64_t)pointer_y < y + 36U) {
                         desktop_settings_activate(option);
                         shell_click_handled = true;
                         break;
@@ -3807,7 +3843,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if (event->scancode == 0x01U) {
             active_view = DESKTOP_HOME;
         } else if (event->scancode >= 0x02U &&
-                   event->scancode <= 0x06U) {
+                   event->scancode <= 0x08U) {
             desktop_settings_activate((size_t)(event->scancode - 0x02U));
         } else {
             return;

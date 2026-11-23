@@ -16,7 +16,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   plus keyboard and mouse input. The installed desktop uses a Windows 10-inspired
   taskbar, Start menu, app buttons, blue window chrome, and blue wallpaper.
   It displays an animated Nexus startup splash and does not expose the live
-  installer as an application or launcher item.
+  installer as an application or launcher item. Alt+Tab cycles through the
+  built-in Files, Browser, Settings, Terminal, and System Monitor views;
+  Shift+Alt+Tab cycles in reverse. This switches the active full-screen app
+  view and is not independent overlapping-window multitasking.
 - PS/2 input, xHCI USB HID boot-keyboard / boot-mouse support, and
   report-protocol USB gamepad discovery with bounded HID report parsing and
   interrupt-IN input decoding for supported controller layouts. Unsupported
@@ -121,9 +124,10 @@ the latest run attached to the current branch.
 - The E1000/DHCP stack is exercised with emulated networking in QEMU; actual
   public-internet access on physical hardware has not yet been validated.
 - File management remains bounded: Nexus's writable NXFS namespace is
-  root-level, FAT32 subdirectories are read-only, and graphical copy/move,
-  rename, writable folder creation, and volume-to-volume management remain
-  incomplete. The Terminal can copy files into Nexus root storage but does
+  root-level, FAT32 subdirectories are read-only, and writable folder
+  creation plus volume-to-volume management remain incomplete. The Files
+  app supports root-level create/open/edit/delete/copy/rename operations;
+  nested FAT32 folders can be browsed but not modified. The Terminal does
   not yet provide a full shell or a general file-management command set.
 - Desktop applications and much of the system runtime remain kernel-integrated.
   A separate userland, a full application/process model, robust preemptive

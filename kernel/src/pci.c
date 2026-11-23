@@ -243,6 +243,14 @@ uint32_t pci_wireless_device_count(void) {
     return wireless_device_count;
 }
 
+uint32_t pci_wireless_lan_candidate_count(void) {
+    uint32_t count = 0U;
+    for (uint32_t i = 0U; i < stored_device_count; ++i) {
+        if (pci_is_wireless_lan_candidate(&stored_devices[i])) ++count;
+    }
+    return count;
+}
+
 const struct nexus_pci_device *pci_device_at(uint32_t index) {
     if (index >= stored_device_count) return NULL;
     return &stored_devices[index];

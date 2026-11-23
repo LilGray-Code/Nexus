@@ -9,6 +9,10 @@ static void check(const char *html, const char *expected) {
     size_t n = nexus_browser_html_to_text((const uint8_t *)html,
                                           strlen(html), output,
                                           sizeof(output));
+    if (n != strlen(expected) || strcmp(output, expected) != 0) {
+        fprintf(stderr, "HTML mismatch\\nexpected: [%s]\\nactual:   [%s]\\n",
+                expected, output);
+    }
     assert(n == strlen(expected));
     assert(strcmp(output, expected) == 0);
 }

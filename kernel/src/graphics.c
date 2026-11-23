@@ -166,6 +166,71 @@ void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
     }
 }
 
+
+static uint32_t rounded_row_inset(uint32_t radius, uint32_t distance) {
+    if (radius == 0U || distance >= radius) return 0U;
+    const uint32_t radius_squared = radius * radius;
+    const uint32_t distance_squared = distance * distance;
+    uint32_t inset = radius;
+    while (inset != 0U &&
+           inset * inset + distance_squared > radius_squared) {
+        --inset;
+    }
+    return radius - inset;
+}
+
+static void graphics_rounded_rect_internal(
+    uint64_t x, uint64_t y, uint64_t width, uint64_t height,
+    uint32_t radius, uint8_t red, uint8_t green, uint8_t blue,
+    uint8_t alpha, bool blend) {
+    if (!initialized || x >= active_surface.width ||
+        y >= active_surface.height || width == 0U || height == 0U) return;
+    if (width > active_surface.width - x)
+        width = active_surface.width - x;
+    if (height > active_surface.height - y)
+        height = active_surface.height - y;
+    if (radius > 256U) radius = 256U;
+    if ((uint64_t)radius * 2U > width) radius = (uint32_t)(width / 2U);
+    if ((uint64_t)radius * 2U > height) radius = (uint32_t)(height / 2U);
+    if (radius == 0U) {
+        if (blend) graphics_blend_rect(x, y, width, height,
+                                       red, green, blue, alpha);
+        else graphics_fill_rect(x, y, width, height, red, green, blue);
+        return;
+    }
+
+    for (uint64_t row = 0U; row < height; ++row) {
+        uint32_t distance = 0U;
+        if (row < radius) distance = radius - (uint32_t)row - 1U;
+        else if (row >= height - radius)
+            distance = (uint32_t)(row - (height - radius));
+        const uint32_t inset = rounded_row_inset(radius, distance);
+        const uint64_t span = width > (uint64_t)inset * 2U
+            ? width - (uint64_t)inset * 2U : 0U;
+        if (span == 0U) continue;
+        if (blend) graphics_blend_rect(x + inset, y + row, span, 1U,
+                                       red, green, blue, alpha);
+        else graphics_fill_rect(x + inset, y + row, span, 1U,
+                                red, green, blue);
+    }
+}
+
+void graphics_round_rect(uint64_t x, uint64_t y, uint64_t width,
+                         uint64_t height, uint32_t radius,
+                         uint8_t red, uint8_t green, uint8_t blue) {
+    graphics_rounded_rect_internal(x, y, width, height, radius,
+                                   red, green, blue, 255U, false);
+}
+
+void graphics_blend_round_rect(uint64_t x, uint64_t y, uint64_t width,
+                               uint64_t height, uint32_t radius,
+                               uint8_t red, uint8_t green, uint8_t blue,
+                               uint8_t alpha) {
+    if (alpha == 0U) return;
+    graphics_rounded_rect_internal(x, y, width, height, radius,
+                                   red, green, blue, alpha, true);
+}
+
 void graphics_clear(uint8_t red, uint8_t green, uint8_t blue) {
     graphics_fill_rect(0U, 0U, graphics_width(), graphics_height(),
                        red, green, blue);

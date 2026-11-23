@@ -263,6 +263,10 @@ jobs:
           fi
           cat installed-uefi-serial.log
           grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installed-uefi-serial.log
+          if grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installed-uefi-serial.log; then
+            echo "Installed OS unexpectedly enabled installer writes"
+            exit 1
+          fi
           grep -q "NEXUS K0 BOOT COMPLETE" installed-uefi-serial.log
 
       - name: Boot the installed legacy BIOS target disk (SeaBIOS)
@@ -282,11 +286,19 @@ jobs:
           fi
           cat installed-bios-serial.log
           grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installed-bios-serial.log
+          if grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installed-bios-serial.log; then
+            echo "Installed OS unexpectedly enabled installer writes"
+            exit 1
+          fi
           grep -q "NEXUS K0 BOOT COMPLETE" installed-bios-serial.log
 
       - name: Verify kernel ELF and ISO
         run: |
           file build/nexus-kernel.elf build/nexus-installer.elf release/NexusOS-OriginalKernel-x86_64.iso
+          if cmp -s build/nexus-kernel.elf build/nexus-installer.elf; then
+            echo "Installer and installed OS binaries must be distinct"
+            exit 1
+          fi
           readelf -h build/nexus-kernel.elf
           readelf -l build/nexus-kernel.elf
           readelf -h build/nexus-installer.elf

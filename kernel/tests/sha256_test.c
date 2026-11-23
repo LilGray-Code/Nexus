@@ -17,6 +17,12 @@ int main(void){
     uint8_t key[20];memset(key,0x0b,sizeof(key));
     nexus_hmac_sha256(key,sizeof(key),"Hi There",8U,digest);
     expect_hex(digest,"b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7",32U);
+    memset(digest,0xA5,sizeof(digest));
+    nexus_hmac_sha256(NULL,1U,"data",4U,digest);
+    for(size_t i=0U;i<sizeof(digest);++i) assert(digest[i]==0U);
+    memset(digest,0xA5,sizeof(digest));
+    nexus_hmac_sha256(key,sizeof(key),NULL,1U,digest);
+    for(size_t i=0U;i<sizeof(digest);++i) assert(digest[i]==0U);
     uint8_t ikm[22];memset(ikm,0x0b,sizeof(ikm));
     uint8_t salt[13],info[10],okm[42];
     for(size_t i=0U;i<sizeof(salt);++i)salt[i]=(uint8_t)i;

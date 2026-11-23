@@ -4,12 +4,14 @@
 #include <stdbool.h>
 
 /* Initialize one xHCI controller and enumerate directly attached HID boot
- * keyboards and mice. USB hubs and USB mass storage remain unsupported. */
+ * keyboards, boot mice, and supported report-protocol gamepads. USB hubs and
+ * USB mass storage remain unsupported. */
 bool xhci_init(void);
 bool xhci_keyboard_ready(void);
 bool xhci_mouse_ready(void);
+bool xhci_gamepad_ready(void);
 
-/* Drain completed USB HID keyboard and mouse interrupt transfers. */
+/* Drain completed USB HID keyboard, mouse, and gamepad interrupt transfers. */
 void xhci_poll(void);
 
 #endif

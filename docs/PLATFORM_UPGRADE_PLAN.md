@@ -128,10 +128,13 @@ It must have:
 
 ## Immediate next implementation milestone
 
-The first code milestone should be NXFS v3's on-disk format and allocator
-prototype, preceded by a compatibility fixture for existing v2 images. The
-installer's system/data partition sizing should then be changed to reserve a
-small boot/system area and assign the remaining eligible target capacity to
-user data, subject to documented minimums and alignment. Only after the
-allocator, migration, and crash-recovery tests pass should the new format be
-enabled in an installer ISO.
+The first code milestone is now a host-tested, read-only NXFS v3 layout planner
+in `kernel/src/nxfs_v3_layout.c`. It computes a partition-relative journal,
+allocation bitmap, inode table, and data region with checked 64-bit arithmetic,
+and has tests for 512-byte and 4096-byte sectors and 4 TiB volumes. It is not
+yet a formatter, allocator, mount driver, or migration path. Next: specify the
+v3 on-disk structures, build a v2 compatibility fixture, implement metadata
+transactions and crash recovery, and only then connect v3 to VFS and the
+installer. The existing installer already assigns all remaining aligned usable
+space to the data partition; its storage filesystem, not the partition planner,
+is the immediate capacity limitation.

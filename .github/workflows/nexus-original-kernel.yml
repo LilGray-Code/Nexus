@@ -76,6 +76,14 @@ jobs:
             -o /tmp/nexus-installer-journal-test
           /tmp/nexus-installer-journal-test
 
+      - name: Test NXFS v3 capacity-aware layout prototype (no disk writes)
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/nxfs_v3_layout.c \
+            kernel/tests/nxfs_v3_layout_test.c \
+            -o /tmp/nexus-nxfs-v3-layout-test
+          /tmp/nexus-nxfs-v3-layout-test
+
       - name: Test Nexus installer partition planner (host-only, no disk writes)
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

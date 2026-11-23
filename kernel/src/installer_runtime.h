@@ -37,10 +37,12 @@ typedef void (*nexus_installer_progress_fn)(
     const char *message);
 
 /*
- * Runs the complete first-install transaction against one explicitly selected
- * disk. The caller must obtain two separate user confirmations and pass the
- * exact stable ID plus the typed ERASE phrase. The kernel revalidates identity,
- * boot-medium provenance, mounted state, and write capability before writes.
+ * Runs a complete install against one explicitly selected disk. The caller
+ * passes the captured stable ID and one final typed ERASE confirmation. The
+ * kernel revalidates identity, boot-medium provenance, mounted state and
+ * write capability before destructive operations. No separate Recovery GPT
+ * partition is required; the transaction journal lives in reserved ESP
+ * sectors and unfinished installs resume automatically when its record is valid.
  *
  * Legacy BIOS uses the dual-layout partition plan because Limine's BIOS stage
  * needs the FAT32 ESP for its configuration and boot payloads.

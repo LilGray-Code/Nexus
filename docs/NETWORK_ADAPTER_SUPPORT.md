@@ -25,9 +25,27 @@ A device appears in this selector only after its hardware driver has initialized
 
 The 802.11 beacon/probe-response parser and Wi-Fi connection-state API are foundations only. The current tree does **not** contain a chipset-specific Wi-Fi radio driver, USB Wi-Fi driver, WPA2/WPA3 authentication/key management, or a complete 802.11-to-Ethernet data path. Therefore Wi-Fi cards and USB Wi-Fi adapters are not yet usable on a real Nexus installation.
 
-## USB driver limitation
+## Adapter inventory and USB detection
 
-The current xHCI implementation handles directly attached USB HID boot keyboards and mice. It does not yet provide the general USB device stack needed by USB network adapters: hub enumeration, generic interface/endpoint discovery, robust bulk transfers, hotplug lifecycle, and device power management. A USB Wi-Fi adapter cannot be made to work merely by copying a driver file to the device.
+PCI discovery now reports wireless-controller class functions and prints exact
+VID:PID values for WLAN candidates. Network-controller class 02/subclass 80
+is treated as a possible wireless adapter, not automatically as Wi-Fi. A
+small exact-ID catalog can name several common Intel, MediaTek, Realtek, and
+Qualcomm/Atheros Wi-Fi families; unmatched hardware remains visible by its
+numeric IDs.
+
+The xHCI enumeration path scans every directly attached root port (rather
+than stopping after a keyboard/mouse/gamepad is found), stores up to 32 USB
+device identities, and identifies common CDC-ECM, CDC-NCM, MBIM and RNDIS
+network-interface descriptors. Vendor-specific USB interfaces are reported
+as such with their exact VID:PID so a future driver can match the real chipset.
+This is device identification only; no USB network driver is bound.
+
+The USB path still lacks hub enumeration, a generic USB network data plane,
+robust bulk transfer scheduling for network adapters, hotplug lifecycle, and
+device power management. USB Wi-Fi adapters remain unsupported until a
+chipset-specific native driver, firmware path, and network integration pass
+real transfer and association tests.
 
 ## Driver installation policy and compatibility
 

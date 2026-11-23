@@ -38,12 +38,24 @@ Path("build/limine-binary/limine-bios-hdd.bin").write_bytes(image)
 print(f"Extracted Limine BIOS HDD image: {len(image)} bytes")
 PY
 
-make -C kernel clean all
+installer_flags="${EXTRA_CFLAGS:-}"
+rm -rf build/os build/installer
+# The installed OS is compiled as its own image with installer mode disabled
+# and without the destructive installer-write capability.
+make -C kernel clean all OUT=../build/os \\
+  EXTRA_CFLAGS="-DNEXUS_INSTALLED_OS_BUILD"
+# The live-media installer is a different kernel image. Its optional destructive
+# write gate is applied only to this image, never to the installed OS kernel.
+make -C kernel clean all OUT=../build/installer \\
+  EXTRA_CFLAGS="-DNEXUS_INSTALLER_BUILD ${installer_flags}"
+cp build/os/nexus-kernel.elf build/nexus-kernel.elf
+cp build/installer/nexus-kernel.elf build/nexus-installer.elf
 
 ISO_ROOT="$ROOT/build/iso-root"
 rm -rf "$ISO_ROOT"
 mkdir -p "$ISO_ROOT/boot/limine" "$ISO_ROOT/EFI/BOOT"
-cp build/nexus-kernel.elf "$ISO_ROOT/boot/nexus-kernel.elf"
+cp build/nexus-installer.elf "$ISO_ROOT/boot/nexus-installer.elf"
+cp build/nexus-kernel.elf "$ISO_ROOT/boot/nexus-os.elf"
 cp boot/limine.conf "$ISO_ROOT/boot/limine/limine.conf"
 cp build/limine-binary/limine-bios.sys "$ISO_ROOT/boot/limine/"
 cp build/limine-binary/limine-bios-hdd.bin "$ISO_ROOT/boot/limine/"
@@ -54,7 +66,8 @@ cp build/limine-binary/BOOTX64.EFI "$ISO_ROOT/EFI/BOOT/"
 test -s "$ISO_ROOT/EFI/BOOT/BOOTX64.EFI"
 test -s "$ISO_ROOT/boot/limine/limine-bios.sys"
 test -s "$ISO_ROOT/boot/limine/limine-bios-hdd.bin"
-test -s "$ISO_ROOT/boot/nexus-kernel.elf"
+test -s "$ISO_ROOT/boot/nexus-installer.elf"
+test -s "$ISO_ROOT/boot/nexus-os.elf"
 
 xorriso -as mkisofs \
   -R -r -J \
@@ -72,4 +85,5 @@ build/limine-binary/limine bios-install release/NexusOS-OriginalKernel-x86_64.is
   sha256sum NexusOS-OriginalKernel-x86_64.iso > SHA256SUMS.txt
   sha256sum --check SHA256SUMS.txt
 )
+file build/nexus-kernel.elf build/nexus-installer.elf
 file release/NexusOS-OriginalKernel-x86_64.iso

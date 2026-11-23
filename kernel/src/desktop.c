@@ -19,6 +19,7 @@
 #include "browser_url.h"
 #include "browser_html.h"
 #include "calculator.h"
+#include "launcher.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -41,6 +42,14 @@ static uint64_t screen_height;
 static bool desktop_ready;
 static bool installer_environment;
 static bool start_menu_open;
+static char launcher_search[32];
+static size_t launcher_visible_apps[7];
+static size_t launcher_visible_count;
+static size_t launcher_selected_index;
+static const char *const launcher_app_names[7] = {
+    "Files", "Nexus Browser", "Settings", "Terminal",
+    "System Monitor", "Control Center", "Calculator"
+};
 static bool window_maximized;
 static uint64_t window_animation_offset;
 static uint8_t settings_theme;
@@ -511,6 +520,28 @@ static void desktop_open_app(size_t app_index) {
     desktop_open_view(desktop_view_for_app(app_index));
 }
 
+static void desktop_launcher_refresh(void) {
+    launcher_visible_count = nexus_launcher_filter(
+        launcher_search, launcher_app_names, 7U,
+        launcher_visible_apps, 7U);
+    if (launcher_visible_count == 0U) {
+        launcher_selected_index = 0U;
+    } else if (launcher_selected_index >= launcher_visible_count) {
+        launcher_selected_index = launcher_visible_count - 1U;
+    }
+}
+
+static void desktop_launcher_reset(void) {
+    launcher_search[0] = '\0';
+    launcher_selected_index = 0U;
+    desktop_launcher_refresh();
+}
+
+static void desktop_launcher_open_selected(void) {
+    if (launcher_visible_count == 0U) return;
+    desktop_open_app(launcher_visible_apps[launcher_selected_index]);
+}
+
 static uint64_t desktop_taskbar_apps_start(void) {
     /* Six pinned apps in the dock; Control Center has its own right-side
      * quick-access surface so it is not duplicated in the icon row. */
@@ -581,7 +612,8 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
     uint64_t menu_y=menu_bottom>menu_height
         ?menu_bottom-menu_height+2U:top_limit;
     if(menu_y<top_limit) menu_y=top_limit;
-    graphics_fill_round_rect(menu_x+6U,menu_y+9U,menu_width,menu_height,
+    desktop_launcher_refresh();
+    graphics_fill_round_rect(menu_x+7U,menu_y+10U,menu_width,menu_height,
                              22U,1U,5U,16U);
     graphics_fill_gradient_rect(menu_x,menu_y,menu_width,menu_height,
                                 27U,39U,57U,14U,23U,39U);
@@ -589,41 +621,63 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                              22U,76U,105U,135U);
     graphics_fill_gradient_rect(menu_x+1U,menu_y+1U,menu_width-2U,3U,
                                  71U,164U,211U,133U,111U,224U);
-    desktop_draw_logo(menu_x+20U,menu_y+18U,24U);
-    graphics_draw_text(menu_x+56U,menu_y+21U,"NEXUS",2U,246U,249U,255U);
-    graphics_draw_text(menu_x+57U,menu_y+43U,"YOUR WORKSPACE",1U,
+    desktop_draw_logo(menu_x+20U,menu_y+16U,24U);
+    graphics_draw_text(menu_x+56U,menu_y+19U,"NEXUS",2U,246U,249U,255U);
+    graphics_draw_text(menu_x+57U,menu_y+41U,"FIND YOUR NEXT TASK",1U,
                        151U,181U,205U);
-    graphics_draw_text(menu_x+22U,menu_y+67U,"PINNED APPLICATIONS",
-                       1U,141U,177U,204U);
-    static const char *const names[7]={
-        "File Explorer","Nexus Browser","Settings","Terminal",
-        "System Monitor","Control Center","Calculator"
-    };
-    if(menu_width>400U) {
+
+    const uint64_t search_x=menu_x+18U;
+    const uint64_t search_y=menu_y+59U;
+    const uint64_t search_w=menu_width-36U;
+    graphics_fill_round_rect(search_x,search_y,search_w,32U,9U,
+                             9U,20U,34U);
+    graphics_draw_round_rect(search_x,search_y,search_w,32U,9U,
+                             75U,126U,157U);
+    graphics_draw_text(search_x+11U,search_y+20U,"SEARCH",1U,
+                       116U,207U,222U);
+    graphics_draw_text(search_x+70U,search_y+20U,
+                       launcher_search[0] ? launcher_search : "Type an app name",
+                       1U,launcher_search[0]?245U:145U,
+                       launcher_search[0]?249U:169U,
+                       launcher_search[0]?255U:190U);
+    graphics_draw_text(menu_x+20U,menu_y+104U,"APPLICATIONS",1U,
+                       141U,177U,204U);
+
+    if(launcher_visible_count==0U) {
+        graphics_draw_text(menu_x+22U,menu_y+150U,"NO MATCHING APPS",
+                           1U,239U,177U,119U);
+    } else if(menu_width>400U) {
         const uint64_t card_width=(menu_width-54U)/2U;
-        const uint64_t row_top=menu_y+82U;
-        for(size_t i=0U;i<7U;++i) {
+        const uint64_t row_top=menu_y+113U;
+        for(size_t i=0U;i<launcher_visible_count;++i) {
+            const size_t app=launcher_visible_apps[i];
             const uint64_t col=i%2U,row=i/2U;
             const uint64_t x=menu_x+18U+col*(card_width+12U);
-            const uint64_t y=row_top+row*63U;
-            graphics_fill_round_rect(x,y,card_width,54U,11U,24U,39U,58U);
-            graphics_draw_round_rect(x,y,card_width,54U,11U,66U,91U,119U);
-            desktop_draw_app_icon(x+12U,y+14U,25U,i);
-            graphics_draw_text(x+49U,y+29U,names[i],1U,235U,243U,250U);
+            const uint64_t y=row_top+row*55U;
+            const bool selected=i==launcher_selected_index;
+            graphics_fill_round_rect(x,y,card_width,48U,10U,
+                selected?42U:24U,selected?76U:39U,selected?99U:58U);
+            graphics_draw_round_rect(x,y,card_width,48U,10U,
+                selected?111U:66U,selected?176U:91U,selected?201U:119U);
+            desktop_draw_app_icon(x+10U,y+11U,25U,app);
+            graphics_draw_text(x+45U,y+28U,launcher_app_names[app],1U,
+                               235U,243U,250U);
         }
     } else {
-        const uint64_t row_top=menu_y+82U;
-        for(size_t i=0U;i<7U;++i) {
-            const uint64_t y=row_top+(uint64_t)i*37U;
-            graphics_fill_round_rect(menu_x+14U,y,menu_width-28U,32U,
-                                     8U,24U,39U,58U);
-            desktop_draw_app_icon(menu_x+21U,y+6U,20U,i);
-            graphics_draw_text(menu_x+52U,y+18U,names[i],1U,
+        const uint64_t row_top=menu_y+112U;
+        for(size_t i=0U;i<launcher_visible_count;++i) {
+            const size_t app=launcher_visible_apps[i];
+            const uint64_t y=row_top+(uint64_t)i*32U;
+            const bool selected=i==launcher_selected_index;
+            graphics_fill_round_rect(menu_x+14U,y,menu_width-28U,29U,
+                8U,selected?42U:24U,selected?76U:39U,selected?99U:58U);
+            desktop_draw_app_icon(menu_x+20U,y+5U,19U,app);
+            graphics_draw_text(menu_x+49U,y+17U,launcher_app_names[app],1U,
                                235U,243U,250U);
         }
     }
-    graphics_draw_text(menu_x+22U,menu_y+menu_height-15U,
-                       "ESC CLOSE   SELECT AN APP TO OPEN",
+    graphics_draw_text(menu_x+20U,menu_y+menu_height-13U,
+                       "TYPE TO SEARCH   UP/DOWN MOVE   ENTER OPEN   ESC CLOSE",
                        1U,132U,165U,193U);
 }
 
@@ -1824,6 +1878,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     keyboard_caps_lock_down = false;
     pointer_under_valid = false;
     start_menu_open = false;
+    desktop_launcher_reset();
     window_maximized = false;
     window_animation_offset = 0U;
     settings_persisted = false;
@@ -3583,34 +3638,51 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 uint64_t menu_y=menu_bottom>menu_height
                     ?menu_bottom-menu_height+2U:top_limit;
                 if(menu_y<top_limit) menu_y=top_limit;
-                const uint64_t row_top=menu_y+82U;
+                desktop_launcher_refresh();
+                const uint64_t search_x=menu_x+18U;
+                const uint64_t search_y=menu_y+59U;
+                const uint64_t search_w=menu_width-36U;
                 bool app_clicked=false;
-                if(menu_width>400U) {
+                if((uint64_t)pointer_x>=search_x &&
+                   (uint64_t)pointer_x<search_x+search_w &&
+                   (uint64_t)pointer_y>=search_y &&
+                   (uint64_t)pointer_y<search_y+32U) {
+                    /* Keep the launcher open so keyboard input can filter. */
+                    app_clicked=true;
+                } else if(menu_width>400U) {
                     const uint64_t cw=(menu_width-54U)/2U;
+                    const uint64_t row_top=menu_y+113U;
                     if((uint64_t)pointer_y>=row_top &&
-                       (uint64_t)pointer_y<row_top+4U*63U &&
+                       (uint64_t)pointer_y<row_top+4U*55U &&
                        (uint64_t)pointer_x>=menu_x+18U) {
                         const uint64_t rx=(uint64_t)pointer_x-menu_x-18U;
                         const uint64_t ry=(uint64_t)pointer_y-row_top;
                         const size_t col=(size_t)(rx/(cw+12U));
-                        const size_t row=(size_t)(ry/63U);
-                        const uint64_t local_x=rx%(cw+12U),local_y=ry%63U;
-                        const size_t app=row*2U+col;
+                        const size_t row=(size_t)(ry/55U);
+                        const uint64_t local_x=rx%(cw+12U),local_y=ry%55U;
+                        const size_t result=row*2U+col;
                         if(col<2U && row<4U && local_x<cw &&
-                           local_y<54U && app<7U) {
-                            desktop_open_app(app); shell_click_handled=true;
+                           local_y<48U && result<launcher_visible_count) {
+                            launcher_selected_index=result;
+                            desktop_launcher_open_selected();
+                            shell_click_handled=true;
                             app_clicked=true;
                         }
                     }
-                } else if((uint64_t)pointer_x>=menu_x+14U &&
-                          (uint64_t)pointer_x<menu_x+menu_width-14U &&
-                          (uint64_t)pointer_y>=row_top &&
-                          (uint64_t)pointer_y<row_top+7U*37U) {
-                    const size_t app=(size_t)((uint64_t)pointer_y-row_top)/37U;
-                    const uint64_t local_y=((uint64_t)pointer_y-row_top)%37U;
-                    if(app<7U && local_y<32U) {
-                        desktop_open_app(app); shell_click_handled=true;
-                        app_clicked=true;
+                } else {
+                    const uint64_t row_top=menu_y+112U;
+                    if((uint64_t)pointer_x>=menu_x+14U &&
+                       (uint64_t)pointer_x<menu_x+menu_width-14U &&
+                       (uint64_t)pointer_y>=row_top &&
+                       (uint64_t)pointer_y<row_top+launcher_visible_count*32U) {
+                        const size_t result=(size_t)((uint64_t)pointer_y-row_top)/32U;
+                        const uint64_t local_y=((uint64_t)pointer_y-row_top)%32U;
+                        if(result<launcher_visible_count && local_y<29U) {
+                            launcher_selected_index=result;
+                            desktop_launcher_open_selected();
+                            shell_click_handled=true;
+                            app_clicked=true;
+                        }
                     }
                 }
                 if(!app_clicked) start_menu_open=false;
@@ -3618,6 +3690,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             if(!shell_click_handled && (uint64_t)pointer_y>=taskbar_top) {
                 if((uint64_t)pointer_x<56U) {
                     start_menu_open=!start_menu_open;
+                    if(start_menu_open) desktop_launcher_reset();
                     shell_click_handled=true;
                 } else if((uint64_t)pointer_x>=desktop_taskbar_control_x() &&
                           (uint64_t)pointer_x<desktop_taskbar_control_x()+42U) {
@@ -3954,23 +4027,53 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view != DESKTOP_INSTALLER && event->scancode == 0x40U) {
         start_menu_open = !start_menu_open;
+        if(start_menu_open) desktop_launcher_reset();
         draw_shell();
         draw_pointer();
         return;
     }
     if (start_menu_open && active_view != DESKTOP_INSTALLER) {
+        bool changed=false;
         if (event->scancode == 0x01U) {
             start_menu_open = false;
-            draw_shell();
-            draw_pointer();
-            return;
-        }
-        if (event->scancode >= 0x02U && event->scancode <= 0x08U) {
+            desktop_launcher_reset();
+        } else if (event->scancode == 0x1CU) {
+            desktop_launcher_open_selected();
+        } else if (event->scancode == 0x48U) {
+            if(launcher_visible_count!=0U && launcher_selected_index>0U)
+                --launcher_selected_index;
+        } else if (event->scancode == 0x50U) {
+            if(launcher_visible_count!=0U &&
+               launcher_selected_index+1U<launcher_visible_count)
+                ++launcher_selected_index;
+        } else if (event->scancode == 0x0EU) {
+            size_t length=0U;
+            while(length<sizeof(launcher_search)-1U &&
+                  launcher_search[length]!='\\0') ++length;
+            if(length!=0U) {
+                launcher_search[length-1U]='\\0';
+                launcher_selected_index=0U;
+                desktop_launcher_refresh();
+            }
+        } else if (event->scancode >= 0x02U && event->scancode <= 0x08U) {
             desktop_open_app((size_t)(event->scancode - 0x02U));
-            draw_shell();
-            draw_pointer();
-            return;
+        } else {
+            const char ch=terminal_scancode_char(event->scancode);
+            size_t length=0U;
+            while(length<sizeof(launcher_search)-1U &&
+                  launcher_search[length]!='\\0') ++length;
+            if(ch>=0x20 && ch<=0x7E &&
+               length<sizeof(launcher_search)-1U) {
+                launcher_search[length]=ch;
+                launcher_search[length+1U]='\\0';
+                launcher_selected_index=0U;
+                desktop_launcher_refresh();
+                changed=true;
+            }
         }
+        if(changed) desktop_launcher_refresh();
+        draw_shell();
+        draw_pointer();
         return;
     }
     if (active_view == DESKTOP_INSTALLER) {

@@ -3785,7 +3785,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
          * explicit Y/N confirmation instead of removing data immediately. */
         if (event->scancode == 0x3FU) {
             refresh_files_listing();
-            serial_write("FILES: listing refreshed by F5\\r\\n");
+            serial_write("FILES: listing refreshed by F5\r\n");
         } else if (!files_delete_pending) {
             files_request_delete_selected();
         }

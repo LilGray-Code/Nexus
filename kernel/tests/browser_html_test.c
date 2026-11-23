@@ -18,8 +18,8 @@ int main(void) {
           "<body><h1>Hello&nbsp;world</h1><script>bad()</script>"
           "<p>A &amp; B &lt; C &gt; D &quot;Q&quot; &#39;x&#39;</p>"
           "<!-- secret comment -->Done</body></html>",
-          "Title\\nHello world\\nA & B < C > D \"Q\" 'x'\\nDone");
-    check("one\n  two\tthree<br>four", "one two three four");
+          "Title\nHello world\nA & B < C > D \"Q\" 'x'\nDone");
+    check("one\n  two\tthree<br>four", "one two three\\nfour");
     check("<SCRIPT type='text/javascript'>x</SCRIPT>visible",
           "visible");
     check("<scripture>ordinary visible text</scripture>tail",
@@ -32,9 +32,9 @@ int main(void) {
     check("<main><h1>Heading</h1><p>First paragraph.</p>"
           "<p>Second paragraph with <strong>emphasis</strong>.</p>"
           "<ul><li>One</li><li>Two</li></ul></main>",
-          "Heading\\nFirst paragraph.\\nSecond paragraph with emphasis."
-          "\\n- One\\n- Two");
-    check("before<br>after<hr>last", "before\\nafter\\nlast");
+          "Heading\nFirst paragraph.\nSecond paragraph with emphasis."
+          "\n- One\n- Two");
+    check("before<br>after<hr>last", "before\nafter\nlast");
 
     char tiny[5];
     size_t n = nexus_browser_html_to_text((const uint8_t *)"abcdef", 6U,

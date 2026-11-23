@@ -26,9 +26,11 @@ The desktop contains an early text-oriented HTTP client:
 The search UI constructs a DuckDuckGo Lite HTTPS URL, but the browser correctly
 refuses to fetch it because no TLS client or certificate validator exists.
 Therefore live public search results and ordinary HTTPS sources are not
-available. Relative links, automatic redirects, CSS layout, JavaScript,
-cookies, tabs, browser profile storage, resumable downloads, and download
-management are also missing. HTTP downloads are unencrypted and must never be
+available. Relative anchor links are now resolved against the current page for the
+bounded source-link picker, including root-relative, path-relative,
+protocol-relative, and query-only references. Automatic redirect following,
+CSS layout, JavaScript, cookies, tabs, browser profile storage, resumable
+downloads, and download management are still missing. HTTP downloads are unencrypted and must never be
 used for credentials or other private data.
 
 This is an incremental prototype, not a modern web browser. Do not advertise
@@ -132,8 +134,9 @@ These are OS engineering requirements, not features that can be supplied by a br
 The kernel includes host-testable URL, HTTP response, search URL, and HTML
 text/link parsing modules. The URL parser validates HTTP and HTTPS schemes,
 host and port syntax, applies default ports, preserves path/query data, and
-strips fragments from the request target. The HTML path can collect up to five
-absolute HTTP(S) anchor URLs; the desktop opens them with Alt+1 through Alt+5.
+strips fragments from the request target. The HTML path can collect up to five distinct, validated HTTP(S) anchor URLs
+and resolve supported relative references against the loaded page; the desktop
+opens them with Alt+1 through Alt+5.
 The HTTP response parser extracts Content-Length, Content-Type,
 Content-Disposition filename, redirects, and chunked-transfer metadata.
 Host tests cover those parsers and malformed/conflicting content lengths.

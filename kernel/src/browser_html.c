@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include "browser_html.h"
+#include "browser_url.h"
 
 static bool html_equal_ci(const uint8_t *data, size_t length,
                           const char *word) {
@@ -245,8 +246,8 @@ static bool html_link_contains_control_or_space(const uint8_t *value,
     return false;
 }
 
-size_t nexus_browser_html_extract_links(
-    const uint8_t *html, size_t length,
+size_t nexus_browser_html_extract_links_with_base(
+    const uint8_t *html, size_t length, const char *base_url,
     char (*links)[NEXUS_BROWSER_HTML_LINK_MAX], size_t link_capacity) {
     if (links == NULL || link_capacity == 0U) return 0U;
     for (size_t i = 0U; i < link_capacity; ++i) links[i][0] = '\0';
@@ -315,7 +316,7 @@ size_t nexus_browser_html_extract_links(
                 ++cursor;
 
             if (!html_equal_ci(html + key_start, key_length, "href") ||
-                !html_is_http_link(html + value_start, value_length) ||
+                value_length == 0U ||
                 value_length >= NEXUS_BROWSER_HTML_LINK_MAX) continue;
 
             char candidate[NEXUS_BROWSER_HTML_LINK_MAX];
@@ -346,10 +347,29 @@ size_t nexus_browser_html_extract_links(
                 n += consumed;
             }
             if (candidate_length == 0U ||
-                !html_is_http_link((const uint8_t *)candidate,
-                                   candidate_length) ||
                 html_link_contains_control_or_space(
                     (const uint8_t *)candidate, candidate_length)) continue;
+            candidate[candidate_length] = '\0';
+
+            char resolved[NEXUS_BROWSER_HTML_LINK_MAX];
+            const bool absolute = html_is_http_link(
+                (const uint8_t *)candidate, candidate_length);
+            if (absolute) {
+                if (!nexus_browser_url_resolve(candidate, candidate,
+                        resolved, sizeof(resolved))) continue;
+            } else {
+                if (base_url == NULL ||
+                    !nexus_browser_url_resolve(base_url, candidate,
+                        resolved, sizeof(resolved))) continue;
+            }
+            candidate_length = 0U;
+            while (resolved[candidate_length] != '\0' &&
+                   candidate_length + 1U < sizeof(candidate)) {
+                candidate[candidate_length] = resolved[candidate_length];
+                ++candidate_length;
+            }
+            if (resolved[candidate_length] != '\0' || candidate_length == 0U)
+                continue;
             candidate[candidate_length] = '\0';
             bool duplicate = false;
             for (size_t n = 0U; n < count; ++n) {
@@ -372,4 +392,11 @@ size_t nexus_browser_html_extract_links(
         i = tag_end;
     }
     return count;
+}
+
+size_t nexus_browser_html_extract_links(
+    const uint8_t *html, size_t length,
+    char (*links)[NEXUS_BROWSER_HTML_LINK_MAX], size_t link_capacity) {
+    return nexus_browser_html_extract_links_with_base(
+        html, length, NULL, links, link_capacity);
 }

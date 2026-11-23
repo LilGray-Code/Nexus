@@ -103,6 +103,18 @@ bool wifi_scan(void) {
     return true;
 }
 
+static bool wifi_bssid_is_set(const uint8_t bssid[6]) {
+    for (size_t i = 0U; i < 6U; ++i)
+        if (bssid[i] != 0U) return true;
+    return false;
+}
+
+static bool wifi_same_bssid(const uint8_t left[6], const uint8_t right[6]) {
+    for (size_t i = 0U; i < 6U; ++i)
+        if (left[i] != right[i]) return false;
+    return true;
+}
+
 bool wifi_publish_scan_results(const struct nexus_wifi_network *results,
                                size_t count) {
     if (driver_ops == NULL || state != NEXUS_WIFI_SCANNING ||
@@ -111,8 +123,40 @@ bool wifi_publish_scan_results(const struct nexus_wifi_network *results,
     for (size_t i = 0U; i < count; ++i) {
         if (!valid_network(&results[i])) return false;
     }
-    for (size_t i = 0U; i < count; ++i) scan_results[i] = results[i];
-    scan_count = count;
+
+    scan_count = 0U;
+    for (size_t i = 0U; i < count; ++i) {
+        size_t duplicate = scan_count;
+        if (wifi_bssid_is_set(results[i].bssid)) {
+            for (size_t n = 0U; n < scan_count; ++n) {
+                if (wifi_same_bssid(scan_results[n].bssid,
+                                    results[i].bssid)) {
+                    duplicate = n;
+                    break;
+                }
+            }
+        }
+        if (duplicate < scan_count) {
+            /* Repeated beacon/probe observations describe one access point.
+             * Retain its strongest received-signal sample. */
+            if (results[i].signal_dbm > scan_results[duplicate].signal_dbm)
+                scan_results[duplicate] = results[i];
+        } else if (scan_count < NEXUS_WIFI_MAX_SCAN_RESULTS) {
+            scan_results[scan_count++] = results[i];
+        }
+    }
+
+    /* Present stronger RSSI values first in the network picker. */
+    for (size_t i = 1U; i < scan_count; ++i) {
+        const struct nexus_wifi_network value = scan_results[i];
+        size_t position = i;
+        while (position > 0U &&
+               scan_results[position - 1U].signal_dbm < value.signal_dbm) {
+            scan_results[position] = scan_results[position - 1U];
+            --position;
+        }
+        scan_results[position] = value;
+    }
     state = NEXUS_WIFI_READY;
     return true;
 }

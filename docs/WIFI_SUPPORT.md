@@ -24,6 +24,11 @@ association, WPA2/WPA3, encryption, and conversion between 802.11 radio traffic
 and Ethernet frames. This bridge makes integration consistent; it does not
 provide a radio driver by itself.
 
+Scan-result publication collapses repeated beacon/probe observations by
+BSSID, retains the strongest received-signal sample, and sorts unique access
+points strongest-first. This is host-tested driver-framework behavior; it does
+not add a radio or enable scans on current hardware.
+
 ## Adapter detection and current chipset identification
 
 Nexus now classifies PCI wireless-controller functions separately from ordinary

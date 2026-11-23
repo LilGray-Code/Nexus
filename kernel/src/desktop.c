@@ -4080,9 +4080,9 @@ static void browser_navigate(void) {
     browser_render_body(browser_response + parsed.body_offset,
                         response_length - parsed.body_offset);
     if (parsed.status_code >= 200U && parsed.status_code < 300U) {
-        browser_source_count = nexus_browser_html_extract_links(
+        browser_source_count = nexus_browser_html_extract_links_with_base(
             browser_response + parsed.body_offset,
-            response_length - parsed.body_offset,
+            response_length - parsed.body_offset, input,
             browser_sources, NEXUS_BROWSER_SOURCE_COUNT);
         size_t url_length = 0U;
         while (input[url_length] != '\0' &&

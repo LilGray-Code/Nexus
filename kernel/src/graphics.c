@@ -275,11 +275,10 @@ void graphics_draw_text_smooth(uint64_t x, uint64_t y, const char *text,
                                uint8_t blue) {
     if (!initialized || text == NULL || scale < 2U || scale > 4U) return;
     const uint32_t step = scale;
-    const uint32_t foreground = pack_rgb(red, green, blue);
     const uint8_t fr = red, fg = green, fb = blue;
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
 
-    for (size_t index = 0U; text[index] != '\\0'; ++index) {
+    for (size_t index = 0U; text[index] != '\0'; ++index) {
         const struct glyph *glyph = find_glyph(text[index]);
         const uint64_t origin_x = x + (uint64_t)index * 6U * step;
         for (uint32_t py = 0U; py < 7U * step; ++py) {
@@ -319,7 +318,6 @@ void graphics_draw_text_smooth(uint64_t x, uint64_t y, const char *text,
                     blend_channel(fb, bb, coverage));
             }
         }
-        (void)foreground;
     }
 }
 

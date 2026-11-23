@@ -229,7 +229,7 @@ jobs:
       - name: Install boot payloads to a disposable disk and boot installed UEFI target via USB mass storage
         shell: bash
         run: |
-          /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
+          /tmp/nexus-installer-storage-test build/nexus-kernel.elf build/nexus-installer.elf \
             build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios-hdd.bin \
             build/limine-binary/limine-bios.sys /tmp/nexus-installed-uefi.img
           echo "Installed disk MBR:"
@@ -262,7 +262,7 @@ jobs:
             exit "$status"
           fi
           cat installed-uefi-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" installed-uefi-serial.log
+          grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installed-uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" installed-uefi-serial.log
 
       - name: Boot the installed legacy BIOS target disk (SeaBIOS)
@@ -281,14 +281,16 @@ jobs:
             exit "$status"
           fi
           cat installed-bios-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" installed-bios-serial.log
+          grep -q "NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled" installed-bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" installed-bios-serial.log
 
       - name: Verify kernel ELF and ISO
         run: |
-          file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso
+          file build/nexus-kernel.elf build/nexus-installer.elf release/NexusOS-OriginalKernel-x86_64.iso
           readelf -h build/nexus-kernel.elf
           readelf -l build/nexus-kernel.elf
+          readelf -h build/nexus-installer.elf
+          readelf -l build/nexus-installer.elf
           (cd release && sha256sum --check SHA256SUMS.txt)
 
       - name: Boot test - UEFI (OVMF)
@@ -321,7 +323,7 @@ jobs:
           cat uefi-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" uefi-serial.log
+          grep -q "INSTALLER: separate installed OS and live-installer images verified" uefi-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
@@ -399,7 +401,7 @@ jobs:
               raise SystemExit(0)
           target = int(matches[-1], 16)
           symbols = subprocess.check_output(
-              ["nm", "-n", "build/nexus-kernel.elf"], text=True
+              ["nm", "-n", "build/nexus-installer.elf"], text=True
           ).splitlines()
           previous = None
           following = None
@@ -421,7 +423,7 @@ jobs:
           print("Next symbol:", following)
           print("addr2line:")
           print(subprocess.check_output(
-              ["addr2line", "-f", "-C", "-e", "build/nexus-kernel.elf",
+              ["addr2line", "-f", "-C", "-e", "build/nexus-installer.elf",
                hex(target)], text=True
           ))
           PY
@@ -446,7 +448,7 @@ jobs:
           cat bios-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" bios-serial.log
           grep -q "NEXUS GDT TSS READY" bios-serial.log
-          grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" bios-serial.log
+          grep -q "INSTALLER: separate installed OS and live-installer images verified" bios-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
           grep -q "NEXUS RAMFS READY" bios-serial.log
@@ -1372,7 +1374,7 @@ jobs:
       - name: Build installable distributable ISO without CI-only disk read
         run: |
           EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" ./build/build-iso.sh
-          file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso
+          file build/nexus-kernel.elf build/nexus-installer.elf release/NexusOS-OriginalKernel-x86_64.iso
           (cd release && sha256sum --check SHA256SUMS.txt)
 
       - name: Boot-check distributable ISO without automatic sector reads
@@ -1418,5 +1420,6 @@ jobs:
             release/NexusOS-OriginalKernel-x86_64.iso
             release/SHA256SUMS.txt
             build/nexus-kernel.elf
+            build/nexus-installer.elf
           if-no-files-found: error
           retention-days: 30

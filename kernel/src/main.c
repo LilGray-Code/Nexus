@@ -115,7 +115,7 @@ static bool boot_media_provenance_init(void) {
            (const uint8_t *)&file->gpt_part_uuid,
            (const uint8_t *)&file->gpt_disk_uuid,
            file->mbr_disk_id)){
-        serial_write("BOOT MEDIA: generic source identity does not match any registered disk\\r\\n");
+        serial_write("BOOT MEDIA: generic source identity does not match any registered disk\r\n");
         return true;
     }
     if(file->media_type==LIMINE_MEDIA_TYPE_OPTICAL&&blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_OPTICAL)){
@@ -237,29 +237,30 @@ void kmain(void) {
     serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
     const bool boot_media_identity_ready = boot_media_provenance_init();
     if (!boot_media_identity_ready) {
-        serial_write("INSTALLER: destructive writes locked until boot source is identified\\r\\n");
+        serial_write("INSTALLER: destructive writes locked until boot source is identified\r\n");
     }
 #if defined(NEXUS_INSTALLER_BUILD)
     if (!boot_media_identity_ready || !blockdev_boot_source_is_external()) {
-        serial_write("INSTALLER ERROR: live-media boot source was not positively identified\\r\\n");
+        serial_write("INSTALLER ERROR: live-media boot source was not positively identified\r\n");
         halt_forever();
     }
     if (!boot_payloads_ready) {
-        serial_write("INSTALLER ERROR: separate installed-OS payload is missing or invalid\\r\\n");
+        serial_write("INSTALLER ERROR: separate installed-OS payload is missing or invalid\r\n");
         halt_forever();
     }
-    serial_write("INSTALLER: separate installed OS and live-installer images verified\\r\\n");
+    serial_write("INSTALLER: separate installed OS and live-installer images verified\r\n");
 #elif defined(NEXUS_INSTALLED_OS_BUILD)
-    serial_write("NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled\\r\\n");
+    (void)boot_payloads_ready;
+    serial_write("NEXUS OS RUNTIME: separate installed-system kernel; installer mode disabled\r\n");
 #else
     if (boot_payloads_ready)
-        serial_write("INSTALLER: boot payload set verified\\r\\n");
+        serial_write("INSTALLER: boot payload set verified\r\n");
     else
-        serial_write("INSTALLER: boot payload set unavailable; deployment disabled\\r\\n");
+        serial_write("INSTALLER: boot payload set unavailable; deployment disabled\r\n");
 #endif
 #ifdef NEXUS_STORAGE_SELFTEST
     if (!storage_run_selftests()) {
-        serial_write("ERROR: post-provenance storage write self-test failed\\r\\n");
+        serial_write("ERROR: post-provenance storage write self-test failed\r\n");
         halt_forever();
     }
 #endif

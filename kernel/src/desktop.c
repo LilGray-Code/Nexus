@@ -362,106 +362,124 @@ static void desktop_open_app(size_t app_index) {
 
 static void desktop_draw_taskbar(uint64_t bottom_bar) {
     const uint64_t y = screen_height - bottom_bar;
-    graphics_fill_rect(0U, y, screen_width, bottom_bar, 10U, 16U, 31U);
-    graphics_fill_rect(0U, y, screen_width, 2U, 47U, 91U, 133U);
-    graphics_fill_rect(0U, y + 2U, screen_width, 1U, 24U, 43U, 66U);
+    /* Windows-style dark taskbar with a bright blue active-window marker. */
+    graphics_fill_rect(0U, y, screen_width, bottom_bar, 28U, 30U, 34U);
+    graphics_fill_rect(0U, y, screen_width, 2U, 0U, 120U, 215U);
+    graphics_fill_rect(0U, y + 2U, screen_width, 1U, 18U, 20U, 24U);
 
-    const uint64_t button_y = y + 7U;
-    const uint64_t button_h = bottom_bar > 14U ? bottom_bar - 14U : 22U;
-    graphics_fill_rect(12U, button_y, 88U, button_h, 28U, 57U, 88U);
-    graphics_draw_rect(12U, button_y, 88U, button_h, 57U, 112U, 151U);
-    desktop_draw_logo(22U, button_y + 7U, 22U);
-    graphics_draw_text(51U, button_y + button_h / 2U - 4U,
-                       "START", 1U, 239U, 247U, 255U);
+    const uint64_t button_y = y + 2U;
+    const uint64_t button_h = bottom_bar - 2U;
+    graphics_fill_rect(0U, button_y, 52U, button_h,
+                       start_menu_open ? 0U : 28U,
+                       start_menu_open ? 96U : 30U,
+                       start_menu_open ? 172U : 34U);
+    desktop_draw_logo(15U, button_y + (button_h > 24U ? 11U : 4U), 22U);
 
     static const char *const labels[5] = {
-        "FILES", "WEB", "SETTINGS", "TERMINAL", "MONITOR"
+        "FILES", "BROWSER", "SETTINGS", "TERMINAL", "MONITOR"
     };
     static const uint8_t accents[5][3] = {
-        {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {103U, 164U, 229U}
+        {0U, 120U, 215U}, {0U, 153U, 188U}, {16U, 124U, 16U},
+        {202U, 80U, 16U}, {104U, 33U, 122U}
     };
-    const uint64_t tab_width = 72U;
-    const uint64_t tab_step = 78U;
+    const uint64_t tab_width = 88U;
+    const uint64_t tab_step = 92U;
     for (size_t i = 0U; i < 5U; ++i) {
-        const uint64_t x = 110U + (uint64_t)i * tab_step;
-        if (x + tab_width >= screen_width - 92U) break;
+        const uint64_t x = 56U + (uint64_t)i * tab_step;
+        if (x + tab_width >= screen_width - 96U) break;
         const bool selected = active_view == desktop_view_for_app(i);
         graphics_fill_rect(x, button_y, tab_width, button_h,
-                           selected ? 37U : 19U,
-                           selected ? 57U : 31U,
-                           selected ? 80U : 49U);
-        graphics_draw_rect(x, button_y, tab_width, button_h,
-                           selected ? 70U : 43U,
-                           selected ? 143U : 70U,
-                           selected ? 176U : 99U);
-        graphics_fill_rect(x + 8U, button_y + 9U, 5U,
-                           button_h > 28U ? button_h - 18U : 10U,
-                           accents[i][0], accents[i][1], accents[i][2]);
-        graphics_draw_text(x + 18U, button_y + button_h / 2U - 4U,
-                           labels[i], 1U, 220U, 235U, 247U);
+                           selected ? 47U : 28U,
+                           selected ? 50U : 30U,
+                           selected ? 56U : 34U);
         if (selected)
-            graphics_fill_rect(x + 8U, y + bottom_bar - 3U,
-                               tab_width - 16U, 2U,
-                               accents[i][0], accents[i][1], accents[i][2]);
+            graphics_fill_rect(x, y + bottom_bar - 3U, tab_width, 3U,
+                               0U, 120U, 215U);
+        graphics_fill_rect(x + 9U, button_y + 12U, 4U,
+                           button_h > 26U ? button_h - 24U : 8U,
+                           accents[i][0], accents[i][1], accents[i][2]);
+        graphics_draw_text(x + 20U, button_y + button_h / 2U - 4U,
+                           labels[i], 1U, 235U, 238U, 242U);
     }
 
     char uptime[21];
     format_u64(timer_ticks() / 100U, uptime);
-    const uint64_t status_x = screen_width > 118U ? screen_width - 112U : 8U;
+    const uint64_t status_x = screen_width > 112U ? screen_width - 104U : 8U;
     if (settings_show_status) {
-        graphics_draw_text(status_x, button_y + 5U, "UPTIME", 1U,
-                           122U, 155U, 183U);
-        graphics_draw_text(status_x, button_y + 21U, uptime, 1U,
-                           220U, 236U, 248U);
+        graphics_draw_text(status_x, button_y + 7U, "NEXUS", 1U,
+                           185U, 190U, 198U);
+        graphics_draw_text(status_x, button_y + 24U, uptime, 1U,
+                           238U, 240U, 244U);
     }
 }
 
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
     if (!start_menu_open) return;
-    const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-    const uint64_t menu_height = 272U;
-    uint64_t menu_x = 12U;
-    uint64_t menu_y = screen_height - bottom_bar - menu_height + 4U;
+    const uint64_t menu_width = screen_width > 460U ? 420U : screen_width - 16U;
+    const uint64_t menu_height = 292U;
+    const uint64_t menu_x = 8U;
+    uint64_t menu_y = screen_height - bottom_bar - menu_height + 2U;
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
     if (menu_y < top_limit) menu_y = top_limit;
 
     graphics_fill_rect(menu_x + 5U, menu_y + 6U,
-                       menu_width, menu_height, 2U, 5U, 15U);
+                       menu_width, menu_height, 3U, 5U, 9U);
     graphics_fill_rect(menu_x, menu_y,
-                       menu_width, menu_height, 19U, 31U, 52U);
+                       menu_width, menu_height, 32U, 35U, 40U);
     graphics_draw_rect(menu_x, menu_y,
-                       menu_width, menu_height, 66U, 111U, 148U);
-    graphics_fill_rect(menu_x, menu_y, menu_width, 42U,
-                       28U, 47U, 72U);
-    desktop_draw_logo(menu_x + 14U, menu_y + 11U, 20U);
-    graphics_draw_text(menu_x + 44U, menu_y + 17U,
-                       "NEXUS APP LAUNCHER", 1U,
-                       239U, 247U, 255U);
+                       menu_width, menu_height, 61U, 65U, 72U);
+    /* Narrow left rail and header reproduce the Windows 10 Start layout. */
+    graphics_fill_rect(menu_x, menu_y, 42U, menu_height, 24U, 27U, 31U);
+    graphics_fill_rect(menu_x, menu_y, menu_width, 38U, 27U, 30U, 35U);
+    desktop_draw_logo(menu_x + 11U, menu_y + 9U, 20U);
+    graphics_draw_text(menu_x + 51U, menu_y + 15U,
+                       "NEXUS OS", 1U, 245U, 246U, 248U);
+    graphics_draw_text(menu_x + 55U, menu_y + 46U,
+                       "MOST USED", 1U, 160U, 165U, 174U);
 
     static const char *const names[5] = {
-        "FILES - MANAGE YOUR DATA",
-        "NEXUS BROWSER - EARLY PREVIEW",
-        "SETTINGS - PERSONALIZE NEXUS",
-        "TERMINAL - COMMAND LINE",
-        "MONITOR - SYSTEM RESOURCES"
+        "File Explorer", "Nexus Browser", "Settings",
+        "Terminal", "System Monitor"
     };
     static const uint8_t accents[5][3] = {
-        {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {103U, 164U, 229U}
+        {0U, 120U, 215U}, {0U, 153U, 188U}, {16U, 124U, 16U},
+        {202U, 80U, 16U}, {104U, 33U, 122U}
     };
+    const uint64_t row_top = menu_y + 58U;
+    const uint64_t row_step = 37U;
     for (size_t i = 0U; i < 5U; ++i) {
-        const uint64_t row_y = menu_y + 49U + (uint64_t)i * 34U;
-        graphics_fill_rect(menu_x + 8U, row_y,
-                           menu_width - 16U, 29U, 25U, 41U, 64U);
-        graphics_fill_rect(menu_x + 16U, row_y + 7U,
-                           14U, 14U, accents[i][0], accents[i][1], accents[i][2]);
-        graphics_draw_text(menu_x + 40U, row_y + 11U,
-                           names[i], 1U, 225U, 238U, 249U);
+        const uint64_t row_y = row_top + (uint64_t)i * row_step;
+        graphics_fill_rect(menu_x + 49U, row_y, menu_width - 58U,
+                           32U, 32U, 35U, 40U);
+        graphics_fill_rect(menu_x + 57U, row_y + 7U,
+                           18U, 18U, accents[i][0], accents[i][1], accents[i][2]);
+        graphics_draw_text(menu_x + 85U, row_y + 12U,
+                           names[i], 1U, 238U, 240U, 244U);
     }
-    graphics_draw_text(menu_x + 14U, menu_y + menu_height - 12U,
-                       "1-5 OPEN APPS   F6 CLOSE MENU", 1U,
-                       140U, 170U, 195U);
+
+    if (menu_width > 380U) {
+        const uint64_t tile_x = menu_x + menu_width - 137U;
+        graphics_draw_text(tile_x, menu_y + 47U, "PINNED", 1U,
+                           160U, 165U, 174U);
+        static const char *const tile_names[5] = {
+            "FILES", "WEB", "SET", "TERM", "MON"
+        };
+        for (size_t i = 0U; i < 5U; ++i) {
+            const uint64_t col = i % 2U;
+            const uint64_t row = i / 2U;
+            const uint64_t x = tile_x + col * 63U;
+            const uint64_t y = menu_y + 64U + row * 64U;
+            graphics_fill_rect(x, y, 58U, 57U,
+                               accents[i][0], accents[i][1], accents[i][2]);
+            graphics_draw_text(x + 7U, y + 25U, tile_names[i], 1U,
+                               255U, 255U, 255U);
+        }
+    }
+    graphics_fill_rect(menu_x + 42U, menu_y + menu_height - 25U,
+                       menu_width - 42U, 25U, 26U, 29U, 34U);
+    graphics_draw_text(menu_x + 54U, menu_y + menu_height - 16U,
+                       "1-5 OPEN APPS     ESC CLOSE", 1U,
+                       160U, 165U, 174U);
 }
 
 static void desktop_draw_startup_animation(void) {

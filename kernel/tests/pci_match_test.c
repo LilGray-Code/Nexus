@@ -62,6 +62,11 @@ int main(void) {
     assert(pci_is_wireless_lan_candidate(&pci_sig_wlan));
     assert(pci_is_wireless_controller(&bluetooth));
     assert(!pci_is_wireless_lan_candidate(&bluetooth));
+    const struct nexus_pci_device known_wifi_generic_class = {
+        .vendor_id = 0x8086U, .device_id = 0x2723U,
+        .class_code = 0x02U, .subclass = 0x00U
+    };
+    assert(pci_is_wireless_lan_candidate(&known_wifi_generic_class));
     assert(!pci_is_network_controller(NULL));
     assert(!pci_is_wireless_controller(NULL));
     assert(!pci_is_wireless_lan_candidate(NULL));

@@ -1,4 +1,5 @@
 #include "pci.h"
+#include "wifi_chipset.h"
 
 #include "serial.h"
 
@@ -224,6 +225,14 @@ bool pci_init(void) {
         serial_write_hex(device->class_code);
         serial_write("/");
         serial_write_hex(device->subclass);
+        const char *chipset = wifi_pci_chipset_name(device->vendor_id,
+                                                    device->device_id);
+        if (chipset != NULL) {
+            serial_write(" chipset=");
+            serial_write(chipset);
+        } else {
+            serial_write(" chipset=UNKNOWN");
+        }
         serial_write(" status=NO-CHIPSET-DRIVER-BOUND\r\n");
     }
 

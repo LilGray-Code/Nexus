@@ -2511,7 +2511,8 @@ static void desktop_draw_window_surface(enum desktop_view view,
             graphics_fill_round_rect(panel_x + 32U, content_y + 14U,
                 panel_width - 64U, 27U, 8U, 225U, 234U, 243U);
             graphics_draw_text(panel_x + 46U, content_y + 31U,
-                browser_search_mode ? "SEARCH RESPONSE" : "PAGE CONTENT",
+                browser_search_mode ? "SEARCH RESPONSE" :
+                    "PAGE CONTENT  |  ALT+1..5 SOURCES",
                 1U, 48U, 88U, 112U);
             for (size_t row = 0U; row < browser_line_count; ++row) {
                 const uint64_t row_y = content_y + 48U + row * 20U;
@@ -2553,7 +2554,8 @@ static void desktop_draw_window_surface(enum desktop_view view,
             browser_status, 1U, 160U, 207U, 196U);
         graphics_draw_text(panel_x + panel_width - 176U,
             panel_y + panel_height - 19U,
-            browser_search_mode ? "SEARCH" : "HTTP", 1U,
+            browser_source_count != 0U ? "ALT+1..5 LINKS" :
+            (browser_search_mode ? "SEARCH" : "HTTP"), 1U,
             111U, 207U, 231U);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
@@ -5564,7 +5566,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
-        if (keyboard_alt && event->scancode >= 0x02U &&
+        if (!browser_download_pending && keyboard_alt &&
+            event->scancode >= 0x02U &&
             event->scancode <= 0x06U) {
             const size_t source = (size_t)(event->scancode - 0x02U);
             if (source < browser_source_count) {
@@ -5597,7 +5600,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     case NEXUS_BROWSER_DOWNLOAD_OK:
                         browser_show_notice("DOWNLOAD SAVED TO NEXUS DATA",
                                             saved_name);
-                        browser_set_status("Download verified and saved");
+                        browser_set_status("Saved file read-back verification passed");
                         break;
                     case NEXUS_BROWSER_DOWNLOAD_HTTPS_BLOCKED:
                         browser_set_status("HTTPS download blocked: verified TLS is not implemented");
@@ -5607,7 +5610,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     case NEXUS_BROWSER_DOWNLOAD_NOT_PERSISTENT:
                         browser_set_status("Persistent Nexus Data storage is unavailable");
                         browser_show_notice("DOWNLOAD NOT SAVED",
-                                            "MOUNT A WRITABLE NEXUS DATA VOLUME");
+                                            "RETURN TO FILES ROOT; MOUNT WRITABLE DATA");
                         break;
                     case NEXUS_BROWSER_DOWNLOAD_FILE_EXISTS:
                         browser_set_status("File already exists; Nexus will not overwrite it");

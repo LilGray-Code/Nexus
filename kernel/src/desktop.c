@@ -738,6 +738,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     if (active_view == DESKTOP_MONITOR) window_title = "SYSTEM MONITOR";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
+    desktop_draw_logo(panel_x + 7U, panel_y + 8U, 22U);
     graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
                        1U, 234U, 244U, 252U);
     /* Custom window controls; close is wired to the shell input handler. */

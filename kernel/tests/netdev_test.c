@@ -9,6 +9,7 @@ static unsigned send_calls;
 static unsigned receive_calls;
 static size_t receive_capacity_seen;
 static bool report_oversized_frame;
+static bool fake_link_is_up;
 static uint8_t received_frame[64];
 
 static bool fake_send(void *context, const void *frame, size_t length) {
@@ -16,6 +17,11 @@ static bool fake_send(void *context, const void *frame, size_t length) {
     if (frame == NULL || length < NEXUS_NETDEV_MIN_FRAME) return false;
     ++send_calls;
     return true;
+}
+
+static bool fake_link_up(void *context) {
+    (void)context;
+    return fake_link_is_up;
 }
 
 static bool fake_receive(void *context, void *buffer, size_t capacity,
@@ -38,13 +44,15 @@ int main(void) {
     static const uint8_t multicast_mac[6] = {0x01U, 0U, 0x5EU, 0U, 0U, 1U};
     static const struct nexus_netdev_ops ops = {
         .send_frame = fake_send,
-        .receive_frame = fake_receive
+        .receive_frame = fake_receive,
+        .link_up = fake_link_up
     };
     uint8_t frame[128] = {0};
     struct nexus_netdev_info info;
 
     netdev_init();
     assert(!netdev_ready());
+    assert(!netdev_link_up());
     assert(!netdev_get_info(&info));
     assert(!netdev_register("bad0", zero_mac, 128U, &ops, NULL));
     assert(!netdev_register("bad0", multicast_mac, 128U, &ops, NULL));
@@ -56,6 +64,9 @@ int main(void) {
 
     assert(netdev_register("test0", mac, 128U, &ops, NULL));
     assert(netdev_ready());
+    assert(!netdev_link_up());
+    fake_link_is_up = true;
+    assert(netdev_link_up());
     assert(!netdev_register("second", mac, 128U, &ops, NULL));
     assert(netdev_get_info(&info));
     assert(info.name[0] == 't' && info.name[4] == '0' &&

@@ -753,6 +753,7 @@ void net_poll(void) {
 bool net_get_info(struct nexus_net_info *info) {
     if (info == NULL || !network.ready) return false;
     info->interface_ready = true;
+    info->link_up = network.link_up;
     info->ipv4_configured = dhcp_state == NET_DHCP_BOUND;
     copy_bytes(info->mac, network.mac, sizeof(info->mac));
     copy_bytes(info->ipv4, network.ipv4, sizeof(info->ipv4));

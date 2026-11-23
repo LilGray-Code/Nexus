@@ -117,7 +117,7 @@ size_t nexus_browser_html_to_text(const uint8_t *html, size_t length,
                        !(html[i] == '-' && html[i + 1U] == '-' &&
                          html[i + 2U] == '>')) ++i;
                 if (i + 2U < length) i += 3U;
-                pending_space = used != 0U;
+                pending_space = used != 0U && output[used - 1U] != '\n';
                 continue;
             }
             size_t tag_start = i + 1U;

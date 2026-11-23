@@ -8,6 +8,7 @@
 #include "blockdev.h"
 #include "gpt.h"
 #include "fat32.h"
+#include "nxfs.h"
 
 #define NEXUS_VFS_NAME_MAX 32U /* 31 printable characters plus NUL */
 #define NEXUS_VFS_READ_CHUNK 4096U

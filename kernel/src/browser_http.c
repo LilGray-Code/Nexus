@@ -195,11 +195,11 @@ bool nexus_browser_http_parse(const uint8_t *response, size_t response_length,
             uint8_t encoding[32];
             if (!copy_header_value((char *)encoding, sizeof(encoding),
                                    value, value_length)) return false;
+            size_t encoding_length = 0U;
+            while (encoding_length < sizeof(encoding) &&
+                   encoding[encoding_length] != '\0') ++encoding_length;
             parsed->chunked_transfer =
-                equal_ascii_ci(encoding, (size_t)0, "") ? false :
-                equal_ascii_ci(encoding,
-                               value_length > 0U ? value_length : 0U,
-                               "chunked");
+                equal_ascii_ci(encoding, encoding_length, "chunked");
         } else if (equal_ascii_ci(response + cursor, colon - cursor,
                                   "content-disposition")) {
             if (!parse_content_disposition(value, value_length,

@@ -178,14 +178,21 @@ bool paging_destroy_user_address_space(uint64_t root_physical) {
         (volatile uint64_t *)memory_phys_to_virt(root_physical);
     if (root == NULL) return false;
 
-    const uint64_t low_entry = root[0];
-    if ((low_entry & PAGE_PRESENT) != 0U) {
-        if ((low_entry & PAGE_USER) == 0U ||
-            (low_entry & PAGE_LARGE) != 0U) return false;
-        const uint64_t low_table = low_entry & PAGE_ADDRESS_MASK;
-        if (!destroy_user_page_table(low_table, levels - 1U) ||
-            !memory_free_page(low_table)) return false;
-        root[0] = 0;
+    /*
+     * User space owns the entire lower canonical half (top-level entries
+     * 0..255). Walk every slot rather than assuming only slot zero is used:
+     * this also makes teardown safe if the process ABI later grows beyond
+     * the current 4 MiB ELF image window.
+     */
+    for (size_t index = 0U; index < 256U; ++index) {
+        const uint64_t entry = root[index];
+        if ((entry & PAGE_PRESENT) == 0U) continue;
+        if ((entry & PAGE_USER) == 0U || (entry & PAGE_LARGE) != 0U)
+            return false;
+        const uint64_t user_table = entry & PAGE_ADDRESS_MASK;
+        if (!destroy_user_page_table(user_table, levels - 1U) ||
+            !memory_free_page(user_table)) return false;
+        root[index] = 0U;
     }
     return memory_free_page(root_physical);
 }
@@ -203,16 +210,87 @@ bool paging_create_user_address_space(uint64_t *root_physical) {
     volatile uint64_t *user_root;
     if (!allocate_table(root_physical, &user_root)) return false;
 
-    for (size_t i = 0; i < 512U; ++i) user_root[i] = kernel_root[i];
-    user_root[0] = 0;
+    /*
+     * Share only the supervisor kernel half. The allocator zeroes the new
+     * root, so leaving entries 0..255 untouched guarantees there are no
+     * inherited identity maps, bootloader aliases, or supervisor-only lower
+     * mappings in a process address space.
+     */
+    for (size_t i = 256U; i < 512U; ++i)
+        user_root[i] = kernel_root[i];
     return true;
+}
+
+/*
+ * Exercise the same address-space lifecycle used by ELF processes during
+ * boot. It verifies a clean lower half, shared kernel mappings, user-page
+ * insertion, duplicate rejection, and complete reclamation on teardown.
+ */
+bool paging_user_address_space_selftest(void) {
+    uint64_t cr3, cr4;
+    __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    const unsigned int user_bits = levels == 5U ? 56U : 47U;
+    const uint64_t kernel_root_physical = cr3 & PAGE_ADDRESS_MASK;
+    volatile uint64_t *kernel_root =
+        (volatile uint64_t *)memory_phys_to_virt(kernel_root_physical);
+    if (kernel_root == NULL) return false;
+
+    uint64_t test_root_physical = 0U;
+    if (!paging_create_user_address_space(&test_root_physical)) return false;
+    volatile uint64_t *test_root =
+        (volatile uint64_t *)memory_phys_to_virt(test_root_physical);
+    if (test_root == NULL) {
+        (void)paging_destroy_user_address_space(test_root_physical);
+        return false;
+    }
+
+    bool valid = true;
+    for (size_t i = 0U; i < 256U; ++i) {
+        if (test_root[i] != 0U) valid = false;
+    }
+    for (size_t i = 256U; i < 512U; ++i) {
+        if (test_root[i] != kernel_root[i]) valid = false;
+    }
+
+    uint64_t user_page = 0U;
+    if (!memory_alloc_page(&user_page)) {
+        (void)paging_destroy_user_address_space(test_root_physical);
+        return false;
+    }
+    if (!paging_map_user_page(test_root_physical, 0x00400000ULL,
+                              user_page, true, false)) {
+        (void)memory_free_page(user_page);
+        (void)paging_destroy_user_address_space(test_root_physical);
+        return false;
+    }
+    if ((test_root[0] & (PAGE_PRESENT | PAGE_USER)) !=
+        (PAGE_PRESENT | PAGE_USER)) valid = false;
+
+    uint64_t duplicate_page = 0U;
+    if (!memory_alloc_page(&duplicate_page)) {
+        (void)paging_destroy_user_address_space(test_root_physical);
+        return false;
+    }
+    if (paging_map_user_page(test_root_physical, 0x00400000ULL,
+                             duplicate_page, true, false)) valid = false;
+    if (!memory_free_page(duplicate_page)) valid = false;
+
+    if (paging_map_user_page(test_root_physical, 1ULL << user_bits,
+                             duplicate_page, true, false)) valid = false;
+
+    if (!paging_destroy_user_address_space(test_root_physical)) return false;
+    return valid;
 }
 
 /* Map one previously-unmapped 4 KiB page into a user address space. */
 bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
                           uint64_t page_physical, bool writable, bool executable) {
-    if ((virtual_address & 0xFFFULL) != 0U ||
-        (page_physical & 0xFFFULL) != 0U) {
+    if ((root_physical & 0xFFFULL) != 0U ||
+        (virtual_address & 0xFFFULL) != 0U ||
+        (page_physical & 0xFFFULL) != 0U ||
+        (page_physical & ~PAGE_ADDRESS_MASK) != 0U) {
         return false;
     }
 

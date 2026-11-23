@@ -26,6 +26,8 @@ int main(void) {
           "ordinary visible text tail");
     check("<styleguide>also visible</styleguide>tail",
           "also visible tail");
+    check("<script>hidden </scripture> still hidden</script>shown",
+          "shown");
     check("unknown &madeup; entity", "unknown &madeup; entity");
 
     char tiny[5];

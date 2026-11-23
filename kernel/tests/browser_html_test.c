@@ -19,7 +19,7 @@ int main(void) {
           "<p>A &amp; B &lt; C &gt; D &quot;Q&quot; &#39;x&#39;</p>"
           "<!-- secret comment -->Done</body></html>",
           "Title\nHello world\nA & B < C > D \"Q\" 'x'\nDone");
-    check("one\n  two\tthree<br>four", "one two three\\nfour");
+    check("one\n  two\tthree<br>four", "one two three\nfour");
     check("<SCRIPT type='text/javascript'>x</SCRIPT>visible",
           "visible");
     check("<scripture>ordinary visible text</scripture>tail",

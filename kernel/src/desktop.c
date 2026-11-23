@@ -1853,7 +1853,7 @@ static void desktop_reboot_after_install(void) {
      * legacy keyboard-controller reset, then force a triple-fault reset as a
      * final x86 fallback for machines without a usable 8042 controller.
      */
-    serial_write("NEXUS INSTALLER: restart requested; booting installed Nexus OS after live-media removal\\r\\n");
+    serial_write("NEXUS INSTALLER: restart requested; booting installed Nexus OS after live-media removal\r\n");");
     __asm__ volatile ("cli" : : : "memory");
 
     const uint8_t chipset_reset_prepare = 0x02U;

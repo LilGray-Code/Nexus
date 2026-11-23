@@ -51,9 +51,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   desktop. The installer builds a GPT layout with an EFI System Partition, Nexus
   System volume, Recovery journal partition, and separate Nexus Data volume;
   BIOS installs also include a BIOS Boot partition. After successful
-  deployment, the completion screen offers **Restart into Nexus OS**. Remove
-  the installation USB before activating restart so firmware boots the target
-  drive rather than returning to the installer.
+  deployment, the live installer offers **Restart into Nexus OS**. Remove
+  the installation USB, then press Enter or click Restart. The installer
+  resets the computer and firmware loads the separately built installed-system
+  kernel into the normal desktop instead of continuing the live installation
+  session.
 - A Files view with a bounded listing (up to 128 indexed entries, six
   visible at once), keyboard/mouse selection, folder-first alphabetical
   sorting, visible directory labels, nested read-only FAT32 navigation,

@@ -91,3 +91,20 @@ QEMU-only success is not evidence of physical GPU or audio support. Hardware sup
 6. Expand device coverage from real hardware test results.
 
 Each stage must include host-side unit tests, QEMU integration tests where hardware emulation is available, and explicit physical-device validation before its compatibility claim is promoted.
+
+
+## Steam and Epic compatibility is a separate platform project
+
+A native Nexus game SDK does not automatically run Windows games or third-party launchers. Steam and Epic compatibility requires a Windows application compatibility environment (Win32/NT API coverage, loader, registry/configuration semantics, graphics translation, audio/input integration, fonts, networking, installers/updaters, and per-title testing). Steam additionally has its own client services, overlays, Steamworks integrations, DRM options, and anti-cheat arrangements; Epic titles have their own launcher, account, entitlement, update, and anti-cheat dependencies.
+
+Nexus must not claim that Steam, Epic, Proton, Wine, or any particular game works until the actual supported build and game have been tested on Nexus hardware. Do not bypass DRM, anti-cheat, account controls, or publisher restrictions. Use official distribution and authentication flows.
+
+### Recommended compatibility sequence
+
+1. Ship a stable native Nexus game runtime and a few openly licensed sample games.
+2. Complete the userland, graphics, audio, controller, storage, and security interfaces needed by applications.
+3. Evaluate a legally compatible Windows API compatibility layer and graphics translation stack as a distinct project; document unsupported APIs and performance limitations.
+4. Build and test a narrowly scoped Windows application suite, then investigate official Steam/Epic client compatibility and publisher requirements.
+5. Publish a per-launcher and per-game compatibility matrix. A launcher installing successfully is not evidence that its games launch or play correctly.
+
+Downloads must remain independent of execution: Nexus may safely download a file only after validated HTTPS and streaming storage exist; installation and execution require separate publisher verification, user consent, and application isolation.

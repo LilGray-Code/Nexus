@@ -132,3 +132,26 @@ does not provide HTML/CSS rendering, JavaScript, or browser security isolation.
 8. **Release validation:** test modern HTTPS sites, forms, authentication, downloads, tabs, crash recovery, malicious/malformed content, privacy controls, updates, and performance in QEMU and on supported physical PCs.
 
 A release may claim only the browser features that have passed their corresponding tests. “Chrome-like” is the long-term product target, not a current compatibility claim. No final Nexus OS release may claim a complete browser until secure modern websites and ordinary browser workflows work on a clean standalone installation.
+
+
+## Engine strategy decision: Chromium compatibility target
+
+The Chrome-level compatibility target requires a production browser engine, not incremental extensions to the current text extractor. The selected engineering direction is to **port and maintain the open-source Chromium engine stack (Blink + V8 and required Chromium platform components) for Nexus**, built from source for the Nexus ABI. This is an architecture target, not an assertion that the port currently builds or runs.
+
+Why this direction:
+- Blink and V8 are the engine family behind Chrome's web compatibility; using the upstream standards implementation is substantially more credible than writing a new HTML/CSS/JavaScript engine from scratch.
+- Chromium is an open-source project, but its full dependency graph, build system, codecs, fonts, sandbox, and platform integration must be audited and tracked. Chrome-branded proprietary services and Google account integrations are not implied.
+- No prebuilt Linux/Windows Chromium binary may be relabeled as a Nexus application. The engine and platform glue must be built for Nexus and tested against Nexus system interfaces.
+- Upstream security updates, CVE response, reproducible builds, dependency provenance, and a supported update cadence are release blockers, not optional maintenance tasks.
+
+### Porting prerequisites and gates
+
+1. Stabilize the Nexus userland ABI: processes/threads, virtual memory and shared memory, file descriptors/handles, synchronization, timers, signals or equivalent event delivery, dynamic loading, and a maintained C/C++ runtime.
+2. Provide nonblocking sockets and mature TCP/IP, DNS, IPv6, TLS, certificate trust, and network-change notifications.
+3. Provide compositor surfaces, GPU/software rendering interfaces, font discovery and shaping, image codecs, audio output, clipboard, keyboard/input, and accessibility services.
+4. Port Chromium's build/toolchain and required third-party dependencies. Replace platform-specific Linux/Windows/ChromeOS services with explicit Nexus platform adapters; do not silently emulate unsupported APIs.
+5. Bring up a single-process software-rendered development build first, then introduce sandboxed renderer/network/GPU processes only after process isolation and IPC are security-tested.
+6. Run Chromium's relevant unit/browser tests plus Web Platform Tests, CSS/HTML/ECMAScript conformance, security regression tests, and a representative real-site matrix. Publish exact pass rates and known incompatibilities.
+7. Only then enable profile persistence, tabs, downloads, extensions, media, hardware acceleration, and user-facing release claims in stages.
+
+**Acceptance bar:** a clean Nexus installation must load modern HTTPS sites with script, CSS, forms, authentication, media, and responsive layouts; survive malformed/untrusted content without compromising the OS; and pass the published compatibility and security suite. A browser shell that merely resembles Chrome does not meet this bar.

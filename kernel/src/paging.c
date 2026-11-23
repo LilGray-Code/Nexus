@@ -238,7 +238,7 @@ bool paging_create_user_address_space(uint64_t *root_physical) {
      * mappings in a process address space.
      */
     for (size_t i = 256U; i < 512U; ++i)
-        user_root[i] = kernel_root[i];
+        user_root[i] = kernel_root[i] & ~PAGE_USER;
     return true;
 }
 
@@ -272,7 +272,8 @@ bool paging_user_address_space_selftest(void) {
         if (test_root[i] != 0U) valid = false;
     }
     for (size_t i = 256U; i < 512U; ++i) {
-        if (test_root[i] != kernel_root[i]) valid = false;
+        if (test_root[i] != (kernel_root[i] & ~PAGE_USER) ||
+            (test_root[i] & PAGE_USER) != 0U) valid = false;
     }
 
     uint64_t user_page = 0U;

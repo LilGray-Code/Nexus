@@ -10,14 +10,22 @@ The target is a modern, general-purpose browser with the core capabilities peopl
 
 ## Current implementation (not release-ready)
 
-The desktop contains an early text-oriented HTTP client:
-- an address field and a small fixed text display;
+The desktop contains a visually branded but still early text-oriented HTTP client.
+The application uses the Nexus orb and wordmark, a Nexus-native address toolbar,
+a custom dark Aurora start panel, and a clear **PLAIN HTTP** status label on
+loaded pages. These are UI improvements, not a claim of modern web-platform
+compatibility.
+
+Current functional scope:
+- an address field and a bounded text display;
 - DNS lookup and one active TCP connection;
 - HTTP/1.0 GET requests and bounded HTTP response-header parsing;
 - an 8 KiB bounded HTTP response buffer and a 64-line text view with Page Up
   and Page Down scrolling;
-- basic HTML-to-text extraction and up to five distinct absolute HTTP(S)
-  anchor targets, opened with Alt+1 through Alt+5;
+- basic HTML-to-text extraction and up to five distinct HTTP(S) anchor
+  targets, opened with Alt+1 through Alt+5; absolute, protocol-relative,
+  root-relative, path-relative and query-only references are resolved against
+  the current document, with path dot-segment normalization;
 - a plain-HTTP download action (Ctrl+S) that asks for confirmation,
   requires a writable persistent Nexus Data volume at its root, requires a
   Content-Length, rejects chunked transfer and files larger than 1 MiB,
@@ -26,7 +34,7 @@ The desktop contains an early text-oriented HTTP client:
 The search UI constructs a DuckDuckGo Lite HTTPS URL, but the browser correctly
 refuses to fetch it because no TLS client or certificate validator exists.
 Therefore live public search results and ordinary HTTPS sources are not
-available. Relative anchor links are now resolved against the current page for the
+available. Relative anchor links are resolved against the current page for the
 bounded source-link picker, including root-relative, path-relative,
 protocol-relative, and query-only references. Automatic redirect following,
 CSS layout, JavaScript, cookies, tabs, browser profile storage, resumable

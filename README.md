@@ -14,10 +14,17 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal,
   System Monitor, Control Center, and a native Calculator, plus keyboard
-  and mouse input. The modernized shell uses a centered icon dock, a compact
-  two-column Start launcher, shared dark app chrome, Aurora-style accents,
-  and a Control Center with live memory, uptime, storage and adapter status
-  plus working theme, wallpaper, contrast, motion and taskbar quick settings.
+  and mouse input. The upgraded shell uses theme-aware rounded window chrome,
+  a branded Nexus orb and app icons, lowercase antialiased text, layered
+  Aurora artwork, and consistent status cards and section headers. Settings
+  includes five visible palette swatches, clearer value controls, accessibility
+  options and persistent-preference status; Control Center uses quick-setting
+  tiles; System Monitor shows memory utilization, storage state, active network
+  interface, Wi-Fi candidate counts and USB inventory; Files shows item counts
+  and whether user data is persistently writable; Terminal has working
+  mouse-triggered HELP, MEM and NET quick commands; Calculator has a more
+  prominent expression/result display; and the installer uses a clearer
+  destination and destructive-review presentation.
 - The Calculator evaluates bounded integer expressions with precedence,
   parentheses, unary signs, division and modulo; it reports syntax,
   divide-by-zero, nesting and overflow errors. Its keypad accepts mouse input
@@ -90,9 +97,13 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   the source. They use transactional NXFS writes when that volume is writable;
   otherwise only files fitting the 4 KiB RAMFS limit can be copied or moved,
   and those copies are volatile.
-- The Browser accepts plain search queries as queries (rather than mistaking
-  them for hostnames), builds an encoded DuckDuckGo Lite search URL, and
-  provides a dedicated search landing page. Direct HTTP pages now use an 8 KiB bounded response buffer, a 64-line text view, and Page Up/Page Down scrolling. The current provider uses HTTPS;
+- Nexus Browser has a first-party branded new-tab screen, Nexus orb/wordmark,
+  native address toolbar and a visible plain-HTTP warning on loaded pages. It
+  accepts plain search queries as queries (rather than mistaking them for
+  hostnames), builds an encoded DuckDuckGo Lite search URL, and provides a
+  dedicated search landing page. Direct HTTP pages use an 8 KiB bounded
+  response buffer, a 64-line text view, and Page Up/Page Down scrolling. The
+  current search provider uses HTTPS;
   secure search and HTTPS pages remain blocked until Nexus has a verified TLS
   client and certificate validation. Requests are never downgraded to
   plaintext. Direct plain-HTTP pages can be fetched and shown as bounded text.
@@ -109,9 +120,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   script/style contents, and decoding common HTML entities. It can collect up
   to five distinct absolute HTTP(S) anchor URLs from a loaded page; press
   **Alt+1** through **Alt+5** to open them. Use **Page Up/Page Down** to
-  scroll the retained text view. Relative links are not yet resolved,
-  and CSS layout and JavaScript execution are not implemented. This remains a
-  limited text browser, not a modern browser engine.
+  scroll the retained text view. Root-relative, path-relative,
+  protocol-relative and query-only HTTP(S) links resolve against the current
+  page. CSS layout and JavaScript execution are not implemented. This remains
+  a limited text browser, not a modern browser engine.
 - An early Intel E1000 wired-Ethernet stack with DHCP, DNS, TCP, a plain-HTTP
   page viewer, and bounded direct-HTTP downloads. This is limited network
   access, not a general-purpose internet/browser implementation.

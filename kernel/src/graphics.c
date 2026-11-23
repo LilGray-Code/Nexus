@@ -119,6 +119,53 @@ void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
     }
 }
 
+
+static uint8_t unpack_channel(uint32_t pixel, uint8_t size, uint8_t shift) {
+    const uint32_t maximum = (1U << size) - 1U;
+    const uint32_t value = (pixel >> shift) & maximum;
+    return (uint8_t)(value * 255U / maximum);
+}
+
+static uint8_t blend_channel(uint8_t source, uint8_t destination,
+                             uint8_t alpha) {
+    const uint32_t inverse = 255U - alpha;
+    return (uint8_t)(((uint32_t)source * alpha +
+                      (uint32_t)destination * inverse + 127U) / 255U);
+}
+
+void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
+                         uint64_t height, uint8_t red, uint8_t green,
+                         uint8_t blue, uint8_t alpha) {
+    if (!initialized || alpha == 0U || x >= active_surface.width ||
+        y >= active_surface.height || width == 0U || height == 0U) return;
+    if (width > active_surface.width - x)
+        width = active_surface.width - x;
+    if (height > active_surface.height - y)
+        height = active_surface.height - y;
+
+    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+    for (uint64_t row = 0U; row < height; ++row) {
+        volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
+            (base + (y + row) * active_surface.pitch + x * 4U);
+        for (uint64_t column = 0U; column < width; ++column) {
+            const uint32_t old = pixels[column];
+            const uint8_t old_red = unpack_channel(
+                old, active_surface.red_mask_size,
+                active_surface.red_mask_shift);
+            const uint8_t old_green = unpack_channel(
+                old, active_surface.green_mask_size,
+                active_surface.green_mask_shift);
+            const uint8_t old_blue = unpack_channel(
+                old, active_surface.blue_mask_size,
+                active_surface.blue_mask_shift);
+            pixels[column] = pack_rgb(
+                blend_channel(red, old_red, alpha),
+                blend_channel(green, old_green, alpha),
+                blend_channel(blue, old_blue, alpha));
+        }
+    }
+}
+
 void graphics_clear(uint8_t red, uint8_t green, uint8_t blue) {
     graphics_fill_rect(0U, 0U, graphics_width(), graphics_height(),
                        red, green, blue);

@@ -4,6 +4,7 @@
 #include "gpt.h"
 #include "fat32.h"
 #include "vfs.h"
+#include "file_list.h"
 #include "process.h"
 #include "net.h"
 #include "http.h"
@@ -74,8 +75,8 @@ static bool files_vfs_ready;
 
 static char files_first_name[NEXUS_VFS_NAME_MAX];
 static char files_preview[41];
-static char files_listing[FILES_LISTING_MAX_ENTRIES][NEXUS_VFS_NAME_MAX];
-static bool files_listing_directories[FILES_LISTING_MAX_ENTRIES];
+static struct nexus_file_list_item files_listing[FILES_LISTING_MAX_ENTRIES];
+static enum nexus_file_sort_mode files_sort_mode = NEXUS_FILE_SORT_NAME;
 static size_t files_listing_count;
 static size_t files_selected_index;
 static size_t files_listing_first_index;
@@ -932,6 +933,9 @@ static void draw_shell(void) {
                                 current_path[0] != '\0'
                                     ? current_path : "PATH UNAVAILABLE",
                                 1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x + 520U, text_y + 304U,
+                                nexus_file_sort_mode_label(files_sort_mode),
+                                1U, 170U, 191U, 211U);
             for (size_t slot = 0U; slot < FILES_LISTING_VISIBLE; ++slot) {
                 const size_t index = files_listing_first_index + slot;
                 if (index >= files_listing_count) break;
@@ -944,7 +948,7 @@ static void draw_shell(void) {
                                        240U, 20U, 34U, 78U, 105U);
                 char display_name[NEXUS_VFS_NAME_MAX + 8U];
                 size_t display_length = 0U;
-                const char *prefix = files_listing_directories[index]
+                const char *prefix = files_listing[index].directory
                     ? "[DIR] " : "      ";
                 while (prefix[display_length] != '\0') {
                     display_name[display_length] = prefix[display_length];
@@ -952,9 +956,9 @@ static void draw_shell(void) {
                 }
                 for (size_t i = 0U;
                      i < NEXUS_VFS_NAME_MAX - 1U &&
-                     files_listing[index][i] != '\0' &&
+                     files_listing[index].name[i] != '\0' &&
                      display_length < sizeof(display_name) - 1U; ++i)
-                    display_name[display_length++] = files_listing[index][i];
+                    display_name[display_length++] = files_listing[index].name[i];
                 display_name[display_length] = '\0';
                 graphics_draw_text(text_x + column * 260U,
                                    text_y + 326U + line * 24U,
@@ -968,7 +972,7 @@ static void draw_shell(void) {
                                    1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "ARROWS SELECT  ENTER OPEN/PREVIEW  BACKSPACE UP  PGUP/PGDN PAGE",
+                               "ARROWS SELECT  ENTER OPEN  BACKSPACE UP  PGUP/PGDN PAGE  S SORT",
                                1, 170, 191, 211);
             if (files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 414U,
@@ -1188,9 +1192,10 @@ static void refresh_files_listing(void) {
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
     for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n) {
-        files_listing_directories[n] = false;
-        for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
-            files_listing[n][k] = '\0';
+        files_listing[n].directory = false;
+        files_listing[n].size = 0U;
+        for (size_t k = 0U; k < sizeof(files_listing[n].name); ++k)
+            files_listing[n].name[k] = '\0';
     }
     if (!files_vfs_ready) return;
 
@@ -1208,12 +1213,13 @@ static void refresh_files_listing(void) {
             size_t length = 0U;
             while (length < NEXUS_VFS_NAME_MAX - 1U &&
                    entry.name[length] != '\0') {
-                files_listing[files_listing_count][length] = entry.name[length];
+                files_listing[files_listing_count].name[length] = entry.name[length];
                 ++length;
             }
-            files_listing[files_listing_count][length] = '\0';
-            files_listing_directories[files_listing_count] =
+            files_listing[files_listing_count].name[length] = '\0';
+            files_listing[files_listing_count].directory =
                 entry.type == NEXUS_VFS_DIRECTORY;
+            files_listing[files_listing_count].size = entry.size;
             ++files_listing_count;
         } else {
             files_listing_truncated = true;
@@ -1248,6 +1254,30 @@ static void refresh_files_listing(void) {
         }
         files_preview[bytes_read] = '\0';
     }
+    if (!nexus_file_list_sort(files_listing, files_listing_count,
+                              files_sort_mode)) {
+        files_sort_mode = NEXUS_FILE_SORT_NAME;
+        (void)nexus_file_list_sort(files_listing, files_listing_count,
+                                   files_sort_mode);
+        serial_write("FILES: invalid sort mode; restored name order\r\n");
+    }
+}
+
+static bool files_listing_get_entry(
+    size_t index, struct nexus_vfs_dirent *entry) {
+    if (entry == NULL || index >= files_listing_count) return false;
+    *entry = (struct nexus_vfs_dirent){0};
+    size_t length = 0U;
+    while (length < NEXUS_VFS_NAME_MAX - 1U &&
+           files_listing[index].name[length] != '\0') {
+        entry->name[length] = files_listing[index].name[length];
+        ++length;
+    }
+    entry->name[length] = '\0';
+    entry->type = files_listing[index].directory
+        ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
+    entry->size = files_listing[index].size;
+    return true;
 }
 
 static size_t files_editor_max_view_offset(void) {
@@ -1311,6 +1341,41 @@ static void files_listing_page(int direction) {
     files_selected_index = files_listing_first_index;
 }
 
+static void files_listing_cycle_sort(void) {
+    char selected_name[NEXUS_VFS_NAME_MAX] = {0};
+    const bool had_selection = files_selected_index < files_listing_count;
+    if (had_selection) {
+        for (size_t i = 0U; i < NEXUS_VFS_NAME_MAX; ++i)
+            selected_name[i] = files_listing[files_selected_index].name[i];
+    }
+
+    files_sort_mode = (enum nexus_file_sort_mode)
+        (((unsigned int)files_sort_mode + 1U) % NEXUS_FILE_SORT_MODE_COUNT);
+    if (!nexus_file_list_sort(files_listing, files_listing_count,
+                              files_sort_mode)) return;
+
+    if (had_selection) {
+        for (size_t index = 0U; index < files_listing_count; ++index) {
+            bool equal = true;
+            for (size_t i = 0U; i < NEXUS_VFS_NAME_MAX; ++i) {
+                if (selected_name[i] != files_listing[index].name[i]) {
+                    equal = false;
+                    break;
+                }
+                if (selected_name[i] == '\0') break;
+            }
+            if (equal) {
+                files_selected_index = index;
+                break;
+            }
+        }
+    }
+    files_listing_ensure_selection_visible();
+    serial_write("FILES: sort mode ");
+    serial_write(nexus_file_sort_mode_label(files_sort_mode));
+    serial_write("\r\n");
+}
+
 static void files_editor_begin_new(void) {
     files_edit_name[0] = '\0';
     files_edit_content[0] = '\0';
@@ -1348,7 +1413,7 @@ static void files_editor_begin_directory(void) {
 static void files_editor_begin_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
-        !vfs_root_entry(files_selected_index, &selected) ||
+        !files_listing_get_entry(files_selected_index, &selected) ||
         selected.type != NEXUS_VFS_FILE ||
         selected.size > FILES_EDITOR_MAX_BYTES) {
         files_edit_status[0] = '\0';
@@ -1395,7 +1460,7 @@ static void files_editor_begin_selected(void) {
 static void files_open_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
-        !vfs_root_entry(files_selected_index, &selected)) return;
+        !files_listing_get_entry(files_selected_index, &selected)) return;
     if (selected.type == NEXUS_VFS_DIRECTORY) {
         if (vfs_enter_directory(selected.name)) refresh_files_listing();
         return;
@@ -1658,9 +1723,12 @@ static void scan_files_once(void) {
         files_preview[n] = '\0';
     files_listing_count = 0U;
     files_selected_index = 0U;
-    for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n)
-        for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
-            files_listing[n][k] = '\0';
+    for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n) {
+        files_listing[n].directory = false;
+        files_listing[n].size = 0U;
+        for (size_t k = 0U; k < sizeof(files_listing[n].name); ++k)
+            files_listing[n].name[k] = '\0';
+    }
 
     for (size_t i = 0U; i < blockdev_count(); ++i) {
         const struct nexus_block_device *device = blockdev_at(i);
@@ -2882,7 +2950,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 } else if (action == 3U) {
                     struct nexus_vfs_dirent selected;
                     if (files_selected_index < files_listing_count &&
-                        vfs_root_entry(files_selected_index, &selected)) {
+                        files_listing_get_entry(files_selected_index, &selected)) {
                         const bool removed = selected.type == NEXUS_VFS_DIRECTORY
                             ? vfs_remove_directory(selected.name)
                             : vfs_remove_file(selected.name);
@@ -3130,6 +3198,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             if (vfs_current_directory_writable()) files_editor_begin_new();
             draw_shell(); draw_pointer(); return;
         }
+        if (event->scancode == 0x1FU) {
+            files_listing_cycle_sort();
+            draw_shell(); draw_pointer(); return;
+        }
         if (event->scancode == 0x20U) {
             files_editor_begin_directory();
             draw_shell(); draw_pointer(); return;
@@ -3186,7 +3258,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if (event->scancode == 0x53U &&
             files_selected_index < files_listing_count) {
             struct nexus_vfs_dirent selected;
-            if (vfs_root_entry(files_selected_index, &selected)) {
+            if (files_listing_get_entry(files_selected_index, &selected)) {
                 const bool removed = selected.type == NEXUS_VFS_DIRECTORY
                     ? vfs_remove_directory(selected.name)
                     : vfs_remove_file(selected.name);
@@ -3207,7 +3279,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x1CU && files_selected_index < files_listing_count) {
             struct nexus_vfs_dirent selected;
-            if (!vfs_root_entry(files_selected_index, &selected)) {
+            if (!files_listing_get_entry(files_selected_index, &selected)) {
                 draw_shell();
                 draw_pointer();
                 return;

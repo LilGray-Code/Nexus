@@ -22,11 +22,14 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   System Partition, Nexus System volume, Recovery journal partition, and
   separate Nexus Data volume; BIOS installs also include a BIOS Boot
   partition.
-- A Files view with a flat root listing (up to 128 indexed entries, six
-  visible at once), keyboard/mouse selection, create/open/edit/delete, names
-  up to 31 characters, and a scrollable 4 KiB ASCII text editor. The desktop
-  mounts the dedicated NXFS Data partition after the Recovery partition;
-  it does not expose the NXFS System partition as the user's file store.
+- A Files view with bounded hierarchical directory navigation over NXFS,
+  keyboard/mouse selection, create/open/edit/delete, and a 128-entry display
+  cache (six rows visible at once). Entries are directory-first and can be
+  sorted by name, file type, or size with the `S` key. Names/path components
+  are limited to 31 characters and the text editor is limited to 4 KiB of
+  ASCII. The desktop mounts the dedicated NXFS Data partition after the
+  Recovery partition; it does not expose the NXFS System partition as the
+  user's file store. Timestamps are not stored, so date sorting is unavailable.
   FAT32 volumes are read-only; RAM-only fallback saves are volatile.
 - An early IPv4 stack with DHCP, DNS, TCP, and a plain HTTP text viewer.
   The network-device layer supports multiple registered adapters and tags
@@ -100,8 +103,10 @@ the latest run attached to the current branch.
 - Secure Boot is not supported.
 - The browser is an early plain-HTTP text viewer; HTTPS/TLS and modern web
   rendering are not implemented.
-- The Files view is currently a flat-file interface with 8.3-style filenames
-  and a 4 KiB ASCII editor; it is not a full hierarchical file manager.
+- The Files app is still a bounded file manager: it has a 128-entry display
+  cache, 31-character path/name limits, and a 4 KiB ASCII editor. Rename,
+  copy, move, search, rich previews, and timestamp metadata are not yet
+  implemented.
 - Desktop applications and much of the system runtime remain kernel-integrated.
   A separate userland, a full application/process model, robust preemptive
   multitasking, updates, and production recovery/upgrade tooling remain work

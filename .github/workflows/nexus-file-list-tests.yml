@@ -1,0 +1,33 @@
+name: Nexus Files sorting tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/file_list.c"
+      - "kernel/src/file_list.h"
+      - "kernel/tests/file_list_test.c"
+      - ".github/workflows/nexus-file-list-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  file-list-tests:
+    name: Test bounded Files list sorting
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Build and run host tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/file_list.c \
+            kernel/tests/file_list_test.c \
+            -o /tmp/nexus-file-list-test
+          /tmp/nexus-file-list-test

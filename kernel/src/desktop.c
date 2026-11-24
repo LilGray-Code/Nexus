@@ -44,6 +44,20 @@ static uint64_t window_position_y;
 static bool window_dragging;
 static uint64_t window_drag_offset_x;
 static uint64_t window_drag_offset_y;
+enum desktop_snap_state {
+    DESKTOP_SNAP_NONE = 0,
+    DESKTOP_SNAP_LEFT,
+    DESKTOP_SNAP_RIGHT
+};
+static enum desktop_snap_state window_snap_state;
+static bool window_custom_size;
+static uint64_t window_custom_width;
+static uint64_t window_custom_height;
+static bool window_resizing;
+static int64_t resize_pointer_origin_x;
+static int64_t resize_pointer_origin_y;
+static uint64_t resize_width_origin;
+static uint64_t resize_height_origin;
 static bool mouse_left_was_down;
 enum desktop_theme_mode {
     DESKTOP_THEME_DARK = 0,
@@ -59,6 +73,10 @@ static const uint8_t desktop_accent_palette[4][3] = {
 };
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
+static bool keyboard_left_control;
+static bool keyboard_alt;
+static bool keyboard_windows;
+static bool keyboard_windows_used;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
@@ -150,6 +168,79 @@ static bool browser_content_truncated;
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
 }
+
+struct desktop_window_rect {
+    uint64_t x;
+    uint64_t y;
+    uint64_t width;
+    uint64_t height;
+};
+
+/* Compute one authoritative app-window rectangle for painting and hit tests.
+ * Keeping this in one place prevents controls from drifting away from the
+ * visible window after a resize or snap operation.
+ */
+static struct desktop_window_rect desktop_window_bounds(void) {
+    struct desktop_window_rect bounds = {0U, 0U, 1U, 1U};
+    const uint64_t top = clamp_min(screen_height / 16U, 34U);
+    const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+    const uint64_t usable_width = screen_width > 32U
+        ? screen_width - 32U : screen_width;
+    const uint64_t usable_height = screen_height > top + bottom + 16U
+        ? screen_height - top - bottom - 16U : 1U;
+
+    if (window_maximized) {
+        bounds.x = 16U;
+        bounds.y = top + 8U;
+        bounds.width = usable_width;
+        bounds.height = usable_height;
+        return bounds;
+    }
+    if (window_snap_state != DESKTOP_SNAP_NONE) {
+        bounds.width = usable_width / 2U;
+        bounds.height = usable_height;
+        bounds.x = window_snap_state == DESKTOP_SNAP_LEFT
+            ? 16U : 16U + bounds.width;
+        bounds.y = top + 8U;
+        return bounds;
+    }
+
+    bounds.width = screen_width * 3U / 4U;
+    if (bounds.width > 920U) bounds.width = 920U;
+    if (bounds.width > screen_width - 16U)
+        bounds.width = screen_width - 16U;
+    bounds.height = usable_height < 512U ? usable_height : 512U;
+
+    if (window_custom_size) {
+        uint64_t minimum_width = screen_width >= 576U
+            ? 560U : (screen_width > 16U ? screen_width - 16U : screen_width);
+        uint64_t minimum_height = usable_height >= 420U
+            ? 420U : usable_height;
+        if (minimum_width > usable_width) minimum_width = usable_width;
+        bounds.width = window_custom_width;
+        bounds.height = window_custom_height;
+        if (bounds.width < minimum_width) bounds.width = minimum_width;
+        if (bounds.width > screen_width - 16U)
+            bounds.width = screen_width - 16U;
+        if (bounds.height < minimum_height)
+            bounds.height = minimum_height;
+        if (bounds.height > usable_height) bounds.height = usable_height;
+    }
+
+    bounds.x = (screen_width - bounds.width) / 2U;
+    bounds.y = top +
+        (screen_height - top - bottom - bounds.height) / 2U;
+    if (window_positioned) {
+        const uint64_t maximum_x = screen_width - bounds.width;
+        const uint64_t maximum_y = screen_height - bottom - bounds.height;
+        bounds.x = window_position_x > maximum_x
+            ? maximum_x : window_position_x;
+        bounds.y = window_position_y < top ? top : window_position_y;
+        if (bounds.y > maximum_y) bounds.y = maximum_y;
+    }
+    return bounds;
+}
+
 
 static bool desktop_theme_is_light(void) {
     return desktop_theme == DESKTOP_THEME_LIGHT;
@@ -285,6 +376,10 @@ static void desktop_open_view(enum desktop_view view) {
     start_menu_open = false;
     window_positioned = false;
     window_dragging = false;
+    window_resizing = false;
+    window_maximized = false;
+    window_snap_state = DESKTOP_SNAP_NONE;
+    window_custom_size = false;
     if (view == DESKTOP_FILES) {
         scan_files_once();
         refresh_files_listing();
@@ -445,7 +540,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                            desktop_theme_is_light() ? 77U : 249U);
     }
     graphics_draw_text(menu_x + 14U, menu_y + menu_height - 12U,
-                       "1-5 OPEN APPS   F6 CLOSE MENU", 1U,
+                       "ALT+TAB SWITCH   ALT+F4 CLOSE", 1U,
                        desktop_theme_is_light() ? 91U : 140U,
                        desktop_theme_is_light() ? 111U : 170U,
                        desktop_theme_is_light() ? 137U : 195U);
@@ -522,19 +617,16 @@ static void draw_shell(void) {
     if (panel_width > width - 16U) panel_width = width - 16U;
     if (panel_height > height - top_bar - bottom_bar - 16U)
         panel_height = height - top_bar - bottom_bar - 16U;
-    if (window_maximized && active_view != DESKTOP_HOME) {
-        panel_width = width - 32U;
-        panel_height = height - top_bar - bottom_bar - 16U;
-    }
 
     uint64_t panel_x = (width - panel_width) / 2U;
-    uint64_t panel_y = window_maximized && active_view != DESKTOP_HOME
-        ? top_bar + 8U
-        : top_bar + (height - top_bar - bottom_bar - panel_height) / 2U;
-    if (window_positioned && !window_maximized &&
-        active_view != DESKTOP_HOME) {
-        panel_x = window_position_x;
-        panel_y = window_position_y;
+    uint64_t panel_y = top_bar +
+        (height - top_bar - bottom_bar - panel_height) / 2U;
+    if (active_view != DESKTOP_HOME) {
+        const struct desktop_window_rect bounds = desktop_window_bounds();
+        panel_x = bounds.x;
+        panel_y = bounds.y;
+        panel_width = bounds.width;
+        panel_height = bounds.height;
     }
 
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
@@ -1392,6 +1484,18 @@ static void draw_shell(void) {
                            1, 170, 191, 211);
     }
 
+    if (active_view != DESKTOP_HOME && !window_maximized &&
+        window_snap_state == DESKTOP_SNAP_NONE &&
+        panel_width >= 36U && panel_height >= 36U) {
+        const uint64_t grip_x = panel_x + panel_width - 17U;
+        const uint64_t grip_y = panel_y + panel_height - 17U;
+        for (uint64_t line = 0U; line < 3U; ++line) {
+            graphics_fill_rect(grip_x + line * 4U, grip_y + 12U,
+                               1U, 4U, 125U, 151U, 176U);
+            graphics_fill_rect(grip_x + 12U, grip_y + line * 4U,
+                               4U, 1U, 125U, 151U, 176U);
+        }
+    }
     desktop_draw_taskbar(bottom_bar);
     desktop_draw_start_menu(bottom_bar);
 }
@@ -1433,10 +1537,20 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     window_maximized = false;
     window_positioned = false;
     window_dragging = false;
+    window_resizing = false;
+    window_snap_state = DESKTOP_SNAP_NONE;
+    window_custom_size = false;
     window_position_x = 0U;
     window_position_y = 0U;
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
+    keyboard_left_shift = false;
+    keyboard_right_shift = false;
+    keyboard_left_control = false;
+    keyboard_alt = false;
+    keyboard_windows = false;
+    keyboard_windows_used = false;
+    keyboard_caps_lock_down = false;
     desktop_ready = true;
 #ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
     serial_write("NEXUS INSTALLER WRITE GATE ENABLED\r\n");
@@ -3046,33 +3160,83 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         const bool clicked = left_down && !mouse_left_was_down;
         mouse_left_was_down = left_down;
 
+        if (window_resizing) {
+            if (left_down && active_view != DESKTOP_HOME &&
+                !window_maximized &&
+                window_snap_state == DESKTOP_SNAP_NONE) {
+                int64_t next_width = (int64_t)resize_width_origin +
+                    pointer_x - resize_pointer_origin_x;
+                int64_t next_height = (int64_t)resize_height_origin +
+                    pointer_y - resize_pointer_origin_y;
+                const uint64_t max_width =
+                    screen_width > window_position_x + 16U
+                        ? screen_width - window_position_x - 16U : 1U;
+                const uint64_t top = clamp_min(screen_height / 16U, 34U);
+                const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+                const uint64_t max_height =
+                    screen_height > window_position_y + bottom
+                        ? screen_height - window_position_y - bottom : 1U;
+                const uint64_t min_width = max_width >= 560U
+                    ? 560U : max_width;
+                const uint64_t min_height = max_height >= 420U
+                    ? 420U : max_height;
+                if (next_width < (int64_t)min_width)
+                    next_width = (int64_t)min_width;
+                if (next_width > (int64_t)max_width)
+                    next_width = (int64_t)max_width;
+                if (next_height < (int64_t)min_height)
+                    next_height = (int64_t)min_height;
+                if (next_height > (int64_t)max_height)
+                    next_height = (int64_t)max_height;
+                window_custom_width = (uint64_t)next_width;
+                window_custom_height = (uint64_t)next_height;
+                window_custom_size = true;
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+            window_resizing = false;
+        }
+
         if (window_dragging) {
             if (left_down && active_view != DESKTOP_HOME &&
                 !window_maximized) {
+                const struct desktop_window_rect bounds =
+                    desktop_window_bounds();
                 const uint64_t top = clamp_min(screen_height / 16U, 34U);
                 const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-                uint64_t pw = screen_width * 3U / 4U;
-                uint64_t ph = 512U;
-                if (pw > 920U) pw = 920U;
-                if (pw > screen_width - 16U) pw = screen_width - 16U;
-                if (ph > screen_height - top - bottom - 16U)
-                    ph = screen_height - top - bottom - 16U;
                 int64_t next_x = pointer_x - (int64_t)window_drag_offset_x;
                 int64_t next_y = pointer_y - (int64_t)window_drag_offset_y;
-                const int64_t max_x = (int64_t)(screen_width - pw);
+                const int64_t max_x = (int64_t)(screen_width - bounds.width);
                 const int64_t min_y = (int64_t)top;
-                const int64_t max_y = (int64_t)(screen_height - bottom - ph);
+                const int64_t max_y =
+                    (int64_t)(screen_height - bottom - bounds.height);
                 if (next_x < 0) next_x = 0;
                 if (next_x > max_x) next_x = max_x;
                 if (next_y < min_y) next_y = min_y;
                 if (next_y > max_y) next_y = max_y;
                 window_position_x = (uint64_t)next_x;
                 window_position_y = (uint64_t)next_y;
+                window_positioned = true;
                 draw_shell();
                 draw_pointer();
                 return;
             }
             window_dragging = false;
+            if (active_view != DESKTOP_HOME && !window_maximized) {
+                const uint64_t top = clamp_min(screen_height / 16U, 34U);
+                if ((uint64_t)pointer_y <= top + 8U) {
+                    window_maximized = true;
+                } else if ((uint64_t)pointer_x <= 8U) {
+                    window_snap_state = DESKTOP_SNAP_LEFT;
+                    window_custom_size = false;
+                    window_positioned = false;
+                } else if ((uint64_t)pointer_x + 8U >= screen_width) {
+                    window_snap_state = DESKTOP_SNAP_RIGHT;
+                    window_custom_size = false;
+                    window_positioned = false;
+                }
+            }
         }
 
         bool shell_click_handled = false;
@@ -3116,25 +3280,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 }
             }
             if (!shell_click_handled && active_view != DESKTOP_HOME) {
-                const uint64_t top = clamp_min(screen_height / 16U, 34U);
-                const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-                uint64_t pw = screen_width * 3U / 4U;
-                uint64_t ph = 512U;
-                if (pw > 920U) pw = 920U;
-                if (pw > screen_width - 16U) pw = screen_width - 16U;
-                if (ph > screen_height - top - bottom - 16U)
-                    ph = screen_height - top - bottom - 16U;
-                if (window_maximized) {
-                    pw = screen_width - 32U;
-                    ph = screen_height - top - bottom - 16U;
-                }
-                uint64_t px = (screen_width - pw) / 2U;
-                uint64_t py = window_maximized ? top + 8U
-                    : top + (screen_height - top - bottom - ph) / 2U;
-                if (window_positioned && !window_maximized) {
-                    px = window_position_x;
-                    py = window_position_y;
-                }
+                const struct desktop_window_rect bounds =
+                    desktop_window_bounds();
+                const uint64_t pw = bounds.width;
+                const uint64_t ph = bounds.height;
+                const uint64_t px = bounds.x;
+                const uint64_t py = bounds.y;
                 const uint64_t controls_x = px + pw - 66U;
                 if ((uint64_t)pointer_y >= py + 8U &&
                     (uint64_t)pointer_y < py + 28U &&
@@ -3146,15 +3297,39 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         window_maximized = false;
                         window_positioned = false;
                         window_dragging = false;
+                        window_resizing = false;
+                        window_snap_state = DESKTOP_SNAP_NONE;
+                        window_custom_size = false;
                     } else if (control >= 22U && control < 36U) {
                         window_maximized = !window_maximized; /* Maximize / restore */
+                        if (!window_maximized)
+                            window_positioned = false;
                     } else if (control >= 44U) {
                         active_view = DESKTOP_HOME; /* Close */
                         window_maximized = false;
                         window_positioned = false;
                         window_dragging = false;
+                        window_resizing = false;
+                        window_snap_state = DESKTOP_SNAP_NONE;
+                        window_custom_size = false;
                     }
                     start_menu_open = false;
+                    shell_click_handled = true;
+                }
+                if (!shell_click_handled && !window_maximized &&
+                    window_snap_state == DESKTOP_SNAP_NONE &&
+                    (uint64_t)pointer_x >= px + pw - 20U &&
+                    (uint64_t)pointer_x < px + pw &&
+                    (uint64_t)pointer_y >= py + ph - 20U &&
+                    (uint64_t)pointer_y < py + ph) {
+                    window_position_x = px;
+                    window_position_y = py;
+                    window_positioned = true;
+                    resize_pointer_origin_x = pointer_x;
+                    resize_pointer_origin_y = pointer_y;
+                    resize_width_origin = pw;
+                    resize_height_origin = ph;
+                    window_resizing = true;
                     shell_click_handled = true;
                 }
                 if (!shell_click_handled &&
@@ -3165,6 +3340,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     window_position_x = px;
                     window_position_y = py;
                     window_positioned = true;
+                    if (window_snap_state != DESKTOP_SNAP_NONE) {
+                        window_custom_width = pw;
+                        window_custom_height = ph;
+                        window_custom_size = true;
+                        window_snap_state = DESKTOP_SNAP_NONE;
+                    }
                     window_drag_offset_x = (uint64_t)pointer_x - px;
                     window_drag_offset_y = (uint64_t)pointer_y - py;
                     window_dragging = true;
@@ -3178,25 +3359,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             return;
         }
         if (clicked && active_view == DESKTOP_SETTINGS) {
-            const uint64_t top = clamp_min(screen_height / 16U, 34U);
-            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-            uint64_t pw = screen_width * 3U / 4U;
-            uint64_t ph = 512U;
-            if (pw > 920U) pw = 920U;
-            if (pw > screen_width - 16U) pw = screen_width - 16U;
-            if (ph > screen_height - top - bottom - 16U)
-                ph = screen_height - top - bottom - 16U;
-            if (window_maximized) {
-                pw = screen_width - 32U;
-                ph = screen_height - top - bottom - 16U;
-            }
-            uint64_t px = (screen_width - pw) / 2U;
-            uint64_t py = window_maximized ? top + 8U
-                : top + (screen_height - top - bottom - ph) / 2U;
-            if (window_positioned && !window_maximized) {
-                px = window_position_x;
-                py = window_position_y;
-            }
+            const struct desktop_window_rect bounds = desktop_window_bounds();
+            const uint64_t px = bounds.x;
+            const uint64_t py = bounds.y;
             const uint64_t sx = px + 32U;
             const uint64_t sy = py + 82U;
             if ((uint64_t)pointer_y >= sy + 42U &&
@@ -3224,25 +3389,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             return;
         }
         if (clicked && active_view == DESKTOP_INSTALLER) {
-            const uint64_t top = clamp_min(screen_height / 16U, 34U);
-            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-            uint64_t pw = screen_width * 3U / 4U;
-            uint64_t ph = 512U;
-            if (pw > 920U) pw = 920U;
-            if (pw > screen_width - 16U) pw = screen_width - 16U;
-            if (ph > screen_height - top - bottom - 16U)
-                ph = screen_height - top - bottom - 16U;
-            if (window_maximized) {
-                pw = screen_width - 32U;
-                ph = screen_height - top - bottom - 16U;
-            }
-            uint64_t px = (screen_width - pw) / 2U;
-            uint64_t py = window_maximized ? top + 8U
-                : top + (screen_height - top - bottom - ph) / 2U;
-            if (window_positioned && !window_maximized) {
-                px = window_position_x;
-                py = window_position_y;
-            }
+            const struct desktop_window_rect bounds = desktop_window_bounds();
+            const uint64_t px = bounds.x;
+            const uint64_t py = bounds.y;
             const int64_t relative_x = pointer_x - (int64_t)(px + 32U);
             const int64_t relative_y = pointer_y - (int64_t)(py + 48U);
             if (relative_x >= 0 && relative_y >= 0) {
@@ -3307,25 +3456,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             return;
         }
         if (clicked && active_view == DESKTOP_FILES && files_vfs_ready) {
-            const uint64_t top = clamp_min(screen_height / 16U, 34U);
-            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
-            uint64_t pw = screen_width * 3U / 4U;
-            uint64_t ph = 512U;
-            if (pw > 920U) pw = 920U;
-            if (pw > screen_width - 16U) pw = screen_width - 16U;
-            if (ph > screen_height - top - bottom - 16U)
-                ph = screen_height - top - bottom - 16U;
-            if (window_maximized) {
-                pw = screen_width - 32U;
-                ph = screen_height - top - bottom - 16U;
-            }
-            uint64_t px = (screen_width - pw) / 2U;
-            uint64_t py = window_maximized ? top + 8U
-                : top + (screen_height - top - bottom - ph) / 2U;
-            if (window_positioned && !window_maximized) {
-                px = window_position_x;
-                py = window_position_y;
-            }
+            const struct desktop_window_rect bounds = desktop_window_bounds();
+            const uint64_t px = bounds.x;
+            const uint64_t py = bounds.y;
             const uint64_t tx = px + 32U;
             const uint64_t ty = py + 82U;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 270U);
@@ -3427,6 +3560,30 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         keyboard_right_shift = !key_released;
         return;
     }
+    if (key_code == 0x1DU) {
+        keyboard_left_control = !key_released;
+        return;
+    }
+    if (key_code == 0x38U) {
+        keyboard_alt = !key_released;
+        return;
+    }
+    if (key_code == 0x5BU || key_code == 0x5CU) {
+        if (!key_released) {
+            keyboard_windows = true;
+            keyboard_windows_used = false;
+        } else {
+            if (keyboard_windows && !keyboard_windows_used &&
+                active_view != DESKTOP_INSTALLER) {
+                start_menu_open = !start_menu_open;
+                draw_shell();
+                draw_pointer();
+            }
+            keyboard_windows = false;
+            keyboard_windows_used = false;
+        }
+        return;
+    }
     if (key_code == 0x3AU) {
         if (key_released) {
             keyboard_caps_lock_down = false;
@@ -3437,6 +3594,91 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (key_released) return;
+
+    if (active_view != DESKTOP_INSTALLER && keyboard_alt &&
+        event->scancode == 0x0FU) {
+        size_t current_app = 4U;
+        bool current_found = false;
+        for (size_t app = 0U; app < 5U; ++app) {
+            if (desktop_view_for_app(app) == active_view) {
+                current_app = app;
+                current_found = true;
+                break;
+            }
+        }
+        size_t next_app;
+        if (!current_found) {
+            next_app = keyboard_left_shift || keyboard_right_shift ? 4U : 0U;
+        } else {
+            next_app = keyboard_left_shift || keyboard_right_shift
+                ? (current_app + 4U) % 5U : (current_app + 1U) % 5U;
+        }
+        desktop_open_app(next_app);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (keyboard_alt && event->scancode == 0x3EU &&
+        active_view != DESKTOP_HOME) {
+        desktop_open_view(DESKTOP_HOME);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (keyboard_windows && event->scancode != 0x5BU &&
+        event->scancode != 0x5CU &&
+        active_view != DESKTOP_INSTALLER) {
+        if (event->scancode == 0x4BU || event->scancode == 0x4DU ||
+            event->scancode == 0x48U || event->scancode == 0x50U) {
+            keyboard_windows_used = true;
+            if (active_view != DESKTOP_HOME) {
+                if (event->scancode == 0x4BU) {
+                    window_maximized = false;
+                    window_snap_state = DESKTOP_SNAP_LEFT;
+                    window_custom_size = false;
+                    window_positioned = false;
+                } else if (event->scancode == 0x4DU) {
+                    window_maximized = false;
+                    window_snap_state = DESKTOP_SNAP_RIGHT;
+                    window_custom_size = false;
+                    window_positioned = false;
+                } else if (event->scancode == 0x48U) {
+                    window_maximized = true;
+                } else if (window_maximized) {
+                    window_maximized = false;
+                    window_positioned = false;
+                } else if (window_snap_state != DESKTOP_SNAP_NONE) {
+                    window_snap_state = DESKTOP_SNAP_NONE;
+                    window_custom_size = false;
+                    window_positioned = false;
+                } else {
+                    desktop_open_view(DESKTOP_HOME);
+                }
+            }
+            window_dragging = false;
+            window_resizing = false;
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (event->scancode == 0x12U || event->scancode == 0x17U ||
+            event->scancode == 0x20U) {
+            keyboard_windows_used = true;
+            if (event->scancode == 0x12U) desktop_open_app(0U); /* Win+E */
+            else if (event->scancode == 0x17U) desktop_open_app(2U); /* Win+I */
+            else desktop_open_view(DESKTOP_HOME); /* Win+D */
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+    }
+    if (active_view != DESKTOP_INSTALLER &&
+        keyboard_left_control && event->scancode == 0x01U) {
+        start_menu_open = !start_menu_open;
+        draw_shell();
+        draw_pointer();
+        return;
+    }
     if (active_view != DESKTOP_INSTALLER && event->scancode == 0x40U) {
         start_menu_open = !start_menu_open;
         draw_shell();

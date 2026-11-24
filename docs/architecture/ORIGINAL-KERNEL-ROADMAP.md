@@ -920,3 +920,49 @@ one sample only, never the sole compatibility target.
   destination rejection, and an 8,193-byte streamed copy across multiple
   blocks that remains readable after remount. These tests do not replace
   physical power-loss testing or controller fault injection.
+
+
+## 12. Desktop shell progression and application compatibility
+
+The original-kernel desktop now has a consistent window-bounds calculation
+shared by rendering and input hit-testing. App windows can be moved and resized
+from the lower-right grip, snapped to the left or right half by dragging to a
+screen edge, and maximized by dragging to the top edge. The shell provides
+Alt+Tab / Alt+Shift+Tab app-view cycling, Alt+F4 close, Win+Arrow placement,
+Win+E for Files, Win+I for Settings, Win+D for Home, and Ctrl+Esc / Win for the
+Start launcher.
+
+This remains a single-foreground-view shell. It does not yet have independent
+app instances, a true overlapping multi-window compositor, virtual desktops,
+GPU acceleration, or persistent personalization settings. Window-management
+input and geometry changes must continue to pass BIOS/UEFI QEMU boot tests
+before release claims are updated.
+
+### Software compatibility is a separate engineering program
+
+Nexus is not currently binary-compatible with Windows. The bounded ELF64
+process test proves only that a Nexus-format ELF test program can execute in a
+ring-3 address space. It does not provide the APIs expected by existing
+desktop applications.
+
+The compatibility path is therefore staged:
+
+1. Stabilize the versioned syscall ABI and per-process address spaces,
+   scheduling, handles, file descriptors, signals/exit semantics, and IPC.
+2. Build the Nexus userland: a C runtime, filesystem utilities, dynamic loader,
+   service manager, package format, and documented POSIX-like surface where
+   practical.
+3. Establish a native graphics/window protocol, compositor, input/focus model,
+   audio services, and stable application SDK.
+4. Add maintained portable runtimes and toolkits against the Nexus ABI, with
+   conformance tests and a published application compatibility matrix.
+5. Only after those foundations, evaluate a PE/COFF loader and a Win32
+   compatibility subsystem. This is a large, multi-year-class scope by itself;
+   it is not achieved by changing the desktop theme or merely loading PE files.
+
+A Windows compatibility layer would still need extensive API behavior, system
+DLL replacements, graphics/audio/input integration, installer support, and
+per-application testing. Hardware drivers, kernel-mode Windows drivers, and
+DirectX behavior are especially separate from ordinary user-mode application
+compatibility. Do not claim support for "all software"; publish exact tested
+applications and limitations.

@@ -13,10 +13,17 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal, and
-  Installer views, plus keyboard and mouse input. The shell supports live
-  Dark/Light appearance, four accent palettes, mouse-selectable Settings
-  controls, and T/A keyboard shortcuts. These appearance preferences currently
-  last for the running session and are not yet saved across reboots.
+  Installer views, plus keyboard and mouse input. The shell supports movable,
+  resizable app windows, left/right edge snapping, top-edge maximize, minimize,
+  maximize/restore/close controls, and a bottom-corner resize grip. Keyboard
+  shortcuts include Alt+Tab / Alt+Shift+Tab to cycle app views, Alt+F4 to close,
+  Win+Left/Right/Up/Down for window placement, Win+E for Files, Win+I for
+  Settings, Win+D for Home, and Ctrl+Esc or the Windows key for Start. The shell
+  also supports live Dark/Light appearance, four accent palettes, and
+  mouse-selectable Settings controls. Appearance preferences last for the
+  running session and are not yet saved across reboots. The current shell still
+  presents one foreground application view at a time; this is not yet a
+  multi-window compositor with independent overlapping app instances.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.
@@ -64,9 +71,14 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   provide CSS layout, JavaScript, HTTPS/TLS, cookies, or a modern browser engine.
 
 The desktop applications and current system services are integrated into the
-kernel. The presence of an ELF loader and ring-3 execution tests does **not**
-mean that Nexus currently has a full separate userland, a mature init/service
-manager, or ordinary preemptive multitasking.
+kernel. The ELF64 loader has a bounded ring-3 execution test, but this does
+**not** mean that Nexus currently has a full separate userland, a mature
+init/service manager, or ordinary preemptive multitasking. Nexus does not yet
+load Windows PE/COFF executables, implement Win32 APIs, or provide a Windows
+application compatibility layer. Ordinary Windows `.exe` applications and
+drivers therefore cannot be assumed to run. Broad software compatibility
+requires a stable per-process ABI, userland libraries/services, GUI and graphics
+APIs, drivers, and then a substantial, separately tested compatibility runtime.
 
 ## Installer safety
 
@@ -117,7 +129,9 @@ the latest run attached to the current branch.
 - Desktop applications and much of the system runtime remain kernel-integrated.
   A separate userland, a full application/process model, robust preemptive
   multitasking, updates, and production recovery/upgrade tooling remain work
-  in progress.
+  in progress. There is no PE/COFF loader, Win32 subsystem, DirectX runtime, or
+  general Windows application support yet; the existing ELF test is a Nexus
+  native-process proof, not Windows compatibility.
 - Broad GPU acceleration, audio, Wi-Fi, Bluetooth, power management, and
   support for arbitrary third-party hardware are not claimed.
 

@@ -279,6 +279,16 @@ bool vfs_remove_file(const char *name) {
     return nxfs_remove_file(path);
 }
 
+static bool vfs_target_is_leaf(const char *target) {
+    if (target == NULL || target[0] == '/') return false;
+    size_t length = 0U;
+    while (length < NEXUS_VFS_NAME_MAX && target[length] != '\0') {
+        if (target[length] == '/') return false;
+        ++length;
+    }
+    return length != 0U && length < NEXUS_VFS_NAME_MAX;
+}
+
 static bool vfs_nxfs_resolve_target_path(
     const char *target, char output[NEXUS_VFS_NAME_MAX]) {
     if (target == NULL || output == NULL ||
@@ -363,8 +373,7 @@ bool vfs_copy_file(const char *name, const char *destination_path) {
                 return vfs_ramfs_write(normalized, ram_entry->data,
                                        ram_entry->size);
             }
-            if (destination_path[0] != '/' &&
-                __builtin_strchr(destination_path, '/') == NULL &&
+            if (vfs_target_is_leaf(destination_path) &&
                 ramfs_find(destination_path) != NULL) return false;
             char target[NEXUS_VFS_NAME_MAX];
             if (!vfs_nxfs_resolve_target_path(destination_path, target) ||
@@ -381,8 +390,7 @@ bool vfs_copy_file(const char *name, const char *destination_path) {
         !vfs_nxfs_resolve_target_path(destination_path, destination))
         return false;
     if (directory_backend == VFS_DIRECTORY_ROOT &&
-        destination_path[0] != '/' &&
-        __builtin_strchr(destination_path, '/') == NULL &&
+        vfs_target_is_leaf(destination_path) &&
         ramfs_find(destination_path) != NULL) return false;
     return nxfs_copy_file(source, destination);
 }

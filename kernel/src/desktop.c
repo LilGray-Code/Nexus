@@ -795,7 +795,7 @@ static void draw_shell(void) {
                                 ? "COPY FILE - ENTER A NEW NAME OR PATH"
                                 : (files_editor_state == FILES_EDITOR_MOVE
                                     ? "MOVE FILE - ENTER A DESTINATION PATH"
-                                    : "TEXT EDITOR - 4096 BYTE LIMIT")));
+                                    : "TEXT EDITOR - 4096 BYTE LIMIT"))));
             graphics_draw_text(text_x, text_y + 48U, editor_title,
                                1, 108, 216, 229);
             graphics_draw_text(text_x, text_y + 82U,

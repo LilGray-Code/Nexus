@@ -7,6 +7,13 @@
 
 #include "netdev.h"
 
+enum nexus_tcp_receive_result {
+    NEXUS_TCP_RECEIVE_ERROR = -1,
+    NEXUS_TCP_RECEIVE_TIMEOUT = 0,
+    NEXUS_TCP_RECEIVE_DATA = 1,
+    NEXUS_TCP_RECEIVE_EOF = 2
+};
+
 struct nexus_net_info {
     char interface_name[16];
     enum nexus_netdev_medium interface_medium;
@@ -38,6 +45,12 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
  */
 bool net_tcp_send(const void *payload, uint16_t payload_length);
 size_t net_tcp_receive(void *buffer, size_t capacity);
+/*
+ * Wait for data, peer EOF, transport failure, or a bounded timeout.
+ * On DATA, *received is non-zero. On EOF or TIMEOUT it is zero.
+ */
+enum nexus_tcp_receive_result net_tcp_receive_wait(
+    void *buffer, size_t capacity, uint64_t timeout_ticks, size_t *received);
 void net_tcp_close(void);
 
 #endif

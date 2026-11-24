@@ -66,7 +66,8 @@ static uint64_t remaining_ticks(uint64_t start, uint64_t budget) {
 
 void nexus_https_close(struct nexus_https_connection *connection) {
     if (connection == NULL) return;
-    nexus_tls_client_free(&https_tls_client);
+    if (connection->private_state == &https_tls_client)
+        nexus_tls_client_free(&https_tls_client);
     if (connection->tcp_open) net_tcp_close();
     *connection = (struct nexus_https_connection){0};
 }
@@ -82,6 +83,7 @@ int nexus_https_connect(struct nexus_https_connection *connection,
         return NEXUS_HTTPS_ERR_ARGUMENT;
     }
 
+    nexus_tls_client_free(&https_tls_client);
     *connection = (struct nexus_https_connection){0};
     const uint64_t start = timer_ticks();
     uint8_t remote_ipv4[4];

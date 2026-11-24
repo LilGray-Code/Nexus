@@ -92,6 +92,8 @@ jobs:
             -Ibuild/deps/mbedtls-build/generated/include \
             -Ibuild/deps/mbedtls-4.1.2/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/drivers/builtin/include \
             kernel/src/tls_heap.c kernel/src/mbedtls_heap.c \
             kernel/src/mbedtls_random.c kernel/src/tls_client.c \
             kernel/tests/tls_client_test.c \

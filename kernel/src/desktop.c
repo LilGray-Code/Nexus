@@ -15,6 +15,7 @@
 #include "serial.h"
 #include "memory.h"
 #include "timer.h"
+#include "text_buffer.h"
 #include "partition_plan.h"
 #include "installer_runtime.h"
 
@@ -88,6 +89,7 @@ static char files_edit_name[NEXUS_VFS_NAME_MAX];
 static char files_edit_content[FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
+static size_t files_edit_cursor;
 static size_t files_edit_view_offset;
 static bool files_edit_follow_end;
 static char files_edit_status[64];
@@ -786,16 +788,28 @@ static void draw_shell(void) {
                                1, 119, 229, 211);
             if (files_editor_state == FILES_EDITOR_CONTENT) {
                 for (size_t line = 0U; line < 4U; ++line) {
-                    char display[65];
+                    char display[66];
                     const size_t offset =
                         files_edit_view_offset + line * 64U;
                     size_t amount = 0U;
                     while (amount < 64U &&
                            offset + amount < files_edit_content_length) {
-                        display[amount] = files_edit_content[offset + amount];
+                        const char value = files_edit_content[offset + amount];
+                        display[amount] = value == '\n' ? ' ' : value;
                         ++amount;
                     }
-                    display[amount] = '\0';
+                    size_t display_length = amount;
+                    if (files_edit_cursor >= offset &&
+                        (files_edit_cursor < offset + 64U || line == 3U) &&
+                        files_edit_cursor <= offset + amount &&
+                        display_length < 65U) {
+                        const size_t caret = files_edit_cursor - offset;
+                        for (size_t i = display_length; i > caret; --i)
+                            display[i] = display[i - 1U];
+                        display[caret] = '|';
+                        ++display_length;
+                    }
+                    display[display_length] = '\0';
                     graphics_draw_text(text_x, text_y + 124U + line * 28U,
                                        display, 1, 239, 249, 255);
                 }
@@ -805,7 +819,7 @@ static void draw_shell(void) {
                         : "SAVE TARGET: VOLATILE RAM ONLY",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 292U,
-                    "PGUP/PGDN SCROLL  HOME/END  F10 SAVE  ENTER NEW LINE",
+                    "ARROWS MOVE  HOME/END LINE  PGUP/PGDN PAGE  BKSP/DEL  F10 SAVE",
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
@@ -1216,6 +1230,16 @@ static void files_editor_scroll_to_end(void) {
     files_edit_follow_end = true;
 }
 
+static void files_editor_keep_cursor_visible(void) {
+    if (files_edit_cursor < files_edit_view_offset ||
+        files_edit_cursor >= files_edit_view_offset + FILES_EDITOR_VIEW_BYTES) {
+        files_edit_view_offset =
+            (files_edit_cursor / FILES_EDITOR_VIEW_BYTES) *
+            FILES_EDITOR_VIEW_BYTES;
+    }
+    files_edit_follow_end = false;
+}
+
 static void files_listing_ensure_selection_visible(void) {
     if (files_listing_count == 0U) {
         files_listing_first_index = 0U;
@@ -1258,6 +1282,7 @@ static void files_editor_begin_new(void) {
     files_edit_content[0] = '\0';
     files_edit_name_length = 0U;
     files_edit_content_length = 0U;
+    files_edit_cursor = 0U;
     files_edit_view_offset = 0U;
     files_edit_follow_end = true;
     files_edit_status[0] = '\0';
@@ -1294,6 +1319,7 @@ static void files_editor_begin_selected(void) {
            files_edit_name[files_edit_name_length] != '\0')
         ++files_edit_name_length;
     files_edit_content_length = bytes_read;
+    files_edit_cursor = files_edit_content_length;
     files_edit_content[files_edit_content_length] = '\0';
     files_editor_scroll_to_end();
     files_edit_status[0] = '\0';
@@ -1376,13 +1402,33 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         }
         files_edit_follow_end = files_edit_view_offset == maximum;
         return;
+    } else if (event->scancode == 0x4BU) {
+        nexus_text_buffer_move_left(files_edit_content_length,&files_edit_cursor);
+        files_editor_keep_cursor_visible();
+        return;
+    } else if (event->scancode == 0x4DU) {
+        nexus_text_buffer_move_right(files_edit_content_length,&files_edit_cursor);
+        files_editor_keep_cursor_visible();
+        return;
+    } else if (event->scancode == 0x48U) {
+        nexus_text_buffer_move_up(files_edit_content,files_edit_content_length,
+                                  &files_edit_cursor);
+        files_editor_keep_cursor_visible();
+        return;
+    } else if (event->scancode == 0x50U) {
+        nexus_text_buffer_move_down(files_edit_content,files_edit_content_length,
+                                    &files_edit_cursor);
+        files_editor_keep_cursor_visible();
+        return;
     } else if (event->scancode == 0x47U) {
-        files_edit_view_offset = 0U;
-        files_edit_follow_end = files_edit_view_offset ==
-                               files_editor_max_view_offset();
+        nexus_text_buffer_move_home(files_edit_content,files_edit_content_length,
+                                    &files_edit_cursor);
+        files_editor_keep_cursor_visible();
         return;
     } else if (event->scancode == 0x4FU) {
-        files_editor_scroll_to_end();
+        nexus_text_buffer_move_end(files_edit_content,files_edit_content_length,
+                                   &files_edit_cursor);
+        files_editor_keep_cursor_visible();
         return;
     }
     if (event->scancode == 0x44U) {
@@ -1412,15 +1458,20 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
             serial_write("\r\n");
         }
     } else if (event->scancode == 0x0EU) {
-        if (files_edit_content_length != 0U) {
-            files_edit_content[--files_edit_content_length] = '\0';
-            if (files_edit_follow_end) files_editor_scroll_to_end();
-        }
+        (void)nexus_text_buffer_backspace(
+            files_edit_content,sizeof(files_edit_content),
+            &files_edit_content_length,&files_edit_cursor);
+        files_editor_keep_cursor_visible();
+    } else if (event->scancode == 0x53U) {
+        (void)nexus_text_buffer_delete(
+            files_edit_content,sizeof(files_edit_content),
+            &files_edit_content_length,files_edit_cursor);
+        files_editor_keep_cursor_visible();
     } else if (event->scancode == 0x1CU) {
-        if (files_edit_content_length < FILES_EDITOR_MAX_BYTES) {
-            files_edit_content[files_edit_content_length++] = '\n';
-            files_edit_content[files_edit_content_length] = '\0';
-            if (files_edit_follow_end) files_editor_scroll_to_end();
+        if (nexus_text_buffer_insert(
+                files_edit_content,sizeof(files_edit_content),
+                &files_edit_content_length,&files_edit_cursor,'\n')) {
+            files_editor_keep_cursor_visible();
         } else {
             const char *message = "EDITOR LIMIT REACHED - SAVE OR REMOVE TEXT";
             size_t i = 0U;
@@ -1433,10 +1484,10 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
     } else {
         const char ch = terminal_scancode_char(event->scancode);
         if (ch >= 0x20 && ch <= 0x7E &&
-            files_edit_content_length < FILES_EDITOR_MAX_BYTES) {
-            files_edit_content[files_edit_content_length++] = ch;
-            files_edit_content[files_edit_content_length] = '\0';
-            if (files_edit_follow_end) files_editor_scroll_to_end();
+            nexus_text_buffer_insert(files_edit_content,
+                sizeof(files_edit_content),&files_edit_content_length,
+                &files_edit_cursor,ch)) {
+            files_editor_keep_cursor_visible();
         } else if (ch >= 0x20 && ch <= 0x7E) {
             const char *message = "EDITOR LIMIT REACHED - SAVE OR REMOVE TEXT";
             size_t i = 0U;

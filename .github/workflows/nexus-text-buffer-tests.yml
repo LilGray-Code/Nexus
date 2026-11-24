@@ -1,0 +1,35 @@
+name: Nexus text buffer editor tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/text_buffer.c"
+      - "kernel/src/text_buffer.h"
+      - "kernel/tests/text_buffer_test.c"
+      - ".github/workflows/nexus-text-buffer-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/text_buffer.c"
+      - "kernel/src/text_buffer.h"
+      - "kernel/tests/text_buffer_test.c"
+      - ".github/workflows/nexus-text-buffer-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  text-buffer-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile text buffer tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/text_buffer.c \
+            kernel/tests/text_buffer_test.c -o /tmp/nexus-text-buffer-test
+      - name: Run editor buffer insertion and navigation tests
+        run: /tmp/nexus-text-buffer-test

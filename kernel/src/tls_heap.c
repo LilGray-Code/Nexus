@@ -25,15 +25,23 @@ static struct tls_heap_block *first_block;
 static bool initialized;
 
 static uintptr_t lock_interrupts(void) {
+#if defined(NEXUS_TLS_HEAP_HOST_TEST)
+    return 0U;
+#else
     uintptr_t flags = 0U;
     __asm__ volatile ("pushfq; popq %0; cli"
                       : "=r"(flags) : : "memory");
     return flags;
+#endif
 }
 
 static void unlock_interrupts(uintptr_t flags) {
+#if !defined(NEXUS_TLS_HEAP_HOST_TEST)
     if ((flags & (1U << 9U)) != 0U)
         __asm__ volatile ("sti" : : : "memory");
+#else
+    (void)flags;
+#endif
 }
 
 static bool align_size(size_t requested, size_t *aligned) {

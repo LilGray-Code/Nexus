@@ -100,6 +100,8 @@ mbedtls_ms_time_t mbedtls_ms_time(void) {
 }
 
 bool nexus_mbedtls_time_init(void) {
-    return mbedtls_platform_set_time(nexus_mbedtls_time) == 0 &&
-           rtc_get_unix_time(&(uint64_t){0U});
+    uint64_t verified_epoch = 0U;
+    if (!rtc_get_unix_time(&verified_epoch)) return false;
+    if (verified_epoch > (uint64_t)INT64_MAX) return false;
+    return mbedtls_platform_set_time(nexus_mbedtls_time) == 0;
 }

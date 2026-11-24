@@ -30,6 +30,12 @@ bool net_udp_send(const uint8_t destination_ipv4[4],
                   const void *payload, uint16_t payload_length);
 bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
                      uint64_t timeout_ticks);
+/*
+ * Send a complete caller-owned buffer using bounded MSS-sized segments.
+ * This bootstrap client waits for each cumulative ACK and retries a segment
+ * a fixed number of times. It is synchronous and stop-and-wait; it does not
+ * yet implement congestion control or out-of-order/partial ACK handling.
+ */
 bool net_tcp_send(const void *payload, uint16_t payload_length);
 size_t net_tcp_receive(void *buffer, size_t capacity);
 void net_tcp_close(void);

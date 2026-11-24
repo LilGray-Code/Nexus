@@ -577,6 +577,19 @@ static void draw_shell(void) {
         desktop_theme_is_light() ? 230U : 12U,
         desktop_theme_is_light() ? 238U : 35U,
         desktop_theme_is_light() ? 247U : 63U);
+    /* Subtle layered accent glows add depth while remaining software-rendered. */
+    uint64_t glow_radius = height / 4U;
+    if (glow_radius > 220U) glow_radius = 220U;
+    if (glow_radius < 32U) glow_radius = 32U;
+    graphics_blend_circle(width * 4U / 5U, height / 3U,
+        (uint32_t)glow_radius,
+        desktop_accent_palette[desktop_accent_index][0],
+        desktop_accent_palette[desktop_accent_index][1],
+        desktop_accent_palette[desktop_accent_index][2],
+        desktop_theme_is_light() ? 22U : 38U);
+    graphics_blend_circle(width * 3U / 5U, height * 2U / 3U,
+        (uint32_t)(glow_radius / 2U),
+        117U, 136U, 244U, desktop_theme_is_light() ? 16U : 28U);
     for (uint64_t band = 0U; band < 5U; ++band) {
         const uint64_t x = width / 2U + band * (width / 14U);
         if (x < width)

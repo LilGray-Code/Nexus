@@ -24,6 +24,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   running session and are not yet saved across reboots. The current shell still
   presents one foreground application view at a time; this is not yet a
   multi-window compositor with independent overlapping app instances.
+- The framebuffer renderer supports clipped rectangles, alpha blending,
+  rounded panels, and bounded row-rasterized circles used for subtle wallpaper
+  lighting. This is CPU software rendering on a linear framebuffer, not GPU
+  acceleration or a DirectX/OpenGL implementation.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.

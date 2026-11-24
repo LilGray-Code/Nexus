@@ -32,6 +32,13 @@ void graphics_draw_rect(uint64_t x, uint64_t y, uint64_t width,
 void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
                          uint64_t height, uint8_t red, uint8_t green,
                          uint8_t blue, uint8_t alpha);
+/* Circle radius is bounded to 2048 pixels; fully off-screen rows are skipped. */
+void graphics_fill_circle(uint64_t center_x, uint64_t center_y,
+                          uint32_t radius, uint8_t red, uint8_t green,
+                          uint8_t blue);
+void graphics_blend_circle(uint64_t center_x, uint64_t center_y,
+                           uint32_t radius, uint8_t red, uint8_t green,
+                           uint8_t blue, uint8_t alpha);
 /* Rounded rectangles use a bounded radius (maximum 256 pixels). */
 void graphics_round_rect(uint64_t x, uint64_t y, uint64_t width,
                           uint64_t height, uint32_t radius,

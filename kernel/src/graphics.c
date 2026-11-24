@@ -167,6 +167,98 @@ void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
 }
 
 
+
+#define NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS 2048U
+
+/* Integer square root with a fixed, small search interval. Circle rasterization
+ * is row-based, so the cost is bounded by 4097 scanlines rather than radius^2.
+ */
+static uint32_t graphics_integer_sqrt(uint32_t value) {
+    uint32_t low = 0U;
+    uint32_t high = NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS + 1U;
+    while (high - low > 1U) {
+        const uint32_t middle = low + (high - low) / 2U;
+        if (middle * middle <= value) low = middle;
+        else high = middle;
+    }
+    return low;
+}
+
+static void graphics_circle_internal(
+    uint64_t center_x, uint64_t center_y, uint32_t radius,
+    uint8_t red, uint8_t green, uint8_t blue, uint8_t alpha,
+    bool blend) {
+    if (!initialized || radius > NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS ||
+        (blend && alpha == 0U)) return;
+
+    const uint64_t surface_width = active_surface.width;
+    const uint64_t surface_height = active_surface.height;
+    if (center_y >= surface_height &&
+        center_y - surface_height >= radius) return;
+
+    const uint64_t first_y = center_y > radius
+        ? center_y - radius : 0U;
+    uint64_t last_y;
+    if (center_y >= surface_height) {
+        last_y = surface_height - 1U;
+    } else {
+        const uint64_t available_below = surface_height - 1U - center_y;
+        last_y = radius > available_below
+            ? surface_height - 1U : center_y + radius;
+    }
+    if (first_y >= surface_height || first_y > last_y) return;
+
+    const uint32_t radius_squared = radius * radius;
+    for (uint64_t y = first_y; y <= last_y; ++y) {
+        const uint64_t distance_y = y >= center_y
+            ? y - center_y : center_y - y;
+        const uint32_t dy = (uint32_t)distance_y;
+        const uint32_t horizontal_squared =
+            radius_squared - dy * dy;
+        const uint32_t span = graphics_integer_sqrt(horizontal_squared);
+        uint64_t left;
+        uint64_t right;
+
+        if (center_x >= surface_width) {
+            const uint64_t distance_left =
+                center_x - (surface_width - 1U);
+            if (distance_left > span) continue;
+            left = center_x > span ? center_x - span : 0U;
+            right = surface_width - 1U;
+        } else {
+            left = center_x > span ? center_x - span : 0U;
+            const uint64_t available_right =
+                surface_width - 1U - center_x;
+            right = span > available_right
+                ? surface_width - 1U : center_x + span;
+        }
+
+        if (right < left) continue;
+        const uint64_t row_width = right - left + 1U;
+        if (blend) {
+            graphics_blend_rect(left, y, row_width, 1U,
+                                red, green, blue, alpha);
+        } else {
+            graphics_fill_rect(left, y, row_width, 1U,
+                               red, green, blue);
+        }
+    }
+}
+
+void graphics_fill_circle(uint64_t center_x, uint64_t center_y,
+                          uint32_t radius, uint8_t red, uint8_t green,
+                          uint8_t blue) {
+    graphics_circle_internal(center_x, center_y, radius,
+                             red, green, blue, 255U, false);
+}
+
+void graphics_blend_circle(uint64_t center_x, uint64_t center_y,
+                           uint32_t radius, uint8_t red, uint8_t green,
+                           uint8_t blue, uint8_t alpha) {
+    graphics_circle_internal(center_x, center_y, radius,
+                             red, green, blue, alpha, true);
+}
+
 static uint32_t rounded_row_inset(uint32_t radius, uint32_t distance) {
     if (radius == 0U || distance >= radius) return 0U;
     const uint32_t radius_squared = radius * radius;

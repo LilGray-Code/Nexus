@@ -55,6 +55,32 @@ int main(void) {
     graphics_blend_rect(7U, 5U, UINT64_MAX, UINT64_MAX,
                         0U, 255U, 0U, 128U);
 
+    /* Filled circles include their axis edges but not outside corner pixels. */
+    graphics_clear(0U, 0U, 0U);
+    graphics_fill_circle(4U, 3U, 2U, 255U, 0U, 0U);
+    assert(guarded[1U + 3U * WIDTH + 4U] == 0x00FF0000U);
+    assert(guarded[1U + 3U * WIDTH + 2U] == 0x00FF0000U);
+    assert(guarded[1U + 1U * WIDTH + 4U] == 0x00FF0000U);
+    assert(guarded[1U + 1U * WIDTH + 2U] == 0U);
+
+    /* Circles clip at every surface edge and safely skip remote centers. */
+    graphics_clear(0U, 0U, 0U);
+    graphics_fill_circle(0U, 0U, 2U, 0U, 255U, 0U);
+    assert(guarded[1U] == 0x0000FF00U);
+    assert(guarded[1U + 2U * WIDTH + 2U] == 0U);
+    graphics_fill_circle(WIDTH + 3U, 2U, 2U, 255U, 255U, 255U);
+    graphics_fill_circle(3U, HEIGHT + 2U, 1U, 255U, 255U, 255U);
+    graphics_fill_circle(4U, 3U, 2049U, 255U, 255U, 255U);
+    assert(guarded[1U + 3U * WIDTH + 4U] == 0U);
+
+    /* Alpha circles blend their clipped spans using the same channel rules. */
+    graphics_clear(0U, 0U, 0U);
+    graphics_blend_circle(4U, 3U, 1U, 255U, 0U, 0U, 128U);
+    assert(((guarded[1U + 3U * WIDTH + 4U] >> 16) & 0xFFU) >= 127U);
+    assert(((guarded[1U + 3U * WIDTH + 4U] >> 16) & 0xFFU) <= 128U);
+    graphics_blend_circle(4U, 3U, 1U, 0U, 255U, 0U, 0U);
+    assert(guarded[1U + 3U * WIDTH + 4U] & 0x00FF0000U);
+
     /* Rounded rectangles clip safely and leave their corner pixels untouched. */
     graphics_clear(0U, 0U, 0U);
     graphics_round_rect(1U, 1U, 6U, 4U, 2U, 0U, 255U, 0U);

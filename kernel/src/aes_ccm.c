@@ -469,8 +469,10 @@ bool nexus_aes_key_unwrap_128(
     const size_t output_bytes =
         wrapped_length - NEXUS_AES_KEY_WRAP_OVERHEAD_BYTES;
     if (plaintext == NULL || plaintext_capacity < output_bytes ||
-        wrapped == plaintext ||
+        wrapped == plaintext || kek == plaintext ||
         ranges_partially_overlap(wrapped, wrapped_length,
+                                 plaintext, output_bytes) ||
+        ranges_partially_overlap(kek, NEXUS_AES128_KEY_BYTES,
                                  plaintext, output_bytes))
         return false;
 

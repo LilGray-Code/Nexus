@@ -190,7 +190,8 @@ read-only file open/read/close, bounded file writes, and runtime ABI version
 discovery. ABI version 1 is reported by syscall 7; applications should check
 `nexus_abi_version()` before using version-specific services. The SDK build
 also creates a reusable static `libnexus.a` with bounded memory/string and file
-I/O helpers. The bundled C
+I/O helpers, including `nexus_printf()` for bounded `%s`, `%c`, signed/unsigned
+integer, hexadecimal, pointer, and percent formatting with short-write retry. The bundled C
 application opens `README.TXT`, reads and verifies its contents, closes the
 descriptor, writes `HELLO.OUT` through the VFS, reopens it and verifies the
 written bytes, then writes a success message and exits with status 7. The
@@ -201,7 +202,7 @@ through NXFS when explicitly writable, otherwise through the volatile RAM
 overlay; FAT32 is never written.
 
 The runtime is intentionally small, not a general-purpose C library or POSIX
-implementation. It has no heap allocator, formatted stdio, dynamic linking,
+implementation. It has no heap allocator, full libc/POSIX stdio semantics, dynamic linking,
 shared libraries, signals, sockets, native GUI SDK, background user-process
 scheduling, or Windows PE/COFF compatibility. The test image stores this static ELF in a bounded
 two-cluster FAT32 chain.
@@ -212,3 +213,10 @@ syscall simulator. It covers partial file reads and console writes, EOF,
 capacity overflow, missing files, close failures, string/memory operations,
 and VFS file-write/readback. The production application still uses the real
 ring-3 `int 0x80` entry path.
+
+The native runtime also includes a bounded `nexus_printf()` formatter. It
+supports `%%`, `%c`, `%s`, `%d`/`%i`, `%u`, `%x`/`%X`, and `%p`, with optional
+numeric width/zero padding (maximum width 32) and a 511-byte output bound.
+Host tests verify formatting, argument conversions, invalid specifiers, and
+short-write completion. This is intentionally a small SDK formatter, not a
+complete ISO C `printf` implementation.

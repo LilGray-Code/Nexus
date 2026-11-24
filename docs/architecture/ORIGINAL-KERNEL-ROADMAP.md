@@ -1155,3 +1155,16 @@ This remains an early runtime, not libc/POSIX: no heap allocator, formatted
 stdio, directory descriptors, background process API, dynamic linker, shared
 libraries, or Win32 layer are claimed. All buffers are caller-owned and
 capacity-bounded.
+
+
+### Bounded native formatted console output
+
+The SDK runtime now includes `nexus_printf()` with an intentionally small
+format subset: `%%`, `%c`, `%s`, `%d`/`%i`, `%u`, `%x`/`%X`, and `%p`. Numeric
+widths up to 32 and zero padding are supported. Formatting uses a fixed
+512-byte stack buffer and rejects unsupported specifiers, oversized widths,
+and output overflow rather than allocating memory or overrunning a caller
+buffer. The final write uses the existing short-write-safe console routine.
+The host syscall-shim tests cover mixed conversions, zero padding, invalid
+formats, and short-write completion. This improves native application
+usability but is not a full C standard library or POSIX stdio implementation.

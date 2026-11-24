@@ -44,8 +44,8 @@ directory descriptors.
 `libnexus.a` currently provides allocation-free memory/string helpers,
 `nexus_write_all()` for retrying valid short writes,
 `nexus_read_file()` for joining partial reads into a caller-owned buffer,
-`nexus_write_file()` for the VFS-backed file-write syscall, and
-`nexus_puts()` for console output.
+`nexus_write_file()` for the VFS-backed file-write syscall, `nexus_puts()`
+for console output, and `nexus_printf()` for bounded formatted output.
 
 `nexus_read_file()` requires an explicit buffer capacity. It returns
 `-NEXUS_EFBIG` if the file does not fit, closes the descriptor on success and
@@ -56,8 +56,8 @@ if a write reports zero progress.
 The host test build defines `NEXUS_USERLAND_HOST_TEST` to inject a deterministic
 syscall simulator. Production builds do not use this shim and invoke the
 real kernel ABI. Tests cover partial reads/writes, EOF, capacity overflow,
-missing files, close failures, memory/string operations, and file-write/
-readback.
+missing files, close failures, memory/string operations, formatted output, invalid format rejection, and
+file-write/readback.
 
 ## Sample application and limitations
 
@@ -74,5 +74,15 @@ x86-64 ET_EXEC ELF files only: no PIE, dynamic linker, shared libraries, TLS,
 or Windows PE/COFF. The current process image limit is 128 KiB, process names
 are limited to 15 characters, and the initial descriptor table and user
 console are bootstrap facilities. Programs run synchronously and the shell
-resumes only after process exit. There is no heap allocator, formatted stdio,
+resumes only after process exit. There is no heap allocator, full libc/POSIX formatted stdio,
 directory descriptor API, process-spawn API, GUI SDK, or background scheduler.
+
+## Bounded formatted output
+
+`nexus_printf()` accepts `%%`, `%c`, `%s`, `%d`/`%i`, `%u`, `%x`/`%X`, and
+`%p`. Numeric conversions may use a width up to 32 and optional zero padding
+(e.g. `%04u`). Output is assembled in a fixed 512-byte buffer and then sent
+through `nexus_write_all()`, so valid short writes are retried. Invalid
+specifiers/widths return `-NEXUS_EINVAL`; output overflow returns
+`-NEXUS_EFBIG`. This is a small freestanding formatter, not full ISO C
+`printf`/`stdio` compatibility.

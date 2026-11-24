@@ -36,6 +36,15 @@ int nexus_https_connect(struct nexus_https_connection *connection,
                         size_t ca_pem_length,
                         uint64_t timeout_ticks);
 
+/* Connect to an explicit TCP port while retaining hostname-based SNI and
+ * certificate identity validation.
+ */
+int nexus_https_connect_port(struct nexus_https_connection *connection,
+                             const char *hostname, uint16_t remote_port,
+                             const unsigned char *ca_pem,
+                             size_t ca_pem_length,
+                             uint64_t timeout_ticks);
+
 bool nexus_https_is_verified(
     const struct nexus_https_connection *connection);
 int nexus_https_write(struct nexus_https_connection *connection,

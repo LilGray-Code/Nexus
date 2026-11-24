@@ -25,7 +25,7 @@ static int tls_send_bridge(void *context, const unsigned char *buffer,
 
     const int result = client->io.send(client->io.context, buffer, length);
     if (result <= 0 || (size_t)result > length)
-        return result < 0 ? result : MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+        return result < 0 ? result : NEXUS_TLS_ERR_TRANSPORT;
     return result;
 }
 
@@ -40,7 +40,7 @@ static int tls_receive_bridge(void *context, unsigned char *buffer,
     const int result =
         client->io.receive(client->io.context, buffer, capacity);
     if (result < 0) return result;
-    if ((size_t)result > capacity) return MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+    if ((size_t)result > capacity) return NEXUS_TLS_ERR_TRANSPORT;
     return result; /* Zero is an orderly transport EOF. */
 }
 

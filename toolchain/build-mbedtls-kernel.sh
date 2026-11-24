@@ -41,12 +41,19 @@ for archive in \
         exit 1
     }
 done
-printf 'Freestanding Mbed TLS 4.1.2 libraries built at %s\\n' "$BUILD"
+printf 'Freestanding Mbed TLS 4.1.2 libraries built at %s\n' "$BUILD"
 find "$BUILD" -type f -name '*.a' -print | sort
 printf 'Undefined symbols referenced by Mbed TLS archives (kernel link review):\\n'
 nm -u $(find "$BUILD" -type f -name '*.a' -print | sort) |
     awk '{print $NF}' | sort -u |
     grep -Ev '^(mbedtls_|psa_|mbed|tfpsa|Hacl_|Hacl|__.*)
+
+printf 'TLS archive contents:\\n'
+for archive in $(find "$BUILD" -type f -name '*.a' -print | sort); do
+    printf '%s: ' "$archive"
+    ar t "$archive" | head -n 3 | tr '\n' ' '
+    printf '\\n'
+done
  || true
 
 printf 'TLS archive contents:\\n'

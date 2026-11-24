@@ -1,0 +1,142 @@
+name: Nexus native SDK and FAT32 packaging tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "userland/**"
+      - "build/create-gpt-test-image.py"
+      - ".github/workflows/nexus-native-sdk.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-sdk-and-image:
+    name: Build native ELF and verify FAT32 cluster chain
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Build SDK sample with strict freestanding flags
+        run: |
+          make -C userland clean inspect
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+
+          path = Path("build/userland/HELLO.ELF")
+          image = path.read_bytes()
+          assert len(image) > 512, "test must exercise a multi-cluster file"
+          assert len(image) <= 4 * 512, "native sample exceeds bounded FAT chain"
+          assert image[:4] == b"\x7fELF"
+          assert image[4] == 2 and image[5] == 1
+          e_type, e_machine = struct.unpack_from("<HH", image, 16)
+          assert e_type == 2 and e_machine == 62
+          phoff = struct.unpack_from("<Q", image, 32)[0]
+          phentsize, phnum = struct.unpack_from("<HH", image, 54)
+          assert phentsize == 56 and phnum > 0
+          load_segments = []
+          for index in range(phnum):
+              item = struct.unpack_from("<IIQQQQQQ", image,
+                                        phoff + index * phentsize)
+              p_type, flags, offset, vaddr, _paddr, filesz, memsz, align = item
+              if p_type != 1:
+                  continue
+              assert flags & 1 and flags & 4
+              assert not (flags & 2), "W+X load segment is forbidden"
+              assert align in (0, 1) or (align & (align - 1)) == 0
+              if align > 1:
+                  assert vaddr % align == offset % align
+              assert offset + filesz <= len(image)
+              assert memsz >= filesz
+              load_segments.append(item)
+          assert len(load_segments) == 1, "sample should have one RX load segment"
+          print(f"Validated static x86-64 ELF64 sample: {len(image)} bytes")
+          PY
+
+      - name: Generate disposable GPT and FAT32 image with compiled app
+        run: |
+          python3 build/create-gpt-test-image.py /tmp/nexus-native-sdk.img build/userland/HELLO.ELF
+          stat -c "Disposable image size: %s bytes" /tmp/nexus-native-sdk.img
+
+      - name: Read back every native app cluster from FAT32
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+
+          image_path = Path("/tmp/nexus-native-sdk.img")
+          elf_path = Path("build/userland/HELLO.ELF")
+          sector = 512
+          partition_lba = 2048
+          with image_path.open("rb") as disk:
+              disk.seek(partition_lba * sector)
+              boot = disk.read(sector)
+              assert boot[510:512] == b"\x55\xaa"
+              bytes_per_sector = struct.unpack_from("<H", boot, 11)[0]
+              sectors_per_cluster = boot[13]
+              reserved = struct.unpack_from("<H", boot, 14)[0]
+              fat_count = boot[16]
+              sectors_per_fat = struct.unpack_from("<I", boot, 36)[0]
+              root_cluster = struct.unpack_from("<I", boot, 44)[0]
+              assert bytes_per_sector == sector and sectors_per_cluster == 1
+              assert fat_count == 2 and root_cluster == 2
+              fat_start = partition_lba + reserved
+              data_start = fat_start + fat_count * sectors_per_fat
+
+              disk.seek(data_start * sector)
+              root = disk.read(sector)
+              entries = {}
+              for offset in range(0, sector, 32):
+                  entry = root[offset:offset + 32]
+                  if not entry or entry[0] == 0:
+                      break
+                  if entry[0] == 0xE5 or entry[11] == 0x0F:
+                      continue
+                  name = entry[0:11]
+                  first_cluster = (
+                      struct.unpack_from("<H", entry, 20)[0] << 16
+                  ) | struct.unpack_from("<H", entry, 26)[0]
+                  size = struct.unpack_from("<I", entry, 28)[0]
+                  entries[name] = (first_cluster, size)
+
+              assert b"HELLO   ELF" in entries
+              first_cluster, file_size = entries[b"HELLO   ELF"]
+              assert first_cluster == 4
+              expected = elf_path.read_bytes()
+              assert file_size == len(expected)
+              assert file_size > sector
+
+              def fat_next(cluster):
+                  disk.seek(fat_start * sector + cluster * 4)
+                  return struct.unpack("<I", disk.read(4))[0] & 0x0FFFFFFF
+
+              recovered = bytearray()
+              visited = set()
+              cluster = first_cluster
+              while True:
+                  assert cluster not in visited, "FAT chain loop"
+                  assert cluster >= 2
+                  visited.add(cluster)
+                  disk.seek((data_start + cluster - 2) * sector)
+                  recovered.extend(disk.read(sector))
+                  next_cluster = fat_next(cluster)
+                  if next_cluster >= 0x0FFFFFF8:
+                      break
+                  cluster = next_cluster
+                  assert len(visited) <= 4, "FAT chain exceeds bound"
+
+              assert bytes(recovered[:file_size]) == expected
+              assert len(visited) == 2, "sample should occupy exactly two clusters"
+              assert fat_next(3) == 5, "README fragmented first cluster changed"
+              assert fat_next(5) >= 0x0FFFFFF8, "README fragmented chain broken"
+              print(f"PASS: {file_size}-byte HELLO.ELF read back from FAT clusters {sorted(visited)}")
+          PY

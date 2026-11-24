@@ -44,6 +44,9 @@ bool vfs_nxfs_mounted(void);
 bool vfs_nxfs_writable(void);
 bool vfs_save_ram_file_to_nxfs(const char *name);
 bool vfs_write_file(const char *name, const void *data, size_t length);
+/* Root-scoped config/data I/O ignores the current directory but never writes FAT32. */
+bool vfs_write_root_file(const char *name, const void *data, size_t length);
+bool vfs_open_root_readonly(const char *name, struct nexus_vfs_file *file);
 bool vfs_root_mounted(void);
 size_t vfs_directory_depth(void);
 bool vfs_current_path(char *buffer, size_t capacity);

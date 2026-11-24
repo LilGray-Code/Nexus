@@ -567,6 +567,22 @@ bool vfs_write_file(const char *name, const void *data, size_t length) {
     return vfs_ramfs_write(name, data, length);
 }
 
+/*
+ * Root-scoped writes are intended for small system preferences and metadata.
+ * They deliberately ignore the caller's current directory, so an application
+ * cannot accidentally save configuration into whichever folder Files left
+ * selected. Persistent NXFS errors are propagated; only an absent/read-only
+ * NXFS volume falls back to the bounded volatile RAM overlay.
+ */
+bool vfs_write_root_file(const char *name, const void *data, size_t length) {
+    if (!vfs_target_is_leaf(name) ||
+        (length != 0U && data == NULL) ||
+        length > NEXUS_NXFS_MAX_FILE_BYTES) return false;
+    if (nxfs_root_mounted && nxfs_is_writable())
+        return nxfs_write_file(name, data, length);
+    return vfs_ramfs_write(name, data, length);
+}
+
 bool vfs_current_directory_writable(void) {
     if (directory_backend == VFS_DIRECTORY_FAT32) return false;
     if (directory_backend == VFS_DIRECTORY_NXFS)
@@ -719,6 +735,47 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
         file->open = true;
         file->fat32_file = true;
         return true;
+    }
+    return false;
+}
+
+/*
+ * Open a simple file name from the volume root without changing the current
+ * directory backend or directory stack. Lookup order mirrors the root VFS
+ * overlay: RAMFS, NXFS Data volume, then read-only FAT32.
+ */
+bool vfs_open_root_readonly(const char *name, struct nexus_vfs_file *file) {
+    if (!vfs_target_is_leaf(name) || file == NULL) return false;
+    *file = (struct nexus_vfs_file){0};
+
+    struct ramfs_entry *ram_entry = ramfs_find(name);
+    if (ram_entry != NULL) {
+        file->filesystem_entry = ram_entry;
+        file->open = true;
+        file->ram_file = true;
+        return true;
+    }
+
+    if (nxfs_root_mounted) {
+        const struct nexus_nxfs_entry *entry = vfs_nxfs_find_path(name);
+        if (entry != NULL && !entry->directory) {
+            file->filesystem_entry = entry;
+            file->open = true;
+            file->nxfs_file = true;
+            return true;
+        }
+    }
+
+    if (root_mounted) {
+        for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
+            const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
+            if (entry == NULL || !name_equal(entry->name, name) ||
+                (entry->attributes & 0x10U) != 0U) continue;
+            file->fat32_snapshot = *entry;
+            file->open = true;
+            file->fat32_file = true;
+            return true;
+        }
     }
     return false;
 }

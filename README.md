@@ -18,16 +18,27 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   maximize/restore/close controls, and a bottom-corner resize grip. Keyboard
   shortcuts include Alt+Tab / Alt+Shift+Tab to cycle app views, Alt+F4 to close,
   Win+Left/Right/Up/Down for window placement, Win+E for Files, Win+I for
-  Settings, Win+D for Home, and Ctrl+Esc or the Windows key for Start. The shell
-  also supports live Dark/Light appearance, four accent palettes, and
-  mouse-selectable Settings controls. Appearance preferences last for the
-  running session and are not yet saved across reboots. The current shell still
-  presents one foreground application view at a time; this is not yet a
-  multi-window compositor with independent overlapping app instances.
+  Settings, Win+D for Home, and Ctrl+Esc or the Windows key for Start. The Start
+  launcher supports typed app search, Up/Down selection, and Enter to launch.
+  The shell also supports live Dark/Light appearance, four accent palettes, and
+  mouse-selectable Settings controls. Theme/accent preferences use a versioned,
+  checksum-validated `NEXUS.CFG` in the root of the NXFS Data volume. Settings
+  or Files performs the existing explicit storage discovery before loading
+  preferences; no user disk scan was added to boot. When a writable NXFS Data
+  volume is unavailable, preferences fall back to volatile RAM and do not
+  survive reboot. The current shell still presents one foreground application
+  view at a time; this is not yet a multi-window compositor with independent
+  overlapping app instances.
 - The framebuffer renderer supports clipped rectangles, alpha blending,
   rounded panels, and bounded row-rasterized circles used for subtle wallpaper
   lighting. This is CPU software rendering on a linear framebuffer, not GPU
   acceleration or a DirectX/OpenGL implementation.
+- Root-scoped VFS configuration I/O reads/writes simple files at the NXFS Data
+  volume root without changing the current directory. It prefers persistent
+  NXFS writes, never writes FAT32, and uses the bounded RAM overlay only when
+  persistent NXFS is unavailable or read-only. Host integration tests exercise
+  root preferences while nested in NXFS/FAT32 directories and verify remount
+  retention.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.

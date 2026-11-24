@@ -37,6 +37,9 @@ static uint64_t screen_width;
 static uint64_t screen_height;
 static bool desktop_ready;
 static bool start_menu_open;
+static char start_menu_query[32];
+static size_t start_menu_query_length;
+static size_t start_menu_selection;
 static bool window_maximized;
 static bool window_positioned;
 static uint64_t window_position_x;
@@ -71,6 +74,10 @@ static const uint8_t desktop_accent_palette[4][3] = {
     {82U, 198U, 155U},  /* Emerald */
     {217U, 164U, 83U}   /* Amber */
 };
+#define NEXUS_DESKTOP_PREF_BYTES 7U
+static bool desktop_preferences_loaded;
+static bool desktop_preferences_saved;
+static bool desktop_preferences_persistent;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
 static bool keyboard_left_control;
@@ -246,6 +253,65 @@ static bool desktop_theme_is_light(void) {
     return desktop_theme == DESKTOP_THEME_LIGHT;
 }
 
+static void desktop_preferences_save(void) {
+    uint8_t record[NEXUS_DESKTOP_PREF_BYTES] = {
+        'N', 'X', 'P', '1', (uint8_t)desktop_theme,
+        desktop_accent_index, 0xA7U
+    };
+    for (size_t i = 0U; i < NEXUS_DESKTOP_PREF_BYTES - 1U; ++i)
+        record[NEXUS_DESKTOP_PREF_BYTES - 1U] ^= record[i];
+
+    desktop_preferences_saved = vfs_write_root_file(
+        "NEXUS.CFG", record, sizeof(record));
+    desktop_preferences_persistent =
+        desktop_preferences_saved && vfs_nxfs_writable();
+    serial_write(desktop_preferences_persistent
+        ? "DESKTOP: personalization saved to persistent NXFS\r\n"
+        : (desktop_preferences_saved
+            ? "DESKTOP: personalization saved to volatile RAM only\r\n"
+            : "DESKTOP: personalization save unavailable\r\n"));
+}
+
+static void desktop_preferences_load(void) {
+    if (desktop_preferences_loaded) return;
+    desktop_preferences_loaded = true;
+
+    struct nexus_vfs_file file;
+    if (!vfs_open_root_readonly("NEXUS.CFG", &file)) return;
+    uint32_t size = 0U;
+    uint8_t record[NEXUS_DESKTOP_PREF_BYTES] = {0};
+    size_t bytes = 0U;
+    const bool valid_size = vfs_file_size(&file, &size) &&
+                            size == sizeof(record);
+    const bool read_ok = valid_size &&
+        vfs_read(&file, record, sizeof(record), &bytes) &&
+        bytes == sizeof(record);
+    const bool from_nxfs = file.nxfs_file;
+    vfs_close(&file);
+    if (!read_ok || record[0] != 'N' || record[1] != 'X' ||
+        record[2] != 'P' || record[3] != '1' ||
+        record[4] > DESKTOP_THEME_LIGHT ||
+        record[5] >= sizeof(desktop_accent_palette) /
+                         sizeof(desktop_accent_palette[0])) {
+        serial_write("DESKTOP: ignored invalid personalization record\r\n");
+        return;
+    }
+    uint8_t checksum = 0xA7U;
+    for (size_t i = 0U; i < sizeof(record) - 1U; ++i)
+        checksum ^= record[i];
+    if (checksum != record[sizeof(record) - 1U]) {
+        serial_write("DESKTOP: personalization checksum mismatch\r\n");
+        return;
+    }
+
+    desktop_theme = (enum desktop_theme_mode)record[4];
+    desktop_accent_index = record[5];
+    desktop_preferences_saved = true;
+    desktop_preferences_persistent = from_nxfs;
+    serial_write("DESKTOP: personalization loaded from volume root\r\n");
+}
+
+
 static void desktop_draw_accent(uint64_t x, uint64_t y,
                                 uint64_t width, uint64_t height) {
     graphics_fill_rect(x, y, width, height,
@@ -257,9 +323,7 @@ static void desktop_draw_accent(uint64_t x, uint64_t y,
 static void desktop_toggle_theme(void) {
     desktop_theme = desktop_theme_is_light()
         ? DESKTOP_THEME_DARK : DESKTOP_THEME_LIGHT;
-    serial_write(desktop_theme_is_light()
-        ? "DESKTOP: light shell theme selected (session only)\r\n"
-        : "DESKTOP: dark theme selected (session only)\r\n");
+    desktop_preferences_save();
 }
 
 static void desktop_cycle_accent(void) {
@@ -267,7 +331,7 @@ static void desktop_cycle_accent(void) {
         (uint8_t)((desktop_accent_index + 1U) %
                   (sizeof(desktop_accent_palette) /
                    sizeof(desktop_accent_palette[0])));
-    serial_write("DESKTOP: accent palette changed (session only)\r\n");
+    desktop_preferences_save();
 }
 
 static void format_u64(uint64_t value, char output[21]) {
@@ -371,9 +435,72 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
     }
 }
 
+static char desktop_search_upper(char value) {
+    return value >= 'a' && value <= 'z'
+        ? (char)(value - 'a' + 'A') : value;
+}
+
+static bool desktop_search_contains(const char *text, const char *query) {
+    if (text == NULL || query == NULL || query[0] == '\0') return true;
+    for (size_t start = 0U; text[start] != '\0'; ++start) {
+        size_t offset = 0U;
+        while (query[offset] != '\0' && text[start + offset] != '\0' &&
+               desktop_search_upper(text[start + offset]) ==
+                   desktop_search_upper(query[offset])) ++offset;
+        if (query[offset] == '\0') return true;
+    }
+    return false;
+}
+
+static bool desktop_start_menu_app_matches(size_t app) {
+    static const char *const search_terms[5] = {
+        "FILES EXPLORER DOCUMENTS DATA FOLDERS",
+        "WEB BROWSER INTERNET NETWORK",
+        "SETTINGS PERSONALIZATION SYSTEM DISPLAY",
+        "TERMINAL CONSOLE COMMAND",
+        "INSTALL INSTALLER DISK DRIVE SETUP"
+    };
+    return app < 5U &&
+        desktop_search_contains(search_terms[app], start_menu_query);
+}
+
+static size_t desktop_start_menu_visible_app(size_t row) {
+    for (size_t app = 0U; app < 5U; ++app) {
+        if (!desktop_start_menu_app_matches(app)) continue;
+        if (row == 0U) return app;
+        --row;
+    }
+    return 5U;
+}
+
+static size_t desktop_start_menu_visible_count(void) {
+    size_t count = 0U;
+    for (size_t app = 0U; app < 5U; ++app)
+        if (desktop_start_menu_app_matches(app)) ++count;
+    return count;
+}
+
+static void desktop_start_menu_toggle(void) {
+    start_menu_open = !start_menu_open;
+    if (start_menu_open) {
+        start_menu_query_length = 0U;
+        start_menu_query[0] = '\0';
+        start_menu_selection = 0U;
+    }
+}
+
+static void desktop_start_menu_clamp_selection(void) {
+    const size_t count = desktop_start_menu_visible_count();
+    if (count == 0U) start_menu_selection = 0U;
+    else if (start_menu_selection >= count)
+        start_menu_selection = count - 1U;
+}
+
 static void desktop_open_view(enum desktop_view view) {
     active_view = view;
     start_menu_open = false;
+    start_menu_query_length = 0U;
+    start_menu_query[0] = '\0';
     window_positioned = false;
     window_dragging = false;
     window_resizing = false;
@@ -382,7 +509,11 @@ static void desktop_open_view(enum desktop_view view) {
     window_custom_size = false;
     if (view == DESKTOP_FILES) {
         scan_files_once();
+        desktop_preferences_load();
         refresh_files_listing();
+    } else if (view == DESKTOP_SETTINGS) {
+        scan_files_once();
+        desktop_preferences_load();
     } else if (view == DESKTOP_INSTALLER) {
         installer_refresh_plan();
         installer_log_selected_target();
@@ -478,8 +609,8 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
     if (!start_menu_open) return;
     const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-    const uint64_t menu_height = 238U;
-    uint64_t menu_x = 12U;
+    const uint64_t menu_height = 258U;
+    const uint64_t menu_x = 12U;
     uint64_t menu_y = screen_height - bottom_bar - menu_height + 4U;
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
     if (menu_y < top_limit) menu_y = top_limit;
@@ -490,9 +621,8 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                               menu_width, menu_height, 12U,
         desktop_theme_is_light() ? 245U : 19U,
         desktop_theme_is_light() ? 248U : 31U,
-        desktop_theme_is_light() ? 252U : 52U, 244U);
-    graphics_round_rect(menu_x, menu_y,
-                          menu_width, menu_height, 12U,
+        desktop_theme_is_light() ? 252U : 52U, 246U);
+    graphics_round_rect(menu_x, menu_y, menu_width, menu_height, 12U,
         desktop_theme_is_light() ? 166U : 66U,
         desktop_theme_is_light() ? 184U : 111U,
         desktop_theme_is_light() ? 204U : 148U);
@@ -513,6 +643,23 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         desktop_theme_is_light() ? 54U : 247U,
         desktop_theme_is_light() ? 76U : 255U);
 
+    graphics_fill_rect(menu_x + 8U, menu_y + 48U,
+                       menu_width - 16U, 25U,
+        desktop_theme_is_light() ? 255U : 13U,
+        desktop_theme_is_light() ? 255U : 22U,
+        desktop_theme_is_light() ? 255U : 36U);
+    graphics_draw_rect(menu_x + 8U, menu_y + 48U,
+                       menu_width - 16U, 25U,
+        desktop_theme_is_light() ? 173U : 65U,
+        desktop_theme_is_light() ? 190U : 99U,
+        desktop_theme_is_light() ? 208U : 135U);
+    graphics_draw_text(menu_x + 18U, menu_y + 57U,
+        start_menu_query_length == 0U ? "SEARCH APPS" : start_menu_query,
+        1U,
+        desktop_theme_is_light() ? 48U : 235U,
+        desktop_theme_is_light() ? 65U : 245U,
+        desktop_theme_is_light() ? 84U : 252U);
+
     static const char *const names[5] = {
         "FILES - MANAGE YOUR DATA",
         "WEB - NETWORK TEXT BROWSER",
@@ -524,23 +671,36 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
         {217U, 164U, 83U}, {239U, 177U, 119U}
     };
-    for (size_t i = 0U; i < 5U; ++i) {
-        const uint64_t row_y = menu_y + 49U + (uint64_t)i * 34U;
+    size_t visible_row = 0U;
+    for (size_t app = 0U; app < 5U; ++app) {
+        if (!desktop_start_menu_app_matches(app)) continue;
+        const uint64_t row_y = menu_y + 80U +
+                               (uint64_t)visible_row * 33U;
+        const bool selected = visible_row == start_menu_selection;
         graphics_fill_rect(menu_x + 8U, row_y,
-                           menu_width - 16U, 29U,
-            desktop_theme_is_light() ? 233U : 25U,
-            desktop_theme_is_light() ? 239U : 41U,
-            desktop_theme_is_light() ? 246U : 64U);
+                           menu_width - 16U, 28U,
+            selected ? desktop_accent_palette[desktop_accent_index][0]
+                     : (desktop_theme_is_light() ? 233U : 25U),
+            selected ? desktop_accent_palette[desktop_accent_index][1]
+                     : (desktop_theme_is_light() ? 239U : 41U),
+            selected ? desktop_accent_palette[desktop_accent_index][2]
+                     : (desktop_theme_is_light() ? 246U : 64U));
         graphics_fill_rect(menu_x + 16U, row_y + 7U,
-                           14U, 14U, accents[i][0], accents[i][1], accents[i][2]);
+                           14U, 14U, accents[app][0],
+                           accents[app][1], accents[app][2]);
         graphics_draw_text(menu_x + 40U, row_y + 11U,
-                           names[i], 1U,
+                           names[app], 1U,
                            desktop_theme_is_light() ? 42U : 225U,
                            desktop_theme_is_light() ? 58U : 238U,
                            desktop_theme_is_light() ? 77U : 249U);
+        ++visible_row;
     }
+    if (visible_row == 0U)
+        graphics_draw_text(menu_x + 18U, menu_y + 101U,
+                           "NO MATCHING APPS", 1U,
+                           239U, 177U, 119U);
     graphics_draw_text(menu_x + 14U, menu_y + menu_height - 12U,
-                       "ALT+TAB SWITCH   ALT+F4 CLOSE", 1U,
+                       "TYPE TO SEARCH  UP/DOWN  ENTER OPEN  ESC", 1U,
                        desktop_theme_is_light() ? 91U : 140U,
                        desktop_theme_is_light() ? 111U : 170U,
                        desktop_theme_is_light() ? 137U : 195U);
@@ -1376,8 +1536,14 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 322U, storage_status,
                            1U, 170U, 225U, 190U);
         graphics_draw_text(text_x, text_y + 350U,
-                           "THEME PREFERENCES ARE SESSION-ONLY IN THIS BUILD",
-                           1U, 239U, 177U, 119U);
+            desktop_preferences_persistent
+                ? "PERSONALIZATION SAVED TO NEXUS DATA"
+                : (desktop_preferences_saved
+                    ? "PERSONALIZATION SAVED TO RAM ONLY"
+                    : "PERSONALIZATION NOT SAVED"),
+            1U, desktop_preferences_persistent ? 119U : 239U,
+            desktop_preferences_persistent ? 229U : 177U,
+            desktop_preferences_persistent ? 190U : 119U);
         graphics_draw_text(text_x, text_y + 372U,
                            "T: TOGGLE THEME     A: CYCLE ACCENT",
                            1U, 170U, 191U, 211U);
@@ -1547,6 +1713,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     installer_refresh_plan();
     mouse_left_was_down = false;
     start_menu_open = false;
+    start_menu_query_length = 0U;
+    start_menu_query[0] = '\0';
+    start_menu_selection = 0U;
     window_maximized = false;
     window_positioned = false;
     window_dragging = false;
@@ -3256,28 +3425,46 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t taskbar_height = clamp_min(screen_height / 11U, 48U);
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {
-                const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-                const uint64_t menu_height = 238U;
-                uint64_t menu_y = taskbar_top - menu_height + 4U;
-                const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
+                const uint64_t menu_width =
+                    screen_width > 340U ? 304U : screen_width - 24U;
+                const uint64_t menu_height = 258U;
+                const uint64_t top_limit =
+                    clamp_min(screen_height / 16U, 34U) + 8U;
+                uint64_t menu_y = taskbar_top > menu_height
+                    ? taskbar_top - menu_height + 4U : top_limit;
                 if (menu_y < top_limit) menu_y = top_limit;
-                if ((uint64_t)pointer_x >= 12U &&
-                    (uint64_t)pointer_x < 12U + menu_width &&
-                    (uint64_t)pointer_y >= menu_y + 49U &&
-                    (uint64_t)pointer_y < menu_y + 49U + 5U * 34U) {
-                    const size_t app = (size_t)((uint64_t)pointer_y -
-                        (menu_y + 49U)) / 34U;
-                    desktop_open_app(app);
+                if ((uint64_t)pointer_y >= taskbar_top &&
+                    (uint64_t)pointer_x >= 12U &&
+                    (uint64_t)pointer_x < 100U) {
+                    desktop_start_menu_toggle();
                     shell_click_handled = true;
+                } else if ((uint64_t)pointer_x >= 12U &&
+                    (uint64_t)pointer_x < 12U + menu_width &&
+                    (uint64_t)pointer_y >= menu_y &&
+                    (uint64_t)pointer_y < menu_y + menu_height) {
+                    const uint64_t rows_y = menu_y + 80U;
+                    if ((uint64_t)pointer_y >= rows_y &&
+                        (uint64_t)pointer_y < rows_y + 5U * 33U) {
+                        const size_t row = (size_t)((uint64_t)pointer_y -
+                            rows_y) / 33U;
+                        const size_t app = desktop_start_menu_visible_app(row);
+                        if (app < 5U) {
+                            desktop_open_app(app);
+                            shell_click_handled = true;
+                        }
+                    }
+                    if (!shell_click_handled) shell_click_handled = true;
                 } else {
                     start_menu_open = false;
+                    start_menu_query_length = 0U;
+                    start_menu_query[0] = '\0';
                 }
             }
             if (!shell_click_handled &&
                 (uint64_t)pointer_y >= taskbar_top) {
                 if ((uint64_t)pointer_x >= 12U &&
                     (uint64_t)pointer_x < 100U) {
-                    start_menu_open = !start_menu_open;
+                    desktop_start_menu_toggle();
                     shell_click_handled = true;
                 } else {
                     for (size_t app = 0U; app < 5U; ++app) {
@@ -3376,26 +3563,34 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t py = bounds.y;
             const uint64_t sx = px + 32U;
             const uint64_t sy = py + 82U;
+            bool changed = false;
             if ((uint64_t)pointer_y >= sy + 42U &&
                 (uint64_t)pointer_y < sy + 74U) {
                 if ((uint64_t)pointer_x >= sx &&
-                    (uint64_t)pointer_x < sx + 116U) {
+                    (uint64_t)pointer_x < sx + 116U &&
+                    desktop_theme != DESKTOP_THEME_DARK) {
                     desktop_theme = DESKTOP_THEME_DARK;
+                    changed = true;
                 } else if ((uint64_t)pointer_x >= sx + 128U &&
-                           (uint64_t)pointer_x < sx + 244U) {
+                           (uint64_t)pointer_x < sx + 244U &&
+                           desktop_theme != DESKTOP_THEME_LIGHT) {
                     desktop_theme = DESKTOP_THEME_LIGHT;
+                    changed = true;
                 }
             } else if ((uint64_t)pointer_y >= sy + 104U &&
                        (uint64_t)pointer_y < sy + 129U) {
                 for (size_t i = 0U; i < 4U; ++i) {
                     const uint64_t x = sx + (uint64_t)i * 78U;
                     if ((uint64_t)pointer_x >= x &&
-                        (uint64_t)pointer_x < x + 62U) {
+                        (uint64_t)pointer_x < x + 62U &&
+                        desktop_accent_index != (uint8_t)i) {
                         desktop_accent_index = (uint8_t)i;
+                        changed = true;
                         break;
                     }
                 }
             }
+            if (changed) desktop_preferences_save();
             draw_shell();
             draw_pointer();
             return;
@@ -3587,7 +3782,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else {
             if (keyboard_windows && !keyboard_windows_used &&
                 active_view != DESKTOP_INSTALLER) {
-                start_menu_open = !start_menu_open;
+                desktop_start_menu_toggle();
                 draw_shell();
                 draw_pointer();
             }
@@ -3686,29 +3881,63 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view != DESKTOP_INSTALLER &&
         keyboard_left_control && event->scancode == 0x01U) {
-        start_menu_open = !start_menu_open;
+        desktop_start_menu_toggle();
         draw_shell();
         draw_pointer();
         return;
     }
     if (active_view != DESKTOP_INSTALLER && event->scancode == 0x40U) {
-        start_menu_open = !start_menu_open;
+        desktop_start_menu_toggle();
         draw_shell();
         draw_pointer();
         return;
     }
     if (start_menu_open && active_view != DESKTOP_INSTALLER) {
+        bool redraw = false;
         if (event->scancode == 0x01U) {
             start_menu_open = false;
-            draw_shell();
-            draw_pointer();
-            return;
+            start_menu_query_length = 0U;
+            start_menu_query[0] = '\0';
+            redraw = true;
+        } else if (event->scancode == 0x1CU) {
+            const size_t app =
+                desktop_start_menu_visible_app(start_menu_selection);
+            if (app < 5U) {
+                desktop_open_app(app);
+                redraw = true;
+            }
+        } else if (event->scancode == 0x48U) {
+            if (start_menu_selection > 0U) --start_menu_selection;
+            redraw = true;
+        } else if (event->scancode == 0x50U) {
+            const size_t count = desktop_start_menu_visible_count();
+            if (count != 0U && start_menu_selection + 1U < count)
+                ++start_menu_selection;
+            redraw = true;
+        } else if (event->scancode == 0x0EU) {
+            if (start_menu_query_length != 0U)
+                start_menu_query[--start_menu_query_length] = '\0';
+            start_menu_selection = 0U;
+            redraw = true;
+        } else {
+            char value = terminal_scancode_char(event->scancode);
+            if ((value >= 'a' && value <= 'z') ||
+                (value >= 'A' && value <= 'Z') ||
+                (value >= '0' && value <= '9') || value == ' ') {
+                if (start_menu_query_length <
+                    sizeof(start_menu_query) - 1U) {
+                    start_menu_query[start_menu_query_length++] =
+                        desktop_search_upper(value);
+                    start_menu_query[start_menu_query_length] = '\0';
+                    start_menu_selection = 0U;
+                    redraw = true;
+                }
+            }
         }
-        if (event->scancode >= 0x02U && event->scancode <= 0x06U) {
-            desktop_open_app((size_t)(event->scancode - 0x02U));
+        desktop_start_menu_clamp_selection();
+        if (redraw) {
             draw_shell();
             draw_pointer();
-            return;
         }
         return;
     }

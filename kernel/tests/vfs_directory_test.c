@@ -289,6 +289,23 @@ int main(void) {
     assert(vfs_current_path(path, sizeof(path)));
     assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
 
+    /* Root-scoped preferences never follow the current nested directory. */
+    static const uint8_t preferences_a[] = {
+        'N', 'X', 'P', '1', 1U, 3U, 0xA7U ^ 'N' ^ 'X' ^ 'P' ^ '1' ^ 1U ^ 3U
+    };
+    assert(vfs_write_root_file("NEXUS.CFG", preferences_a,
+                               sizeof(preferences_a)));
+    char root_config[32] = {0};
+    struct nexus_vfs_file root_file;
+    assert(vfs_open_root_readonly("NEXUS.CFG", &root_file));
+    size_t root_bytes = 0U;
+    assert(vfs_read(&root_file, root_config, sizeof(preferences_a), &root_bytes));
+    assert(root_bytes == sizeof(preferences_a));
+    assert(memcmp(root_config, preferences_a, sizeof(preferences_a)) == 0);
+    vfs_close(&root_file);
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
+
     static const char payload[] = "Persistent nested VFS file";
     assert(vfs_write_file("NOTE.TXT", payload, sizeof(payload) - 1U));
     struct nexus_vfs_dirent note;
@@ -336,6 +353,15 @@ int main(void) {
     /* Reboot-equivalent remount: VFS path resets but nested metadata persists. */
     nxfs_unmount();
     assert(vfs_mount_root_nxfs(&device, &partition));
+    assert(vfs_open_root_readonly("NEXUS.CFG", &root_file));
+    memset(root_config, 0, sizeof(root_config));
+    root_bytes = 0U;
+    assert(vfs_read(&root_file, root_config, sizeof(preferences_a), &root_bytes));
+    assert(root_bytes == sizeof(preferences_a));
+    assert(memcmp(root_config, preferences_a, sizeof(preferences_a)) == 0);
+    vfs_close(&root_file);
+    assert(find_entry("NEXUS.CFG", &note));
+    assert(note.type == NEXUS_VFS_FILE);
     assert(find_entry("DOCUMENTS", &note));
     assert(note.type == NEXUS_VFS_DIRECTORY);
     assert(vfs_enter_directory("DOCUMENTS"));
@@ -374,6 +400,23 @@ int main(void) {
     assert(vfs_current_path(path, sizeof(path)));
     assert(strcmp(path, "/BOOT/MANUALS") == 0);
     read_current_file("GUIDE.TXT", "Nested FAT guide");
+    /* Root reads remain available while browsing a nested read-only FAT folder. */
+    assert(vfs_open_root_readonly("ROOT.TXT", &root_file));
+    memset(root_config, 0, sizeof(root_config));
+    root_bytes = 0U;
+    assert(vfs_read(&root_file, root_config, 12U, &root_bytes));
+    assert(root_bytes == 12U);
+    assert(memcmp(root_config, "ROOT CONTENT", 12U) == 0);
+    vfs_close(&root_file);
+    assert(vfs_write_root_file("NEXUS.CFG", preferences_a,
+                               sizeof(preferences_a)));
+    assert(vfs_open_root_readonly("NEXUS.CFG", &root_file));
+    memset(root_config, 0, sizeof(root_config));
+    root_bytes = 0U;
+    assert(vfs_read(&root_file, root_config, sizeof(preferences_a), &root_bytes));
+    assert(root_bytes == sizeof(preferences_a));
+    assert(memcmp(root_config, preferences_a, sizeof(preferences_a)) == 0);
+    vfs_close(&root_file);
     assert(vfs_parent_directory());
     assert(vfs_parent_directory());
     assert(vfs_current_path(path, sizeof(path)));

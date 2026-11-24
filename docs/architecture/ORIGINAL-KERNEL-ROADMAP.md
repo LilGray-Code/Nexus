@@ -966,3 +966,28 @@ per-application testing. Hardware drivers, kernel-mode Windows drivers, and
 DirectX behavior are especially separate from ordinary user-mode application
 compatibility. Do not claim support for "all software"; publish exact tested
 applications and limitations.
+
+
+### Persistent desktop preferences and searchable app launcher
+
+The Settings view now stores its dark/light theme and accent palette in a
+small versioned `NEXUS.CFG` record in the root of the NXFS Data volume. The
+record has a fixed length, magic/version bytes, bounded enum values, and a
+checksum before preferences are applied. Root-scoped VFS APIs keep this
+operation independent of the current Files directory and never write FAT32.
+When no writable NXFS Data volume exists, the preference is stored in the
+volatile RAM overlay and the Settings page reports that it will not survive a
+reboot.
+
+To preserve the rule against automatically scanning user disks at boot,
+Settings and Files trigger the existing explicit storage-discovery path; the
+preference record is loaded after that volume scan. A later boot therefore
+loads the stored preference when the user first opens Settings or Files,
+rather than silently mounting/scanning storage during early boot.
+
+The Start launcher now filters the available app catalog as the user types,
+supports Up/Down selection, Backspace editing, Escape dismissal, and Enter to
+launch the selected match. Search terms cover app names and practical aliases
+such as Files/Explorer, Web/Browser, Settings/Personalization, and
+Install/Drive. These are native in-kernel shell controls; they do not claim a
+Windows API or third-party application compatibility runtime.

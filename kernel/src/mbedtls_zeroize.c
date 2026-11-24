@@ -23,6 +23,7 @@ int printf(const char *format, ...) {
 
 #include <limits.h>
 #include <stdarg.h>
+#include <stdbool.h>
 
 /* Append one byte while retaining snprintf's would-have-written count. */
 static void nexus_format_put(char *buffer, size_t capacity,

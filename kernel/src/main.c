@@ -337,6 +337,8 @@ void kmain(void) {
     serial_write_hex(timer_ticks());
     serial_write("\r\n");
 
+    serial_write("K2: scheduler self-test initialization
+");
     scheduler_init();
     scheduler_count_a = 0;
     scheduler_count_b = 0;
@@ -349,8 +351,14 @@ void kmain(void) {
         halt_forever();
     }
 
+    serial_write("K2: scheduler threads created
+");
     scheduler_start();
+    serial_write("K2: scheduler start returned
+");
     scheduler_wait();
+    serial_write("K2: initial scheduler workers finished
+");
 
     bool scheduler_ok = scheduler_count_a == 3 &&
                         scheduler_count_b == 3 &&
@@ -375,12 +383,16 @@ void kmain(void) {
         halt_forever();
     }
     scheduler_wait();
+    serial_write("K2: first recyclable worker pair finished
+");
     if (scheduler_recycle_count != 2U ||
         !scheduler_create_thread(scheduler_recycle_worker, NULL)) {
         serial_write("ERROR: scheduler failed to recycle finished thread slots\r\n");
         halt_forever();
     }
     scheduler_wait();
+    serial_write("K2: recycled worker finished
+");
     if (scheduler_recycle_count != 3U) {
         serial_write("ERROR: scheduler recycled-thread self-test failed\r\n");
         halt_forever();

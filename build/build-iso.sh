@@ -38,7 +38,16 @@ Path("build/limine-binary/limine-bios-hdd.bin").write_bytes(image)
 print(f"Extracted Limine BIOS HDD image: {len(image)} bytes")
 PY
 
-make -C kernel clean all
+# Build the pinned Mbed TLS 1.3 client as freestanding kernel objects.
+# Cryptographic RNG, RTC time, and allocator callbacks are provided by Nexus.
+sh toolchain/fetch-mbedtls.sh
+cmake -S build/deps/mbedtls-4.1.2 -B build/deps/mbedtls-kernel-build \
+  -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF \
+  -DMBEDTLS_CONFIG_SET="MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG;MBEDTLS_PLATFORM_TIME_ALT;MBEDTLS_PLATFORM_GMTIME_R_ALT;MBEDTLS_PLATFORM_MS_TIME_ALT;MBEDTLS_PLATFORM_MEMORY;MBEDTLS_SSL_PROTO_TLS1_3" \
+  -DMBEDTLS_CONFIG_UNSET="MBEDTLS_PSA_BUILTIN_GET_ENTROPY;MBEDTLS_NET_C;MBEDTLS_TIMING_C" \
+  -DCMAKE_C_FLAGS="-O2 -D_GNU_SOURCE -include stdint.h -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel"
+cmake --build build/deps/mbedtls-kernel-build --parallel 2
+make -C kernel clean all NEXUS_TLS=1
 
 ISO_ROOT="$ROOT/build/iso-root"
 rm -rf "$ISO_ROOT"

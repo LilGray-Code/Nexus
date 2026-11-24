@@ -47,6 +47,12 @@ static bool keyboard_right_shift;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
+static const char *installer_transport_label(
+    const struct nexus_block_device *device);
+static void installer_draw_button(uint64_t x, uint64_t y,
+                                  uint64_t width, uint64_t height,
+                                  const char *label, bool selected,
+                                  bool warning);
 static char terminal_scancode_char(uint8_t code);
 static void scan_files_once(void);
 static void refresh_files_listing(void);

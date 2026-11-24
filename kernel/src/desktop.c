@@ -3052,12 +3052,14 @@ browser_retry:
     path[path_length++] = '/';
     for (size_t i = address_start; i < browser_address_length; ++i) {
         const char ch = browser_address[i];
-        if (!in_path && ch == '/') {
+        if (!in_path && (ch == '/' || ch == '?')) {
             in_path = true;
             path_length = 0U;
             path[path_length++] = '/';
+            if (ch == '?') path[path_length++] = '?';
             continue;
         }
+        if (!in_path && ch == '#') break;
         if (!in_path) {
             if (authority_length >= sizeof(authority) - 1U) {
                 browser_set_status("Host name or port is too long");

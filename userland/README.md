@@ -1,8 +1,8 @@
 # Nexus native application SDK (early ABI)
 
 This directory contains the first freestanding C SDK for native Nexus
-applications. It targets the original x86-64 kernel's current static ELF64
-loader and the initial `int 0x80` syscall ABI.
+applications. It targets the original x86-64 kernel's static ELF64 loader and
+the initial `int 0x80` syscall ABI.
 
 ## Build
 
@@ -11,14 +11,16 @@ From the repository root:
 ```sh
 make -C userland
 make -C userland inspect
+make -C userland test
 ```
 
-The default target produces `build/userland/HELLO.ELF`. The example is
-compiled from C and a minimal startup routine; it is not hand-assembled by the
-disk-image generator. CI inserts this exact compiler-built executable into
-the disposable FAT32 boot-test image.
+The build produces `build/userland/libnexus.a` and
+`build/userland/HELLO.ELF`. The sample is compiled from C and a minimal
+startup routine, then statically links only the runtime functions it uses. CI
+inserts this exact compiler-built executable into the disposable FAT32
+boot-test image.
 
-## Syscalls currently wrapped
+## Syscall ABI
 
 | Wrapper | Syscall | Behavior |
 |---|---:|---|
@@ -32,25 +34,45 @@ the disposable FAT32 boot-test image.
 
 Arguments use RDI/RSI/RDX, the syscall number and result use RAX, and errors
 are returned as negative errno values. The ABI version is currently 1; native
-programs should query `nexus_abi_version()` before using other wrappers. The kernel validates user-memory ranges
-before copying. File names are simple volume-local names; the early interface
-does not support path separators or directory descriptors.
+programs should query `nexus_abi_version()` before using other wrappers. The
+kernel validates user-memory ranges before copying. File names are simple
+volume-local names; the early interface does not support path separators or
+directory descriptors.
 
-## Current limitations
+## Reusable runtime
 
-This is an SDK starter, not a libc or POSIX implementation. The process
-loader accepts static x86-64 ET_EXEC ELF files only: no PIE, dynamic linker,
-shared libraries, TLS, or Windows PE/COFF. The current process image limit is
-128 KiB, process names are limited to 15 characters, and the initial descriptor
-table and user console are bootstrap facilities. Programs run synchronously
-and the shell resumes only after process exit. The test image's HELLO.ELF is
-kept below one 512-byte FAT32 cluster so the compact CI image generator can
-install it without introducing a multi-cluster directory-entry test dependency.
+`libnexus.a` currently provides allocation-free memory/string helpers,
+`nexus_write_all()` for retrying valid short writes,
+`nexus_read_file()` for joining partial reads into a caller-owned buffer,
+`nexus_write_file()` for the VFS-backed file-write syscall, and
+`nexus_puts()` for console output.
 
-The sample deliberately exercises ABI negotiation, open/read/close, VFS file
-write, reopening and verifying the new file, console write, and exit status 7.
-The compiled ELF is stored in a bounded two-cluster FAT32 chain. When run, it
-creates `HELLO.OUT` through the VFS: the file is persistent on a writable
-NXFS data volume and volatile when only the RAM overlay is available. The QEMU boot workflow checks its output and exit status from the
-actual Nexus kernel, making this a verified native ABI example rather than a
-host-only compile demo.
+`nexus_read_file()` requires an explicit buffer capacity. It returns
+`-NEXUS_EFBIG` if the file does not fit, closes the descriptor on success and
+failure paths, and reports the byte count only after a successful close.
+`nexus_write_all()` caps each syscall-sized chunk and returns `-NEXUS_EIO`
+if a write reports zero progress.
+
+The host test build defines `NEXUS_USERLAND_HOST_TEST` to inject a deterministic
+syscall simulator. Production builds do not use this shim and invoke the
+real kernel ABI. Tests cover partial reads/writes, EOF, capacity overflow,
+missing files, close failures, memory/string operations, and file-write/
+readback.
+
+## Sample application and limitations
+
+The `HELLO.ELF` sample checks ABI version 1, reads and verifies
+`README.TXT`, writes `HELLO.OUT` through the VFS, reopens it and verifies the
+written bytes, prints the expected success line, and exits with status 7. The
+compiled ELF is stored in a bounded FAT32 chain (up to four 512-byte clusters).
+At runtime, `HELLO.OUT` is persistent on a writable NXFS data volume and
+volatile when only the RAM overlay is available; read-only FAT32 is never
+written.
+
+This is an early runtime, not libc or POSIX. The process loader accepts static
+x86-64 ET_EXEC ELF files only: no PIE, dynamic linker, shared libraries, TLS,
+or Windows PE/COFF. The current process image limit is 128 KiB, process names
+are limited to 15 characters, and the initial descriptor table and user
+console are bootstrap facilities. Programs run synchronously and the shell
+resumes only after process exit. There is no heap allocator, formatted stdio,
+directory descriptor API, process-spawn API, GUI SDK, or background scheduler.

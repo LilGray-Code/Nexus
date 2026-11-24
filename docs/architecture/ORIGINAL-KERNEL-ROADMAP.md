@@ -1130,3 +1130,28 @@ states. The host Wi-Fi tests exercise both inline-completion paths. This is a
 state-machine correctness improvement only: Nexus still has no registered
 wireless chipset driver or firmware, so live scanning and association are not
 yet available.
+
+
+### Reusable native application runtime library
+
+The first-party SDK now builds a static `libnexus.a` from an allocation-free
+runtime module. It contains bounded memory/string helpers, `nexus_write_all`
+(which handles short writes and refuses zero-progress loops), `nexus_puts`,
+`nexus_read_file` (which joins partial reads, detects capacity overflow, and
+closes the descriptor on every path), and `nexus_write_file` through syscall 6.
+The sample app links this archive for README reads, HELLO.OUT write/readback,
+and console output. Link order is sample object files followed by the runtime
+archive; function-section garbage collection keeps unused helper code out of
+the static executable.
+
+A host-only syscall shim is selected only by `NEXUS_USERLAND_HOST_TEST`.
+Strict host tests simulate partial reads, short writes, EOF, overflow,
+missing files, close errors, file write/readback, and memory/string operations.
+Production binaries keep the real `int 0x80` assembly syscall path. The
+standalone SDK workflow runs these tests before building the static ELF and
+verifying its FAT32 cluster chain.
+
+This remains an early runtime, not libc/POSIX: no heap allocator, formatted
+stdio, directory descriptors, background process API, dynamic linker, shared
+libraries, or Win32 layer are claimed. All buffers are caller-owned and
+capacity-bounded.

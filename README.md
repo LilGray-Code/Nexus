@@ -188,7 +188,9 @@ make -C userland inspect
 The SDK wraps the Nexus `int 0x80` ABI for process exit, console write,
 read-only file open/read/close, bounded file writes, and runtime ABI version
 discovery. ABI version 1 is reported by syscall 7; applications should check
-`nexus_abi_version()` before using version-specific services. The bundled C
+`nexus_abi_version()` before using version-specific services. The SDK build
+also creates a reusable static `libnexus.a` with bounded memory/string and file
+I/O helpers. The bundled C
 application opens `README.TXT`, reads and verifies its contents, closes the
 descriptor, writes `HELLO.OUT` through the VFS, reopens it and verifies the
 written bytes, then writes a success message and exits with status 7. The
@@ -198,8 +200,15 @@ read/write syscalls, console output, and exit status. User-file writes go
 through NXFS when explicitly writable, otherwise through the volatile RAM
 overlay; FAT32 is never written.
 
-This is an early native SDK, not a general-purpose C library or POSIX
-implementation. Dynamic linking, shared libraries, signals, sockets, a native
-GUI SDK, background user-process scheduling, and Windows PE/COFF compatibility
-are not implemented. The test image stores this static ELF in a bounded
+The runtime is intentionally small, not a general-purpose C library or POSIX
+implementation. It has no heap allocator, formatted stdio, dynamic linking,
+shared libraries, signals, sockets, native GUI SDK, background user-process
+scheduling, or Windows PE/COFF compatibility. The test image stores this static ELF in a bounded
 two-cluster FAT32 chain.
+
+
+The native SDK host workflow runs `make -C userland test` against an injected
+syscall simulator. It covers partial file reads and console writes, EOF,
+capacity overflow, missing files, close failures, string/memory operations,
+and VFS file-write/readback. The production application still uses the real
+ring-3 `int 0x80` entry path.

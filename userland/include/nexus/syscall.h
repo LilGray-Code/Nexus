@@ -32,6 +32,19 @@
 #define NEXUS_ENOSYS         38LL
 #define NEXUS_EINVAL         22LL
 
+#ifdef NEXUS_USERLAND_HOST_TEST
+/* Host tests inject a deterministic syscall backend. Production builds use
+ * the real Nexus ring-3 interrupt ABI below.
+ */
+int64_t nexus_test_syscall3(uint64_t number, uint64_t arg1,
+                            uint64_t arg2, uint64_t arg3);
+static inline int64_t nexus_syscall3(uint64_t number,
+                                     uint64_t arg1,
+                                     uint64_t arg2,
+                                     uint64_t arg3) {
+    return nexus_test_syscall3(number, arg1, arg2, arg3);
+}
+#else
 static inline int64_t nexus_syscall3(uint64_t number,
                                      uint64_t arg1,
                                      uint64_t arg2,
@@ -43,6 +56,7 @@ static inline int64_t nexus_syscall3(uint64_t number,
                       : "rcx", "r11", "memory", "cc");
     return (int64_t)result;
 }
+#endif
 
 static inline uint64_t nexus_abi_version(void) {
     return (uint64_t)nexus_syscall3(NEXUS_SYS_ABI_VERSION, 0U, 0U, 0U);

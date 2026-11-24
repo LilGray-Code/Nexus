@@ -160,7 +160,10 @@ jobs:
                   assert len(visited) <= 4, "FAT chain exceeds bound"
 
               assert bytes(recovered[:file_size]) == expected
-              assert len(visited) == 2, "sample should occupy exactly two clusters"
+              expected_clusters = (file_size + sector - 1) // sector
+              assert len(visited) == expected_clusters, (
+                  f"HELLO.ELF chain length {len(visited)} != {expected_clusters}"
+              )
               assert fat_next(3) == 5, "README fragmented first cluster changed"
               assert fat_next(5) >= 0x0FFFFFF8, "README fragmented chain broken"
               print(f"PASS: {file_size}-byte HELLO.ELF read back from FAT clusters {sorted(visited)}")

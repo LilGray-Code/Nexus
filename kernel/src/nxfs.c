@@ -99,14 +99,24 @@ static bool normalize_name(const char *source,
                            char output[NEXUS_NXFS_NAME_MAX]) {
     if (source == NULL || output == NULL) return false;
     size_t length = 0U;
+    size_t segment_length = 0U;
     bool after_dot = false;
     while (source[length] != '\0') {
         if (length >= NEXUS_NXFS_NAME_MAX - 1U) return false;
         const char ch = source[length];
+        if (ch == '/') {
+            if (segment_length == 0U || output[length - 1U] == '.')
+                return false;
+            output[length++] = '/';
+            segment_length = 0U;
+            after_dot = false;
+            continue;
+        }
         if (ch == '.') {
-            if (after_dot || length == 0U) return false;
+            if (after_dot || segment_length == 0U) return false;
             after_dot = true;
             output[length++] = '.';
+            ++segment_length;
             continue;
         }
         const bool valid = (ch >= 'a' && ch <= 'z') ||
@@ -115,8 +125,9 @@ static bool normalize_name(const char *source,
                            ch == '_' || ch == '-';
         if (!valid) return false;
         output[length++] = ascii_upper(ch);
+        ++segment_length;
     }
-    if (length == 0U || output[length - 1U] == '.') return false;
+    if (segment_length == 0U || output[length - 1U] == '.') return false;
     output[length] = '\0';
     return true;
 }
@@ -130,6 +141,50 @@ static bool names_equal(const char *a, const char *b) {
         if (ca == '\0') return true;
     }
     return false;
+}
+
+static bool parent_directory_exists(const char *normalized) {
+    size_t length = 0U;
+    size_t last_separator = NEXUS_NXFS_NAME_MAX;
+    while (length < NEXUS_NXFS_NAME_MAX - 1U &&
+           normalized[length] != '\0') {
+        if (normalized[length] == '/') last_separator = length;
+        ++length;
+    }
+    if (last_separator == NEXUS_NXFS_NAME_MAX) return true;
+    if (last_separator == 0U) return false;
+
+    char parent[NEXUS_NXFS_NAME_MAX];
+    for (size_t i = 0U; i < last_separator; ++i)
+        parent[i] = normalized[i];
+    parent[last_separator] = '\0';
+    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
+        if (nxfs_entries[i].used && nxfs_entries[i].directory &&
+            names_equal(nxfs_entries[i].name, parent)) return true;
+    }
+    return false;
+}
+
+static bool entry_has_child(const char *parent) {
+    size_t length = 0U;
+    while (length < NEXUS_NXFS_NAME_MAX - 1U &&
+           parent[length] != '\0') ++length;
+    if (length == 0U || length >= NEXUS_NXFS_NAME_MAX - 1U) return true;
+    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
+        const struct nexus_nxfs_entry *entry = &nxfs_entries[i];
+        if (!entry->used || names_equal(entry->name, parent)) continue;
+        size_t j = 0U;
+        while (j < length && entry->name[j] == parent[j]) ++j;
+        if (j == length && entry->name[j] == '/') return true;
+    }
+    return false;
+}
+
+static size_t find_entry_slot(const char *normalized) {
+    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i)
+        if (nxfs_entries[i].used &&
+            names_equal(nxfs_entries[i].name, normalized)) return i;
+    return NEXUS_NXFS_MAX_FILES;
 }
 
 bool nxfs_partition_type_matches(const struct nexus_gpt_partition *partition) {
@@ -175,6 +230,7 @@ static void encode_entry(const struct nexus_nxfs_entry *entry,
     while (name_length < NEXUS_NXFS_NAME_MAX &&
            entry->name[name_length] != '\0') ++name_length;
     record[10] = (uint8_t)name_length;
+    record[11] = entry->directory ? 1U : 0U;
     write_le32(record + 12U, entry->size);
     write_le32(record + 16U, entry->data_crc);
     write_le64(record + 20U, entry->generation);
@@ -187,12 +243,13 @@ static bool decode_entry(const uint8_t record[NXFS_ENTRY_BYTES],
     if (record == NULL || entry == NULL ||
         !equal_bytes(record, (const uint8_t *)entry_magic, 8U) ||
         read_le32(record + 60U) != crc32_bytes(record, 60U) ||
-        record[8] > 1U || record[9] > 1U ||
+        record[8] > 1U || record[9] > 1U || record[11] > 1U ||
         record[10] >= NEXUS_NXFS_NAME_MAX) return false;
 
     *entry = (struct nexus_nxfs_entry){0};
     entry->used = record[8] != 0U;
     entry->bank = record[9];
+    entry->directory = record[11] != 0U;
     entry->size = read_le32(record + 12U);
     entry->data_crc = read_le32(record + 16U);
     entry->generation = read_le64(record + 20U);
@@ -226,6 +283,9 @@ static bool verify_entry_data(size_t slot,
     if (entry == NULL || !entry->used ||
         entry->size > NEXUS_NXFS_MAX_FILE_BYTES ||
         entry->bank > 1U) return false;
+    if (entry->directory)
+        return entry->size == 0U && entry->bank == 0U &&
+               entry->data_crc == 0U;
     uint32_t remaining = entry->size;
     uint64_t crc = 0xFFFFFFFFU;
     uint64_t relative_lba = data_lba(slot, entry->bank);
@@ -593,7 +653,8 @@ const struct nexus_nxfs_entry *nxfs_entry_at(size_t index) {
 bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
                     uint32_t offset, uint32_t length, void *buffer) {
     if (!nxfs_mounted || nxfs_busy || entry == NULL ||
-        (length != 0U && buffer == NULL) || offset > entry->size ||
+        entry->directory || (length != 0U && buffer == NULL) ||
+        offset > entry->size ||
         length > entry->size - offset) return false;
 
     size_t slot = NEXUS_NXFS_MAX_FILES;
@@ -628,12 +689,14 @@ bool nxfs_write_file(const char *name, const void *data, size_t length) {
     if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
         length > NEXUS_NXFS_MAX_FILE_BYTES ||
         (length != 0U && data == NULL) ||
-        !normalize_name(name, normalized)) return false;
+        !normalize_name(name, normalized) ||
+        !parent_directory_exists(normalized)) return false;
 
     size_t slot = NEXUS_NXFS_MAX_FILES;
     for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
         if (nxfs_entries[i].used &&
             names_equal(nxfs_entries[i].name, normalized)) {
+            if (nxfs_entries[i].directory) return false;
             slot = i;
             break;
         }
@@ -687,11 +750,58 @@ bool nxfs_remove_file(const char *name) {
     for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
         if (nxfs_entries[i].used &&
             names_equal(nxfs_entries[i].name, normalized)) {
+            if (nxfs_entries[i].directory) return false;
             slot = i;
             break;
         }
     }
     if (slot >= NEXUS_NXFS_MAX_FILES) return false;
+
+    struct nexus_nxfs_entry tombstone = {0};
+    tombstone.generation = nxfs_entries[slot].generation + 1U;
+    return commit_entry(slot, &tombstone);
+}
+
+bool nxfs_is_directory(const char *name) {
+    char normalized[NEXUS_NXFS_NAME_MAX];
+    if (!nxfs_mounted || !normalize_name(name, normalized)) return false;
+    const size_t slot = find_entry_slot(normalized);
+    return slot < NEXUS_NXFS_MAX_FILES && nxfs_entries[slot].directory;
+}
+
+bool nxfs_create_directory(const char *name) {
+    char normalized[NEXUS_NXFS_NAME_MAX];
+    if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
+        !normalize_name(name, normalized) ||
+        !parent_directory_exists(normalized) ||
+        find_entry_slot(normalized) < NEXUS_NXFS_MAX_FILES) return false;
+
+    size_t slot = NEXUS_NXFS_MAX_FILES;
+    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
+        if (!nxfs_entries[i].used) { slot = i; break; }
+    }
+    if (slot >= NEXUS_NXFS_MAX_FILES) return false;
+
+    struct nexus_nxfs_entry entry = {0};
+    entry.used = true;
+    entry.directory = true;
+    entry.bank = 0U;
+    entry.size = 0U;
+    entry.data_crc = 0U;
+    entry.generation = nxfs_entries[slot].generation + 1U;
+    for (size_t i = 0U; i < NEXUS_NXFS_NAME_MAX; ++i)
+        entry.name[i] = normalized[i];
+    return commit_entry(slot, &entry);
+}
+
+bool nxfs_remove_directory(const char *name) {
+    char normalized[NEXUS_NXFS_NAME_MAX];
+    if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
+        !normalize_name(name, normalized)) return false;
+    const size_t slot = find_entry_slot(normalized);
+    if (slot >= NEXUS_NXFS_MAX_FILES ||
+        !nxfs_entries[slot].directory || entry_has_child(normalized))
+        return false;
 
     struct nexus_nxfs_entry tombstone = {0};
     tombstone.generation = nxfs_entries[slot].generation + 1U;

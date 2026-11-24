@@ -14,6 +14,7 @@
 
 struct nexus_nxfs_entry {
     bool used;
+    bool directory;
     uint8_t bank;
     char name[NEXUS_NXFS_NAME_MAX];
     uint32_t size;
@@ -45,6 +46,9 @@ bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
                     uint32_t offset, uint32_t length, void *buffer);
 bool nxfs_write_file(const char *name, const void *data, size_t length);
 bool nxfs_remove_file(const char *name);
+bool nxfs_is_directory(const char *name);
+bool nxfs_create_directory(const char *name);
+bool nxfs_remove_directory(const char *name);
 bool nxfs_selftest(void);
 
 #endif

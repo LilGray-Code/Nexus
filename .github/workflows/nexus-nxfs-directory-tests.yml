@@ -1,0 +1,35 @@
+name: Nexus NXFS persistent directory tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/nxfs.c"
+      - "kernel/src/nxfs.h"
+      - "kernel/tests/nxfs_directory_test.c"
+      - ".github/workflows/nexus-nxfs-directory-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/nxfs.c"
+      - "kernel/src/nxfs.h"
+      - "kernel/tests/nxfs_directory_test.c"
+      - ".github/workflows/nexus-nxfs-directory-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  nxfs-directory-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile NXFS directory tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/nxfs.c \
+            kernel/tests/nxfs_directory_test.c -o /tmp/nexus-nxfs-directory-test
+      - name: Run persistent directory, nested file and remount tests
+        run: /tmp/nexus-nxfs-directory-test

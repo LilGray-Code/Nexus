@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "wpa2_psk.h"
+#include "wpa2_eapol.h"
 
 #define NEXUS_WPA2_TK_CCMP_BYTES 16U
 #define NEXUS_WPA2_HANDSHAKE_KEY_DATA_MAX 256U

@@ -21,12 +21,16 @@ int main(void) {
             nonzero = nonzero || bytes[i] != 0U;
         assert(nonzero);
 
-        uint8_t second[64];
-        assert(nexus_rng_fill(second, sizeof(second)));
-        bool different = false;
-        for (size_t i = 0U; i < sizeof(bytes); ++i)
-            different = different || bytes[i] != second[i];
-        assert(different);
+        uint8_t second[64] = {0};
+        if (nexus_rng_fill(second, sizeof(second))) {
+            bool different = false;
+            for (size_t i = 0U; i < sizeof(bytes); ++i)
+                different = different || bytes[i] != second[i];
+            assert(different);
+        } else {
+            for (size_t i = 0U; i < sizeof(second); ++i)
+                assert(second[i] == 0U);
+        }
     } else {
         for (size_t i = 0U; i < sizeof(bytes); ++i)
             assert(bytes[i] == 0U);

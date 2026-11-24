@@ -1,0 +1,35 @@
+name: Nexus AES-CCM CCMP primitive tests
+
+on:
+  push:
+    branches:
+      - nexus-ccmp-aes-ccm-foundation
+    paths:
+      - "kernel/src/aes_ccm.c"
+      - "kernel/src/aes_ccm.h"
+      - "kernel/tests/aes_ccm_test.c"
+      - ".github/workflows/nexus-aes-ccm-tests.yml"
+  pull_request:
+    branches:
+      - nexus-wpa2-ptk-mic-foundation
+    paths:
+      - "kernel/src/aes_ccm.c"
+      - "kernel/src/aes_ccm.h"
+      - "kernel/tests/aes_ccm_test.c"
+      - ".github/workflows/nexus-aes-ccm-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  aes-ccm-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile AES-CCM tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/aes_ccm.c kernel/tests/aes_ccm_test.c \
+            -o /tmp/nexus-aes-ccm-test
+      - name: Run AES-CCM known-answer and safety tests
+        run: /tmp/nexus-aes-ccm-test

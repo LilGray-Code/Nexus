@@ -23,7 +23,7 @@ TLS_OBJECTS := $(OUT)/tls_heap.o $(OUT)/mbedtls_heap.o \
 	$(OUT)/tls_client.o $(OUT)/net_https.o
 TLS_LIBS := $(MBEDTLS_BUILD)/library/libmbedtls.a \
 	$(MBEDTLS_BUILD)/library/libmbedx509.a \
-	$(MBEDTLS_BUILD)/tf-psa-crypto/library/libtfpsacrypto.a
+	$(MBEDTLS_BUILD)/tf-psa-crypto/core/libtfpsacrypto.a
 TLS_LINK_FLAGS := --start-group $(TLS_LIBS) --end-group
 else
 TLS_OBJECTS := $(OUT)/net_https_stub.o

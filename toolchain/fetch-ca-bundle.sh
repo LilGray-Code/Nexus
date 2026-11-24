@@ -24,7 +24,7 @@ printf '%s  %s\n' "$SHA256" "$TMP" | sha256sum --check --status || {
 }
 grep -q -- '-----BEGIN CERTIFICATE-----' "$TMP"
 grep -q -- '-----END CERTIFICATE-----' "$TMP"
-printf '\\000' >> "$TMP"
+printf '\0' >> "$TMP"
 mv "$TMP" "$DEST"
 printf 'Pinned Mozilla CA bundle verified; PEM bytes including NUL: '
 wc -c < "$DEST"

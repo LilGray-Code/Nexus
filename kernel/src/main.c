@@ -73,6 +73,7 @@ static void scheduler_worker_a(void *argument) {
         scheduler_count_a++;
         if (scheduler_trace_count < 6)
             scheduler_trace[scheduler_trace_count++] = 1;
+        scheduler_yield();
     }
 }
 
@@ -85,6 +86,7 @@ static void scheduler_worker_b(void *argument) {
         scheduler_count_b++;
         if (scheduler_trace_count < 6)
             scheduler_trace[scheduler_trace_count++] = 2;
+        scheduler_yield();
     }
 }
 
@@ -391,7 +393,7 @@ void kmain(void) {
         serial_write("ERROR: scheduler recycled-thread self-test failed\r\n");
         halt_forever();
     }
-    serial_write("K2: preemptive scheduling and thread-slot recycling passed\r\n");
+    serial_write("K2: cooperative scheduling and thread-slot recycling passed\r\n");
 
     if (framebuffer_request.response != NULL &&
         framebuffer_request.response->framebuffer_count > 0) {
@@ -399,7 +401,7 @@ void kmain(void) {
     } else {
         serial_write("DESKTOP: no framebuffer supplied by bootloader\r\n");
     }
-    serial_write("NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY\r\n");
+    serial_write("NEXUS K2 COOPERATIVE THREAD SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     const bool ps2_input_ready = input_init();

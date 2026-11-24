@@ -68,7 +68,20 @@ jobs:
       - name: Compile pinned Mbed TLS libraries
         run: |
           cmake -S build/deps/mbedtls-4.1.2 -B build/deps/mbedtls-build \
-            -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF
+            -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF \
+            -DMBEDTLS_CONFIG_SET=MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG \
+            -DMBEDTLS_CONFIG_UNSET="MBEDTLS_PSA_BUILTIN_GET_ENTROPY;MBEDTLS_NET_C;MBEDTLS_TIMING_C"
           cmake --build build/deps/mbedtls-build --parallel 2
+      - name: Test Nexus RNG adapter against Mbed TLS PSA API
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/src \
+            -Ibuild/deps/mbedtls-4.1.2/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/generated/include \
+            kernel/src/random.c kernel/src/mbedtls_random.c \
+            kernel/tests/mbedtls_random_test.c \
+            -o /tmp/nexus-mbedtls-rng-test
+          /tmp/nexus-mbedtls-rng-test
       - name: Build freestanding kernel
         run: make -C kernel

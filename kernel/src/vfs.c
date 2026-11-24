@@ -279,6 +279,114 @@ bool vfs_remove_file(const char *name) {
     return nxfs_remove_file(path);
 }
 
+static bool vfs_nxfs_resolve_target_path(
+    const char *target, char output[NEXUS_VFS_NAME_MAX]) {
+    if (target == NULL || output == NULL ||
+        directory_backend == VFS_DIRECTORY_FAT32 || target[0] == '\0')
+        return false;
+
+    const bool absolute = target[0] == '/';
+    const size_t offset = absolute ? 1U : 0U;
+    if (target[offset] == '\0') return false;
+    bool has_separator = absolute;
+    size_t length = 0U;
+    while (length < NEXUS_VFS_NAME_MAX && target[offset + length] != '\0') {
+        if (target[offset + length] == '/') has_separator = true;
+        ++length;
+    }
+    if (length == 0U || length >= NEXUS_VFS_NAME_MAX) return false;
+    if (!has_separator)
+        return vfs_nxfs_compose_path(target + offset, output);
+
+    for (size_t i = 0U; i < length; ++i) {
+        char value = target[offset + i];
+        if (value >= 'a' && value <= 'z')
+            value = (char)(value - 'a' + 'A');
+        output[i] = value;
+    }
+    output[length] = '\0';
+    return true;
+}
+
+/* A move changes one persistent metadata record; no file-sized buffer needed. */
+bool vfs_move_file(const char *name, const char *destination_path) {
+    if (name == NULL || destination_path == NULL ||
+        directory_backend == VFS_DIRECTORY_FAT32) return false;
+
+    if (directory_backend == VFS_DIRECTORY_ROOT) {
+        struct ramfs_entry *ram_entry = ramfs_find(name);
+        if (ram_entry != NULL) {
+            char normalized[NEXUS_VFS_NAME_MAX];
+            if (destination_path[0] == '/' ||
+                !normalize_ramfs_name(destination_path, normalized) ||
+                ramfs_find(normalized) != NULL) return false;
+            if (nxfs_root_mounted) {
+                char root_target[NEXUS_VFS_NAME_MAX];
+                if (!vfs_nxfs_compose_path(normalized, root_target) ||
+                    vfs_nxfs_find_path(root_target) != NULL) return false;
+            }
+            for (size_t i = 0U; i < NEXUS_VFS_NAME_MAX; ++i)
+                ram_entry->name[i] = normalized[i];
+            return true;
+        }
+    }
+    if (!nxfs_root_mounted || !nxfs_is_writable()) return false;
+    char source[NEXUS_VFS_NAME_MAX];
+    char destination[NEXUS_VFS_NAME_MAX];
+    if (!vfs_nxfs_compose_path(name, source) ||
+        !vfs_nxfs_resolve_target_path(destination_path, destination))
+        return false;
+    return nxfs_move_file(source, destination);
+}
+
+bool vfs_rename_file(const char *name, const char *new_name) {
+    return vfs_move_file(name, new_name);
+}
+
+/* NXFS copies stream blocks through a bounded buffer rather than a file-sized allocation. */
+bool vfs_copy_file(const char *name, const char *destination_path) {
+    if (name == NULL || destination_path == NULL ||
+        directory_backend == VFS_DIRECTORY_FAT32) return false;
+
+    if (directory_backend == VFS_DIRECTORY_ROOT) {
+        struct ramfs_entry *ram_entry = ramfs_find(name);
+        if (ram_entry != NULL) {
+            if (!nxfs_root_mounted || !nxfs_is_writable()) {
+                char normalized[NEXUS_VFS_NAME_MAX];
+                if (destination_path[0] == '/' ||
+                    !normalize_ramfs_name(destination_path, normalized) ||
+                    ramfs_find(normalized) != NULL) return false;
+                char root_target[NEXUS_VFS_NAME_MAX];
+                if (nxfs_root_mounted &&
+                    (!vfs_nxfs_compose_path(normalized, root_target) ||
+                     vfs_nxfs_find_path(root_target) != NULL)) return false;
+                return vfs_ramfs_write(normalized, ram_entry->data,
+                                       ram_entry->size);
+            }
+            if (destination_path[0] != '/' &&
+                __builtin_strchr(destination_path, '/') == NULL &&
+                ramfs_find(destination_path) != NULL) return false;
+            char target[NEXUS_VFS_NAME_MAX];
+            if (!vfs_nxfs_resolve_target_path(destination_path, target) ||
+                vfs_nxfs_find_path(target) != NULL)
+                return false;
+            return nxfs_write_file(target, ram_entry->data, ram_entry->size);
+        }
+    }
+
+    if (!nxfs_root_mounted || !nxfs_is_writable()) return false;
+    char source[NEXUS_VFS_NAME_MAX];
+    char destination[NEXUS_VFS_NAME_MAX];
+    if (!vfs_nxfs_compose_path(name, source) ||
+        !vfs_nxfs_resolve_target_path(destination_path, destination))
+        return false;
+    if (directory_backend == VFS_DIRECTORY_ROOT &&
+        destination_path[0] != '/' &&
+        __builtin_strchr(destination_path, '/') == NULL &&
+        ramfs_find(destination_path) != NULL) return false;
+    return nxfs_copy_file(source, destination);
+}
+
 bool vfs_create_directory(const char *name) {
     if (name == NULL || directory_backend == VFS_DIRECTORY_FAT32 ||
         !nxfs_root_mounted || !nxfs_is_writable()) return false;

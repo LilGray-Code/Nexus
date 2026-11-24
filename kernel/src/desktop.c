@@ -85,10 +85,14 @@ enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
     FILES_EDITOR_DIRECTORY_NAME,
+    FILES_EDITOR_RENAME,
+    FILES_EDITOR_COPY,
+    FILES_EDITOR_MOVE,
     FILES_EDITOR_CONTENT
 };
 static enum files_editor_state files_editor_state;
 static char files_edit_name[NEXUS_VFS_NAME_MAX];
+static char files_operation_source[NEXUS_VFS_NAME_MAX];
 static char files_edit_content[FILES_EDITOR_MAX_BYTES + 1U];
 static size_t files_edit_name_length;
 static size_t files_edit_content_length;
@@ -780,17 +784,38 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y, "NEXUS FILES",
                            2, 239, 249, 255);
         if (files_editor_state != FILES_EDITOR_CLOSED) {
-            graphics_draw_text(text_x, text_y + 48U,
+            const char *editor_title =
                 files_editor_state == FILES_EDITOR_NAME
                     ? "NEW FILE - ENTER A NAME"
                     : (files_editor_state == FILES_EDITOR_DIRECTORY_NAME
                         ? "NEW FOLDER - ENTER A NAME"
-                        : "TEXT EDITOR - 4096 BYTE LIMIT"),
-                1, 108, 216, 229);
-            graphics_draw_text(text_x, text_y + 82U, "NAME:",
-                               1, 233, 243, 252);
+                        : (files_editor_state == FILES_EDITOR_RENAME
+                            ? "RENAME FILE - ENTER THE NEW NAME"
+                            : (files_editor_state == FILES_EDITOR_COPY
+                                ? "COPY FILE - ENTER A NEW NAME OR PATH"
+                                : (files_editor_state == FILES_EDITOR_MOVE
+                                    ? "MOVE FILE - ENTER A DESTINATION PATH"
+                                    : "TEXT EDITOR - 4096 BYTE LIMIT")));
+            graphics_draw_text(text_x, text_y + 48U, editor_title,
+                               1, 108, 216, 229);
+            graphics_draw_text(text_x, text_y + 82U,
+                (files_editor_state == FILES_EDITOR_COPY ||
+                 files_editor_state == FILES_EDITOR_MOVE)
+                    ? "TARGET:"
+                    : (files_editor_state == FILES_EDITOR_RENAME
+                        ? "NEW NAME:" : "NAME:"),
+                1, 233, 243, 252);
             graphics_draw_text(text_x + 48U, text_y + 82U, files_edit_name,
                                1, 119, 229, 211);
+            if (files_editor_state == FILES_EDITOR_RENAME ||
+                files_editor_state == FILES_EDITOR_COPY ||
+                files_editor_state == FILES_EDITOR_MOVE) {
+                graphics_draw_text(text_x, text_y + 108U, "SOURCE:",
+                                   1, 233, 243, 252);
+                graphics_draw_text(text_x + 56U, text_y + 108U,
+                                   files_operation_source,
+                                   1, 170, 191, 211);
+            }
             if (files_editor_state == FILES_EDITOR_CONTENT) {
                 for (size_t line = 0U; line < 4U; ++line) {
                     char display[66];
@@ -828,15 +853,23 @@ static void draw_shell(void) {
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
-                    files_editor_state == FILES_EDITOR_DIRECTORY_NAME
-                        ? "FOLDER NAME: LETTERS, NUMBERS, _ - AND DOT"
-                        : "UP TO 31 CHARS: LETTERS, NUMBERS, _ - AND ONE DOT",
+                    (files_editor_state == FILES_EDITOR_COPY ||
+                     files_editor_state == FILES_EDITOR_MOVE)
+                        ? "PATHS ARE VOLUME-ROOT RELATIVE; A SIMPLE NAME USES THIS FOLDER"
+                        : (files_editor_state == FILES_EDITOR_DIRECTORY_NAME
+                            ? "FOLDER NAME: LETTERS, NUMBERS, _ - AND DOT"
+                            : "LETTERS, NUMBERS, _ - DOT AND / FOR PATHS"),
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 156U,
                     files_editor_state == FILES_EDITOR_DIRECTORY_NAME
                         ? "ENTER CREATE FOLDER  ESC CANCEL"
-                        : "ENTER CONTINUE  ESC CANCEL",
+                        : "ENTER CONFIRM  ESC CANCEL",
                     1, 170, 191, 211);
+                if (files_editor_state == FILES_EDITOR_COPY ||
+                    files_editor_state == FILES_EDITOR_MOVE)
+                    graphics_draw_text(text_x, text_y + 184U,
+                        "PATHS USE / AS THE DIRECTORY SEPARATOR",
+                        1, 170, 191, 211);
             }
             graphics_draw_text(text_x, text_y + 340U, files_edit_status,
                                1, 239, 177, 119);
@@ -972,7 +1005,7 @@ static void draw_shell(void) {
                                    1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "ARROWS SELECT  ENTER OPEN  BACKSPACE UP  PGUP/PGDN PAGE  S SORT",
+                               "ENTER OPEN  R RENAME  C COPY  M MOVE  S SORT  BACKSPACE UP",
                                1, 170, 191, 211);
             if (files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 414U,
@@ -1468,6 +1501,28 @@ static void files_open_selected(void) {
     files_editor_begin_selected();
 }
 
+static void files_editor_begin_operation(enum files_editor_state state) {
+    struct nexus_vfs_dirent selected;
+    if (state != FILES_EDITOR_RENAME && state != FILES_EDITOR_COPY &&
+        state != FILES_EDITOR_MOVE) return;
+    if (files_selected_index >= files_listing_count ||
+        !files_listing_get_entry(files_selected_index, &selected) ||
+        selected.type != NEXUS_VFS_FILE) {
+        serial_write("FILES: select a file before rename, copy or move\r\n");
+        return;
+    }
+    if (!vfs_file_writable(selected.name)) {
+        serial_write("FILES: selected file is read-only or on volatile storage\r\n");
+        return;
+    }
+    for (size_t i = 0U; i < NEXUS_VFS_NAME_MAX; ++i)
+        files_operation_source[i] = selected.name[i];
+    files_edit_name[0] = '\0';
+    files_edit_name_length = 0U;
+    files_edit_status[0] = '\0';
+    files_editor_state = state;
+}
+
 static bool files_editor_name_exists(void) {
     for (size_t index = 0U; index < vfs_root_entry_count(); ++index) {
         struct nexus_vfs_dirent entry;
@@ -1494,16 +1549,25 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         return;
     }
     if (files_editor_state == FILES_EDITOR_NAME ||
-        files_editor_state == FILES_EDITOR_DIRECTORY_NAME) {
+        files_editor_state == FILES_EDITOR_DIRECTORY_NAME ||
+        files_editor_state == FILES_EDITOR_RENAME ||
+        files_editor_state == FILES_EDITOR_COPY ||
+        files_editor_state == FILES_EDITOR_MOVE) {
+        const bool creating_file = files_editor_state == FILES_EDITOR_NAME;
         const bool creating_directory =
             files_editor_state == FILES_EDITOR_DIRECTORY_NAME;
+        const bool file_operation = files_editor_state == FILES_EDITOR_RENAME ||
+            files_editor_state == FILES_EDITOR_COPY ||
+            files_editor_state == FILES_EDITOR_MOVE;
         if (event->scancode == 0x0EU) {
             if (files_edit_name_length != 0U)
                 files_edit_name[--files_edit_name_length] = '\0';
         } else if (event->scancode == 0x1CU) {
             if (files_edit_name_length == 0U) {
                 const char *message = creating_directory
-                    ? "ENTER A FOLDER NAME" : "ENTER A FILE NAME";
+                    ? "ENTER A FOLDER NAME"
+                    : (file_operation ? "ENTER A NAME OR DESTINATION PATH"
+                                      : "ENTER A FILE NAME");
                 size_t i = 0U;
                 while (message[i] != '\0' &&
                        i < sizeof(files_edit_status) - 1U) {
@@ -1511,6 +1575,45 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                     ++i;
                 }
                 files_edit_status[i] = '\0';
+            } else if (file_operation) {
+                bool succeeded = false;
+                const char *operation = "operation";
+                if (files_editor_state == FILES_EDITOR_RENAME) {
+                    succeeded = vfs_rename_file(files_operation_source,
+                                                files_edit_name);
+                    operation = "renamed";
+                } else if (files_editor_state == FILES_EDITOR_COPY) {
+                    succeeded = vfs_copy_file(files_operation_source,
+                                              files_edit_name);
+                    operation = "copied";
+                } else {
+                    succeeded = vfs_move_file(files_operation_source,
+                                              files_edit_name);
+                    operation = "moved";
+                }
+                if (succeeded) {
+                    serial_write("FILES: ");
+                    serial_write(operation);
+                    serial_write(" ");
+                    serial_write(files_operation_source);
+                    serial_write(" -> ");
+                    serial_write(files_edit_name);
+                    serial_write("\r\n");
+                    files_editor_state = FILES_EDITOR_CLOSED;
+                    files_operation_source[0] = '\0';
+                    files_edit_status[0] = '\0';
+                    refresh_files_listing();
+                } else {
+                    const char *message =
+                        "OPERATION FAILED - CHECK PATH, COLLISIONS OR STORAGE";
+                    size_t i = 0U;
+                    while (message[i] != '\0' &&
+                           i < sizeof(files_edit_status) - 1U) {
+                        files_edit_status[i] = message[i];
+                        ++i;
+                    }
+                    files_edit_status[i] = '\0';
+                }
             } else if (files_editor_name_exists()) {
                 const char *message = creating_directory
                     ? "NAME ALREADY EXISTS" : "FILE EXISTS - PRESS E TO EDIT";
@@ -1540,7 +1643,7 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                     }
                     files_edit_status[i] = '\0';
                 }
-            } else {
+            } else if (creating_file) {
                 files_editor_state = FILES_EDITOR_CONTENT;
                 files_edit_status[0] = '\0';
             }
@@ -3200,6 +3303,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x1FU) {
             files_listing_cycle_sort();
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x13U) {
+            files_editor_begin_operation(FILES_EDITOR_RENAME);
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x2EU) {
+            files_editor_begin_operation(FILES_EDITOR_COPY);
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x32U) {
+            files_editor_begin_operation(FILES_EDITOR_MOVE);
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x20U) {

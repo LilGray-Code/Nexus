@@ -742,6 +742,104 @@ bool nxfs_write_file(const char *name, const void *data, size_t length) {
     return true;
 }
 
+/*
+ * Move a regular file by atomically changing its single metadata record.
+ * Directory moves are intentionally not supported: rewriting a directory
+ * prefix and every descendant would require a multi-record journal.
+ */
+bool nxfs_move_file(const char *source_name, const char *destination_name) {
+    char source[NEXUS_NXFS_NAME_MAX];
+    char destination[NEXUS_NXFS_NAME_MAX];
+    if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
+        !normalize_name(source_name, source) ||
+        !normalize_name(destination_name, destination) ||
+        names_equal(source, destination) ||
+        !parent_directory_exists(destination) ||
+        find_entry_slot(destination) < NEXUS_NXFS_MAX_FILES)
+        return false;
+
+    const size_t slot = find_entry_slot(source);
+    if (slot >= NEXUS_NXFS_MAX_FILES ||
+        nxfs_entries[slot].directory) return false;
+
+    struct nexus_nxfs_entry moved = nxfs_entries[slot];
+    for (size_t i = 0U; i < NEXUS_NXFS_NAME_MAX; ++i)
+        moved.name[i] = destination[i];
+    ++moved.generation;
+    return commit_entry(slot, &moved);
+}
+
+bool nxfs_rename_file(const char *source_name, const char *destination_name) {
+    return nxfs_move_file(source_name, destination_name);
+}
+
+/*
+ * Copy one NXFS file without allocating a file-sized RAM buffer. Data is
+ * streamed through the bounded block buffer; CRC is checked before the
+ * journaled destination metadata makes the copy visible.
+ */
+bool nxfs_copy_file(const char *source_name, const char *destination_name) {
+    char source[NEXUS_NXFS_NAME_MAX];
+    char destination[NEXUS_NXFS_NAME_MAX];
+    if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
+        !normalize_name(source_name, source) ||
+        !normalize_name(destination_name, destination) ||
+        names_equal(source, destination) ||
+        !parent_directory_exists(destination) ||
+        find_entry_slot(destination) < NEXUS_NXFS_MAX_FILES)
+        return false;
+
+    const size_t source_slot = find_entry_slot(source);
+    if (source_slot >= NEXUS_NXFS_MAX_FILES ||
+        nxfs_entries[source_slot].directory) return false;
+
+    size_t destination_slot = NEXUS_NXFS_MAX_FILES;
+    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
+        if (!nxfs_entries[i].used) {
+            destination_slot = i;
+            break;
+        }
+    }
+    if (destination_slot >= NEXUS_NXFS_MAX_FILES) return false;
+
+    const struct nexus_nxfs_entry *original = &nxfs_entries[source_slot];
+    if (original->size > NEXUS_NXFS_MAX_FILE_BYTES || original->bank > 1U)
+        return false;
+
+    nxfs_busy = true;
+    uint32_t remaining = original->size;
+    uint32_t checksum = 0xFFFFFFFFU;
+    uint64_t source_lba = data_lba(source_slot, original->bank);
+    uint64_t destination_lba = data_lba(destination_slot, 0U);
+    while (remaining != 0U) {
+        if (!nxfs_read_block(source_lba++, nxfs_io_buffer)) {
+            nxfs_busy = false;
+            return false;
+        }
+        const uint32_t amount = remaining < nxfs_block_size
+            ? remaining : nxfs_block_size;
+        checksum = crc32_update(checksum, nxfs_io_buffer, amount);
+        if (!nxfs_write_block(destination_lba++, nxfs_io_buffer)) {
+            nxfs_busy = false;
+            return false;
+        }
+        remaining -= amount;
+    }
+    if (~checksum != original->data_crc || !nxfs_flush()) {
+        nxfs_busy = false;
+        return false;
+    }
+
+    struct nexus_nxfs_entry copied = *original;
+    copied.bank = 0U;
+    copied.generation = nxfs_entries[destination_slot].generation + 1U;
+    for (size_t i = 0U; i < NEXUS_NXFS_NAME_MAX; ++i)
+        copied.name[i] = destination[i];
+
+    nxfs_busy = false;
+    return commit_entry(destination_slot, &copied);
+}
+
 bool nxfs_remove_file(const char *name) {
     char normalized[NEXUS_NXFS_NAME_MAX];
     if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||

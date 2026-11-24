@@ -232,6 +232,27 @@ static void read_current_file(const char *name, const char *expected) {
     vfs_close(&file);
 }
 
+static void read_current_bytes(const char *name, const uint8_t *expected,
+                               size_t expected_size) {
+    struct nexus_vfs_file file;
+    assert(vfs_open_readonly(name, &file));
+    uint32_t size = 0U;
+    assert(vfs_file_size(&file, &size));
+    assert(size == expected_size);
+    uint8_t buffer[NEXUS_VFS_READ_CHUNK];
+    size_t offset = 0U;
+    while (offset < expected_size) {
+        size_t bytes = 0U;
+        const size_t requested = expected_size - offset <
+            sizeof(buffer) ? expected_size - offset : sizeof(buffer);
+        assert(vfs_read(&file, buffer, requested, &bytes));
+        assert(bytes == requested);
+        assert(memcmp(buffer, expected + offset, bytes) == 0);
+        offset += bytes;
+    }
+    vfs_close(&file);
+}
+
 int main(void) {
     struct nexus_block_device device = {0};
     memcpy(device.name, "VFS-TEST", sizeof("VFS-TEST"));
@@ -279,10 +300,36 @@ int main(void) {
     read_current_file("NOTE.TXT", payload);
     assert(!vfs_remove_directory("PROJECTS"));
 
+    assert(vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
+    assert(vfs_root_entry_count() == 2U);
+    read_current_file("COPY.TXT", payload);
+    assert(!vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
+    assert(!vfs_move_file("COPY.TXT", "DOCUMENTS/PROJECTS/NOTE.TXT"));
+    assert(vfs_root_entry_count() == 2U);
+    assert(vfs_move_file("COPY.TXT", "DOCUMENTS/MOVED.TXT"));
+    struct nexus_vfs_file copy_probe;
+    assert(!vfs_open_readonly("COPY.TXT", &copy_probe));
+
     assert(vfs_parent_directory());
     assert(vfs_current_path(path, sizeof(path)));
     assert(strcmp(path, "/DOCUMENTS") == 0);
+    read_current_file("MOVED.TXT", payload);
+    assert(vfs_rename_file("MOVED.TXT", "ARCHIVE.TXT"));
+    struct nexus_vfs_file moved_probe;
+    assert(!vfs_open_readonly("MOVED.TXT", &moved_probe));
+    read_current_file("ARCHIVE.TXT", payload);
+
+    static uint8_t large_payload[8193];
+    for (size_t i = 0U; i < sizeof(large_payload); ++i)
+        large_payload[i] = (uint8_t)((i * 37U + 11U) & 0xFFU);
+    assert(vfs_write_file("BIG.BIN", large_payload, sizeof(large_payload)));
+    assert(vfs_copy_file("BIG.BIN", "BIGCOPY.BIN"));
+    read_current_bytes("BIGCOPY.BIN", large_payload, sizeof(large_payload));
+    assert(!vfs_move_file("BIGCOPY.BIN", "BIG.BIN"));
+
     assert(!vfs_remove_directory("PROJECTS"));
+    read_current_file("ARCHIVE.TXT", payload);
+    read_current_bytes("BIGCOPY.BIN", large_payload, sizeof(large_payload));
     assert(vfs_parent_directory());
     assert(!vfs_remove_directory("DOCUMENTS"));
 
@@ -292,6 +339,11 @@ int main(void) {
     assert(find_entry("DOCUMENTS", &note));
     assert(note.type == NEXUS_VFS_DIRECTORY);
     assert(vfs_enter_directory("DOCUMENTS"));
+    read_current_file("ARCHIVE.TXT", payload);
+    read_current_bytes("BIGCOPY.BIN", large_payload, sizeof(large_payload));
+    assert(vfs_remove_file("ARCHIVE.TXT"));
+    assert(vfs_remove_file("BIG.BIN"));
+    assert(vfs_remove_file("BIGCOPY.BIN"));
     assert(vfs_enter_directory("PROJECTS"));
     read_current_file("NOTE.TXT", payload);
     assert(vfs_remove_file("NOTE.TXT"));
@@ -314,6 +366,8 @@ int main(void) {
     assert(!vfs_write_file("NEW.TXT", payload, sizeof(payload) - 1U));
     assert(!vfs_create_directory("UNSAFE"));
     assert(!vfs_remove_file("INFO.TXT"));
+    assert(!vfs_copy_file("INFO.TXT", "BOOT/COPY.TXT"));
+    assert(!vfs_move_file("INFO.TXT", "BOOT/MOVED.TXT"));
     read_current_file("INFO.TXT", "READ ONLY INFO");
 
     assert(vfs_enter_directory("MANUALS"));

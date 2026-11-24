@@ -900,3 +900,23 @@ without a terminal:
 The test suite must cover multiple QEMU disk/controller profiles and a rotating
 physical matrix from multiple vendors. The Dell Latitude 5410 is optional as
 one sample only, never the sole compatibility target.
+
+
+### Persistent Files operations
+
+- NXFS regular files can be renamed or moved to another existing or new
+  directory path using a single journaled metadata-record update. Directory
+  moves remain disabled because the current one-record journal cannot atomically
+  rewrite a directory and all descendants.
+- NXFS copies stream one logical block at a time from the source slot into a
+  free destination slot. The source CRC is recomputed during transfer; data is
+  flushed before a journaled destination entry makes the copy visible.
+- The VFS exposes rename, copy, and move operations and refuses writes through
+  read-only FAT32 mounts. RAM-only operations remain limited to volatile RAM.
+- The Files screen exposes R (rename), C (copy), and M (move) for selected
+  regular files. A simple target name means the current directory; a path
+  containing a slash is resolved relative to the NXFS Data-volume root.
+- Host integration tests cover nested cross-directory move, rename, duplicate
+  destination rejection, and an 8,193-byte streamed copy across multiple
+  blocks that remains readable after remount. These tests do not replace
+  physical power-loss testing or controller fault injection.

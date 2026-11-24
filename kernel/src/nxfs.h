@@ -45,6 +45,9 @@ const struct nexus_nxfs_entry *nxfs_entry_at(size_t index);
 bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
                     uint32_t offset, uint32_t length, void *buffer);
 bool nxfs_write_file(const char *name, const void *data, size_t length);
+bool nxfs_rename_file(const char *source_name, const char *destination_name);
+bool nxfs_move_file(const char *source_name, const char *destination_name);
+bool nxfs_copy_file(const char *source_name, const char *destination_name);
 bool nxfs_remove_file(const char *name);
 bool nxfs_is_directory(const char *name);
 bool nxfs_create_directory(const char *name);

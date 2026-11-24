@@ -58,6 +58,41 @@ extern void nexus_enter_user(uint64_t root_physical,
 
 static struct nexus_vfs_file usermode_files[USERMODE_FILE_SLOTS];
 static bool usermode_file_used[USERMODE_FILE_SLOTS];
+static char usermode_output_buffer[NEXUS_USERMODE_OUTPUT_MAX];
+static size_t usermode_output_length;
+static bool usermode_output_truncated;
+
+static void usermode_output_reset(void) {
+    usermode_output_length = 0U;
+    usermode_output_truncated = false;
+    usermode_output_buffer[0] = '\0';
+}
+
+static void usermode_output_append(const char *data, size_t length) {
+    if (data == NULL || length == 0U) return;
+    const size_t available =
+        sizeof(usermode_output_buffer) - 1U - usermode_output_length;
+    const size_t amount = length < available ? length : available;
+    for (size_t i = 0U; i < amount; ++i)
+        usermode_output_buffer[usermode_output_length + i] = data[i];
+    usermode_output_length += amount;
+    usermode_output_buffer[usermode_output_length] = '\0';
+    if (amount != length) usermode_output_truncated = true;
+}
+
+size_t usermode_console_output_copy(char *destination, size_t capacity,
+                                    bool *truncated) {
+    if (truncated != NULL) *truncated = usermode_output_truncated;
+    if (destination == NULL || capacity == 0U) return 0U;
+    size_t amount = usermode_output_length;
+    if (amount >= capacity) amount = capacity - 1U;
+    for (size_t i = 0U; i < amount; ++i)
+        destination[i] = usermode_output_buffer[i];
+    destination[amount] = '\0';
+    if (truncated != NULL && amount < usermode_output_length)
+        *truncated = true;
+    return amount;
+}
 static uint8_t usermode_test_elf[TEST_ELF_FILE_CAPACITY]
     __attribute__((aligned(16)));
 
@@ -217,6 +252,7 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
     }
 
     usermode_close_all_files();
+    usermode_output_reset();
     usermode_exit_status = UINT64_MAX;
     usermode_exit_seen = false;
     usermode_write_rejected = false;
@@ -243,8 +279,17 @@ bool usermode_run_selftest(void) {
 
     uint64_t exit_status = UINT64_MAX;
     const bool executed = process_run(pid, &exit_status);
+    char captured_output[sizeof(test_message)] = {0};
+    bool output_truncated = false;
+    const size_t output_length = usermode_console_output_copy(
+        captured_output, sizeof(captured_output), &output_truncated);
+    bool output_matches = output_length == sizeof(test_message) - 1U &&
+                          !output_truncated;
+    for (size_t i = 0U; i < output_length && output_matches; ++i) {
+        if (captured_output[i] != test_message[i]) output_matches = false;
+    }
     const bool result_ok = executed && exit_status == USER_EXIT_STATUS &&
-                           usermode_write_rejected;
+                           usermode_write_rejected && output_matches;
     return process_reap(pid) && result_ok;
 }
 
@@ -257,6 +302,7 @@ bool usermode_sys_write(uint64_t user_address, uint64_t length) {
     }
 
     /* Never dereference a userspace pointer directly in ring 0. */
+    usermode_output_append(kernel_buffer, (size_t)length);
     serial_write_n(kernel_buffer, (size_t)length);
     serial_write("\r\n");
     return true;

@@ -6,6 +6,7 @@
 #include "vfs.h"
 #include "file_list.h"
 #include "process.h"
+#include "usermode.h"
 #include "net.h"
 #include "http.h"
 #include "html_text.h"
@@ -144,6 +145,9 @@ static size_t files_edit_view_offset;
 static bool files_edit_follow_end;
 static char files_edit_status[64];
 static char files_app_status[64];
+static char files_run_output[96];
+static bool files_run_output_available;
+static bool files_run_output_truncated;
 static char terminal_input[64];
 static size_t terminal_input_length;
 static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
@@ -1530,17 +1534,24 @@ static void draw_shell(void) {
                         ? "NO MATCHES" : "NO FILES",
                     1U, 170U, 191U, 211U);
             }
-            graphics_draw_text(text_x, text_y + 374U, files_app_status,
-                1U, files_app_status[0] == '\0' ? 139U : 119U,
+            if (files_run_output_available) {
+                graphics_draw_text(text_x, text_y + 374U,
+                    files_run_output, 1U, 188U, 218U, 194U);
+            }
+            graphics_draw_text(text_x, text_y + 390U,
+                files_app_status, 1U,
+                files_app_status[0] == '\0' ? 139U : 119U,
                 files_app_status[0] == '\0' ? 163U : 229U,
                 files_app_status[0] == '\0' ? 188U : 190U);
-            graphics_draw_text(text_x, text_y + 394U,
-                "CTRL+F SEARCH  CTRL+ENTER RUN ELF  ENTER OPEN  R RENAME  C COPY  M MOVE",
+            graphics_draw_text(text_x, text_y + 408U,
+                "CTRL+F SEARCH  CTRL+ENTER RUN ELF  ENTER OPEN  R RENAME",
                 1, 170, 191, 211);
-            if (files_listing_truncated) {
-                graphics_draw_text(text_x, text_y + 414U,
-                                   "LISTING LIMITED TO 128 ENTRIES",
-                                   1, 239, 177, 119);
+            if (files_run_output_truncated || files_listing_truncated) {
+                graphics_draw_text(text_x, text_y + 420U,
+                    files_run_output_truncated
+                        ? "PROGRAM OUTPUT TRUNCATED"
+                        : "LISTING LIMITED TO 128 ENTRIES",
+                    1, 239, 177, 119);
             }
         }
         }
@@ -2242,6 +2253,9 @@ static void files_set_app_status(const char *message) {
  * bootstrap process exits and its user address space is reclaimed.
  */
 static void files_run_selected(void) {
+    files_run_output[0] = '\0';
+    files_run_output_available = false;
+    files_run_output_truncated = false;
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_filtered_count ||
         !files_listing_get_entry(files_selected_index, &selected)) {
@@ -2289,6 +2303,12 @@ static void files_run_selected(void) {
         serial_write("\r\n");
         return;
     }
+
+    const size_t output_length = usermode_console_output_copy(
+        files_run_output, sizeof(files_run_output),
+        &files_run_output_truncated);
+    files_run_output_available =
+        output_length != 0U || files_run_output_truncated;
 
     size_t out = 0U;
     const char *prefix = "PID ";

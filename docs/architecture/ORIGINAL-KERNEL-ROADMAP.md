@@ -1037,3 +1037,19 @@ record becomes EXITED. It is not yet an independent background process
 scheduler, terminal emulator attached to the user process, package manager,
 or Windows PE/COFF compatibility layer. Process image size and process-name
 limits remain enforced by the existing ELF/process subsystem.
+
+
+### Bounded native process console capture
+
+The user-mode `write` syscall now appends validated user-memory payloads to a
+256-byte kernel-owned output buffer while preserving the existing serial
+diagnostic output. The buffer is reset for each synchronous user-mode run and
+can be copied through a capacity-checked API with an explicit truncation flag.
+The Files Run ELF action displays the latest captured output (bounded to its
+visible UI buffer), process ID, and exit status. The boot-time ring-3 self-test
+now verifies both its exit code and its captured `NEXUS USER MODE` output.
+
+This is a small synchronous console bridge, not a terminal device, pipe system,
+per-process descriptor table, or concurrent process I/O service. Only output
+written through the current user-mode `write` syscall is captured. The process
+still exits before the desktop regains control.

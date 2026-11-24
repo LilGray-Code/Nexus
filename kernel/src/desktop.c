@@ -3110,7 +3110,7 @@ browser_retry:
             return;
         }
         browser_set_status("Opening verified TLS 1.3 connection...");
-        const int connect_result = nexus_https_connect(
+        const int connect_result = nexus_https_connect_port(
             &https, hostname, remote_port, browser_ca_bundle, ca_length, 1800U);
         browser_clear_ca_bundle();
         if (connect_result != 0 || !nexus_https_is_verified(&https)) {
@@ -3129,7 +3129,7 @@ browser_retry:
         }
         browser_set_status("Opening HTTP connection...");
         if (!net_tcp_connect(address, remote_port, 800U)) {
-            browser_set_status("TCP connection to port 80 failed");
+            browser_set_status("TCP connection to selected port failed");
             return;
         }
     }

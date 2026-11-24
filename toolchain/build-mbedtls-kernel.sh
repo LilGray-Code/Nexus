@@ -20,7 +20,7 @@ for tool in cmake make; do
     }
 done
 
-KERNEL_CFLAGS="-std=gnu11 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -include stdint.h -include stdio.h"
+KERNEL_CFLAGS="-std=gnu11 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -DMBEDTLS_PLATFORM_SNPRINTF_MACRO=snprintf -include stdint.h -include stdio.h"
 
 cmake -S "$SOURCE" -B "$BUILD" \
     -DCMAKE_BUILD_TYPE=Release \

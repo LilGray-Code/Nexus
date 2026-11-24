@@ -77,6 +77,19 @@ bool nexus_wpa2_supplicant_handle_eapol(
     struct nexus_wpa2_supplicant *supplicant,
     const uint8_t *frame, size_t frame_length);
 
+/*
+ * Initialize using a fresh nonce from the kernel hardware RNG. This helper
+ * fails closed when a trustworthy CPU RDRAND source is unavailable or fails;
+ * callers must not substitute timestamps or other predictable values.
+ */
+bool nexus_wpa2_supplicant_init_random(
+    struct nexus_wpa2_supplicant *supplicant,
+    const uint8_t pmk[NEXUS_WPA2_PMK_BYTES],
+    const uint8_t supplicant_mac[6],
+    const uint8_t authenticator_mac[6],
+    const struct nexus_wpa2_handshake_ops *ops,
+    void *ops_context);
+
 /* Clear installed keys (when supported) and wipe all handshake secrets. */
 void nexus_wpa2_supplicant_deinit(
     struct nexus_wpa2_supplicant *supplicant);

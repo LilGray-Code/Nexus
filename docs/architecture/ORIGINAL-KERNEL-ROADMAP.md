@@ -1053,3 +1053,29 @@ This is a small synchronous console bridge, not a terminal device, pipe system,
 per-process descriptor table, or concurrent process I/O service. Only output
 written through the current user-mode `write` syscall is captured. The process
 still exits before the desktop regains control.
+
+
+### First-party native application SDK and compiled-ELF integration test
+
+A small freestanding C SDK now lives in `userland/`. It documents and wraps
+the current x86-64 `int 0x80` ABI (exit, write, open, read, close, and
+file-write). A sample static ELF application is compiled from C plus a minimal
+`_start` assembly entry point. It opens `README.TXT`, reads and verifies a
+bounded payload, closes the descriptor, writes a success message, and exits
+with status 7.
+
+The BIOS/UEFI CI workflow compiles this program using the repository's native
+SDK Makefile and embeds the actual compiled ELF into the disposable GPT/FAT32
+test volume. The image builder constructs a bounded two-cluster FAT32 chain
+for the 571-byte ELF. The kernel storage self-test loads that file from VFS,
+validates the ELF program headers and W^X mappings, enters CPL3, exercises
+open/read/close/write, verifies the program output and exit status, and reclaims
+the process address space. The image generator retains the old hand-built ELF
+only as a fallback for standalone invocation; CI explicitly supplies the
+compiler-built SDK executable.
+
+This provides a repeatable path for building Nexus-native applications, but
+does not yet supply a full libc/POSIX environment, dynamic loader, background
+concurrent process scheduler, GUI SDK, graphics/audio services, or Windows
+binary compatibility. The current app test remains a single synchronous
+process.

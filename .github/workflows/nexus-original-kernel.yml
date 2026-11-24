@@ -147,6 +147,19 @@ jobs:
             -o /tmp/nexus-fat32-format-test
           /tmp/nexus-fat32-format-test
 
+      - name: Build first-party Nexus native application SDK
+        run: |
+          make -C userland inspect
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          image = Path("build/userland/HELLO.ELF").read_bytes()
+          assert len(image) <= 2048, "test app must fit in four FAT32 clusters"
+          assert image[:4] == b"\x7fELF" and image[4] == 2 and image[5] == 1
+          assert struct.unpack_from("<H", image, 18)[0] == 62
+          print(f"Nexus native SDK sample: {len(image)} byte x86-64 ELF64")
+          PY
+
       - name: Build dual-mode ISO
         run: |
           chmod +x build/build-iso.sh
@@ -222,8 +235,8 @@ jobs:
         run: |
           # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
           truncate -s 256M nvme-test.img ahci-test.img
-          python3 build/create-gpt-test-image.py nvme-test.img
-          python3 build/create-gpt-test-image.py ahci-test.img
+          python3 build/create-gpt-test-image.py nvme-test.img build/userland/HELLO.ELF
+          python3 build/create-gpt-test-image.py ahci-test.img build/userland/HELLO.ELF
           set +e
           timeout -k 2s 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
@@ -252,7 +265,8 @@ jobs:
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
-          grep -q "NEXUS FILE EXEC OK" uefi-serial.log
+          grep -q "NEXUS FILE EXEC OK; SDK FILE IO OK" uefi-serial.log
+          grep -q "DESKTOP: HELLO.ELF native SDK file I/O and output capture passed" uefi-serial.log
           grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
           grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log

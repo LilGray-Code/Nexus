@@ -70,7 +70,7 @@ def make_hello_elf():
     image[segment_offset:] = segment
     return bytes(image)
 
-def make_fat32(image):
+def make_fat32(image, hello_elf):
     volume_sectors = PARTITION_LAST - PARTITION_FIRST + 1
     reserved = 32
     fats = 2
@@ -112,7 +112,17 @@ def make_fat32(image):
     fat = bytearray(sectors_per_fat * SECTOR)
     struct.pack_into("<IIII", fat, 0,
                      0x0FFFFFF8, 0xFFFFFFFF, 0x0FFFFFFF, 5)
-    struct.pack_into("<I", fat, 4 * 4, 0x0FFFFFFF)
+    hello_cluster_count = (len(hello_elf) + SECTOR - 1) // SECTOR
+    if hello_cluster_count == 0 or hello_cluster_count > 4:
+        raise ValueError("HELLO.ELF must fit in at most four FAT32 clusters")
+    # README uses clusters 3 -> 5; HELLO uses cluster 4 then 6 onward.
+    hello_clusters = [4] + list(range(6, 6 + hello_cluster_count - 1))
+    for index, cluster in enumerate(hello_clusters):
+        next_cluster = (
+            hello_clusters[index + 1]
+            if index + 1 < len(hello_clusters) else 0x0FFFFFFF
+        )
+        struct.pack_into("<I", fat, cluster * 4, next_cluster)
     struct.pack_into("<I", fat, 5 * 4, 0x0FFFFFFF)
     for copy in range(fats):
         offset = (fat_start + copy * sectors_per_fat) * SECTOR
@@ -128,9 +138,8 @@ def make_fat32(image):
     struct.pack_into("<I", root_entry, 28, len(README))
     root[0:32] = root_entry
 
-    hello_elf = make_hello_elf()
-    if len(hello_elf) > SECTOR:
-        raise ValueError("HELLO.ELF test image must fit in one FAT32 cluster")
+    if len(hello_elf) == 0 or len(hello_elf) > 4 * SECTOR:
+        raise ValueError("HELLO.ELF must fit within four FAT32 clusters")
     hello_entry = bytearray(32)
     hello_entry[0:11] = b"HELLO   ELF"
     hello_entry[11] = 0x20
@@ -142,8 +151,10 @@ def make_fat32(image):
 
     offset = data_start * SECTOR
     image[offset:offset + SECTOR] = root
-    hello_sector = (data_start + 2) * SECTOR
-    image[hello_sector:hello_sector + len(hello_elf)] = hello_elf
+    for index, cluster in enumerate(hello_clusters):
+        hello_sector = (data_start + cluster - 2) * SECTOR
+        chunk = hello_elf[index * SECTOR:(index + 1) * SECTOR]
+        image[hello_sector:hello_sector + len(chunk)] = chunk
 
     file_sector = (data_start + 1) * SECTOR
     image[file_sector:file_sector + SECTOR] = README[:SECTOR]
@@ -152,9 +163,20 @@ def make_fat32(image):
           fragmented_file_sector + len(README) - SECTOR] = README[SECTOR:]
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: create-gpt-test-image.py IMAGE")
+    if len(sys.argv) not in (2, 3):
+        raise SystemExit(
+            "usage: create-gpt-test-image.py IMAGE [NATIVE_HELLO_ELF]")
     path = Path(sys.argv[1])
+    hello_elf = (
+        Path(sys.argv[2]).read_bytes()
+        if len(sys.argv) == 3 else make_hello_elf()
+    )
+    if (len(hello_elf) < 64 or hello_elf[:4] != b"\x7fELF" or
+            hello_elf[4] != 2 or hello_elf[5] != 1 or
+            struct.unpack_from("<H", hello_elf, 18)[0] != 62):
+        raise SystemExit("HELLO.ELF must be a little-endian x86-64 ELF64 executable")
+    if len(hello_elf) == 0 or len(hello_elf) > 4 * SECTOR:
+        raise SystemExit("HELLO.ELF exceeds the four-cluster CI test bound")
     image = bytearray(TOTAL_SECTORS * SECTOR)
 
     # LBA 100 remains unused and unallocated; CI saves, writes, flushes,
@@ -198,7 +220,7 @@ def main():
     image[(TOTAL_SECTORS - 1) * SECTOR:] = make_header(
         TOTAL_SECTORS - 1, 1, backup_entries_lba, disk_guid, entries_crc)
 
-    make_fat32(image)
+    make_fat32(image, hello_elf)
     # Leave the dedicated NXFS partition blank; the kernel CI test formats it.
     path.write_bytes(image)
 

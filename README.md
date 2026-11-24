@@ -169,3 +169,27 @@ and [GitHub Actions](https://github.com/LilGray-Code/Nexus/actions).
 
 A successful build or QEMU test is not a substitute for testing on the actual
 PC and storage hardware where Nexus will be used.
+
+
+## Native application SDK
+
+Nexus now includes a first-party freestanding x86-64 native application SDK
+under `userland/`. Build and inspect the sample with:
+
+```sh
+make -C userland inspect
+```
+
+The SDK wraps the current Nexus `int 0x80` ABI for process exit, console
+write, read-only file open/read/close, and bounded file writes. The bundled C
+application opens `README.TXT`, reads and verifies its contents, closes the
+descriptor, writes a success message, and exits with status 7. The BIOS/UEFI
+QEMU workflow builds the application and inserts the compiled ELF into its
+disposable FAT32 image; the kernel then loads it in ring 3 and checks the file
+syscalls, console output, and exit status.
+
+This is an early native SDK, not a general-purpose C library or POSIX
+implementation. Dynamic linking, shared libraries, signals, sockets, a native
+GUI SDK, background user-process scheduling, and Windows PE/COFF compatibility
+are not implemented. The test image stores this static ELF in a bounded
+two-cluster FAT32 chain.

@@ -30,6 +30,9 @@
 #define NET_TCP_HEADER 20U
 #define NET_TCP_MAX_PAYLOAD 1200U
 #define NET_TCP_RX_CAPACITY 4096U
+#define NET_TCP_RETRY_TICKS 25U
+#define NET_TCP_MAX_RETRIES 5U
+#define NET_TCP_DATA_TIMEOUT_TICKS (NET_TCP_RETRY_TICKS * (NET_TCP_MAX_RETRIES + 1U))
 #define TCP_FLAG_FIN 0x01U
 #define TCP_FLAG_SYN 0x02U
 #define TCP_FLAG_RST 0x04U
@@ -85,6 +88,11 @@ struct net_tcp_connection {
     bool connected;
     bool failed;
     bool peer_closed;
+    bool ack_waiting;
+    bool ack_received;
+    uint32_t ack_expected;
+    uint64_t syn_last_send_tick;
+    uint32_t syn_retry_count;
     uint8_t remote_ipv4[4];
     uint16_t local_port;
     uint16_t remote_port;
@@ -97,6 +105,7 @@ static struct net_tcp_connection tcp_connection;
 static uint16_t tcp_next_port = 49152U;
 
 static bool ipv4_next_hop(const uint8_t destination[4], uint8_t next_hop[4]);
+static void tcp_retry_pending_syn(void);
 
 static uint16_t read_be16(const uint8_t *p) {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
@@ -784,6 +793,7 @@ void net_poll(void) {
         if (!netdev_receive_frame(rx_frame, sizeof(rx_frame), &length)) break;
         receive_frame(rx_frame, length);
     }
+    tcp_retry_pending_syn();
     dhcp_retry();
 }
 
@@ -975,6 +985,19 @@ static void receive_tcp(const uint8_t *segment, size_t length,
     }
 
     if (!tcp_connection.connected || (flags & TCP_FLAG_ACK) == 0U) return;
+
+    if ((flags & TCP_FLAG_ACK) != 0U) {
+        if (tcp_connection.ack_waiting &&
+            acknowledgement == tcp_connection.ack_expected) {
+            tcp_connection.local_sequence = acknowledgement;
+            tcp_connection.ack_received = true;
+            tcp_connection.ack_waiting = false;
+        } else if (acknowledgement != tcp_connection.local_sequence) {
+            /* Reject acknowledgements outside the one outstanding segment. */
+            return;
+        }
+    }
+
     if (payload_length != 0U &&
         sequence == tcp_connection.remote_sequence &&
         payload_length <= NET_TCP_RX_CAPACITY - tcp_connection.receive_length) {
@@ -1042,6 +1065,8 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
         tcp_connection.active = false;
         return false;
     }
+    tcp_connection.syn_last_send_tick = timer_ticks();
+    tcp_connection.syn_retry_count = 0U;
 
     uint64_t connect_budget = timeout_ticks / 2U;
     if (connect_budget == 0U) connect_budget = 1U;
@@ -1058,16 +1083,77 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
     return true;
 }
 
+static bool tcp_send_reliable_segment(const uint8_t *payload,
+                                      size_t payload_length) {
+    if (payload_length == 0U || payload_length > NET_TCP_MAX_PAYLOAD)
+        return false;
+
+    tcp_connection.ack_expected =
+        tcp_connection.local_sequence + (uint32_t)payload_length;
+    tcp_connection.ack_waiting = true;
+    tcp_connection.ack_received = false;
+    if (!send_tcp_segment(TCP_FLAG_ACK | TCP_FLAG_PSH,
+                          payload, payload_length)) {
+        tcp_connection.ack_waiting = false;
+        return false;
+    }
+
+    const uint64_t start_tick = timer_ticks();
+    uint64_t last_send_tick = start_tick;
+    uint32_t retries = 0U;
+    while (!tcp_connection.ack_received && !tcp_connection.failed) {
+        net_poll();
+        if (tcp_connection.ack_received) return true;
+
+        const uint64_t now = timer_ticks();
+        if (now - start_tick >= NET_TCP_DATA_TIMEOUT_TICKS) break;
+        if (now - last_send_tick >= NET_TCP_RETRY_TICKS) {
+            if (retries >= NET_TCP_MAX_RETRIES) break;
+            (void)send_tcp_segment(TCP_FLAG_ACK | TCP_FLAG_PSH,
+                                   payload, payload_length);
+            ++retries;
+            last_send_tick = now;
+        }
+        __asm__ volatile ("pause");
+    }
+
+    tcp_connection.ack_waiting = false;
+    tcp_connection.failed = true;
+    tcp_connection.connected = false;
+    tcp_connection.active = false;
+    return false;
+}
+
 bool net_tcp_send(const void *payload, uint16_t payload_length) {
     if (!tcp_connection.active || !tcp_connection.connected ||
         tcp_connection.peer_closed ||
-        (payload_length != 0U && payload == NULL) ||
-        payload_length > NET_TCP_MAX_PAYLOAD) return false;
+        (payload_length != 0U && payload == NULL)) return false;
     if (payload_length == 0U) return true;
-    if (!send_tcp_segment(TCP_FLAG_ACK | TCP_FLAG_PSH,
-                          payload, payload_length)) return false;
-    tcp_connection.local_sequence += payload_length;
+
+    const uint8_t *bytes = (const uint8_t *)payload;
+    size_t offset = 0U;
+    while (offset < payload_length) {
+        size_t amount = (size_t)payload_length - offset;
+        if (amount > NET_TCP_MAX_PAYLOAD) amount = NET_TCP_MAX_PAYLOAD;
+        if (!tcp_send_reliable_segment(bytes + offset, amount)) return false;
+        offset += amount;
+    }
     return true;
+}
+
+static void tcp_retry_pending_syn(void) {
+    if (!tcp_connection.active || !tcp_connection.connecting) return;
+    const uint64_t now = timer_ticks();
+    if (now - tcp_connection.syn_last_send_tick < NET_TCP_RETRY_TICKS)
+        return;
+    if (tcp_connection.syn_retry_count >= NET_TCP_MAX_RETRIES) {
+        tcp_connection.failed = true;
+        tcp_connection.connecting = false;
+        return;
+    }
+    (void)send_tcp_segment(TCP_FLAG_SYN, NULL, 0U);
+    ++tcp_connection.syn_retry_count;
+    tcp_connection.syn_last_send_tick = now;
 }
 
 size_t net_tcp_receive(void *buffer, size_t capacity) {

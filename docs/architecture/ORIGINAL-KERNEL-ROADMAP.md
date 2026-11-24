@@ -991,3 +991,14 @@ launch the selected match. Search terms cover app names and practical aliases
 such as Files/Explorer, Web/Browser, Settings/Personalization, and
 Install/Drive. These are native in-kernel shell controls; they do not claim a
 Windows API or third-party application compatibility runtime.
+
+
+### Per-app window placement memory
+
+The single-foreground desktop now stores a bounded window-state record for
+each of its five app views. Switching to another app or minimizing preserves
+the previous view's custom size, position, snap state, and maximized state;
+activating its taskbar tab restores that placement. Closing a view invalidates
+its remembered placement. The taskbar draws a small marker for inactive app
+views with saved placement. These records are session-only and do not turn the
+single-foreground shell into a simultaneous multi-window compositor.

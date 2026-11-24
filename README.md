@@ -27,8 +27,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   preferences; no user disk scan was added to boot. When a writable NXFS Data
   volume is unavailable, preferences fall back to volatile RAM and do not
   survive reboot. The current shell still presents one foreground application
-  view at a time; this is not yet a multi-window compositor with independent
-  overlapping app instances.
+  view at a time. Taskbar switching and minimizing remember each app view's
+  last window size, position, snap, and maximize state; closing discards that
+  saved placement. This makes window navigation more consistent but is not
+  yet a multi-window compositor with independent overlapping app instances.
 - The framebuffer renderer supports clipped rectangles, alpha blending,
   rounded panels, and bounded row-rasterized circles used for subtle wallpaper
   lighting. This is CPU software rendering on a linear framebuffer, not GPU

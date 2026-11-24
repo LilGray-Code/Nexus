@@ -183,6 +183,21 @@ struct desktop_window_rect {
     uint64_t height;
 };
 
+#define DESKTOP_APP_COUNT 5U
+struct desktop_app_window_state {
+    bool valid;
+    bool maximized;
+    bool positioned;
+    bool custom_size;
+    enum desktop_snap_state snap;
+    uint64_t x;
+    uint64_t y;
+    uint64_t width;
+    uint64_t height;
+};
+static struct desktop_app_window_state
+    desktop_app_windows[DESKTOP_APP_COUNT];
+
 /* Compute one authoritative app-window rectangle for painting and hit tests.
  * Keeping this in one place prevents controls from drifting away from the
  * visible window after a resize or snap operation.
@@ -248,6 +263,64 @@ static struct desktop_window_rect desktop_window_bounds(void) {
     return bounds;
 }
 
+
+static size_t desktop_app_index_for_view(enum desktop_view view) {
+    switch (view) {
+        case DESKTOP_FILES: return 0U;
+        case DESKTOP_BROWSER: return 1U;
+        case DESKTOP_SETTINGS: return 2U;
+        case DESKTOP_TERMINAL: return 3U;
+        case DESKTOP_INSTALLER: return 4U;
+        default: return DESKTOP_APP_COUNT;
+    }
+}
+
+static void desktop_window_reset(void) {
+    window_maximized = false;
+    window_positioned = false;
+    window_dragging = false;
+    window_resizing = false;
+    window_snap_state = DESKTOP_SNAP_NONE;
+    window_custom_size = false;
+    window_position_x = 0U;
+    window_position_y = 0U;
+    window_custom_width = 0U;
+    window_custom_height = 0U;
+    window_drag_offset_x = 0U;
+    window_drag_offset_y = 0U;
+}
+
+static void desktop_window_save_for_view(enum desktop_view view,
+                                         bool preserve) {
+    const size_t app = desktop_app_index_for_view(view);
+    if (app >= DESKTOP_APP_COUNT) return;
+    struct desktop_app_window_state *saved = &desktop_app_windows[app];
+    saved->valid = preserve;
+    if (!preserve) return;
+    saved->maximized = window_maximized;
+    saved->positioned = window_positioned;
+    saved->custom_size = window_custom_size;
+    saved->snap = window_snap_state;
+    saved->x = window_position_x;
+    saved->y = window_position_y;
+    saved->width = window_custom_width;
+    saved->height = window_custom_height;
+}
+
+static void desktop_window_restore_for_view(enum desktop_view view) {
+    desktop_window_reset();
+    const size_t app = desktop_app_index_for_view(view);
+    if (app >= DESKTOP_APP_COUNT || !desktop_app_windows[app].valid) return;
+    const struct desktop_app_window_state *saved = &desktop_app_windows[app];
+    window_maximized = saved->maximized;
+    window_positioned = saved->positioned;
+    window_custom_size = saved->custom_size;
+    window_snap_state = saved->snap;
+    window_position_x = saved->x;
+    window_position_y = saved->y;
+    window_custom_width = saved->width;
+    window_custom_height = saved->height;
+}
 
 static bool desktop_theme_is_light(void) {
     return desktop_theme == DESKTOP_THEME_LIGHT;
@@ -496,17 +569,19 @@ static void desktop_start_menu_clamp_selection(void) {
         start_menu_selection = count - 1U;
 }
 
-static void desktop_open_view(enum desktop_view view) {
+static void desktop_transition_view(enum desktop_view view,
+                                     bool remember_current) {
+    const bool switching = active_view != view;
+    if (switching)
+        desktop_window_save_for_view(active_view, remember_current);
     active_view = view;
     start_menu_open = false;
     start_menu_query_length = 0U;
     start_menu_query[0] = '\0';
-    window_positioned = false;
-    window_dragging = false;
-    window_resizing = false;
-    window_maximized = false;
-    window_snap_state = DESKTOP_SNAP_NONE;
-    window_custom_size = false;
+    if (switching) {
+        if (view == DESKTOP_HOME) desktop_window_reset();
+        else desktop_window_restore_for_view(view);
+    }
     if (view == DESKTOP_FILES) {
         scan_files_once();
         desktop_preferences_load();
@@ -518,6 +593,17 @@ static void desktop_open_view(enum desktop_view view) {
         installer_refresh_plan();
         installer_log_selected_target();
     }
+}
+
+static void desktop_open_view(enum desktop_view view) {
+    desktop_transition_view(view, true);
+}
+
+/* Alt+F4 / the close button discard placement; minimize and desktop switching
+ * preserve the last window arrangement for the next taskbar activation.
+ */
+static void desktop_close_view(void) {
+    desktop_transition_view(DESKTOP_HOME, false);
 }
 
 static void desktop_open_app(size_t app_index) {
@@ -591,6 +677,10 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
             graphics_fill_rect(x + 8U, y + bottom_bar - 3U,
                                tab_width - 16U, 2U,
                                accents[i][0], accents[i][1], accents[i][2]);
+        else if (desktop_app_windows[i].valid)
+            graphics_fill_circle(x + tab_width / 2U,
+                                 y + bottom_bar - 4U, 2U,
+                                 accents[i][0], accents[i][1], accents[i][2]);
     }
 
     char uptime[21];
@@ -1724,6 +1814,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     window_custom_size = false;
     window_position_x = 0U;
     window_position_y = 0U;
+    for (size_t app = 0U; app < DESKTOP_APP_COUNT; ++app)
+        desktop_app_windows[app] = (struct desktop_app_window_state){0};
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
     keyboard_left_shift = false;
@@ -3492,25 +3584,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     (uint64_t)pointer_x < controls_x + 58U) {
                     const uint64_t control = (uint64_t)pointer_x - controls_x;
                     if (control < 14U) {
-                        active_view = DESKTOP_HOME; /* Minimize */
-                        window_maximized = false;
-                        window_positioned = false;
-                        window_dragging = false;
-                        window_resizing = false;
-                        window_snap_state = DESKTOP_SNAP_NONE;
-                        window_custom_size = false;
+                        desktop_open_view(DESKTOP_HOME); /* Minimize */
                     } else if (control >= 22U && control < 36U) {
                         window_maximized = !window_maximized; /* Maximize / restore */
                         if (!window_maximized)
                             window_positioned = false;
                     } else if (control >= 44U) {
-                        active_view = DESKTOP_HOME; /* Close */
-                        window_maximized = false;
-                        window_positioned = false;
-                        window_dragging = false;
-                        window_resizing = false;
-                        window_snap_state = DESKTOP_SNAP_NONE;
-                        window_custom_size = false;
+                        desktop_close_view(); /* Close and discard saved placement */
                     }
                     start_menu_open = false;
                     shell_click_handled = true;
@@ -3827,7 +3907,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (keyboard_alt && event->scancode == 0x3EU &&
         active_view != DESKTOP_HOME) {
-        desktop_open_view(DESKTOP_HOME);
+        desktop_close_view();
         draw_shell();
         draw_pointer();
         return;
@@ -3946,7 +4026,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             installer_ui_state == INSTALLER_UI_RUNNING) return;
         if (event->scancode == 0x01U) {
             if (installer_ui_state == INSTALLER_UI_SELECT) {
-                active_view = DESKTOP_HOME;
+                desktop_open_view(DESKTOP_HOME);
             } else {
                 installer_ui_state = INSTALLER_UI_SELECT;
                 installer_input_length = 0U;
@@ -4015,7 +4095,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_SETTINGS) {
         if (event->scancode == 0x01U) {
-            active_view = DESKTOP_HOME;
+            desktop_open_view(DESKTOP_HOME);
         } else if (event->scancode == 0x14U) {
             desktop_toggle_theme();
         } else if (event->scancode == 0x1EU) {
@@ -4030,7 +4110,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x01U) {
-            active_view = DESKTOP_HOME;
+            desktop_open_view(DESKTOP_HOME);
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x1CU) {
@@ -4244,7 +4324,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
     }
     if (next_view == active_view) return;
-    active_view = next_view;
+    desktop_open_view(next_view);
     draw_shell();
     draw_pointer();
     serial_write("DESKTOP: view changed by keyboard shortcut\r\n");

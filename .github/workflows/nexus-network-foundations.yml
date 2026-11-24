@@ -46,6 +46,11 @@ jobs:
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
             kernel/src/http.c kernel/tests/http_test.c -o /tmp/nexus-http-test
           /tmp/nexus-http-test
+      - name: Test RTC date and epoch conversion
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/rtc.c kernel/tests/rtc_test.c -o /tmp/nexus-rtc-test
+          /tmp/nexus-rtc-test
       - name: Test Wi-Fi state manager
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \

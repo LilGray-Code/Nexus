@@ -191,6 +191,43 @@ static void setup_network(void) {
     tcp_connection = (struct net_tcp_connection){0};
 }
 
+static void test_receive_wait_reports_timeout_data_and_eof(void) {
+    setup_network();
+    assert(net_tcp_connect(remote_ip, 443U, 300U));
+
+    uint8_t output[8] = {0U};
+    size_t received = 99U;
+    assert(net_tcp_receive_wait(output, sizeof(output), 5U, &received) ==
+           NEXUS_TCP_RECEIVE_TIMEOUT);
+    assert(received == 0U);
+
+    tcp_connection.receive_buffer[0] = 'T';
+    tcp_connection.receive_buffer[1] = 'L';
+    tcp_connection.receive_buffer[2] = 'S';
+    tcp_connection.receive_length = 3U;
+    received = 0U;
+    assert(net_tcp_receive_wait(output, sizeof(output), 5U, &received) ==
+           NEXUS_TCP_RECEIVE_DATA);
+    assert(received == 3U);
+    assert(output[0] == 'T' && output[1] == 'L' && output[2] == 'S');
+    assert(tcp_connection.receive_length == 0U);
+
+    tcp_connection.peer_closed = true;
+    received = 99U;
+    assert(net_tcp_receive_wait(output, sizeof(output), 5U, &received) ==
+           NEXUS_TCP_RECEIVE_EOF);
+    assert(received == 0U);
+
+    tcp_connection.peer_closed = false;
+    tcp_connection.failed = true;
+    assert(net_tcp_receive_wait(output, sizeof(output), 5U, &received) ==
+           NEXUS_TCP_RECEIVE_ERROR);
+    assert(net_tcp_receive_wait(output, sizeof(output), 0U, &received) ==
+           NEXUS_TCP_RECEIVE_ERROR);
+    assert(net_tcp_receive_wait(NULL, sizeof(output), 5U, &received) ==
+           NEXUS_TCP_RECEIVE_ERROR);
+}
+
 int main(void) {
     setup_network();
     assert(net_tcp_connect(remote_ip, 443U, 300U));
@@ -215,5 +252,6 @@ int main(void) {
     assert(!net_tcp_send(&byte, 1U));
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
+    test_receive_wait_reports_timeout_data_and_eof();
     return 0;
 }

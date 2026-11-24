@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <stdio.h>
 
 #include "mbedtls/platform_util.h"
 
@@ -15,7 +16,7 @@ void mbedtls_platform_zeroize(void *buffer, size_t length) {
 }
 
 /* Mbed TLS self-test diagnostic output is not routed to kernel serial logs. */
-int nexus_mbedtls_printf(const char *format, ...) {
+int printf(const char *format, ...) {
     (void)format;
     return 0;
 }

@@ -226,7 +226,7 @@ bool nexus_wpa2_derive_ptk(
         supplicant_nonce == NULL) return false;
 
     uint8_t context[12U + 64U];
-    uint8_t input[sizeof(label) + sizeof(context)];
+    uint8_t input[sizeof(label) + sizeof(context) + 1U];
     uint8_t digest[SHA1_DIGEST_BYTES];
     size_t offset = 0U;
 

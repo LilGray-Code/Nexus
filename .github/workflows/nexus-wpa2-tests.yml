@@ -1,0 +1,35 @@
+name: Nexus WPA2 PSK derivation tests
+
+on:
+  push:
+    branches:
+      - nexus-wpa2-psk-foundation
+    paths:
+      - "kernel/src/wpa2_psk.c"
+      - "kernel/src/wpa2_psk.h"
+      - "kernel/tests/wpa2_psk_test.c"
+      - ".github/workflows/nexus-wpa2-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wpa2_psk.c"
+      - "kernel/src/wpa2_psk.h"
+      - "kernel/tests/wpa2_psk_test.c"
+      - ".github/workflows/nexus-wpa2-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  wpa2-psk-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile WPA2 PSK tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wpa2_psk.c kernel/tests/wpa2_psk_test.c \
+            -o /tmp/nexus-wpa2-psk-test
+      - name: Run WPA2 PSK tests
+        run: /tmp/nexus-wpa2-psk-test

@@ -31,11 +31,15 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - An early IPv4 stack with DHCP, DNS, TCP, and a plain HTTP text viewer.
   The network-device layer supports multiple registered adapters and tags
   wired Ethernet versus Wi-Fi media, but only the E1000 Ethernet driver is
-  implemented; no Wi-Fi chipset, firmware, scanning, or WPA authentication
-  is currently supported.
+  implemented; no Wi-Fi chipset, firmware, or scanning is currently supported.
+  WPA2-Personal PBKDF2-HMAC-SHA1 PMK derivation has been implemented and tested,
+  but the EAPOL four-way handshake, MIC/key installation, CCMP encryption, and
+  a working wireless station driver remain unimplemented.
 - The HTTP viewer validates bounded HTTP/1.x response framing (including
-  content-length and chunked bodies) and provides keyboard page scrolling.
-  It remains a text-only viewer, not a modern HTML/CSS/JavaScript browser.
+  content-length and chunked bodies) and provides keyboard page scrolling. Its
+  bounded HTML-to-text stage formats common block elements, list items, and
+  entities while omitting comments and script/style content. It does not yet
+  provide CSS layout, JavaScript, HTTPS/TLS, cookies, or a modern browser engine.
 
 The desktop applications and current system services are integrated into the
 kernel. The presence of an ELF loader and ring-3 execution tests does **not**

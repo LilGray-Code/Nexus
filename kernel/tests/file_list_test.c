@@ -86,7 +86,8 @@ int main(void) {
                   "SORT: SIZE (S)") == 0);
     assert(nexus_file_list_sort(NULL, 0U, NEXUS_FILE_SORT_NAME));
 
-    struct nexus_file_list_item malformed[1] = {{0}};
+    struct nexus_file_list_item malformed[1];
+    memset(malformed, 0, sizeof(malformed));
     for (size_t i = 0U; i < NEXUS_FILE_LIST_NAME_MAX; ++i)
         malformed[0].name[i] = 'X';
     assert(!nexus_file_list_sort(malformed, 1U, NEXUS_FILE_SORT_NAME));

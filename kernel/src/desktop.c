@@ -8,6 +8,7 @@
 #include "process.h"
 #include "usermode.h"
 #include "net.h"
+#include "net_https.h"
 #include "http.h"
 #include "html_text.h"
 #include "browser_history.h"
@@ -178,12 +179,15 @@ static char installer_status_text[96] = "Select a supported target disk";
 #define NEXUS_BROWSER_LINE_WIDTH 72U
 static char browser_address[96];
 static size_t browser_address_length;
-static char browser_status[80] = "Enter host/path; HTTP only, no HTTPS";
+static char browser_status[80] = "HTTPS-first; requires NEXUS.CRT on Nexus Data";
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 static size_t browser_line_scroll;
 static bool browser_content_truncated;
 static struct nexus_browser_history browser_history;
+#define NEXUS_BROWSER_CA_FILE "NEXUS.CRT"
+#define NEXUS_BROWSER_CA_MAX_BYTES (64U * 1024U)
+static unsigned char browser_ca_bundle[NEXUS_BROWSER_CA_MAX_BYTES + 1U];
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -1692,7 +1696,7 @@ static void draw_shell(void) {
                            "T: TOGGLE THEME     A: CYCLE ACCENT",
                            1U, 170U, 191U, 211U);
     } else if (active_view == DESKTOP_BROWSER) {
-        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - HTTP TEXT VIEW",
+        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - SECURE WEB TEXT VIEW",
                            2, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 38U, "HOST/PATH:",
                            1, 108, 216, 229);
@@ -1714,7 +1718,7 @@ static void draw_shell(void) {
                            "PGUP/PGDN SCROLL  HOME/END  ALT+LEFT BACK  ALT+RIGHT FORWARD",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 382U,
-                           "ENTER LOADS  ESC HOME  PLAIN HTTP ONLY",
+                           "HTTPS TLS 1.3 / HTTP 1.1  TEXT ONLY - NO CSS OR JAVASCRIPT",
                            1, 239, 177, 119);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",

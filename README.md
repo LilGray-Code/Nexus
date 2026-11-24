@@ -13,7 +13,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal, and
-  Installer views, plus keyboard and mouse input.
+  Installer views, plus keyboard and mouse input. The shell supports live
+  Dark/Light appearance, four accent palettes, mouse-selectable Settings
+  controls, and T/A keyboard shortcuts. These appearance preferences currently
+  last for the running session and are not yet saved across reboots.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.

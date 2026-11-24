@@ -167,8 +167,8 @@ static void desktop_toggle_theme(void) {
     desktop_theme = desktop_theme_is_light()
         ? DESKTOP_THEME_DARK : DESKTOP_THEME_LIGHT;
     serial_write(desktop_theme_is_light()
-        ? "DESKTOP: light shell theme selected (session only)\\r\\n"
-        : "DESKTOP: dark theme selected (session only)\\r\\n");
+        ? "DESKTOP: light shell theme selected (session only)\r\n"
+        : "DESKTOP: dark theme selected (session only)\r\n");
 }
 
 static void desktop_cycle_accent(void) {
@@ -176,7 +176,7 @@ static void desktop_cycle_accent(void) {
         (uint8_t)((desktop_accent_index + 1U) %
                   (sizeof(desktop_accent_palette) /
                    sizeof(desktop_accent_palette[0])));
-    serial_write("DESKTOP: accent palette changed (session only)\\r\\n");
+    serial_write("DESKTOP: accent palette changed (session only)\r\n");
 }
 
 static void format_u64(uint64_t value, char output[21]) {
@@ -689,17 +689,26 @@ static void draw_shell(void) {
                 desktop_theme_is_light() ? 132U : 198U);
             if (i == 0U) {
                 graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   memory_value, 1U, 233U, 244U, 252U);
+                                   memory_value, 1U,
+                desktop_theme_is_light() ? 41U : 233U,
+                desktop_theme_is_light() ? 59U : 244U,
+                desktop_theme_is_light() ? 80U : 252U);
             } else if (i == 1U) {
                 graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   uptime_value, 1U, 233U, 244U, 252U);
+                                   uptime_value, 1U,
+                desktop_theme_is_light() ? 41U : 233U,
+                desktop_theme_is_light() ? 59U : 244U,
+                desktop_theme_is_light() ? 80U : 252U);
             } else {
                 const char *storage_label =
                     vfs_nxfs_mounted() && vfs_nxfs_writable()
                         ? "NXFS READY"
                         : (vfs_root_mounted() ? "MOUNTED" : "RAM ONLY");
                 graphics_draw_text(card_x + 11U, card_y + 34U,
-                                   storage_label, 1U, 233U, 244U, 252U);
+                                   storage_label, 1U,
+                desktop_theme_is_light() ? 41U : 233U,
+                desktop_theme_is_light() ? 59U : 244U,
+                desktop_theme_is_light() ? 80U : 252U);
             }
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,

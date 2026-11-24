@@ -3343,9 +3343,14 @@ browser_retry:
         }
         char redirect_target[sizeof(browser_address)];
         size_t redirect_length = 0U;
-        if (!browser_resolve_redirect(
+        size_t location_length = 0U;
+        while (location_length < sizeof(parsed.location) &&
+               parsed.location[location_length] != '\0')
+            ++location_length;
+        if (location_length == sizeof(parsed.location) ||
+            !browser_resolve_redirect(
                 host, host_length, path, path_length, use_https,
-                parsed.location, strlen(parsed.location),
+                parsed.location, location_length,
                 redirect_target, sizeof(redirect_target), &redirect_length)) {
             browser_set_status(
                 "Redirect rejected (invalid URL or HTTPS downgrade)");

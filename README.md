@@ -33,11 +33,13 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   wired Ethernet versus Wi-Fi media, but only the E1000 Ethernet driver is
   implemented; no Wi-Fi chipset, firmware, or scanning is currently supported.
   WPA2-Personal PMK derivation, pairwise-key expansion (PTK), EAPOL-Key MIC
-  compute/verify, AES-128-CCM for CCMP, RFC 3394 AES key unwrap, and bounded
-  EAPOL-Key frame/GTK KDE parsing have known-answer or structural tests. A
-  complete EAPOL four-way state machine, replay/nonce policy, GTK installation,
-  802.11 header/nonce assembly, scanning/association, and a working wireless
-  station/chipset driver remain unimplemented.
+  compute/verify, AES-128-CCM for CCMP, RFC 3394 AES key unwrap, bounded
+  EAPOL-Key/GTK KDE parsing, and a first supplicant-side M1-M4 handshake engine
+  have known-answer or integration tests. The engine requires a caller-supplied
+  cryptographically random SNonce and driver callbacks to transmit EAPOL and
+  install keys. Radio scanning/association, hardware key programming, robust
+  retransmission/timer policy, 802.11 header/nonce assembly, and a working
+  wireless station/chipset driver remain unimplemented.
 - The HTTP viewer validates bounded HTTP/1.x response framing (including
   content-length and chunked bodies) and provides keyboard page scrolling. Its
   bounded HTML-to-text stage formats common block elements, list items, and

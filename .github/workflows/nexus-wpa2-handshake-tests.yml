@@ -1,0 +1,37 @@
+name: Nexus WPA2 four-way handshake tests
+
+on:
+  push:
+    branches:
+      - nexus-wpa2-fourway-handshake
+    paths:
+      - "kernel/src/wpa2_handshake.c"
+      - "kernel/src/wpa2_handshake.h"
+      - "kernel/tests/wpa2_handshake_test.c"
+      - ".github/workflows/nexus-wpa2-handshake-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wpa2_handshake.c"
+      - "kernel/src/wpa2_handshake.h"
+      - "kernel/tests/wpa2_handshake_test.c"
+      - ".github/workflows/nexus-wpa2-handshake-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  wpa2-handshake-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile WPA2 handshake tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wpa2_psk.c kernel/src/aes_ccm.c \
+            kernel/src/wpa2_eapol.c kernel/src/wpa2_handshake.c \
+            kernel/tests/wpa2_handshake_test.c \
+            -o /tmp/nexus-wpa2-handshake-test
+      - name: Run WPA2 handshake integration tests
+        run: /tmp/nexus-wpa2-handshake-test

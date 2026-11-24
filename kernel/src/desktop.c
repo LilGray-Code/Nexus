@@ -1798,7 +1798,7 @@ static void browser_navigate(void) {
         size_t length = 12U;
         for (size_t i = 0U; number[i] != '\0' && length < sizeof(message)-1U; ++i)
             message[length++] = number[i];
-        message[length] = '\\0';
+        message[length] = '\0';
         browser_set_status(message);
         return;
     }

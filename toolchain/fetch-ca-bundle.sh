@@ -18,10 +18,12 @@ done
 mkdir -p "$BUILD_ROOT"
 trap 'rm -f "$TMP"' EXIT HUP INT TERM
 curl --fail --location --retry 3 --retry-all-errors "$URL" --output "$TMP"
-printf '%s  %s\n' "$SHA256" "$TMP" | sha256sum --check --status || {
+ACTUAL_SHA256=$(sha256sum "$TMP" | awk '{print $1}')
+if [ "$ACTUAL_SHA256" != "$SHA256" ]; then
     printf 'Mozilla CA bundle checksum mismatch; refusing to use it.\n' >&2
+    printf 'Expected: %s\nActual:   %s\n' "$SHA256" "$ACTUAL_SHA256" >&2
     exit 1
-}
+fi
 grep -q -- '-----BEGIN CERTIFICATE-----' "$TMP"
 grep -q -- '-----END CERTIFICATE-----' "$TMP"
 printf '\0' >> "$TMP"

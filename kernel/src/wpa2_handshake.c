@@ -2,6 +2,7 @@
 
 #include "aes_ccm.h"
 #include "wpa2_eapol.h"
+#include "random.h"
 
 #include <stdint.h>
 
@@ -242,6 +243,29 @@ bool nexus_wpa2_supplicant_init(
     supplicant->ops_context = ops_context;
     supplicant->state = NEXUS_WPA2_SUPPLICANT_WAIT_M1;
     return true;
+}
+
+bool nexus_wpa2_supplicant_init_random(
+    struct nexus_wpa2_supplicant *supplicant,
+    const uint8_t pmk[NEXUS_WPA2_PMK_BYTES],
+    const uint8_t supplicant_mac[6],
+    const uint8_t authenticator_mac[6],
+    const struct nexus_wpa2_handshake_ops *ops,
+    void *ops_context) {
+    if (supplicant == NULL) return false;
+    *supplicant = (struct nexus_wpa2_supplicant){0};
+
+    uint8_t fresh_snonce[32] = {0U};
+    if (!nexus_rng_fill(fresh_snonce, sizeof(fresh_snonce))) {
+        secure_zero(fresh_snonce, sizeof(fresh_snonce));
+        return false;
+    }
+
+    const bool initialized = nexus_wpa2_supplicant_init(
+        supplicant, pmk, supplicant_mac, authenticator_mac,
+        fresh_snonce, ops, ops_context);
+    secure_zero(fresh_snonce, sizeof(fresh_snonce));
+    return initialized;
 }
 
 bool nexus_wpa2_supplicant_handle_eapol(

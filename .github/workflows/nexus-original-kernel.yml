@@ -132,6 +132,13 @@ jobs:
             -o /tmp/nexus-fat32-large-lba-test
           /tmp/nexus-fat32-large-lba-test
 
+      - name: Test FAT32 mount, long names and directory chains
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/fat32.c \
+            kernel/tests/fat32_mount_test.c -o /tmp/nexus-fat32-test
+          /tmp/nexus-fat32-test
+
       - name: Test FAT32 partition formatter
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

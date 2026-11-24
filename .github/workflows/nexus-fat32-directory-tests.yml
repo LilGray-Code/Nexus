@@ -1,0 +1,35 @@
+name: Nexus FAT32 directory and long-name tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/fat32.c"
+      - "kernel/src/fat32.h"
+      - "kernel/tests/fat32_mount_test.c"
+      - ".github/workflows/nexus-fat32-directory-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/fat32.c"
+      - "kernel/src/fat32.h"
+      - "kernel/tests/fat32_mount_test.c"
+      - ".github/workflows/nexus-fat32-directory-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fat32-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile FAT32 parser tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/fat32.c \
+            kernel/tests/fat32_mount_test.c -o /tmp/nexus-fat32-test
+      - name: Run FAT32 long-name, directory-chain and bounds tests
+        run: /tmp/nexus-fat32-test

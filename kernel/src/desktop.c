@@ -75,6 +75,7 @@ static bool files_vfs_ready;
 static char files_first_name[NEXUS_VFS_NAME_MAX];
 static char files_preview[41];
 static char files_listing[FILES_LISTING_MAX_ENTRIES][NEXUS_VFS_NAME_MAX];
+static bool files_listing_directories[FILES_LISTING_MAX_ENTRIES];
 static size_t files_listing_count;
 static size_t files_selected_index;
 static size_t files_listing_first_index;
@@ -836,7 +837,9 @@ static void draw_shell(void) {
                            "STORAGE DEVICE DISCOVERY IS ACTIVE",
                            1, 108, 216, 229);
         graphics_draw_text(text_x, text_y + 78U,
-                           "DISKS ARE CURRENTLY READ ONLY",
+                           vfs_nxfs_writable()
+                               ? "NEXUS USER DATA IS PERSISTENT AND WRITABLE"
+                               : "FAT32 IS READ ONLY; RAM FILES ARE VOLATILE",
                            1, 233, 243, 252);
         if (!files_scanned) {
             graphics_draw_text(text_x, text_y + 108U,
@@ -914,10 +917,12 @@ static void draw_shell(void) {
                 graphics_draw_text(action_x + 9U, text_y + 279U,
                                    actions[action], 1U, 234U, 244U, 252U);
             }
+            char current_path[96];
+            if (!vfs_current_path(current_path, sizeof(current_path)))
+                current_path[0] = '\0';
             graphics_draw_text(text_x, text_y + 304U,
-                                files_scan_ok
-                                    ? "PERSISTENT FILES  /  FAT32 + NXFS + RAM"
-                                    : "RAM FILES  /  VOLATILE UNTIL SAVED",
+                                current_path[0] != '\0'
+                                    ? current_path : "PATH UNAVAILABLE",
                                 1U, 108U, 216U, 229U);
             for (size_t slot = 0U; slot < FILES_LISTING_VISIBLE; ++slot) {
                 const size_t index = files_listing_first_index + slot;
@@ -929,9 +934,23 @@ static void draw_shell(void) {
                     graphics_fill_rect(text_x + column * 260U - 6U,
                                        text_y + 321U + line * 24U,
                                        240U, 20U, 34U, 78U, 105U);
+                char display_name[NEXUS_VFS_NAME_MAX + 8U];
+                size_t display_length = 0U;
+                const char *prefix = files_listing_directories[index]
+                    ? "[DIR] " : "      ";
+                while (prefix[display_length] != '\0') {
+                    display_name[display_length] = prefix[display_length];
+                    ++display_length;
+                }
+                for (size_t i = 0U;
+                     i < NEXUS_VFS_NAME_MAX - 1U &&
+                     files_listing[index][i] != '\0' &&
+                     display_length < sizeof(display_name) - 1U; ++i)
+                    display_name[display_length++] = files_listing[index][i];
+                display_name[display_length] = '\0';
                 graphics_draw_text(text_x + column * 260U,
                                    text_y + 326U + line * 24U,
-                                   files_listing[index], 1U,
+                                   display_name, 1U,
                                    selected ? 119U : 233U,
                                    selected ? 229U : 243U,
                                    selected ? 211U : 252U);
@@ -941,7 +960,7 @@ static void draw_shell(void) {
                                    1U, 170U, 191U, 211U);
             }
             graphics_draw_text(text_x, text_y + 390U,
-                               "UP/DOWN SELECT  PGUP/PGDN PAGE  ENTER PREVIEW",
+                               "ARROWS SELECT  ENTER OPEN/PREVIEW  BACKSPACE UP  PGUP/PGDN PAGE",
                                1, 170, 191, 211);
             if (files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 414U,
@@ -1161,6 +1180,7 @@ static void refresh_files_listing(void) {
     for (size_t n = 0; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
     for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n) {
+        files_listing_directories[n] = false;
         for (size_t k = 0U; k < sizeof(files_listing[n]); ++k)
             files_listing[n][k] = '\0';
     }
@@ -1184,6 +1204,8 @@ static void refresh_files_listing(void) {
                 ++length;
             }
             files_listing[files_listing_count][length] = '\0';
+            files_listing_directories[files_listing_count] =
+                entry.type == NEXUS_VFS_DIRECTORY;
             ++files_listing_count;
         } else {
             files_listing_truncated = true;
@@ -1309,6 +1331,16 @@ static void files_editor_begin_selected(void) {
         files_edit_status[i] = '\0';
         return;
     }
+    if (!vfs_file_writable(selected.name)) {
+        const char *message = "READ ONLY - CREATE A WRITABLE COPY FIRST";
+        size_t i = 0U;
+        while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+            files_edit_status[i] = message[i];
+            ++i;
+        }
+        files_edit_status[i] = '\0';
+        return;
+    }
     struct nexus_vfs_file file;
     if (!vfs_open_readonly(selected.name, &file)) return;
     size_t bytes_read = 0U;
@@ -1328,6 +1360,17 @@ static void files_editor_begin_selected(void) {
     files_editor_scroll_to_end();
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
+}
+
+static void files_open_selected(void) {
+    struct nexus_vfs_dirent selected;
+    if (files_selected_index >= files_listing_count ||
+        !vfs_root_entry(files_selected_index, &selected)) return;
+    if (selected.type == NEXUS_VFS_DIRECTORY) {
+        if (vfs_enter_directory(selected.name)) refresh_files_listing();
+        return;
+    }
+    files_editor_begin_selected();
 }
 
 static bool files_editor_name_exists(void) {
@@ -2773,9 +2816,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 relative_x >= 0 && relative_x < 392) {
                 const size_t action = (size_t)relative_x / 100U;
                 if (action == 0U) {
-                    files_editor_begin_new();
+                    if (vfs_directory_depth() == 0U)
+                        files_editor_begin_new();
                 } else if (action == 1U) {
-                    files_editor_begin_selected();
+                    files_open_selected();
                 } else if (action == 2U) {
                     struct nexus_vfs_dirent selected;
                     if (files_selected_index < files_listing_count &&
@@ -3017,11 +3061,15 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x31U) {
-            files_editor_begin_new();
+            if (vfs_directory_depth() == 0U) files_editor_begin_new();
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x12U) {
-            files_editor_begin_selected();
+            files_open_selected();
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x0EU && vfs_directory_depth() > 0U) {
+            if (vfs_parent_directory()) refresh_files_listing();
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x48U && files_listing_count > 0U) {
@@ -3084,8 +3132,15 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x1CU && files_selected_index < files_listing_count) {
             struct nexus_vfs_dirent selected;
-            if (vfs_root_entry(files_selected_index, &selected) &&
-                selected.type == NEXUS_VFS_FILE) {
+            if (!vfs_root_entry(files_selected_index, &selected)) {
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+            if (selected.type == NEXUS_VFS_DIRECTORY) {
+                if (vfs_enter_directory(selected.name))
+                    refresh_files_listing();
+            } else if (selected.type == NEXUS_VFS_FILE) {
                 struct nexus_vfs_file file;
                 if (vfs_open_readonly(selected.name, &file)) {
                     uint8_t preview_data[sizeof(files_preview) - 1U];

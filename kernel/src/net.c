@@ -1181,6 +1181,33 @@ size_t net_tcp_receive(void *buffer, size_t capacity) {
     return count;
 }
 
+enum nexus_tcp_receive_result net_tcp_receive_wait(
+    void *buffer, size_t capacity, uint64_t timeout_ticks, size_t *received) {
+    if (received == NULL) return NEXUS_TCP_RECEIVE_ERROR;
+    *received = 0U;
+    if (!tcp_connection.active || !tcp_connection.connected ||
+        buffer == NULL || capacity == 0U || timeout_ticks == 0U)
+        return NEXUS_TCP_RECEIVE_ERROR;
+
+    const uint64_t start = timer_ticks();
+    while (tcp_connection.receive_length == 0U &&
+           !tcp_connection.peer_closed && !tcp_connection.failed &&
+           tcp_connection.active && tcp_connection.connected) {
+        if (timer_ticks() - start >= timeout_ticks)
+            return NEXUS_TCP_RECEIVE_TIMEOUT;
+        net_poll();
+        __asm__ volatile ("pause");
+    }
+
+    if (tcp_connection.receive_length != 0U) {
+        *received = net_tcp_receive(buffer, capacity);
+        return *received != 0U ? NEXUS_TCP_RECEIVE_DATA
+                               : NEXUS_TCP_RECEIVE_ERROR;
+    }
+    if (tcp_connection.peer_closed) return NEXUS_TCP_RECEIVE_EOF;
+    return NEXUS_TCP_RECEIVE_ERROR;
+}
+
 void net_tcp_close(void) {
     if (!tcp_connection.active) return;
     if (tcp_connection.connected && !tcp_connection.peer_closed &&

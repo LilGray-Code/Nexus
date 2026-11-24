@@ -97,7 +97,11 @@ static bool is_message_three(const struct nexus_wpa2_eapol_key *key) {
            key->encrypted_key_data &&
            key->key_length == NEXUS_WPA2_TK_CCMP_BYTES &&
            key->key_data_length >= NEXUS_AES_KEY_WRAP_MIN_CIPHERTEXT_BYTES &&
-           (key->key_data_length % 8U) == 0U;
+           key->key_data_length <=
+               NEXUS_WPA2_HANDSHAKE_KEY_DATA_MAX +
+               NEXUS_AES_KEY_WRAP_OVERHEAD_BYTES &&
+           (key->key_data_length % 8U) == 0U &&
+           key->replay_counter != 0U;
 }
 
 static bool process_message_one(
@@ -228,6 +232,7 @@ bool nexus_wpa2_supplicant_init(
         !valid_unicast_mac(authenticator_mac) || fresh_snonce == NULL ||
         bytes_are_zero(fresh_snonce, 32U) || ops == NULL ||
         ops->send_eapol == NULL || ops->install_ccmp128_keys == NULL ||
+        ops->clear_ccmp128_keys == NULL ||
         bytes_equal_constant_time(supplicant_mac, authenticator_mac, 6U))
         return false;
 

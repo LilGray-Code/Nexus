@@ -2989,18 +2989,19 @@ static bool browser_https_receive_response(
 static void browser_navigate(bool record_history) {
     browser_clear_page();
     if (browser_address_length == 0U) {
-        browser_set_status("Enter a host or host/path first");
+        browser_set_status("Enter a URL or host name");
         return;
     }
 
+    /* HTTPS-first for scheme-less addresses. Plain HTTP requires http://. */
+    bool use_https = true;
     size_t address_start = 0U;
     if (browser_starts_with(browser_address, browser_address_length,
                             "https://")) {
-        browser_set_status("HTTPS unavailable: TLS certificate validation is not implemented");
-        return;
-    }
-    if (browser_starts_with(browser_address, browser_address_length,
-                            "http://")) {
+        address_start = 8U;
+    } else if (browser_starts_with(browser_address, browser_address_length,
+                                   "http://")) {
+        use_https = false;
         address_start = 7U;
     } else {
         for (size_t i = 0U; i + 2U < browser_address_length; ++i) {
@@ -3034,7 +3035,7 @@ static void browser_navigate(bool record_history) {
             }
             host[host_length++] = ch;
         } else {
-            if (ch == '#') break; /* Fragments are never sent in HTTP requests. */
+            if (ch == '#') break;
             if (path_length >= sizeof(path) - 1U ||
                 ch < 0x21 || ch > 0x7E) {
                 browser_set_status("Invalid or overlong URL path");
@@ -3050,7 +3051,8 @@ static void browser_navigate(bool record_history) {
     host[host_length] = '\0';
     path[path_length] = '\0';
     if (!browser_valid_host(host, host_length)) {
-        browser_set_status("Invalid host; ports and special characters are unsupported");
+        browser_set_status(
+            "Invalid host; ports and IPv6 literals are not supported");
         return;
     }
     if (record_history &&
@@ -3059,32 +3061,68 @@ static void browser_navigate(bool record_history) {
         return;
     }
 
-    browser_set_status("Resolving host...");
-    uint8_t address[4];
-    if (!net_dns_resolve(host, address, 600U)) {
-        browser_set_status("DNS failed; check DHCP/network");
-        return;
-    }
-    browser_set_status("Opening TCP connection...");
-    if (!net_tcp_connect(address, 80U, 800U)) {
-        browser_set_status("TCP connection to port 80 failed");
-        return;
+    struct nexus_https_connection https = {0};
+    bool https_open = false;
+    if (use_https) {
+        size_t ca_length = 0U;
+        browser_set_status("Loading persistent CA trust store...");
+        if (!browser_load_ca_bundle(&ca_length)) {
+            browser_set_status(
+                "HTTPS needs a valid NEXUS.CRT PEM bundle on Nexus Data");
+            browser_clear_ca_bundle();
+            return;
+        }
+        browser_set_status("Opening verified TLS 1.3 connection...");
+        const int connect_result = nexus_https_connect(
+            &https, host, browser_ca_bundle, ca_length, 1800U);
+        browser_clear_ca_bundle();
+        if (connect_result != 0 || !nexus_https_is_verified(&https)) {
+            nexus_https_close(&https);
+            browser_set_status(
+                "HTTPS failed: check CA trust bundle, RTC clock and network");
+            return;
+        }
+        https_open = true;
+    } else {
+        browser_set_status("Resolving host...");
+        uint8_t address[4];
+        if (!net_dns_resolve(host, address, 600U)) {
+            browser_set_status("DNS failed; check DHCP/network");
+            return;
+        }
+        browser_set_status("Opening HTTP connection...");
+        if (!net_tcp_connect(address, 80U, 800U)) {
+            browser_set_status("TCP connection to port 80 failed");
+            return;
+        }
     }
 
-    char request[256];
+    char request[384];
     size_t request_length = 0U;
-    bool request_ok =
+    const bool request_ok =
         browser_append_text(request, sizeof(request), &request_length,
                             "GET ") &&
         browser_append_text(request, sizeof(request), &request_length, path) &&
         browser_append_text(request, sizeof(request), &request_length,
-                            " HTTP/1.0\r\nHost: ") &&
+                            " HTTP/1.1\r\nHost: ") &&
         browser_append_text(request, sizeof(request), &request_length, host) &&
         browser_append_text(request, sizeof(request), &request_length,
-                            "\r\nConnection: close\r\nUser-Agent: Nexus/0.1\r\n\r\n");
-    if (!request_ok || !net_tcp_send(request, (uint16_t)request_length)) {
+                            "\r\nUser-Agent: NexusBrowser/0.2\r\n"
+                            "Accept: text/html,text/plain,*/*\r\n"
+                            "Accept-Encoding: identity\r\n"
+                            "Cache-Control: no-cache\r\n"
+                            "Connection: close\r\n\r\n");
+    bool request_sent = false;
+    if (request_ok) {
+        request_sent = use_https
+            ? browser_https_send_all(
+                &https, (const unsigned char *)request, request_length)
+            : net_tcp_send(request, (uint16_t)request_length);
+    }
+    if (!request_sent) {
         browser_set_status("HTTP request could not be sent");
-        net_tcp_close();
+        if (https_open) nexus_https_close(&https);
+        else net_tcp_close();
         return;
     }
 
@@ -3092,26 +3130,39 @@ static void browser_navigate(bool record_history) {
     uint8_t body[1536];
     struct nexus_http_response parsed;
     size_t response_length = 0U;
-    const uint64_t start = timer_ticks();
-    uint64_t last_data = start;
-    browser_set_status("Receiving HTTP response...");
-    while (timer_ticks() - start < 600U &&
-           (response_length == 0U || timer_ticks() - last_data < 40U) &&
-           response_length < sizeof(response)) {
-        net_poll();
-        const size_t received =
-            net_tcp_receive(response + response_length,
-                            sizeof(response) - response_length);
-        if (received != 0U) {
-            response_length += received;
-            last_data = timer_ticks();
+    bool orderly_eof = false;
+    bool receive_ok = true;
+    browser_set_status(use_https
+        ? "Receiving encrypted HTTPS response..."
+        : "Receiving unencrypted HTTP response...");
+    if (use_https) {
+        receive_ok = browser_https_receive_response(
+            &https, response, sizeof(response), &response_length, &orderly_eof);
+        nexus_https_close(&https);
+        https_open = false;
+    } else {
+        const uint64_t start = timer_ticks();
+        uint64_t last_data = start;
+        while (timer_ticks() - start < 600U &&
+               (response_length == 0U || timer_ticks() - last_data < 40U) &&
+               response_length < sizeof(response)) {
+            net_poll();
+            const size_t received =
+                net_tcp_receive(response + response_length,
+                                sizeof(response) - response_length);
+            if (received != 0U) {
+                response_length += received;
+                last_data = timer_ticks();
+            }
+            __asm__ volatile ("pause" ::: "memory");
         }
-        __asm__ volatile ("pause");
+        net_tcp_close();
     }
-    net_tcp_close();
 
-    if (response_length == 0U) {
-        browser_set_status("No HTTP response received");
+    if (!receive_ok || response_length == 0U) {
+        browser_set_status(use_https
+            ? "No complete TLS response received"
+            : "No HTTP response received");
         return;
     }
     if (!nexus_http_decode_response(response, response_length, body,
@@ -3119,24 +3170,38 @@ static void browser_navigate(bool record_history) {
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
     }
+    /* Require TLS close_notify for close-delimited bodies; a timed-out TLS
+     * stream must not be mistaken for a complete page.
+     */
+    if (use_https && !parsed.has_content_length && !parsed.chunked &&
+        !orderly_eof) {
+        browser_set_status("HTTPS response ended before authenticated EOF");
+        return;
+    }
     if (parsed.status_code < 200U || parsed.status_code >= 300U) {
         char number[21];
         char message[80] = "HTTP status ";
         format_u64(parsed.status_code, number);
         size_t length = 12U;
-        for (size_t i = 0U; number[i] != '\0' && length < sizeof(message)-1U; ++i)
+        for (size_t i = 0U; number[i] != '\0' &&
+             length < sizeof(message) - 1U; ++i)
             message[length++] = number[i];
         message[length] = '\0';
         browser_set_status(message);
         return;
     }
-    browser_render_body(body, parsed.body_length);
-    if (browser_content_truncated)
-        browser_set_status("HTML text clipped to the bounded browser page");
-    else
-        browser_set_status("Loaded HTML text; no CSS, JavaScript, or TLS");
-}
 
+    browser_render_body(body, parsed.body_length);
+    if (browser_content_truncated) {
+        browser_set_status("Page text clipped to the bounded browser view");
+    } else if (use_https) {
+        browser_set_status(
+            "HTTPS certificate verified (TLS 1.3); HTML text only");
+    } else {
+        browser_set_status(
+            "HTTP loaded without encryption; HTML text only");
+    }
+}
 static void browser_history_navigate(bool forward) {
     char destination[sizeof(browser_address)];
     const bool moved = forward

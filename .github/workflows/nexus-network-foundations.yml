@@ -81,9 +81,9 @@ jobs:
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror \
             -Ikernel/src \
+            -Ibuild/deps/mbedtls-build/generated/include \
             -Ibuild/deps/mbedtls-4.1.2/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
-            -Ibuild/deps/mbedtls-build/generated/include \
             kernel/src/random.c kernel/src/mbedtls_random.c \
             kernel/tests/mbedtls_random_test.c \
             -o /tmp/nexus-mbedtls-rng-test
@@ -92,9 +92,9 @@ jobs:
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror \
             -Ikernel/src \
+            -Ibuild/deps/mbedtls-build/generated/include \
             -Ibuild/deps/mbedtls-4.1.2/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
-            -Ibuild/deps/mbedtls-build/generated/include \
             kernel/src/mbedtls_time.c kernel/tests/mbedtls_time_test.c \
             -o /tmp/nexus-mbedtls-time-test
           /tmp/nexus-mbedtls-time-test
@@ -109,9 +109,9 @@ jobs:
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror \
             -DNEXUS_TLS_HEAP_HOST_TEST -Ikernel/src \
+            -Ibuild/deps/mbedtls-build/generated/include \
             -Ibuild/deps/mbedtls-4.1.2/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
-            -Ibuild/deps/mbedtls-build/generated/include \
             kernel/src/tls_heap.c kernel/src/mbedtls_heap.c \
             kernel/tests/mbedtls_heap_test.c \
             -o /tmp/nexus-mbedtls-heap-test

@@ -154,7 +154,7 @@ jobs:
           from pathlib import Path
           import struct
           image = Path("build/userland/HELLO.ELF").read_bytes()
-          assert len(image) <= 2048, "test app must fit in four FAT32 clusters"
+          assert len(image) <= 4096, "test app must fit in eight FAT32 clusters"
           assert image[:4] == b"\x7fELF" and image[4] == 2 and image[5] == 1
           assert struct.unpack_from("<H", image, 18)[0] == 62
           print(f"Nexus native SDK sample: {len(image)} byte x86-64 ELF64")

@@ -17,7 +17,8 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   resizable app windows, left/right edge snapping, top-edge maximize, minimize,
   maximize/restore/close controls, and a bottom-corner resize grip. Keyboard
   shortcuts include Alt+Tab / Alt+Shift+Tab to cycle app views, Alt+F4 to close,
-  Win+Left/Right/Up/Down for window placement, Win+E for Files, Win+I for
+  Alt+Left/Right for browser history, Win+Left/Right/Up/Down for window
+  placement, Win+E for Files, Win+I for
   Settings, Win+D for Home, and Ctrl+Esc or the Windows key for Start. The Start
   launcher supports typed app search, Up/Down selection, and Enter to launch.
   The shell also supports live Dark/Light appearance, four accent palettes, and
@@ -77,7 +78,8 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   implemented; no Wi-Fi chipset driver or firmware is registered, so live radio
   scanning and association are not available. A bounded 802.11 beacon and
   probe-response parser plus generic Wi-Fi state/driver interface are included
-  as a test-backed foundation only.
+  as a test-backed foundation only. The state manager preserves synchronous
+  scan-result and connection-completion callbacks from a driver.
   WPA2-Personal PMK/PTK derivation, EAPOL-Key MIC verification, AES-128-CCM,
   RFC 3394 key unwrap, EAPOL-Key/GTK parsing, and a bounded supplicant M1-M4
   handshake engine have known-answer or integration tests. The engine
@@ -91,10 +93,12 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   SHA-256, HMAC-SHA256, and HKDF-SHA256 primitives have known-answer tests as
   TLS building blocks; they do not constitute TLS.
 - The HTTP viewer validates bounded HTTP/1.x response framing (including
-  content-length and chunked bodies) and provides keyboard page scrolling. Its
-  bounded HTML-to-text stage formats common block elements, list items, and
-  entities while omitting comments and script/style content. It does not yet
-  provide CSS layout, JavaScript, HTTPS/TLS, cookies, or a modern browser engine.
+  content-length and chunked bodies), provides keyboard page scrolling, and
+  keeps a 12-entry session history with branch truncation and oldest-entry
+  eviction (Alt+Left / Alt+Right). Its bounded HTML-to-text stage formats
+  common block elements, list items, and entities while omitting comments and
+  script/style content. It does not yet provide CSS layout, JavaScript,
+  HTTPS/TLS, cookies, or a modern browser engine.
 
 The desktop applications and current system services are integrated into the
 kernel. The ELF64 loader has a bounded ring-3 execution test, but this does
@@ -149,9 +153,10 @@ the latest run attached to the current branch.
 - The browser is an early plain-HTTP text viewer; HTTPS/TLS and modern web
   rendering are not implemented.
 - The Files app is still bounded: it has a 128-entry display cache,
-  31-character path/name limits, and a 4 KiB ASCII editor. Directory rename,
-  search, rich previews, timestamps, large-document editing, and broader
-  filesystem capacity are not yet implemented.
+  current-folder-only filename search, 31-character path/name limits, and a
+  4 KiB ASCII editor. Directory rename, recursive search, rich previews,
+  timestamps, large-document editing, and broader filesystem capacity remain
+  future work.
 - Desktop applications and much of the system runtime remain kernel-integrated.
   A separate userland, a full application/process model, robust preemptive
   multitasking, updates, and production recovery/upgrade tooling remain work

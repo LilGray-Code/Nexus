@@ -45,11 +45,16 @@ bool wifi_scan(void) {
         return false;
     }
     scan_count = 0U;
+    /* Publish the transition before entering a driver callback. Some drivers
+     * complete a scan inline and call wifi_publish_scan_results() before
+     * returning; that callback must see SCANNING, and READY must not then be
+     * overwritten by a stale post-callback assignment.
+     */
+    state = NEXUS_WIFI_SCANNING;
     if (!driver_ops->scan(driver_context)) {
         state = NEXUS_WIFI_FAILED;
         return false;
     }
-    state = NEXUS_WIFI_SCANNING;
     return true;
 }
 
@@ -92,11 +97,15 @@ bool wifi_connect(const struct nexus_wifi_network *network,
         if (passphrase_length < minimum_length ||
             passphrase_length > NEXUS_WIFI_PASSPHRASE_MAX) return false;
     }
+    /* The driver may complete authentication inline and report CONNECTED
+     * before connect() returns. Set CONNECTING first and preserve any valid
+     * state transition emitted from inside the callback.
+     */
+    state = NEXUS_WIFI_CONNECTING;
     if (!driver_ops->connect(driver_context, network, passphrase)) {
         state = NEXUS_WIFI_FAILED;
         return false;
     }
-    state = NEXUS_WIFI_CONNECTING;
     return true;
 }
 

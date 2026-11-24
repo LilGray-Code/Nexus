@@ -8,6 +8,9 @@ struct mock_driver {
     unsigned starts, scans, connects, disconnects, polls;
     bool fail_scan;
     bool fail_connect;
+    bool publish_scan_inline;
+    bool connect_inline;
+    struct nexus_wifi_network inline_network;
 };
 
 static bool mock_start(void *context) {
@@ -17,7 +20,10 @@ static bool mock_start(void *context) {
 static bool mock_scan(void *context) {
     struct mock_driver *m = context;
     m->scans++;
-    return !m->fail_scan;
+    if (m->fail_scan) return false;
+    if (m->publish_scan_inline)
+        return wifi_publish_scan_results(&m->inline_network, 1U);
+    return true;
 }
 static bool mock_connect(void *context, const struct nexus_wifi_network *n,
                          const char *passphrase) {
@@ -25,7 +31,9 @@ static bool mock_connect(void *context, const struct nexus_wifi_network *n,
     (void)n;
     (void)passphrase;
     m->connects++;
-    return !m->fail_connect;
+    if (m->fail_connect) return false;
+    if (m->connect_inline) wifi_report_connected();
+    return true;
 }
 static void mock_disconnect(void *context) {
     ((struct mock_driver *)context)->disconnects++;
@@ -84,6 +92,23 @@ int main(void) {
     wifi_disconnect();
     assert(mock.disconnects == 1U);
     assert(wifi_get_state() == NEXUS_WIFI_READY);
+
+    /* A driver may publish a completed scan synchronously from scan(). */
+    mock.inline_network = networks[1];
+    mock.publish_scan_inline = true;
+    assert(wifi_scan());
+    assert(wifi_get_state() == NEXUS_WIFI_READY);
+    assert(wifi_scan_result_count() == 1U);
+    assert(wifi_scan_result_at(0U, &copied));
+    assert(copied.ssid[0] == 'O');
+    mock.publish_scan_inline = false;
+
+    /* Likewise, connect() may report CONNECTED before returning. */
+    mock.connect_inline = true;
+    assert(wifi_connect(&networks[1], NULL));
+    assert(wifi_get_state() == NEXUS_WIFI_CONNECTED);
+    mock.connect_inline = false;
+    wifi_disconnect();
 
     assert(wifi_scan());
     struct nexus_wifi_network invalid = {0};

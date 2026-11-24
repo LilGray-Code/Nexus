@@ -51,7 +51,9 @@ struct nexus_wifi_driver_ops {
 };
 
 /* The hardware driver owns radio operations; this layer validates requests
- * and reports only state/results explicitly supplied by that driver.
+ * and reports only state/results explicitly supplied by that driver. Driver
+ * callbacks may report scan/connection completion synchronously before the
+ * callback returns; the manager preserves those state transitions.
  */
 bool wifi_register_driver(const struct nexus_wifi_driver_ops *ops,
                           void *context);

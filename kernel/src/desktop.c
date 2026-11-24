@@ -10,6 +10,7 @@
 #include "net.h"
 #include "http.h"
 #include "html_text.h"
+#include "browser_history.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -182,6 +183,7 @@ static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 static size_t browser_line_scroll;
 static bool browser_content_truncated;
+static struct nexus_browser_history browser_history;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -1709,10 +1711,10 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 360U, text_y + 66U,
                                "TRUNCATED", 1, 239, 177, 119);
         graphics_draw_text(text_x, text_y + 360U,
-                           "PGUP/PGDN SCROLL  HOME/END  ENTER LOADS  ESC HOME",
+                           "PGUP/PGDN SCROLL  HOME/END  ALT+LEFT BACK  ALT+RIGHT FORWARD",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 382U,
-                           "PLAIN HTTP ONLY - DO NOT SEND PRIVATE DATA",
+                           "ENTER LOADS  ESC HOME  PLAIN HTTP ONLY",
                            1, 239, 177, 119);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
@@ -1850,6 +1852,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     screen_width = graphics_width();
     screen_height = graphics_height();
     active_view = DESKTOP_HOME;
+    nexus_browser_history_init(&browser_history);
+    browser_address_length = 0U;
+    browser_address[0] = '\0';
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
     installer_refresh_plan();
@@ -2866,7 +2871,7 @@ static bool browser_starts_with(const char *value, size_t length,
     return true;
 }
 
-static void browser_navigate(void) {
+static void browser_navigate(bool record_history) {
     browser_clear_page();
     if (browser_address_length == 0U) {
         browser_set_status("Enter a host or host/path first");
@@ -2931,6 +2936,11 @@ static void browser_navigate(void) {
     path[path_length] = '\0';
     if (!browser_valid_host(host, host_length)) {
         browser_set_status("Invalid host; ports and special characters are unsupported");
+        return;
+    }
+    if (record_history &&
+        !nexus_browser_history_push(&browser_history, browser_address)) {
+        browser_set_status("Browser history could not store this address");
         return;
     }
 
@@ -3010,6 +3020,30 @@ static void browser_navigate(void) {
         browser_set_status("HTML text clipped to the bounded browser page");
     else
         browser_set_status("Loaded HTML text; no CSS, JavaScript, or TLS");
+}
+
+static void browser_history_navigate(bool forward) {
+    char destination[sizeof(browser_address)];
+    const bool moved = forward
+        ? nexus_browser_history_forward(&browser_history, destination,
+                                        sizeof(destination))
+        : nexus_browser_history_back(&browser_history, destination,
+                                     sizeof(destination));
+    if (!moved) {
+        browser_set_status(forward ? "No forward page in this session"
+                                   : "No previous page in this session");
+        return;
+    }
+
+    size_t length = 0U;
+    while (length < sizeof(browser_address) - 1U &&
+           destination[length] != '\0') {
+        browser_address[length] = destination[length];
+        ++length;
+    }
+    browser_address[length] = '\0';
+    browser_address_length = length;
+    browser_navigate(false);
 }
 
 static void terminal_execute(void) {
@@ -4336,8 +4370,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             desktop_open_view(DESKTOP_HOME);
             draw_shell(); draw_pointer(); return;
         }
-        if (event->scancode == 0x1CU) {
-            browser_navigate();
+        if (keyboard_alt && event->scancode == 0x4BU) {
+            browser_history_navigate(false);
+        } else if (keyboard_alt && event->scancode == 0x4DU) {
+            browser_history_navigate(true);
+        } else if (event->scancode == 0x1CU) {
+            browser_navigate(true);
         } else if (event->scancode == 0x49U) {
             browser_line_scroll = browser_line_scroll > NEXUS_BROWSER_VISIBLE_LINES
                 ? browser_line_scroll - NEXUS_BROWSER_VISIBLE_LINES : 0U;

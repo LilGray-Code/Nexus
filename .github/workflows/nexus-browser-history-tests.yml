@@ -1,0 +1,35 @@
+name: Nexus browser history tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/browser_history.c"
+      - "kernel/src/browser_history.h"
+      - "kernel/tests/browser_history_test.c"
+      - ".github/workflows/nexus-browser-history-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/browser_history.c"
+      - "kernel/src/browser_history.h"
+      - "kernel/tests/browser_history_test.c"
+      - ".github/workflows/nexus-browser-history-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  browser-history:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build bounded browser history with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/browser_history.c \
+            kernel/tests/browser_history_test.c \
+            -o /tmp/nexus-browser-history-test
+          /tmp/nexus-browser-history-test

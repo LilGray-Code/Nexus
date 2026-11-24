@@ -1102,3 +1102,31 @@ existing VFS policy remains in force: writes go to explicitly writable NXFS
 when available, otherwise the volatile RAM overlay; read-only FAT32 is never
 modified. Running the sample leaves `HELLO.OUT` in the current writable
 namespace (persistent on NXFS, volatile on RAMFS).
+
+
+### Bounded browser Back/Forward history
+
+The browser now has an allocation-free 12-entry URL history. Explicit
+navigations record the current address; duplicate current URLs do not create
+repeated entries. Navigating Back or Forward restores the address and reloads
+it through the existing HTTP-only fetch path. Visiting a new URL after going
+Back discards the old Forward branch, and appending beyond the capacity evicts
+the oldest entry. Keyboard shortcuts are Alt+Left and Alt+Right. The history
+is session-only and is reset on desktop initialization.
+
+A standalone host test covers basic movement, forward-branch truncation,
+duplicate suppression, capacity eviction, invalid/oversized URLs, and
+destination-buffer bounds. This improves navigation usability but does not add
+TLS, CSS layout, JavaScript, cookies, tabs, or a modern browser engine.
+
+
+### Wi-Fi driver callback state ordering
+
+The generic Wi-Fi state manager now enters SCANNING or CONNECTING before
+invoking the hardware driver's callback. This preserves results when a driver
+publishes scan results or reports CONNECTED synchronously before its callback
+returns; the old post-callback assignment could overwrite those completed
+states. The host Wi-Fi tests exercise both inline-completion paths. This is a
+state-machine correctness improvement only: Nexus still has no registered
+wireless chipset driver or firmware, so live scanning and association are not
+yet available.

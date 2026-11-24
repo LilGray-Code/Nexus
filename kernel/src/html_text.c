@@ -316,6 +316,19 @@ bool nexus_html_to_text(const uint8_t *input, size_t input_length,
             continue;
         }
 
+        if (cursor + 1U < input_length &&
+            (input[cursor + 1U] == '!' || input[cursor + 1U] == '?')) {
+            size_t declaration_end = 0U;
+            if (!find_tag_end(input, input_length, cursor + 2U,
+                              &declaration_end)) {
+                malformed = true;
+                cursor = input_length;
+            } else {
+                cursor = declaration_end + 1U;
+            }
+            continue;
+        }
+
         size_t tag_end = 0U;
         if (!find_tag_end(input, input_length, cursor + 1U, &tag_end)) {
             malformed = true;

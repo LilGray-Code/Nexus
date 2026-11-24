@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include <stdio.h>
 
 static void test_memory_and_strings(void) {
     char source[] = "Nexus-runtime";

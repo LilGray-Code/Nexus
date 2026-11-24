@@ -1,6 +1,6 @@
 # Nexus OS Networking, HTTPS, Browser, and Wi-Fi Engineering Specification
 
-**Status:** Architecture and acceptance contract; implementation is not yet complete.
+**Status:** Active implementation. Nexus now has a fail-closed RDRAND byte source, a WPA2 SNonce initializer using that source, and bounded TCP SYN/data retransmission. TLS, verified HTTPS, a physical Wi-Fi driver, and a modern browser engine are still not implemented.
 
 ## Verified current boundary
 

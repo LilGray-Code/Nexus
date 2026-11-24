@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "nexus/syscall.h"
+
 /* Allocation-free helpers provided by libnexus.a. These are not a drop-in
  * libc/POSIX implementation. File I/O uses the active Nexus VFS policy.
  */

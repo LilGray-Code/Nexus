@@ -99,7 +99,7 @@ static void test_parse_rejects_bad_headers_and_lengths(void) {
 }
 
 static void test_extract_single_ccmp_gtk_kde(void) {
-    uint8_t key_data[2U + 3U + 2U + NEXUS_WPA2_GTK_CCMP_BYTES];
+    uint8_t key_data[2U + 4U + 2U + NEXUS_WPA2_GTK_CCMP_BYTES];
     size_t cursor = 0U;
     key_data[cursor++] = 0xDDU;
     key_data[cursor++] = (uint8_t)(sizeof(key_data) - 2U);

@@ -24,10 +24,25 @@ static void secure_zero(void *memory, size_t length) {
     for (size_t i = 0U; i < length; ++i) bytes[i] = 0U;
 }
 
+static bool memory_ranges_overlap(const void *a, size_t a_length,
+                                  const void *b, size_t b_length) {
+    if (a_length == 0U || b_length == 0U) return false;
+    const uintptr_t start_a = (uintptr_t)a;
+    const uintptr_t start_b = (uintptr_t)b;
+    if (start_a > UINTPTR_MAX - a_length ||
+        start_b > UINTPTR_MAX - b_length)
+        return true;
+    return start_a < start_b + b_length &&
+           start_b < start_a + a_length;
+}
+
 bool nexus_wpa2_eapol_parse_key(
     const uint8_t *frame, size_t frame_length,
     struct nexus_wpa2_eapol_key *parsed) {
     if (parsed == NULL) return false;
+    if (frame != NULL &&
+        memory_ranges_overlap(frame, frame_length, parsed, sizeof(*parsed)))
+        return false;
     *parsed = (struct nexus_wpa2_eapol_key){0};
     if (frame == NULL ||
         frame_length < NEXUS_WPA2_EAPOL_HEADER_BYTES +
@@ -105,6 +120,22 @@ bool nexus_wpa2_eapol_extract_gtk_kde(
         0x00U, 0x0FU, 0xACU, 0x01U
     };
     if (gtk_length == NULL) return false;
+    if ((gtk != NULL && gtk_info != NULL &&
+         memory_ranges_overlap(gtk, NEXUS_WPA2_GTK_CCMP_BYTES,
+                               gtk_info, sizeof(*gtk_info))) ||
+        (gtk != NULL && memory_ranges_overlap(gtk, NEXUS_WPA2_GTK_CCMP_BYTES,
+                                               gtk_length, sizeof(*gtk_length))) ||
+        (gtk_info != NULL && memory_ranges_overlap(gtk_info, sizeof(*gtk_info),
+                                                   gtk_length, sizeof(*gtk_length))) ||
+        (key_data != NULL && key_data_length != 0U &&
+         ((gtk != NULL && memory_ranges_overlap(key_data, key_data_length,
+                                                gtk, NEXUS_WPA2_GTK_CCMP_BYTES)) ||
+          (gtk_info != NULL && memory_ranges_overlap(key_data, key_data_length,
+                                                     gtk_info, sizeof(*gtk_info))) ||
+          memory_ranges_overlap(key_data, key_data_length,
+                                gtk_length, sizeof(*gtk_length)))))
+        return false;
+
     *gtk_length = 0U;
     if (gtk_info != NULL) *gtk_info = 0U;
     if (gtk != NULL) secure_zero(gtk, NEXUS_WPA2_GTK_CCMP_BYTES);
@@ -115,14 +146,14 @@ bool nexus_wpa2_eapol_extract_gtk_kde(
 
     size_t cursor = 0U;
     bool found = false;
-    uint8_t candidate[NEXUS_WPA2_GTK_CCMP_BYTES];
+    uint8_t candidate[NEXUS_WPA2_GTK_CCMP_BYTES] = {0U};
     uint8_t candidate_info = 0U;
     while (cursor < key_data_length) {
-        if (key_data_length - cursor < 2U) return false;
+        if (key_data_length - cursor < 2U) goto fail;
         const uint8_t element_id = key_data[cursor];
         const size_t element_length = key_data[cursor + 1U];
         cursor += 2U;
-        if (element_length > key_data_length - cursor) return false;
+        if (element_length > key_data_length - cursor) goto fail;
 
         if (element_id == 0xDDU &&
             element_length >= sizeof(rsn_gtk_kde_prefix) &&
@@ -133,24 +164,28 @@ bool nexus_wpa2_eapol_extract_gtk_kde(
             if (found || element_length !=
                          sizeof(rsn_gtk_kde_prefix) + 2U +
                          NEXUS_WPA2_GTK_CCMP_BYTES)
-                return false;
+                goto fail;
             candidate_info = key_data[cursor + 4U];
             const uint8_t reserved = key_data[cursor + 5U];
             if ((candidate_info & 0xF8U) != 0U || reserved != 0U)
-                return false;
+                goto fail;
             copy_bytes(candidate, key_data + cursor + 6U, sizeof(candidate));
             found = true;
         }
         cursor += element_length;
     }
 
-    if (!found) {
-        secure_zero(candidate, sizeof(candidate));
-        return false;
-    }
+    if (!found) goto fail;
     copy_bytes(gtk, candidate, sizeof(candidate));
     *gtk_info = candidate_info;
     *gtk_length = sizeof(candidate);
     secure_zero(candidate, sizeof(candidate));
     return true;
+
+fail:
+    secure_zero(candidate, sizeof(candidate));
+    secure_zero(gtk, NEXUS_WPA2_GTK_CCMP_BYTES);
+    *gtk_info = 0U;
+    *gtk_length = 0U;
+    return false;
 }

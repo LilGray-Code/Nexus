@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "netdev.h"
+
 struct nexus_net_info {
     char interface_name[16];
     enum nexus_netdev_medium interface_medium;

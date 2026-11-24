@@ -11,5 +11,6 @@ void scheduler_start(void);
 void scheduler_wait(void);
 void scheduler_yield(void);
 void scheduler_preempt(void);
+void scheduler_set_preemption_enabled(bool enabled);
 
 #endif

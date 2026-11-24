@@ -292,7 +292,7 @@ jobs:
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log
           grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log
-          grep -q "NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY" uefi-serial.log
+          grep -q "NEXUS K2 COOPERATIVE THREAD SCHEDULER READY" uefi-serial.log
           grep -q "NEXUS DESKTOP FRAMEBUFFER READY" uefi-serial.log
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log

@@ -140,6 +140,7 @@ int nexus_https_connect(struct nexus_https_connection *connection,
 bool nexus_https_is_verified(
     const struct nexus_https_connection *connection) {
     return connection != NULL && connection->tcp_open &&
+           connection->private_state == &https_tls_client &&
            connection->tls_ready && connection->verified &&
            nexus_tls_client_is_verified(&https_tls_client);
 }

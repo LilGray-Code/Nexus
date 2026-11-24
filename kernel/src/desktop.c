@@ -7,6 +7,7 @@
 #include "process.h"
 #include "net.h"
 #include "http.h"
+#include "html_text.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -1644,39 +1645,16 @@ static void browser_render_body(const uint8_t *data, size_t length) {
     browser_clear_page();
     if (data == NULL) return;
 
-    bool in_tag = false;
-    bool in_entity = false;
-    for (size_t i = 0U; i < length; ++i) {
-        const char ch = (char)data[i];
-        if (in_tag) {
-            if (ch == '>') {
-                in_tag = false;
-                browser_append_page_char(' ');
-            }
-            continue;
-        }
-        if (in_entity) {
-            if (ch == ';') {
-                in_entity = false;
-                browser_append_page_char(' ');
-            }
-            continue;
-        }
-        if (ch == '<') {
-            in_tag = true;
-            continue;
-        }
-        if (ch == '&') {
-            in_entity = true;
-            continue;
-        }
-        browser_append_page_char(ch);
-        if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT &&
-            i + 1U < length) {
-            char *last = browser_lines[NEXUS_BROWSER_LINE_COUNT - 1U];
-            if (last[NEXUS_BROWSER_LINE_WIDTH - 2U] != '\0') break;
-        }
+    char text[1536];
+    struct nexus_html_text_result result;
+    if (!nexus_html_to_text(data, length, text, sizeof(text), &result)) {
+        browser_set_status("HTML text conversion rejected invalid input");
+        return;
     }
+    for (size_t i = 0U; i < result.output_length; ++i)
+        browser_append_page_char(text[i]);
+    if (result.truncated || result.malformed)
+        browser_content_truncated = result.truncated;
 }
 
 static bool browser_append_text(char *buffer, size_t capacity,
@@ -1863,9 +1841,9 @@ static void browser_navigate(void) {
     }
     browser_render_body(body, parsed.body_length);
     if (browser_content_truncated)
-        browser_set_status("Loaded HTTP text; page truncated at 48 lines");
+        browser_set_status("HTML text clipped to the bounded browser page");
     else
-        browser_set_status("Loaded HTTP text; no TLS, CSS, or JavaScript");
+        browser_set_status("Loaded HTML text; no CSS, JavaScript, or TLS");
 }
 
 static void terminal_execute(void) {

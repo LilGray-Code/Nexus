@@ -29,6 +29,10 @@ void serial_write(const char *message) {
     (void)message;
 }
 
+void serial_write_hex(uint64_t value) {
+    (void)value;
+}
+
 bool netdev_link_up(void) {
     return true;
 }

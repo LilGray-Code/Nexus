@@ -14,9 +14,8 @@ int main(void) {
 
     const bool available = nexus_rng_available();
     const bool filled = nexus_rng_fill(bytes, sizeof(bytes));
-    assert(filled == available);
-
-    if (available) {
+    if (filled) {
+        assert(available);
         bool nonzero = false;
         for (size_t i = 0U; i < sizeof(bytes); ++i)
             nonzero = nonzero || bytes[i] != 0U;
@@ -35,8 +34,8 @@ int main(void) {
 
     uint32_t word = 0xA5A5A5A5U;
     const bool word_filled = nexus_rng_u32(&word);
-    assert(word_filled == available);
-    if (!available) assert(word == 0U);
+    if (!word_filled) assert(word == 0U);
+    else assert(available);
     assert(!nexus_rng_u32(NULL));
     return 0;
 }

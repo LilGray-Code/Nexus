@@ -21,6 +21,8 @@ static struct nexus_thread threads[NEXUS_MAX_THREADS];
 static size_t thread_count;
 static struct nexus_thread *current_thread;
 static bool scheduler_started;
+/* IRQ-context preemption stays opt-in until its dedicated QEMU test passes. */
+static bool preemption_enabled;
 
 extern void arch_context_switch(uintptr_t *old_stack, uintptr_t new_stack);
 
@@ -73,6 +75,7 @@ void scheduler_init(void) {
     thread_count = 0U;
     current_thread = &main_thread;
     scheduler_started = false;
+    preemption_enabled = false;
 }
 
 bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
@@ -193,8 +196,17 @@ void scheduler_yield(void) {
     restore_interrupt_state(old->saved_interrupts_enabled);
 }
 
+void scheduler_set_preemption_enabled(bool enabled) {
+    const bool restore_if =
+        (interrupt_flags() & RFLAGS_INTERRUPT_ENABLE) != 0U;
+    __asm__ volatile ("cli" : : : "memory");
+    preemption_enabled = enabled;
+    restore_interrupt_state(restore_if);
+}
+
 void scheduler_preempt(void) {
-    if (!scheduler_started || current_thread == NULL) return;
+    if (!preemption_enabled || !scheduler_started || current_thread == NULL)
+        return;
     scheduler_yield();
 }
 
@@ -210,6 +222,10 @@ void scheduler_wait(void) {
         }
         if (!runnable) break;
         __asm__ volatile ("sti; hlt" : : : "memory");
+        /* Timer IRQs wake the main thread; thread switches happen at this
+         * explicit safe point until IRQ-stack preemption is independently
+         * validated on both supported firmware paths. */
+        scheduler_yield();
     }
     __asm__ volatile ("cli" : : : "memory");
 }

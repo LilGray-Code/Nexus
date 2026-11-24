@@ -76,6 +76,45 @@ bool nexus_file_list_sort(struct nexus_file_list_item *items, size_t count,
     return true;
 }
 
+
+static bool name_contains_query(const char *name, const char *query,
+                                size_t query_length) {
+    if (query_length == 0U) return true;
+    for (size_t start = 0U; name[start] != '\0'; ++start) {
+        size_t offset = 0U;
+        while (offset < query_length && name[start + offset] != '\0' &&
+               ascii_upper(name[start + offset]) ==
+                   ascii_upper(query[offset])) ++offset;
+        if (offset == query_length) return true;
+    }
+    return false;
+}
+
+bool nexus_file_list_filter(const struct nexus_file_list_item *items,
+                            size_t count, const char *query,
+                            size_t *indices, size_t capacity,
+                            size_t *matched_count) {
+    if (matched_count == NULL || query == NULL ||
+        count > NEXUS_FILE_LIST_MAX_ENTRIES ||
+        (count != 0U && (items == NULL || indices == NULL)) ||
+        capacity < count) return false;
+
+    size_t query_length = 0U;
+    while (query_length < NEXUS_FILE_LIST_NAME_MAX &&
+           query[query_length] != '\0') ++query_length;
+    if (query_length == NEXUS_FILE_LIST_NAME_MAX) return false;
+
+    *matched_count = 0U;
+    for (size_t i = 0U; i < count; ++i) {
+        if (!valid_name(items[i].name)) return false;
+        if (!name_contains_query(items[i].name, query, query_length))
+            continue;
+        indices[*matched_count] = i;
+        ++*matched_count;
+    }
+    return true;
+}
+
 const char *nexus_file_sort_mode_label(enum nexus_file_sort_mode mode) {
     switch (mode) {
         case NEXUS_FILE_SORT_NAME: return "SORT: NAME (S)";

@@ -52,7 +52,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - A Files view with bounded hierarchical directory navigation over NXFS,
   keyboard/mouse selection, create/open/edit/delete, and a 128-entry display
   cache (six rows visible at once). Entries are directory-first and can be
-  sorted by name, file type, or size with the `S` key. Regular files support
+  filtered by case-insensitive filename substring using `Ctrl+F`; matching is
+  limited to the current folder and the bounded 128-entry cache, not recursive
+  full-volume search. Results retain their original VFS entry identity while
+  sorting by name, file type, or size with the `S` key. Regular files support
   persistent rename (`R`), copy (`C`), and move (`M`). Copies stream through
   a bounded block buffer and verify the source CRC before journaled metadata
   makes the new file visible. Destination paths containing a slash are

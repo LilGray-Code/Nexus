@@ -28,6 +28,13 @@ struct nexus_file_list_item {
  */
 bool nexus_file_list_sort(struct nexus_file_list_item *items, size_t count,
                           enum nexus_file_sort_mode mode);
+/* Build a bounded list of source indices whose names contain query.
+ * Matching is ASCII case-insensitive. The caller supplies capacity >= count.
+ */
+bool nexus_file_list_filter(const struct nexus_file_list_item *items,
+                            size_t count, const char *query,
+                            size_t *indices, size_t capacity,
+                            size_t *matched_count);
 const char *nexus_file_sort_mode_label(enum nexus_file_sort_mode mode);
 
 #endif

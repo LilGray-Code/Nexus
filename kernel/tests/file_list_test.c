@@ -86,6 +86,46 @@ int main(void) {
                   "SORT: SIZE (S)") == 0);
     assert(nexus_file_list_sort(NULL, 0U, NEXUS_FILE_SORT_NAME));
 
+    /* Case-insensitive substring filtering returns original array indices. */
+    struct nexus_file_list_item filter_items[] = {
+        {"Documents", true, 0U},
+        {"notes.txt", false, 42U},
+        {"image.png", false, 17U},
+        {"meeting-notes.md", false, 73U},
+        {"NOTES-OLD.TXT", false, 9U}
+    };
+    size_t filtered[5] = {0U};
+    size_t filtered_count = 0U;
+    assert(nexus_file_list_filter(filter_items, 5U, "notes",
+                                  filtered, 5U, &filtered_count));
+    assert(filtered_count == 3U);
+    assert(filtered[0] == 1U && filtered[1] == 3U && filtered[2] == 4U);
+    assert(nexus_file_list_filter(filter_items, 5U, ".TXT",
+                                  filtered, 5U, &filtered_count));
+    assert(filtered_count == 2U);
+    assert(filtered[0] == 1U && filtered[1] == 4U);
+    assert(nexus_file_list_filter(filter_items, 5U, "DOC",
+                                  filtered, 5U, &filtered_count));
+    assert(filtered_count == 1U && filtered[0] == 0U);
+    assert(nexus_file_list_filter(filter_items, 5U, "",
+                                  filtered, 5U, &filtered_count));
+    assert(filtered_count == 5U && filtered[4] == 4U);
+    assert(nexus_file_list_filter(filter_items, 5U, "not-present",
+                                  filtered, 5U, &filtered_count));
+    assert(filtered_count == 0U);
+    assert(nexus_file_list_filter(NULL, 0U, "", NULL, 0U,
+                                  &filtered_count));
+    assert(filtered_count == 0U);
+    assert(!nexus_file_list_filter(filter_items, 5U, "notes",
+                                   filtered, 4U, &filtered_count));
+    assert(!nexus_file_list_filter(filter_items, 5U, NULL,
+                                   filtered, 5U, &filtered_count));
+    char oversized_query[NEXUS_FILE_LIST_NAME_MAX + 1U];
+    memset(oversized_query, 'X', sizeof(oversized_query));
+    oversized_query[sizeof(oversized_query) - 1U] = '\0';
+    assert(!nexus_file_list_filter(filter_items, 5U, oversized_query,
+                                   filtered, 5U, &filtered_count));
+
     struct nexus_file_list_item malformed[1];
     memset(malformed, 0, sizeof(malformed));
     for (size_t i = 0U; i < NEXUS_FILE_LIST_NAME_MAX; ++i)

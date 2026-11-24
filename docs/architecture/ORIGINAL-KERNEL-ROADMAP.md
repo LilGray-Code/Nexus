@@ -1002,3 +1002,21 @@ activating its taskbar tab restores that placement. Closing a view invalidates
 its remembered placement. The taskbar draws a small marker for inactive app
 views with saved placement. These records are session-only and do not turn the
 single-foreground shell into a simultaneous multi-window compositor.
+
+
+### Current-folder filename filtering in Files
+
+The Files application now includes a bounded ASCII case-insensitive substring
+filter over the current directory listing. `Ctrl+F` focuses the search field;
+typing updates the visible index list without mutating the underlying VFS
+cache, Enter leaves search mode, Backspace edits the query, and Escape clears
+the query. Mouse selection and keyboard navigation operate on filtered-result
+indices which are mapped back to the original sorted VFS entries before
+open/edit/delete/rename/copy/move operations. Sorting preserves the selected
+filename through the filtered view.
+
+The filter uses the existing maximum 128-entry Files cache and does not walk
+subdirectories or recursively scan an entire volume. A folder change or parent
+navigation resets the query so a search cannot silently carry into a different
+directory. The host-side file-list tests cover case-insensitive matches,
+extension fragments, empty queries, no-match results, and invalid bounds.

@@ -2375,46 +2375,6 @@ static void installer_confirm_target_id(void) {
     }
 }
 
-#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
-static void installer_apply_typed_erase(void) {
-    if (!installer_text_equal_ci(installer_input, "ERASE")) {
-        installer_set_status("Type ERASE exactly to continue");
-        return;
-    }
-    const struct nexus_block_device *device =
-        blockdev_at(installer_selected_device);
-    installer_ui_state = INSTALLER_UI_RUNNING;
-    installer_set_status("Starting guarded installation");
-    draw_shell();
-    draw_pointer();
-    const enum nexus_installer_runtime_result result =
-        nexus_installer_runtime_apply(
-            device, installer_firmware, installer_confirmed_id,
-            "ERASE", installer_progress_update, NULL);
-    if (result == NEXUS_INSTALL_RESULT_OK) {
-        installer_ui_state = INSTALLER_UI_COMPLETE;
-        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
-    } else {
-        installer_ui_state = INSTALLER_UI_FAILED;
-        installer_set_status(installer_result_message(result));
-        serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
-        serial_write(installer_result_message(result));
-        serial_write("\r\n");
-    }
-}
-#else
-static void installer_apply_typed_erase(void) {
-    if (!installer_text_equal_ci(installer_input, "ERASE")) {
-        installer_set_status("Type ERASE exactly to continue");
-        return;
-    }
-    installer_ui_state = INSTALLER_UI_FAILED;
-    installer_set_status(
-        "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
-    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
-}
-#endif
-
 static void installer_draw_button(uint64_t x, uint64_t y,
                                   uint64_t width, uint64_t height,
                                   const char *label, bool selected,
@@ -2474,6 +2434,46 @@ static const char *installer_result_message(
             return "Target identity or boot-media safety check failed";
         default: return "Installer rejected the selected target or input";
     }
+}
+#endif
+
+#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
+static void installer_apply_typed_erase(void) {
+    if (!installer_text_equal_ci(installer_input, "ERASE")) {
+        installer_set_status("Type ERASE exactly to continue");
+        return;
+    }
+    const struct nexus_block_device *device =
+        blockdev_at(installer_selected_device);
+    installer_ui_state = INSTALLER_UI_RUNNING;
+    installer_set_status("Starting guarded installation");
+    draw_shell();
+    draw_pointer();
+    const enum nexus_installer_runtime_result result =
+        nexus_installer_runtime_apply(
+            device, installer_firmware, installer_confirmed_id,
+            "ERASE", installer_progress_update, NULL);
+    if (result == NEXUS_INSTALL_RESULT_OK) {
+        installer_ui_state = INSTALLER_UI_COMPLETE;
+        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
+    } else {
+        installer_ui_state = INSTALLER_UI_FAILED;
+        installer_set_status(installer_result_message(result));
+        serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
+        serial_write(installer_result_message(result));
+        serial_write("\r\n");
+    }
+}
+#else
+static void installer_apply_typed_erase(void) {
+    if (!installer_text_equal_ci(installer_input, "ERASE")) {
+        installer_set_status("Type ERASE exactly to continue");
+        return;
+    }
+    installer_ui_state = INSTALLER_UI_FAILED;
+    installer_set_status(
+        "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
+    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
 }
 #endif
 

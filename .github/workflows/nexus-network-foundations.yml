@@ -95,13 +95,25 @@ jobs:
             -Ibuild/deps/mbedtls-build/tf-psa-crypto/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/drivers/builtin/include \
             kernel/src/tls_heap.c kernel/src/mbedtls_heap.c \
-            kernel/src/mbedtls_random.c kernel/src/tls_client.c \
-            kernel/tests/tls_client_test.c \
+            kernel/src/mbedtls_random.c kernel/src/mbedtls_time.c \
+            kernel/src/tls_client.c kernel/tests/tls_client_test.c \
             -Lbuild/deps/mbedtls-build/library \
             -Lbuild/deps/mbedtls-build/tf-psa-crypto/library \
             -Wl,--start-group -lmbedtls -lmbedx509 -lmbedcrypto \
             -Wl,--end-group -o /tmp/nexus-tls-client-test
           /tmp/nexus-tls-client-test /tmp/nexus-tls-test-ca.pem
+      - name: Test Nexus TCP-to-HTTPS transport bridge
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/src \
+            -Ibuild/deps/mbedtls-build/generated/include \
+            -Ibuild/deps/mbedtls-4.1.2/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/drivers/builtin/include \
+            kernel/src/net_https.c kernel/tests/net_https_test.c \
+            -o /tmp/nexus-net-https-test
+          /tmp/nexus-net-https-test
 
       - name: Test Nexus RNG adapter against Mbed TLS PSA API
         run: |
@@ -110,6 +122,8 @@ jobs:
             -Ibuild/deps/mbedtls-build/generated/include \
             -Ibuild/deps/mbedtls-4.1.2/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/drivers/builtin/include \
             kernel/src/random.c kernel/src/mbedtls_random.c \
             kernel/tests/mbedtls_random_test.c \
             -o /tmp/nexus-mbedtls-rng-test
@@ -121,6 +135,8 @@ jobs:
             -Ibuild/deps/mbedtls-build/generated/include \
             -Ibuild/deps/mbedtls-4.1.2/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/drivers/builtin/include \
             kernel/src/mbedtls_time.c kernel/tests/mbedtls_time_test.c \
             -o /tmp/nexus-mbedtls-time-test
           /tmp/nexus-mbedtls-time-test
@@ -138,6 +154,8 @@ jobs:
             -Ibuild/deps/mbedtls-build/generated/include \
             -Ibuild/deps/mbedtls-4.1.2/include \
             -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/drivers/builtin/include \
             kernel/src/tls_heap.c kernel/src/mbedtls_heap.c \
             kernel/tests/mbedtls_heap_test.c \
             -o /tmp/nexus-mbedtls-heap-test

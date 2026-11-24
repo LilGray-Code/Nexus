@@ -2875,6 +2875,119 @@ static bool browser_starts_with(const char *value, size_t length,
     return true;
 }
 
+static bool browser_append_span(char *buffer, size_t capacity,
+                                size_t *length, const char *value,
+                                size_t value_length) {
+    if (buffer == NULL || length == NULL ||
+        (value_length != 0U && value == NULL) ||
+        *length > capacity || value_length > capacity - *length)
+        return false;
+    for (size_t i = 0U; i < value_length; ++i)
+        buffer[(*length)++] = value[i];
+    return true;
+}
+
+static bool browser_is_http_redirect(uint16_t status_code) {
+    return status_code == 301U || status_code == 302U ||
+           status_code == 303U || status_code == 307U ||
+           status_code == 308U;
+}
+
+static bool browser_resolve_redirect(
+    const char *host, size_t host_length, const char *path,
+    size_t path_length, bool current_https, const char *location,
+    size_t location_length, char *output, size_t output_capacity,
+    size_t *output_length) {
+    if (host == NULL || path == NULL || location == NULL ||
+        output == NULL || output_length == NULL ||
+        host_length == 0U || location_length == 0U ||
+        output_capacity == 0U) return false;
+
+    size_t target_length = location_length;
+    for (size_t i = 0U; i < target_length; ++i) {
+        if (location[i] == '#') {
+            target_length = i;
+            break;
+        }
+        const unsigned char ch = (unsigned char)location[i];
+        if (ch <= 0x20U || ch >= 0x7FU) return false;
+    }
+    if (target_length == 0U) return false;
+
+    const bool absolute_https =
+        browser_starts_with(location, target_length, "https://");
+    const bool absolute_http =
+        browser_starts_with(location, target_length, "http://");
+    if (absolute_https || absolute_http) {
+        if (current_https && absolute_http) return false;
+        if (target_length >= output_capacity) return false;
+        for (size_t i = 0U; i < target_length; ++i)
+            output[i] = location[i];
+        output[target_length] = '\0';
+        *output_length = target_length;
+        return true;
+    }
+
+    const char *scheme = current_https ? "https" : "http";
+    const size_t scheme_length = current_https ? 5U : 4U;
+    size_t used = 0U;
+    if (browser_starts_with(location, target_length, "//")) {
+        if (!browser_append_span(output, output_capacity, &used,
+                                 scheme, scheme_length) ||
+            !browser_append_text(output, output_capacity, &used, ":") ||
+            !browser_append_span(output, output_capacity, &used,
+                                 location, target_length))
+            return false;
+    } else {
+        if (!browser_append_span(output, output_capacity, &used,
+                                 scheme, scheme_length) ||
+            !browser_append_text(output, output_capacity, &used, "://") ||
+            !browser_append_span(output, output_capacity, &used,
+                                 host, host_length))
+            return false;
+
+        if (location[0] == '/') {
+            if (!browser_append_span(output, output_capacity, &used,
+                                     location, target_length))
+                return false;
+        } else if (location[0] == '?') {
+            size_t base_length = path_length;
+            for (size_t i = 0U; i < base_length; ++i) {
+                if (path[i] == '?') {
+                    base_length = i;
+                    break;
+                }
+            }
+            if (!browser_append_span(output, output_capacity, &used,
+                                     path, base_length) ||
+                !browser_append_span(output, output_capacity, &used,
+                                     location, target_length))
+                return false;
+        } else {
+            size_t directory_length = path_length;
+            for (size_t i = 0U; i < directory_length; ++i) {
+                if (path[i] == '?' || path[i] == '#') {
+                    directory_length = i;
+                    break;
+                }
+            }
+            while (directory_length != 0U &&
+                   path[directory_length - 1U] != '/')
+                --directory_length;
+            if (!browser_append_span(output, output_capacity, &used,
+                                     path, directory_length) ||
+                !browser_append_span(output, output_capacity, &used,
+                                     location, target_length))
+                return false;
+        }
+    }
+
+    if (used == 0U || used >= output_capacity) return false;
+    output[used] = '\0';
+    *output_length = used;
+    return true;
+}
+
 static bool browser_load_ca_bundle(size_t *pem_length) {
     if (pem_length == NULL) return false;
     *pem_length = 0U;
@@ -2987,6 +3100,9 @@ static bool browser_https_receive_response(
 }
 
 static void browser_navigate(bool record_history) {
+    size_t redirect_count = 0U;
+    bool history_saved = false;
+browser_retry:
     browser_clear_page();
     if (browser_address_length == 0U) {
         browser_set_status("Enter a URL or host name");
@@ -3055,10 +3171,12 @@ static void browser_navigate(bool record_history) {
             "Invalid host; ports and IPv6 literals are not supported");
         return;
     }
-    if (record_history &&
-        !nexus_browser_history_push(&browser_history, browser_address)) {
-        browser_set_status("Browser history could not store this address");
-        return;
+    if (record_history && !history_saved) {
+        if (!nexus_browser_history_push(&browser_history, browser_address)) {
+            browser_set_status("Browser history could not store this address");
+            return;
+        }
+        history_saved = true;
     }
 
     struct nexus_https_connection https = {0};
@@ -3177,6 +3295,32 @@ static void browser_navigate(bool record_history) {
         !orderly_eof) {
         browser_set_status("HTTPS response ended before authenticated EOF");
         return;
+    }
+    if (browser_is_http_redirect(parsed.status_code)) {
+        if (!parsed.has_location) {
+            browser_set_status("Redirect response did not include Location");
+            return;
+        }
+        if (redirect_count >= 5U) {
+            browser_set_status("Redirect limit reached (maximum five hops)");
+            return;
+        }
+        char redirect_target[sizeof(browser_address)];
+        size_t redirect_length = 0U;
+        if (!browser_resolve_redirect(
+                host, host_length, path, path_length, use_https,
+                parsed.location, strlen(parsed.location),
+                redirect_target, sizeof(redirect_target), &redirect_length)) {
+            browser_set_status(
+                "Redirect rejected (invalid URL or HTTPS downgrade)");
+            return;
+        }
+        for (size_t i = 0U; i < redirect_length; ++i)
+            browser_address[i] = redirect_target[i];
+        browser_address[redirect_length] = '\0';
+        browser_address_length = redirect_length;
+        ++redirect_count;
+        goto browser_retry;
     }
     if (parsed.status_code < 200U || parsed.status_code >= 300U) {
         char number[21];

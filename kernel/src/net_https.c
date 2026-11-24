@@ -72,12 +72,12 @@ void nexus_https_close(struct nexus_https_connection *connection) {
     *connection = (struct nexus_https_connection){0};
 }
 
-int nexus_https_connect(struct nexus_https_connection *connection,
-                        const char *hostname,
-                        const unsigned char *ca_pem,
-                        size_t ca_pem_length,
-                        uint64_t timeout_ticks) {
-    if (connection == NULL || hostname == NULL || hostname[0] == '\0' ||
+int nexus_https_connect_port(struct nexus_https_connection *connection,
+                             const char *hostname, uint16_t remote_port,
+                             const unsigned char *ca_pem,
+                             size_t ca_pem_length,
+                             uint64_t timeout_ticks) {
+    if (connection == NULL || hostname == NULL || hostname[0] == '\0' || remote_port == 0U ||
         ca_pem == NULL || ca_pem_length < 2U ||
         ca_pem[ca_pem_length - 1U] != 0U || timeout_ticks == 0U) {
         return NEXUS_HTTPS_ERR_ARGUMENT;
@@ -95,7 +95,7 @@ int nexus_https_connect(struct nexus_https_connection *connection,
 
     uint64_t remaining = remaining_ticks(start, timeout_ticks);
     if (remaining == 0U) return NEXUS_HTTPS_ERR_TIMEOUT;
-    if (!net_tcp_connect(remote_ipv4, NEXUS_HTTPS_PORT, remaining)) {
+    if (!net_tcp_connect(remote_ipv4, remote_port, remaining)) {
         return remaining_ticks(start, timeout_ticks) == 0U
             ? NEXUS_HTTPS_ERR_TIMEOUT : NEXUS_HTTPS_ERR_CONNECT;
     }
@@ -165,4 +165,13 @@ int nexus_https_read(struct nexus_https_connection *connection,
     if (result == MBEDTLS_ERR_SSL_WANT_READ) return NEXUS_HTTPS_WANT_READ;
     if (result == MBEDTLS_ERR_SSL_WANT_WRITE) return NEXUS_HTTPS_WANT_WRITE;
     return result;
+}
+
+int nexus_https_connect(struct nexus_https_connection *connection,
+                        const char *hostname,
+                        const unsigned char *ca_pem,
+                        size_t ca_pem_length,
+                        uint64_t timeout_ticks) {
+    return nexus_https_connect_port(connection, hostname, NEXUS_HTTPS_PORT,
+                                    ca_pem, ca_pem_length, timeout_ticks);
 }

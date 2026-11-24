@@ -70,7 +70,8 @@ jobs:
           /tmp/nexus-sha256-test
       - name: Test Nexus freestanding libc primitives
         run: |
-          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -fno-builtin \
+            -Wno-format-truncation -Ikernel/src \
             kernel/tests/libc_test.c -o /tmp/nexus-libc-test
           /tmp/nexus-libc-test
       - name: Fetch and checksum-verify pinned Mbed TLS source

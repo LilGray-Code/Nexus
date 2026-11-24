@@ -944,11 +944,14 @@ static void draw_shell(void) {
         struct nexus_net_info info;
         if (net_get_info(&info) && info.interface_ready) {
             const char *network_status = !info.link_up
-                ? "NETWORK: ETHERNET / LINK DOWN"
-                : (info.ipv4_configured
-                    ? "NETWORK: ETHERNET / CONNECTED"
-                    : "NETWORK: ETHERNET / DHCP WAITING");
+                ? "LINK DOWN"
+                : (info.ipv4_configured ? "CONNECTED" : "DHCP WAITING");
             graphics_draw_text(text_x, text_y + 126U,
+                               "NETWORK:", 1, 233U, 243U, 252U);
+            graphics_draw_text(text_x + 76U, text_y + 126U,
+                               info.interface_name, 1,
+                               119U, 229U, 211U);
+            graphics_draw_text(text_x + 200U, text_y + 126U,
                                network_status, 1,
                                info.link_up ? 108U : 239U,
                                info.link_up ? 216U : 177U,
@@ -973,7 +976,7 @@ static void draw_shell(void) {
             }
         } else {
             graphics_draw_text(text_x, text_y + 126U,
-                               "NETWORK: NO ETHERNET INTERFACE",
+                               "NETWORK: NO ADAPTER",
                                1, 239, 177, 119);
         }
 

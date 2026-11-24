@@ -45,6 +45,7 @@ struct net_arp_entry {
 struct net_state {
     bool ready;
     bool link_up;
+    char interface_name[16];
     uint8_t mac[6];
     uint8_t ipv4[4];
     uint16_t ipv4_id;
@@ -682,6 +683,8 @@ bool net_init(void) {
     struct nexus_netdev_info device_info;
     if (!netdev_get_info(&device_info)) return false;
     copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
+    copy_bytes(network.interface_name, device_info.name,
+               sizeof(network.interface_name));
     network.ready = true;
     network.ipv4_id = 1U;
     network.link_up = netdev_link_up();
@@ -689,7 +692,9 @@ bool net_init(void) {
     dhcp_transaction_id = 0x4E585553U;
     dhcp_retry_count = 0U;
     dhcp_last_send_tick = timer_ticks();
-    serial_write("NEXUS ETHERNET L2 READY\r\n");
+    serial_write("NEXUS NETWORK DEVICE READY: ");
+    serial_write(device_info.name);
+    serial_write("\r\n");
     if (network.link_up) {
         if (send_dhcp_message(1U)) {
             serial_write("NEXUS DHCP DISCOVER SENT\r\n");
@@ -740,7 +745,35 @@ static void network_handle_link_change(bool link_up) {
 
 void net_poll(void) {
     if (!network.ready) return;
-    network_handle_link_change(netdev_link_up());
+    const bool link_up = netdev_link_up();
+    struct nexus_netdev_info device_info;
+    if (!netdev_get_info(&device_info)) return;
+    if (!equal_bytes(device_info.mac, network.mac, sizeof(network.mac))) {
+        copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
+        copy_bytes(network.interface_name, device_info.name,
+                   sizeof(network.interface_name));
+        for (size_t i = 0U; i < 4U; ++i) {
+            network.ipv4[i] = 0U;
+            offered_ipv4[i] = 0U;
+            dhcp_server_ipv4[i] = 0U;
+            subnet_mask[i] = 0U;
+            gateway_ipv4[i] = 0U;
+            dns_ipv4[i] = 0U;
+        }
+        for (size_t i = 0U; i < NET_ARP_CACHE_SIZE; ++i)
+            network.arp[i].valid = false;
+        network.arp_replace = 0U;
+        tcp_connection = (struct net_tcp_connection){0};
+        dns_query_active = false;
+        dns_query_done = true;
+        dns_query_success = false;
+        /* Force the existing link transition path to reacquire DHCP. */
+        network.link_up = !link_up;
+        serial_write("NEXUS NETWORK ADAPTER SELECTED: ");
+        serial_write(device_info.name);
+        serial_write("\r\n");
+    }
+    network_handle_link_change(link_up);
     if (!network.link_up) return;
     for (size_t i = 0; i < 32U; ++i) {
         size_t length = 0U;
@@ -755,6 +788,8 @@ bool net_get_info(struct nexus_net_info *info) {
     info->interface_ready = true;
     info->link_up = network.link_up;
     info->ipv4_configured = dhcp_state == NET_DHCP_BOUND;
+    copy_bytes(info->interface_name, network.interface_name,
+               sizeof(info->interface_name));
     copy_bytes(info->mac, network.mac, sizeof(info->mac));
     copy_bytes(info->ipv4, network.ipv4, sizeof(info->ipv4));
     copy_bytes(info->subnet_mask, subnet_mask, sizeof(info->subnet_mask));

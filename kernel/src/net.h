@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 struct nexus_net_info {
+    char interface_name[16];
     bool interface_ready;
     bool link_up;
     bool ipv4_configured;

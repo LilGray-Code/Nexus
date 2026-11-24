@@ -161,6 +161,19 @@ int main(void) {
     assert(!nexus_https_is_verified(&connection));
 
     reset_test();
+    assert(nexus_https_connect_port(&connection, "example.test", 8443U,
+                                    trust, sizeof(trust), 500U) == 0);
+    assert(connected_port == 8443U);
+    assert(resolved_hostname != NULL);
+    nexus_https_close(&connection);
+
+    reset_test();
+    assert(nexus_https_connect_port(&connection, "example.test", 0U,
+                                    trust, sizeof(trust), 500U) ==
+           NEXUS_HTTPS_ERR_ARGUMENT);
+    assert(connected_port == 0U);
+
+    reset_test();
     dns_success = false;
     assert(nexus_https_connect(&connection, "missing.test", trust,
                                sizeof(trust), 500U) == NEXUS_HTTPS_ERR_DNS);

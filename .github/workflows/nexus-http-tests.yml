@@ -1,0 +1,35 @@
+name: Nexus HTTP response parser tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/http.c"
+      - "kernel/src/http.h"
+      - "kernel/tests/http_test.c"
+      - ".github/workflows/nexus-http-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/http.c"
+      - "kernel/src/http.h"
+      - "kernel/tests/http_test.c"
+      - ".github/workflows/nexus-http-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  http-parser-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile HTTP parser tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/http.c kernel/tests/http_test.c \
+            -o /tmp/nexus-http-test
+      - name: Run HTTP parser tests
+        run: /tmp/nexus-http-test

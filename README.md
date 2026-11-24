@@ -109,7 +109,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   block elements, list items, and entities while omitting comments and
   script/style content. The browser provides keyboard page scrolling and a
   12-entry session history with branch truncation and oldest-entry eviction
-  (Alt+Left / Alt+Right). This is not yet a general-purpose modern browser:
+  (Alt+Left / Alt+Right). HTTP and HTTPS URLs may specify numeric TCP ports;
+  the defaults remain 80 and 443 respectively. Hostnames and IPv4 literals
+  are accepted; IPv6 literals are not yet supported by the network stack.
+  This is not yet a general-purpose modern browser:
   it has no CSS layout, JavaScript engine, DOM, cookies, tabbed browsing,
   image/video/audio rendering, downloads, compression support, or full
   browser compatibility layer.

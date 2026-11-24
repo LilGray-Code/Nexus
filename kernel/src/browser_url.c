@@ -47,6 +47,79 @@ static bool location_has_unknown_scheme(const char *location, size_t length) {
     return false;
 }
 
+bool nexus_browser_parse_authority(
+    const char *authority, size_t authority_length, uint16_t default_port,
+    struct nexus_browser_authority *parsed) {
+    if (authority == NULL || parsed == NULL || authority_length == 0U ||
+        authority_length >= 80U || default_port == 0U)
+        return false;
+
+    size_t hostname_length = authority_length;
+    size_t colon = SIZE_MAX;
+    for (size_t i = 0U; i < authority_length; ++i) {
+        const char ch = authority[i];
+        if (ch == '@' || ch == '/' || ch == '?' || ch == '#' ||
+            (unsigned char)ch <= 0x20U || (unsigned char)ch >= 0x7FU)
+            return false;
+        if (ch == ':') {
+            if (colon != SIZE_MAX) return false;
+            colon = i;
+        }
+    }
+
+    uint16_t port = default_port;
+    bool explicit_port = false;
+    if (colon != SIZE_MAX) {
+        if (colon == 0U || colon + 1U >= authority_length)
+            return false;
+        hostname_length = colon;
+        uint32_t parsed_port = 0U;
+        size_t digits = 0U;
+        for (size_t i = colon + 1U; i < authority_length; ++i) {
+            const char ch = authority[i];
+            if (ch < '0' || ch > '9' || ++digits > 5U)
+                return false;
+            parsed_port = parsed_port * 10U + (uint32_t)(ch - '0');
+            if (parsed_port > 65535U) return false;
+        }
+        if (parsed_port == 0U || digits == 0U) return false;
+        port = (uint16_t)parsed_port;
+        explicit_port = true;
+    }
+
+    if (hostname_length == 0U ||
+        hostname_length > NEXUS_BROWSER_HOST_MAX)
+        return false;
+
+    size_t label_length = 0U;
+    bool previous_hyphen = false;
+    for (size_t i = 0U; i < hostname_length; ++i) {
+        const char ch = authority[i];
+        if (ch == '.') {
+            if (label_length == 0U || previous_hyphen) return false;
+            label_length = 0U;
+            previous_hyphen = false;
+            continue;
+        }
+        const bool alphanumeric =
+            (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9');
+        if (!alphanumeric && ch != '-') return false;
+        if (label_length == 0U && ch == '-') return false;
+        if (++label_length > 63U) return false;
+        previous_hyphen = ch == '-';
+    }
+    if (label_length == 0U || previous_hyphen) return false;
+
+    for (size_t i = 0U; i < hostname_length; ++i)
+        parsed->hostname[i] = authority[i];
+    parsed->hostname[hostname_length] = '\0';
+    parsed->hostname_length = hostname_length;
+    parsed->port = port;
+    parsed->explicit_port = explicit_port;
+    return true;
+}
+
 bool nexus_browser_resolve_redirect(
     const char *host, size_t host_length, const char *path,
     size_t path_length, bool current_https, const char *location,

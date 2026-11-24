@@ -2879,29 +2879,6 @@ static bool browser_append_text(char *buffer, size_t capacity,
     return true;
 }
 
-static bool browser_valid_host(const char *host, size_t length) {
-    if (host == NULL || length == 0U || length >= 64U) return false;
-    size_t label_length = 0U;
-    bool previous_hyphen = false;
-    for (size_t i = 0U; i < length; ++i) {
-        const char ch = host[i];
-        if (ch == '.') {
-            if (label_length == 0U || previous_hyphen) return false;
-            label_length = 0U;
-            previous_hyphen = false;
-            continue;
-        }
-        const bool alphanumeric =
-            (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-            (ch >= '0' && ch <= '9');
-        if (!alphanumeric && ch != '-') return false;
-        if (label_length == 0U && ch == '-') return false;
-        if (++label_length > 63U) return false;
-        previous_hyphen = ch == '-';
-    }
-    return label_length != 0U && !previous_hyphen;
-}
-
 static bool browser_starts_with(const char *value, size_t length,
                                  const char *prefix) {
     size_t i = 0U;
@@ -3067,26 +3044,28 @@ browser_retry:
         }
     }
 
-    char host[64];
+    char authority[80];
     char path[96];
-    size_t host_length = 0U;
+    size_t authority_length = 0U;
     size_t path_length = 0U;
     bool in_path = false;
     path[path_length++] = '/';
     for (size_t i = address_start; i < browser_address_length; ++i) {
         const char ch = browser_address[i];
-        if (!in_path && ch == '/') {
+        if (!in_path && (ch == '/' || ch == '?')) {
             in_path = true;
             path_length = 0U;
             path[path_length++] = '/';
+            if (ch == '?') path[path_length++] = '?';
             continue;
         }
+        if (!in_path && ch == '#') break;
         if (!in_path) {
-            if (host_length >= sizeof(host) - 1U) {
-                browser_set_status("Host name is too long");
+            if (authority_length >= sizeof(authority) - 1U) {
+                browser_set_status("Host name or port is too long");
                 return;
             }
-            host[host_length++] = ch;
+            authority[authority_length++] = ch;
         } else {
             if (ch == '#') break;
             if (path_length >= sizeof(path) - 1U ||
@@ -3097,17 +3076,22 @@ browser_retry:
             path[path_length++] = ch;
         }
     }
-    if (host_length == 0U) {
+    if (authority_length == 0U) {
         browser_set_status("Enter a host name");
         return;
     }
-    host[host_length] = '\0';
+    authority[authority_length] = '\0';
     path[path_length] = '\0';
-    if (!browser_valid_host(host, host_length)) {
+    struct nexus_browser_authority endpoint = {0};
+    const uint16_t default_port = use_https ? 443U : 80U;
+    if (!nexus_browser_parse_authority(
+            authority, authority_length, default_port, &endpoint)) {
         browser_set_status(
-            "Invalid host; ports and IPv6 literals are not supported");
+            "Invalid host/port; use DNS or IPv4 and port 1-65535");
         return;
     }
+    const char *hostname = endpoint.hostname;
+    const uint16_t remote_port = endpoint.port;
     if (record_history && !history_saved) {
         if (!nexus_browser_history_push(&browser_history, browser_address)) {
             browser_set_status("Browser history could not store this address");
@@ -3128,8 +3112,8 @@ browser_retry:
             return;
         }
         browser_set_status("Opening verified TLS 1.3 connection...");
-        const int connect_result = nexus_https_connect(
-            &https, host, browser_ca_bundle, ca_length, 1800U);
+        const int connect_result = nexus_https_connect_port(
+            &https, hostname, remote_port, browser_ca_bundle, ca_length, 1800U);
         browser_clear_ca_bundle();
         if (connect_result != 0 || !nexus_https_is_verified(&https)) {
             nexus_https_close(&https);
@@ -3141,13 +3125,13 @@ browser_retry:
     } else {
         browser_set_status("Resolving host...");
         uint8_t address[4];
-        if (!net_dns_resolve(host, address, 600U)) {
+        if (!net_dns_resolve(hostname, address, 600U)) {
             browser_set_status("DNS failed; check DHCP/network");
             return;
         }
         browser_set_status("Opening HTTP connection...");
-        if (!net_tcp_connect(address, 80U, 800U)) {
-            browser_set_status("TCP connection to port 80 failed");
+        if (!net_tcp_connect(address, remote_port, 800U)) {
+            browser_set_status("TCP connection to selected port failed");
             return;
         }
     }
@@ -3160,7 +3144,7 @@ browser_retry:
         browser_append_text(request, sizeof(request), &request_length, path) &&
         browser_append_text(request, sizeof(request), &request_length,
                             " HTTP/1.1\r\nHost: ") &&
-        browser_append_text(request, sizeof(request), &request_length, host) &&
+        browser_append_text(request, sizeof(request), &request_length, authority) &&
         browser_append_text(request, sizeof(request), &request_length,
                             "\r\nUser-Agent: NexusBrowser/0.2\r\n"
                             "Accept: text/html,text/plain,*/*\r\n"
@@ -3250,7 +3234,7 @@ browser_retry:
             ++location_length;
         if (location_length == sizeof(parsed.location) ||
             !nexus_browser_resolve_redirect(
-                host, host_length, path, path_length, use_https,
+                authority, authority_length, path, path_length, use_https,
                 parsed.location, location_length,
                 redirect_target, sizeof(redirect_target), &redirect_length)) {
             browser_set_status(

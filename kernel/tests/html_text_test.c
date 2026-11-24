@@ -76,13 +76,13 @@ static void test_bounded_output_and_malformed_input(void) {
     assert(result.output_length == sizeof(output) - 1U);
     assert(output[sizeof(output) - 1U] == '\0');
 
-    static const uint8_t malformed[] = "<p>unfinished";
+    static const uint8_t malformed[] = "<p>unfinished<broken";
     char malformed_output[64];
     assert(nexus_html_to_text(malformed, sizeof(malformed) - 1U,
                               malformed_output, sizeof(malformed_output),
                               &result));
     assert(result.malformed);
-    expect_equal(malformed_output, result.output_length, "unfinished");
+    expect_equal(malformed_output, result.output_length, "unfinished<broken");
 }
 
 static void test_invalid_arguments(void) {

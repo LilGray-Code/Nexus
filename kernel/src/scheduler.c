@@ -92,7 +92,8 @@ bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
             restore_interrupt_state(restore_if);
             return false;
         }
-        slot = thread_count++;
+        slot = thread_count;
+        ++thread_count;
     }
 
     struct nexus_thread *thread = &threads[slot];
@@ -117,7 +118,6 @@ bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
     initial_stack[7] = 0U;
     thread->saved_stack = (uintptr_t)initial_stack;
 
-    ++thread_count;
     restore_interrupt_state(restore_if);
     return true;
 }

@@ -25,6 +25,9 @@ jobs:
       - name: Check out Nexus
         uses: actions/checkout@v4
 
+      - name: Run host-side SDK runtime tests
+        run: make -C userland test
+
       - name: Build SDK sample with strict freestanding flags
         run: |
           make -C userland clean inspect

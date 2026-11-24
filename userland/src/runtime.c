@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
+
 
 #define NEXUS_RUNTIME_READ_CHUNK 256U
 #define NEXUS_RUNTIME_WRITE_CHUNK 128U
@@ -133,6 +135,144 @@ int64_t nexus_read_file(const char *path, void *buffer, size_t capacity,
     if (close_result < 0) return close_result;
     *bytes_read = total;
     return (int64_t)total;
+}
+
+ 
+#define NEXUS_RUNTIME_FORMAT_CAPACITY 512U
+
+static bool format_append(char output[NEXUS_RUNTIME_FORMAT_CAPACITY],
+                          size_t *length, char value) {
+    if (*length >= NEXUS_RUNTIME_FORMAT_CAPACITY - 1U) return false;
+    output[(*length)++] = value;
+    return true;
+}
+
+static bool format_unsigned(char output[NEXUS_RUNTIME_FORMAT_CAPACITY],
+                            size_t *length, uint64_t value, unsigned base,
+                            bool uppercase, unsigned width, char padding) {
+    char digits[32];
+    size_t count = 0U;
+    do {
+        const unsigned digit = (unsigned)(value % base);
+        digits[count++] = (char)(digit < 10U ? '0' + digit :
+            (uppercase ? 'A' : 'a') + (digit - 10U));
+        value /= base;
+    } while (value != 0U && count < sizeof(digits));
+
+    while (count < width) {
+        if (!format_append(output, length, padding)) return false;
+        --width;
+    }
+    while (count != 0U) {
+        if (!format_append(output, length, digits[--count])) return false;
+    }
+    return true;
+}
+
+int64_t nexus_printf(const char *format, ...) {
+    if (format == NULL) return -NEXUS_EINVAL;
+    char output[NEXUS_RUNTIME_FORMAT_CAPACITY];
+    size_t length = 0U;
+    va_list arguments;
+    va_start(arguments, format);
+
+    for (size_t i = 0U; format[i] != '\\0'; ++i) {
+        if (format[i] != '%') {
+            if (!format_append(output, &length, format[i])) {
+                va_end(arguments);
+                return -NEXUS_EFBIG;
+            }
+            continue;
+        }
+
+        ++i;
+        if (format[i] == '\\0') {
+            va_end(arguments);
+            return -NEXUS_EINVAL;
+        }
+        char padding = ' ';
+        if (format[i] == '0') {
+            padding = '0';
+            ++i;
+        }
+        unsigned width = 0U;
+        while (format[i] >= '0' && format[i] <= '9') {
+            if (width > 32U) {
+                va_end(arguments);
+                return -NEXUS_EINVAL;
+            }
+            width = width * 10U + (unsigned)(format[i++] - '0');
+            if (width > 32U) {
+                va_end(arguments);
+                return -NEXUS_EINVAL;
+            }
+        }
+
+        bool ok = true;
+        switch (format[i]) {
+            case '%':
+                ok = format_append(output, &length, '%');
+                break;
+            case 'c':
+                ok = format_append(output, &length,
+                                   (char)va_arg(arguments, int));
+                break;
+            case 's': {
+                const char *value = va_arg(arguments, const char *);
+                if (value == NULL) value = "(null)";
+                const size_t value_length = nexus_strlen(value);
+                if (value_length > NEXUS_RUNTIME_FORMAT_CAPACITY - length - 1U) {
+                    ok = false;
+                    break;
+                }
+                for (size_t n = 0U; n < value_length && ok; ++n)
+                    ok = format_append(output, &length, value[n]);
+                break;
+            }
+            case 'd':
+            case 'i': {
+                const int64_t signed_value = (int64_t)va_arg(arguments, int);
+                const bool negative = signed_value < 0;
+                const uint64_t magnitude = negative
+                    ? (uint64_t)(-(signed_value + 1)) + 1U
+                    : (uint64_t)signed_value;
+                if (negative) {
+                    ok = format_append(output, &length, '-');
+                    if (width > 0U) --width;
+                }
+                if (ok) ok = format_unsigned(output, &length, magnitude,
+                                              10U, false, width, padding);
+                break;
+            }
+            case 'u':
+            case 'x':
+            case 'X':
+            case 'p': {
+                const uint64_t value = format[i] == 'p'
+                    ? (uint64_t)(uintptr_t)va_arg(arguments, void *)
+                    : (uint64_t)va_arg(arguments, unsigned int);
+                const unsigned base = (format[i] == 'u') ? 10U : 16U;
+                if (format[i] == 'p') {
+                    ok = format_append(output, &length, '0') &&
+                         format_append(output, &length, 'x');
+                    if (width > 0U) width = width > 2U ? width - 2U : 0U;
+                }
+                if (ok) ok = format_unsigned(output, &length, value, base,
+                    format[i] == 'X', width, padding);
+                break;
+            }
+            default:
+                va_end(arguments);
+                return -NEXUS_EINVAL;
+        }
+        if (!ok) {
+            va_end(arguments);
+            return -NEXUS_EFBIG;
+        }
+    }
+
+    va_end(arguments);
+    return nexus_write_all(1, output, length);
 }
 
 int64_t nexus_write_file(const char *path, const void *buffer, size_t length) {

@@ -165,6 +165,19 @@ static void test_file_write_and_readback(void) {
     assert(nexus_memcmp(readback, payload, bytes_read) == 0);
 }
 
+static void test_formatted_console_output(void) {
+    test_console_length = 0U;
+    test_write_chunk = 5U;
+    assert(nexus_printf("PID=%04u %s %d 0x%X %c %%", 23U,
+                        "ready", -7, 0x2AU, 'Z') > 0);
+    static const char expected[] = "PID=0023 ready -7 0x2A Z %";
+    assert(test_console_length == sizeof(expected) - 1U);
+    assert(nexus_memcmp(test_console, expected, sizeof(expected) - 1U) == 0);
+
+    assert(nexus_printf("%q", 1) == -NEXUS_EINVAL);
+    assert(nexus_printf("%100u", 1U) == -NEXUS_EINVAL);
+    assert(nexus_printf(NULL) == -NEXUS_EINVAL);
+}
 static void test_partial_console_writes_and_errors(void) {
     static const char message[] = "short writes must be retried";
     test_console_length = 0U;
@@ -186,6 +199,7 @@ int main(void) {
     test_string_and_memory_helpers();
     test_bounded_file_read_and_overflow();
     test_file_write_and_readback();
+    test_formatted_console_output();
     test_partial_console_writes_and_errors();
     return 0;
 }

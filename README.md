@@ -194,7 +194,7 @@ I/O helpers, including `nexus_printf()` for bounded `%s`, `%c`, signed/unsigned
 integer, hexadecimal, pointer, and percent formatting with short-write retry. The bundled C
 application opens `README.TXT`, reads and verifies its contents, closes the
 descriptor, writes `HELLO.OUT` through the VFS, reopens it and verifies the
-written bytes, then writes a success message and exits with status 7. The
+written bytes, then uses `nexus_printf()` to emit a zero-padded numeric field in its success message and exits with status 7. The
 BIOS/UEFI QEMU workflow builds the application and inserts the compiled ELF
 into its disposable FAT32 image; the kernel then loads it in ring 3 and checks
 read/write syscalls, console output, and exit status. User-file writes go

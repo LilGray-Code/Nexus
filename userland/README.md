@@ -63,8 +63,8 @@ file-write/readback.
 
 The `HELLO.ELF` sample checks ABI version 1, reads and verifies
 `README.TXT`, writes `HELLO.OUT` through the VFS, reopens it and verifies the
-written bytes, prints the expected success line, and exits with status 7. The
-compiled ELF is stored in a bounded FAT32 chain (up to four 512-byte clusters).
+written bytes, prints the expected success line using `nexus_printf()` (including zero-padded numeric output), and exits with status 7. The
+compiled ELF is stored in a bounded FAT32 chain (up to eight 512-byte clusters).
 At runtime, `HELLO.OUT` is persistent on a writable NXFS data volume and
 volatile when only the RAM overlay is available; read-only FAT32 is never
 written.

@@ -32,8 +32,10 @@ int main(void) {
                      sizeof(output_readback)) != 0) return 15;
 
     static const char message[] =
-        "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK";
-    if (nexus_puts(message) != (int64_t)(sizeof(message) - 1U))
+        "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=0023";
+    if (nexus_printf(
+            "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=%04u", 23U) !=
+        (int64_t)(sizeof(message) - 1U))
         return 16;
 
     return 7;

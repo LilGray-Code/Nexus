@@ -1168,3 +1168,15 @@ buffer. The final write uses the existing short-write-safe console routine.
 The host syscall-shim tests cover mixed conversions, zero padding, invalid
 formats, and short-write completion. This improves native application
 usability but is not a full C standard library or POSIX stdio implementation.
+
+
+### Native formatter exercised by the actual ring-3 application
+
+The compiler-built `HELLO.ELF` sample now calls `nexus_printf()` from ring 3,
+including a `%04u` zero-padded numeric conversion. The desktop self-test
+compares the complete captured output (`FORMAT=0023`) rather than merely
+checking that the process returned. This verifies that the formatter is linked
+into a real Nexus application and that the formatted bytes cross the syscall
+boundary correctly. The disposable FAT32 builder and read-back test now allow
+up to eight clusters so the larger sample remains bounded while exercising a
+real multi-cluster executable.

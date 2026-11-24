@@ -113,8 +113,8 @@ def make_fat32(image, hello_elf):
     struct.pack_into("<IIII", fat, 0,
                      0x0FFFFFF8, 0xFFFFFFFF, 0x0FFFFFFF, 5)
     hello_cluster_count = (len(hello_elf) + SECTOR - 1) // SECTOR
-    if hello_cluster_count == 0 or hello_cluster_count > 4:
-        raise ValueError("HELLO.ELF must fit in at most four FAT32 clusters")
+    if hello_cluster_count == 0 or hello_cluster_count > 8:
+        raise ValueError("HELLO.ELF must fit in at most eight FAT32 clusters")
     # README uses clusters 3 -> 5; HELLO uses cluster 4 then 6 onward.
     hello_clusters = [4] + list(range(6, 6 + hello_cluster_count - 1))
     for index, cluster in enumerate(hello_clusters):
@@ -138,8 +138,8 @@ def make_fat32(image, hello_elf):
     struct.pack_into("<I", root_entry, 28, len(README))
     root[0:32] = root_entry
 
-    if len(hello_elf) == 0 or len(hello_elf) > 4 * SECTOR:
-        raise ValueError("HELLO.ELF must fit within four FAT32 clusters")
+    if len(hello_elf) == 0 or len(hello_elf) > 8 * SECTOR:
+        raise ValueError("HELLO.ELF must fit within eight FAT32 clusters")
     hello_entry = bytearray(32)
     hello_entry[0:11] = b"HELLO   ELF"
     hello_entry[11] = 0x20
@@ -175,8 +175,8 @@ def main():
             hello_elf[4] != 2 or hello_elf[5] != 1 or
             struct.unpack_from("<H", hello_elf, 18)[0] != 62):
         raise SystemExit("HELLO.ELF must be a little-endian x86-64 ELF64 executable")
-    if len(hello_elf) == 0 or len(hello_elf) > 4 * SECTOR:
-        raise SystemExit("HELLO.ELF exceeds the four-cluster CI test bound")
+    if len(hello_elf) == 0 or len(hello_elf) > 8 * SECTOR:
+        raise SystemExit("HELLO.ELF exceeds the eight-cluster CI test bound")
     image = bytearray(TOTAL_SECTORS * SECTOR)
 
     # LBA 100 remains unused and unallocated; CI saves, writes, flushes,

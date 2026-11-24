@@ -63,7 +63,7 @@ jobs:
           path = Path("build/userland/HELLO.ELF")
           image = path.read_bytes()
           assert len(image) > 512, "test must exercise a multi-cluster file"
-          assert len(image) <= 4 * 512, "native sample exceeds bounded FAT chain"
+          assert len(image) <= 8 * 512, "native sample exceeds bounded FAT chain"
           assert image[:4] == b"\x7fELF"
           assert image[4] == 2 and image[5] == 1
           e_type, e_machine = struct.unpack_from("<HH", image, 16)
@@ -160,7 +160,7 @@ jobs:
                   if next_cluster >= 0x0FFFFFF8:
                       break
                   cluster = next_cluster
-                  assert len(visited) <= 4, "FAT chain exceeds bound"
+                  assert len(visited) <= 8, "FAT chain exceeds bound"
 
               assert bytes(recovered[:file_size]) == expected
               expected_clusters = (file_size + sector - 1) // sector

@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static mbedtls_time_t (*registered_time)(mbedtls_time_t *);
 static uint64_t fake_epoch = 1795500000ULL;
 static uint64_t fake_ticks;
 
@@ -23,11 +22,6 @@ bool rtc_get_unix_time(uint64_t *seconds) {
 }
 
 uint64_t timer_ticks(void) { return ++fake_ticks; }
-
-int mbedtls_platform_set_time(mbedtls_time_t (*callback)(mbedtls_time_t *)) {
-    registered_time = callback;
-    return 0;
-}
 
 bool nexus_rng_fill(void *output, size_t length) {
     /* Deterministic entropy is permitted only in this host adapter test. */
@@ -90,7 +84,6 @@ int main(int argc, char **argv) {
     assert(pem != NULL && pem_length > 1U);
 
     assert(nexus_tls_heap_init());
-    assert(registered_time == NULL);
     struct nexus_tls_io io = {
         .context = NULL,
         .send = blocked_send,

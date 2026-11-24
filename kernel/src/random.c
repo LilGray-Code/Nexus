@@ -17,6 +17,9 @@ static bool cpu_has_rdrand(void) {
     __asm__ volatile ("cpuid"
                       : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
                       : "a"(CPUID_LEAF_FEATURES), "c"(0U));
+    (void)eax;
+    (void)ebx;
+    (void)edx;
     return (ecx & CPUID_RDRAND_ECX_BIT) != 0U;
 }
 

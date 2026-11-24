@@ -13,3 +13,9 @@ void mbedtls_platform_zeroize(void *buffer, size_t length) {
     while (length-- != 0U) *bytes++ = 0U;
     __asm__ volatile ("" : : "r"(buffer) : "memory");
 }
+
+/* Mbed TLS self-test diagnostic output is not routed to kernel serial logs. */
+int nexus_mbedtls_printf(const char *format, ...) {
+    (void)format;
+    return 0;
+}

@@ -23,7 +23,7 @@ int64_t nexus_write_all(int descriptor, const void *buffer, size_t length);
 int64_t nexus_puts(const char *text);
 
 /* Bounded printf subset: %%, %c, %s, %d/%i, %u, %x/%X, %p;
- * optional zero padding and widths up to 32. Output is capped at 511 bytes.
+ * optional zero padding and numeric widths up to 32. Output is capped at 511 bytes.
  */
 int64_t nexus_printf(const char *format, ...);
 

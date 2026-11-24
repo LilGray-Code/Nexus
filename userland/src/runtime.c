@@ -2,6 +2,7 @@
 #include "nexus/syscall.h"
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdarg.h>
 
@@ -176,7 +177,7 @@ int64_t nexus_printf(const char *format, ...) {
     va_list arguments;
     va_start(arguments, format);
 
-    for (size_t i = 0U; format[i] != '\\0'; ++i) {
+    for (size_t i = 0U; format[i] != '\0'; ++i) {
         if (format[i] != '%') {
             if (!format_append(output, &length, format[i])) {
                 va_end(arguments);
@@ -186,7 +187,7 @@ int64_t nexus_printf(const char *format, ...) {
         }
 
         ++i;
-        if (format[i] == '\\0') {
+        if (format[i] == '\0') {
             va_end(arguments);
             return -NEXUS_EINVAL;
         }

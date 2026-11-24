@@ -14,6 +14,7 @@
 #define NEXUS_TLS_ERR_PSA_UNAVAILABLE (-1004)
 #define NEXUS_TLS_ERR_TLS13_UNAVAILABLE (-1005)
 #define NEXUS_TLS_ERR_NOT_CONNECTED (-1006)
+#define NEXUS_TLS_ERR_TRANSPORT (-1007)
 
 typedef int nexus_tls_send_fn(void *context,
                               const unsigned char *buffer, size_t length);

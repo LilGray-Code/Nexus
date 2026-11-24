@@ -20,12 +20,29 @@ int main(void) {
         if (contents[i] != expected_prefix[i]) return 13;
     }
 
+    static const char output_name[] = "HELLO.OUT";
+    static const char output_payload[] = "NEXUS SDK FILE WRITE OK";
+    const int64_t saved = nexus_file_write(
+        output_name, output_payload, sizeof(output_payload) - 1U);
+    if (saved != (int64_t)(sizeof(output_payload) - 1U)) return 14;
+
+    char output_readback[sizeof(output_payload) - 1U];
+    const int64_t output_fd = nexus_open(output_name);
+    if (output_fd < 0) return 15;
+    const int64_t output_bytes = nexus_read(
+        (int)output_fd, output_readback, sizeof(output_readback));
+    const int64_t output_close = nexus_close((int)output_fd);
+    if (output_bytes != (int64_t)sizeof(output_readback) ||
+        output_close != 0) return 16;
+    for (size_t i = 0U; i < sizeof(output_readback); ++i)
+        if (output_readback[i] != output_payload[i]) return 17;
+
     static const char message[] =
-        "NEXUS FILE EXEC OK; SDK FILE IO OK";
+        "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK";
     const int64_t bytes_written =
         nexus_write(1, message, sizeof(message) - 1U);
     if (bytes_written != (int64_t)(sizeof(message) - 1U))
-        return 14;
+        return 18;
 
     return 7;
 }

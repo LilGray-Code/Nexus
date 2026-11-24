@@ -185,10 +185,13 @@ read-only file open/read/close, bounded file writes, and runtime ABI version
 discovery. ABI version 1 is reported by syscall 7; applications should check
 `nexus_abi_version()` before using version-specific services. The bundled C
 application opens `README.TXT`, reads and verifies its contents, closes the
-descriptor, writes a success message, and exits with status 7. The BIOS/UEFI
-QEMU workflow builds the application and inserts the compiled ELF into its
-disposable FAT32 image; the kernel then loads it in ring 3 and checks the file
-syscalls, console output, and exit status.
+descriptor, writes `HELLO.OUT` through the VFS, reopens it and verifies the
+written bytes, then writes a success message and exits with status 7. The
+BIOS/UEFI QEMU workflow builds the application and inserts the compiled ELF
+into its disposable FAT32 image; the kernel then loads it in ring 3 and checks
+read/write syscalls, console output, and exit status. User-file writes go
+through NXFS when explicitly writable, otherwise through the volatile RAM
+overlay; FAT32 is never written.
 
 This is an early native SDK, not a general-purpose C library or POSIX
 implementation. Dynamic linking, shared libraries, signals, sockets, a native

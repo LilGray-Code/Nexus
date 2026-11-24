@@ -47,8 +47,10 @@ and the shell resumes only after process exit. The test image's HELLO.ELF is
 kept below one 512-byte FAT32 cluster so the compact CI image generator can
 install it without introducing a multi-cluster directory-entry test dependency.
 
-The sample deliberately exercises open/read/close/write and returns status 7.
-The test image stores the 571-byte compiled ELF in a bounded two-cluster FAT32
-chain. The QEMU boot workflow checks its output and exit status from the
+The sample deliberately exercises ABI negotiation, open/read/close, VFS file
+write, reopening and verifying the new file, console write, and exit status 7.
+The compiled ELF is stored in a bounded two-cluster FAT32 chain. When run, it
+creates `HELLO.OUT` through the VFS: the file is persistent on a writable
+NXFS data volume and volatile when only the RAM overlay is available. The QEMU boot workflow checks its output and exit status from the
 actual Nexus kernel, making this a verified native ABI example rather than a
 host-only compile demo.

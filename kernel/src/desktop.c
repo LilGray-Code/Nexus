@@ -4600,7 +4600,7 @@ desktop_run_process_selftest(void) {
     }
 
     static const char expected_output[] =
-        "NEXUS FILE EXEC OK; SDK FILE IO OK";
+        "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK";
     char captured_output[sizeof(expected_output)] = {0};
     bool output_truncated = false;
     const size_t output_length = usermode_console_output_copy(
@@ -4620,7 +4620,7 @@ desktop_run_process_selftest(void) {
         serial_write("DESKTOP: HELLO.ELF native SDK output mismatch\r\n");
         return NEXUS_DESKTOP_PROCESS_TEST_FAILED;
     }
-    serial_write("DESKTOP: HELLO.ELF native SDK file I/O and output capture passed\r\n");
+    serial_write("DESKTOP: HELLO.ELF native SDK file read/write and output capture passed\r\n");
     return result.exit_status == 7U
         ? NEXUS_DESKTOP_PROCESS_TEST_PASSED
         : NEXUS_DESKTOP_PROCESS_TEST_FAILED;

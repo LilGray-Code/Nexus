@@ -1089,3 +1089,16 @@ sample checks the returned value before exercising file and console calls.
 The native SDK host workflow compares the kernel and SDK syscall number/version
 definitions so the two interfaces cannot silently drift. Future incompatible
 changes must increment the ABI version and update both headers together.
+
+
+### Native SDK VFS write-and-readback coverage
+
+The compiled `HELLO.ELF` SDK sample now exercises syscall 6 as well as
+open/read/close and console output. It writes a short `HELLO.OUT` file through
+the VFS, reopens the file, reads the entire payload, compares every byte, and
+only then emits its success message and exits with status 7. The boot-time
+desktop process self-test checks this success output and exit status. The
+existing VFS policy remains in force: writes go to explicitly writable NXFS
+when available, otherwise the volatile RAM overlay; read-only FAT32 is never
+modified. Running the sample leaves `HELLO.OUT` in the current writable
+namespace (persistent on NXFS, volatile on RAMFS).

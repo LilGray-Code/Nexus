@@ -1,0 +1,33 @@
+name: Nexus freestanding TLS kernel build
+
+on:
+  push:
+    branches:
+      - nexus-https-tls-integration
+    paths:
+      - "kernel/src/**"
+      - "kernel/Makefile"
+      - "toolchain/**"
+      - ".github/workflows/nexus-tls-kernel-build.yml"
+  pull_request:
+    paths:
+      - "kernel/src/**"
+      - "kernel/Makefile"
+      - "toolchain/**"
+      - ".github/workflows/nexus-tls-kernel-build.yml"
+
+jobs:
+  freestanding-tls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential binutils cmake curl python3
+      - name: Fetch checksum-pinned Mbed TLS
+        run: sh toolchain/fetch-mbedtls.sh
+      - name: Build Mbed TLS with the Nexus freestanding target profile
+        run: sh toolchain/build-mbedtls-kernel.sh

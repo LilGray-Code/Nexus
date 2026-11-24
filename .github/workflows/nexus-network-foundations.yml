@@ -74,10 +74,33 @@ jobs:
         run: |
           cmake -S build/deps/mbedtls-4.1.2 -B build/deps/mbedtls-build \
             -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF \
-            -DMBEDTLS_CONFIG_SET="MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG;MBEDTLS_PLATFORM_TIME_ALT;MBEDTLS_PLATFORM_TIME_TYPE_MACRO=int64_t;MBEDTLS_PLATFORM_GMTIME_R_ALT;MBEDTLS_PLATFORM_MS_TIME_ALT;MBEDTLS_PLATFORM_MEMORY" \
+            -DMBEDTLS_CONFIG_SET="MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG;MBEDTLS_PLATFORM_TIME_ALT;MBEDTLS_PLATFORM_TIME_TYPE_MACRO=int64_t;MBEDTLS_PLATFORM_GMTIME_R_ALT;MBEDTLS_PLATFORM_MS_TIME_ALT;MBEDTLS_PLATFORM_MEMORY;MBEDTLS_SSL_PROTO_TLS1_3" \
             -DMBEDTLS_CONFIG_UNSET="MBEDTLS_PSA_BUILTIN_GET_ENTROPY;MBEDTLS_NET_C;MBEDTLS_TIMING_C" \
           -DCMAKE_C_FLAGS="-D_GNU_SOURCE -include stdint.h"
           cmake --build build/deps/mbedtls-build --parallel 2
+      - name: Test verified TLS 1.3 client adapter
+        run: |
+          openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 2 \
+            -keyout /tmp/nexus-tls-test-key.pem \
+            -out /tmp/nexus-tls-test-ca.pem \
+            -subj "/CN=localhost" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "keyUsage=critical,digitalSignature,keyCertSign,cRLSign" \
+            -addext "subjectAltName=DNS:localhost"
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DNEXUS_TLS_HEAP_HOST_TEST -Ikernel/src \
+            -Ibuild/deps/mbedtls-build/generated/include \
+            -Ibuild/deps/mbedtls-4.1.2/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            kernel/src/tls_heap.c kernel/src/mbedtls_heap.c \
+            kernel/src/mbedtls_random.c kernel/src/tls_client.c \
+            kernel/tests/tls_client_test.c \
+            -Lbuild/deps/mbedtls-build/library \
+            -Lbuild/deps/mbedtls-build/tf-psa-crypto/library \
+            -Wl,--start-group -lmbedtls -lmbedx509 -lmbedcrypto \
+            -Wl,--end-group -o /tmp/nexus-tls-client-test
+          /tmp/nexus-tls-client-test /tmp/nexus-tls-test-ca.pem
+
       - name: Test Nexus RNG adapter against Mbed TLS PSA API
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror \

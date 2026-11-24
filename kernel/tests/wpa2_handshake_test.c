@@ -283,11 +283,13 @@ static void test_random_nonce_initializer_fails_closed(void) {
         &supplicant, pmk, sta, ap, &ops, &radio);
     if (initialized) {
         assert(supplicant.state == NEXUS_WPA2_SUPPLICANT_WAIT_M1);
-        assert(!bytes_are_zero(supplicant.supplicant_nonce,
-                               sizeof(supplicant.supplicant_nonce)));
+        bool nonce_nonzero = false;
+        for (size_t i = 0U; i < sizeof(supplicant.supplicant_nonce); ++i)
+            nonce_nonzero = nonce_nonzero || supplicant.supplicant_nonce[i] != 0U;
+        assert(nonce_nonzero);
         nexus_wpa2_supplicant_deinit(&supplicant);
     } else {
-        assert(!nexus_rng_available() || supplicant.state == 0);
+        assert(supplicant.state == 0);
         for (size_t i = 0U; i < sizeof(supplicant.pmk); ++i)
             assert(supplicant.pmk[i] == 0U);
     }

@@ -652,14 +652,20 @@ TCP port 80, sends a small HTTP/1.0 GET request, and prints a bounded response.
 DNS and TCP neighbor resolution use the correct on-link router when the target
 is off-subnet, and ARP probes are throttled while waiting.
 
-This is an early transport proof, not a production TCP implementation. It has
-no retransmission, congestion control, out-of-order reassembly, robust FIN
-state machine, TLS, certificate verification, IPv6, sockets API, or browser
-renderer. The first TCP/HTTP change exposed four compiler warnings in the
-terminal response path; these were fixed in commit
-[0829b923](https://github.com/LilGray-Code/Nexus/commit/0829b923234d6f216204a11cc0995133e29e3150).
-That commit's build and ISO structural checks passed, but UEFI runtime boot
-was still in progress when this note was written.
+The TCP client now retries a dropped SYN with a bounded timer, and data
+writes use a one-outstanding-segment stop-and-wait policy: each segment is
+retransmitted a bounded number of times until its exact acknowledgement is
+received. Larger writes are split into 1,200-byte segments. If retry exhaustion
+occurs, the connection is failed and closed instead of silently advancing the
+send sequence. A new host-side mock-peer test drops the first SYN and first
+transmission of every data segment, verifies byte-identical retransmission,
+checks multi-segment writes, and checks the bounded no-ACK failure path.
+
+This is still not a production TCP implementation. Congestion control,
+out-of-order receive reassembly, partial ACK handling, robust FIN/TIME-WAIT
+states, IPv6, sockets, TLS, certificate verification, and a browser renderer
+remain unimplemented. Stop-and-wait is intentionally conservative and is not
+a substitute for a full TCP congestion-control implementation.
 
 ### VFS-backed Files view and RAM overlay
 
@@ -1129,7 +1135,12 @@ returns; the old post-callback assignment could overwrite those completed
 states. The host Wi-Fi tests exercise both inline-completion paths. This is a
 state-machine correctness improvement only: Nexus still has no registered
 wireless chipset driver or firmware, so live scanning and association are not
-yet available.
+yet available. The kernel now has a fail-closed RDRAND-backed random-byte API,
+and the WPA2 supplicant has an initializer that generates its own fresh SNonce
+through that API. The RNG has no timer/counter fallback; unsupported CPUs or
+instruction failures return failure and clear partial output. This supplies a
+cryptographic randomness boundary for later TLS and Wi-Fi integration, but it
+is not a seeded kernel DRBG or a replacement for a maintained TLS library.
 
 
 ### Reusable native application runtime library

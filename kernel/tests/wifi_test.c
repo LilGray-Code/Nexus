@@ -94,7 +94,9 @@ int main(void) {
     assert(wifi_get_state() == NEXUS_WIFI_READY);
 
     /* A driver may publish a completed scan synchronously from scan(). */
-    mock.inline_network = networks[1];
+    struct nexus_wifi_network open_network = networks[1];
+    open_network.security = NEXUS_WIFI_SECURITY_OPEN;
+    mock.inline_network = open_network;
     mock.publish_scan_inline = true;
     assert(wifi_scan());
     assert(wifi_get_state() == NEXUS_WIFI_READY);
@@ -105,7 +107,7 @@ int main(void) {
 
     /* Likewise, connect() may report CONNECTED before returning. */
     mock.connect_inline = true;
-    assert(wifi_connect(&networks[1], NULL));
+    assert(wifi_connect(&open_network, NULL));
     assert(wifi_get_state() == NEXUS_WIFI_CONNECTED);
     mock.connect_inline = false;
     wifi_disconnect();

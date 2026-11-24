@@ -3184,7 +3184,6 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 const uint64_t max_width =
                     screen_width > window_position_x + 16U
                         ? screen_width - window_position_x - 16U : 1U;
-                const uint64_t top = clamp_min(screen_height / 16U, 34U);
                 const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
                 const uint64_t max_height =
                     screen_height > window_position_y + bottom

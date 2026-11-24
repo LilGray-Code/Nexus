@@ -41,5 +41,27 @@ jobs:
             kernel/src/sha256.c kernel/src/random.c \
             -o /tmp/nexus-wpa2-handshake-test
           /tmp/nexus-wpa2-handshake-test
+      - name: Test DNS-independent HTTP framing parser
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/http.c kernel/tests/http_test.c -o /tmp/nexus-http-test
+          /tmp/nexus-http-test
+      - name: Test Wi-Fi state manager
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/wifi.c kernel/tests/wifi_test.c -o /tmp/nexus-wifi-test
+          /tmp/nexus-wifi-test
+      - name: Test 802.11 beacon and security parser
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/wifi_80211.c kernel/tests/wifi_80211_test.c \
+            -o /tmp/nexus-wifi-80211-test
+          /tmp/nexus-wifi-80211-test
+      - name: Test SHA-256, HMAC and HKDF
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/sha256.c kernel/tests/sha256_test.c \
+            -o /tmp/nexus-sha256-test
+          /tmp/nexus-sha256-test
       - name: Build freestanding kernel
         run: make -C kernel

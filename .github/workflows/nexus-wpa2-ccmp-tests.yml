@@ -1,0 +1,39 @@
+name: Nexus WPA2 CCMP frame and replay tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wpa2_ccmp.c"
+      - "kernel/src/wpa2_ccmp.h"
+      - "kernel/src/aes_ccm.c"
+      - "kernel/src/aes_ccm.h"
+      - "kernel/tests/wpa2_ccmp_test.c"
+      - ".github/workflows/nexus-wpa2-ccmp-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wpa2_ccmp.c"
+      - "kernel/src/wpa2_ccmp.h"
+      - "kernel/src/aes_ccm.c"
+      - "kernel/src/aes_ccm.h"
+      - "kernel/tests/wpa2_ccmp_test.c"
+      - ".github/workflows/nexus-wpa2-ccmp-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  wpa2-ccmp-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile CCMP frame tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/aes_ccm.c kernel/src/wpa2_ccmp.c \
+            kernel/tests/wpa2_ccmp_test.c -o /tmp/nexus-wpa2-ccmp-test
+      - name: Run CCMP framing, authentication, and replay tests
+        run: /tmp/nexus-wpa2-ccmp-test

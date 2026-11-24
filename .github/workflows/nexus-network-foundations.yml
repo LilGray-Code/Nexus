@@ -98,5 +98,23 @@ jobs:
             kernel/src/mbedtls_time.c kernel/tests/mbedtls_time_test.c \
             -o /tmp/nexus-mbedtls-time-test
           /tmp/nexus-mbedtls-time-test
+      - name: Test bounded crypto heap allocator
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DNEXUS_TLS_HEAP_HOST_TEST -Ikernel/src \
+            kernel/src/tls_heap.c kernel/tests/tls_heap_test.c \
+            -o /tmp/nexus-tls-heap-test
+          /tmp/nexus-tls-heap-test
+      - name: Test Mbed TLS heap integration
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DNEXUS_TLS_HEAP_HOST_TEST -Ikernel/src \
+            -Ibuild/deps/mbedtls-4.1.2/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/generated/include \
+            kernel/src/tls_heap.c kernel/src/mbedtls_heap.c \
+            kernel/tests/mbedtls_heap_test.c \
+            -o /tmp/nexus-mbedtls-heap-test
+          /tmp/nexus-mbedtls-heap-test
       - name: Build freestanding kernel
         run: make -C kernel

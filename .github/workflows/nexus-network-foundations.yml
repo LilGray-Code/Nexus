@@ -1,0 +1,36 @@
+name: Nexus network foundation tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/**"
+      - "kernel/tests/**"
+      - "kernel/Makefile"
+      - ".github/workflows/nexus-network-foundations.yml"
+  pull_request:
+    paths:
+      - "kernel/src/**"
+      - "kernel/tests/**"
+      - "kernel/Makefile"
+      - ".github/workflows/nexus-network-foundations.yml"
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Test hardware random source
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/random.c kernel/tests/random_test.c -o /tmp/nexus-random-test
+          /tmp/nexus-random-test
+      - name: Test TCP retransmission and stream segmentation
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/tests/net_tcp_test.c -o /tmp/nexus-net-tcp-test
+          /tmp/nexus-net-tcp-test
+      - name: Build freestanding kernel
+        run: make -C kernel

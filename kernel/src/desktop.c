@@ -177,6 +177,14 @@ static char installer_status_text[96] = "Select a supported target disk";
 #define NEXUS_BROWSER_LINE_COUNT 48U
 #define NEXUS_BROWSER_VISIBLE_LINES 9U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
+/* A larger bounded response window makes real HTML pages less likely to be
+ * clipped at the old 1.5 KiB limit. Buffers live in BSS, not the small kernel
+ * stack. TCP itself remains a single-connection, bounded receive transport.
+ */
+#define NEXUS_BROWSER_RESPONSE_CAPACITY (16U * 1024U)
+static uint8_t browser_response_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
+static uint8_t browser_body_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
+static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_address[96];
 static size_t browser_address_length;
 static char browser_status[80] = "HTTPS-first; requires NEXUS.CRT on Nexus Data";
@@ -2820,14 +2828,14 @@ static void browser_render_body(const uint8_t *data, size_t length) {
     browser_clear_page();
     if (data == NULL) return;
 
-    char text[1536];
     struct nexus_html_text_result result;
-    if (!nexus_html_to_text(data, length, text, sizeof(text), &result)) {
+    if (!nexus_html_to_text(data, length, browser_text_buffer,
+                            sizeof(browser_text_buffer), &result)) {
         browser_set_status("HTML text conversion rejected invalid input");
         return;
     }
     for (size_t i = 0U; i < result.output_length; ++i)
-        browser_append_page_char(text[i]);
+        browser_append_page_char(browser_text_buffer[i]);
     if (result.truncated || result.malformed)
         browser_content_truncated = result.truncated;
 }
@@ -3244,8 +3252,8 @@ browser_retry:
         return;
     }
 
-    uint8_t response[1536];
-    uint8_t body[1536];
+    uint8_t *response = browser_response_buffer;
+    uint8_t *body = browser_body_buffer;
     struct nexus_http_response parsed;
     size_t response_length = 0U;
     bool orderly_eof = false;
@@ -3255,7 +3263,7 @@ browser_retry:
         : "Receiving unencrypted HTTP response...");
     if (use_https) {
         receive_ok = browser_https_receive_response(
-            &https, response, sizeof(response), &response_length, &orderly_eof);
+            &https, response, NEXUS_BROWSER_RESPONSE_CAPACITY, &response_length, &orderly_eof);
         nexus_https_close(&https);
         https_open = false;
     } else {
@@ -3263,11 +3271,11 @@ browser_retry:
         uint64_t last_data = start;
         while (timer_ticks() - start < 600U &&
                (response_length == 0U || timer_ticks() - last_data < 40U) &&
-               response_length < sizeof(response)) {
+               response_length < NEXUS_BROWSER_RESPONSE_CAPACITY) {
             net_poll();
             const size_t received =
                 net_tcp_receive(response + response_length,
-                                sizeof(response) - response_length);
+                                NEXUS_BROWSER_RESPONSE_CAPACITY - response_length);
             if (received != 0U) {
                 response_length += received;
                 last_data = timer_ticks();
@@ -3284,7 +3292,7 @@ browser_retry:
         return;
     }
     if (!nexus_http_decode_response(response, response_length, body,
-                                    sizeof(body), &parsed)) {
+                                    NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
     }

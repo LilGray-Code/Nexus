@@ -10,6 +10,7 @@
 #define NEXUS_NETDEV_MIN_FRAME 14U
 #define NEXUS_NETDEV_MAX_FRAME 2048U
 
+/* Medium is descriptive metadata; Wi-Fi still needs a real 802.11 station driver. */
 enum nexus_netdev_medium {
     NEXUS_NETDEV_MEDIUM_ETHERNET = 1,
     NEXUS_NETDEV_MEDIUM_WIFI = 2

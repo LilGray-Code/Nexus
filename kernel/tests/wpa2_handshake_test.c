@@ -192,6 +192,28 @@ static void test_four_way_handshake_m1_to_m4(void) {
 
     nexus_wpa2_supplicant_deinit(&supplicant);
     assert(radio.clear_count == 1U);
+
+    /* If M4 cannot be sent after key install, installed keys are rolled back. */
+    struct test_radio rollback_radio = {0};
+    assert(nexus_wpa2_supplicant_init(
+        &supplicant, pmk, sta, ap, snonce, &ops, &rollback_radio));
+    assert(nexus_wpa2_supplicant_handle_eapol(
+        &supplicant, message_one, m1_length));
+    rollback_radio.fail_send = true;
+    assert(!nexus_wpa2_supplicant_handle_eapol(
+        &supplicant, message_three, sizeof(message_three)));
+    assert(rollback_radio.install_count == 1U);
+    assert(rollback_radio.clear_count == 1U);
+    assert(!supplicant.keys_installed);
+    assert(supplicant.state == NEXUS_WPA2_SUPPLICANT_WAIT_M3);
+    rollback_radio.fail_send = false;
+    assert(nexus_wpa2_supplicant_handle_eapol(
+        &supplicant, message_three, sizeof(message_three)));
+    assert(rollback_radio.install_count == 2U);
+    assert(rollback_radio.send_count == 2U);
+    assert(supplicant.state == NEXUS_WPA2_SUPPLICANT_COMPLETE);
+    nexus_wpa2_supplicant_deinit(&supplicant);
+    assert(rollback_radio.clear_count == 2U);
 }
 
 static void test_handshake_rejects_bad_mic_and_replay(void) {
@@ -254,6 +276,10 @@ static void test_init_requires_valid_identity_and_nonce(void) {
     struct nexus_wpa2_supplicant supplicant;
     assert(!nexus_wpa2_supplicant_init(
         &supplicant, pmk, sta, ap, NULL, &ops, &radio));
+    struct nexus_wpa2_handshake_ops no_clear_ops = ops;
+    no_clear_ops.clear_ccmp128_keys = NULL;
+    assert(!nexus_wpa2_supplicant_init(
+        &supplicant, pmk, sta, ap, nonce, &no_clear_ops, &radio));
     uint8_t multicast[6] = {0x01U,0U,0U,0U,0U,1U};
     assert(!nexus_wpa2_supplicant_init(
         &supplicant, pmk, multicast, ap, nonce, &ops, &radio));

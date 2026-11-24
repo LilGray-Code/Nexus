@@ -36,3 +36,8 @@ jobs:
           grep -q -- '-----BEGIN CERTIFICATE-----' build/nexus-ca-bundle.pem
       - name: Build Mbed TLS with the Nexus freestanding target profile
         run: sh toolchain/build-mbedtls-kernel.sh
+      - name: Link TLS client and CA bundle into the Nexus kernel
+        run: |
+          sh toolchain/fetch-ca-bundle.sh
+          make -C kernel clean all
+          file build/nexus-kernel.elf

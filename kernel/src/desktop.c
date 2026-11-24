@@ -566,63 +566,84 @@ static void draw_shell(void) {
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
-            graphics_draw_text(text_x, text_y, "NEXUS INSTALLER - DRIVE SELECTION",
-                               2, 239, 249, 255);
+            graphics_draw_text(text_x, text_y, "INSTALL NEXUS - CHOOSE A DRIVE",
+                               2U, 239U, 249U, 255U);
             graphics_draw_text(text_x, text_y + 28U,
-                               "READ-ONLY DISCOVERY - SELECT A TARGET",
-                               1, 108, 216, 229);
+                               "Nothing is written until you confirm the target twice.",
+                               1U, 108U, 216U, 229U);
             const size_t device_count = blockdev_count();
             if (device_count == 0U) {
                 graphics_draw_text(text_x, text_y + 88U,
                                    "NO SUPPORTED STORAGE DEVICES DETECTED",
-                                   1, 239, 177, 119);
+                                   1U, 239U, 177U, 119U);
+                graphics_draw_text(text_x, text_y + 118U,
+                                   "Connect an internal SSD or supported USB drive.",
+                                   1U, 170U, 191U, 211U);
             } else {
                 const struct nexus_block_device *device =
                     blockdev_at(installer_selected_device);
+                char drive_index[21], drive_total[21];
+                format_u64(installer_selected_device + 1U, drive_index);
+                format_u64(device_count, drive_total);
+                graphics_draw_text(text_x, text_y + 54U,
+                                   "SELECTED DRIVE:", 1U, 233U, 243U, 252U);
+                graphics_draw_text(text_x + 140U, text_y + 54U,
+                                   device != NULL ? device->name : "UNKNOWN",
+                                   1U, 119U, 229U, 211U);
+                graphics_draw_text(text_x + 260U, text_y + 54U,
+                                   "DRIVE", 1U, 170U, 191U, 211U);
+                graphics_draw_text(text_x + 300U, text_y + 54U,
+                                   drive_index, 1U, 119U, 229U, 211U);
+                graphics_draw_text(text_x + 312U, text_y + 54U,
+                                   "OF", 1U, 170U, 191U, 211U);
+                graphics_draw_text(text_x + 332U, text_y + 54U,
+                                   drive_total, 1U, 119U, 229U, 211U);
                 if (device != NULL) {
-                    graphics_draw_text(text_x, text_y + 54U,
-                                       "SELECTED DRIVE:", 1, 233, 243, 252);
-                    graphics_draw_text(text_x + 140U, text_y + 54U,
-                                       device->name, 1, 119, 229, 211);
-                    graphics_draw_text(text_x, text_y + 72U,
-                                       device->model, 1, 170, 225, 190);
-                    graphics_draw_text(text_x, text_y + 90U,
-                                       device->stable_id, 1, 170, 191, 211);
+                    graphics_draw_text(text_x, text_y + 76U,
+                                       device->model, 1U, 170U, 225U, 190U);
+                    graphics_draw_text(text_x, text_y + 94U,
+                                       device->stable_id, 1U, 170U, 191U, 211U);
+                    graphics_draw_text(text_x + 340U, text_y + 76U,
+                                       installer_transport_label(device),
+                                       1U, 119U, 229U, 211U);
                     const uint64_t blocks_per_gib =
                         (1024ULL * 1024ULL * 1024ULL) / device->block_size;
                     char capacity[21], sector[21];
                     format_u64(blocks_per_gib == 0U ? 0U :
                                device->block_count / blocks_per_gib, capacity);
                     format_u64(device->block_size, sector);
-                    graphics_draw_text(text_x, text_y + 112U,
-                                       "CAPACITY (GiB):", 1, 233, 243, 252);
-                    graphics_draw_text(text_x + 140U, text_y + 112U,
-                                       capacity, 1, 170, 225, 190);
-                    graphics_draw_text(text_x + 250U, text_y + 112U,
+                    graphics_draw_text(text_x, text_y + 116U,
+                                       "CAPACITY:", 1U, 233U, 243U, 252U);
+                    graphics_draw_text(text_x + 92U, text_y + 116U,
+                                       capacity, 1U, 170U, 225U, 190U);
+                    graphics_draw_text(text_x + 124U, text_y + 116U,
+                                       "GiB", 1U, 170U, 191U, 211U);
+                    graphics_draw_text(text_x + 190U, text_y + 116U,
+                                       "SECTOR:", 1U, 233U, 243U, 252U);
+                    graphics_draw_text(text_x + 272U, text_y + 116U,
+                                       sector, 1U, 170U, 225U, 190U);
+                    graphics_draw_text(text_x + 380U, text_y + 116U,
                                        blockdev_identity_is_unique(device)
-                                           ? "IDENTITY: UNIQUE"
-                                           : "IDENTITY: NOT SAFE",
-                                       1, blockdev_identity_is_unique(device)
-                                           ? 108 : 239,
+                                           ? "IDENTITY VERIFIED"
+                                           : "IDENTITY NOT SAFE",
+                                       1U, blockdev_identity_is_unique(device)
+                                           ? 108U : 239U,
                                        blockdev_identity_is_unique(device)
-                                           ? 216 : 177,
+                                           ? 216U : 177U,
                                        blockdev_identity_is_unique(device)
-                                           ? 229 : 119);
-                    graphics_draw_text(text_x, text_y + 134U,
-                                       "LOGICAL SECTOR:", 1, 233, 243, 252);
-                    graphics_draw_text(text_x + 140U, text_y + 134U,
-                                       sector, 1, 170, 225, 190);
-                    graphics_draw_text(text_x, text_y + 156U,
-                                       installer_firmware == NEXUS_FIRMWARE_UEFI
-                                           ? "FIRMWARE PLAN: UEFI / GPT"
-                                           : (installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS
-                                               ? "FIRMWARE PLAN: LEGACY BIOS + ESP / GPT"
-                                               : "FIRMWARE PLAN: UEFI + BIOS / GPT"),
-                                       1, 108, 216, 229);
+                                           ? 229U : 119U);
+                    graphics_draw_text(text_x, text_y + 144U,
+                                       "INSTALL FOR:", 1U, 233U, 243U, 252U);
+                    installer_draw_button(text_x, text_y + 158U, 104U, 24U,
+                        "UEFI", installer_firmware == NEXUS_FIRMWARE_UEFI, false);
+                    installer_draw_button(text_x + 112U, text_y + 158U, 104U, 24U,
+                        "BIOS", installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS, false);
+                    installer_draw_button(text_x + 224U, text_y + 158U, 112U, 24U,
+                        "BOTH", installer_firmware == NEXUS_FIRMWARE_DUAL, false);
                     if (installer_plan_valid) {
-                        graphics_draw_text(text_x, text_y + 180U,
-                                           "PROPOSED PARTITIONS (READ ONLY)",
-                                           1, 119, 229, 211);
+                        graphics_draw_text(text_x, text_y + 190U,
+                                           "INSTALL LAYOUT - PREVIEW ONLY",
+                                           1U, 119U, 229U, 211U);
                         for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
                             const struct nexus_planned_partition *part =
                                 &installer_plan.partitions[i];
@@ -633,7 +654,7 @@ static void draw_shell(void) {
                                 (part->kind == NEXUS_PARTITION_SYSTEM
                                     ? "NEXUS SYSTEM" :
                                 (part->kind == NEXUS_PARTITION_RECOVERY
-                                    ? "NEXUS RECOVERY" : "NEXUS DATA")));
+                                    ? "RECOVERY" : "USER DATA")));
                             const uint64_t sectors_per_mib =
                                 (1024ULL * 1024ULL) / device->block_size;
                             const uint64_t size_mib =
@@ -641,82 +662,107 @@ static void draw_shell(void) {
                                 sectors_per_mib;
                             char size_text[21];
                             format_u64(size_mib, size_text);
-                            const uint64_t row_y = text_y + 202U + i * 16U;
+                            const uint64_t row_y = text_y + 210U + i * 16U;
                             graphics_draw_text(text_x, row_y, label,
-                                               1, 233, 243, 252);
+                                               1U, 233U, 243U, 252U);
                             graphics_draw_text(text_x + 190U, row_y,
-                                               size_text, 1, 170, 225, 190);
+                                               size_text, 1U, 170U, 225U, 190U);
                             graphics_draw_text(text_x + 230U, row_y,
-                                               "MiB", 1, 170, 191, 211);
+                                               "MiB", 1U, 170U, 191U, 211U);
                         }
                     } else {
-                        graphics_draw_text(text_x, text_y + 194U,
-                                           "DISK TOO SMALL OR LAYOUT UNSUPPORTED",
-                                           1, 239, 177, 119);
+                        graphics_draw_text(text_x, text_y + 210U,
+                                           "THIS DRIVE CANNOT USE THAT LAYOUT",
+                                           1U, 239U, 177U, 119U);
                     }
-                    graphics_draw_text(text_x, text_y + 274U,
-                                       installer_target_status(device), 1,
-                                       170, 225, 190);
+                    graphics_draw_text(text_x, text_y + 292U,
+                                       installer_target_status(device), 1U,
+                                       170U, 225U, 190U);
                 }
+                installer_draw_button(text_x, text_y + 310U, 104U, 24U,
+                                      "PREVIOUS", installer_selected_device > 0U,
+                                      false);
+                installer_draw_button(text_x + 112U, text_y + 310U, 104U, 24U,
+                                      "NEXT DRIVE",
+                                      installer_selected_device + 1U < device_count,
+                                      false);
+                installer_draw_button(text_x + 228U, text_y + 310U, 220U, 24U,
+                                      "CONTINUE", false, false);
             }
-            graphics_draw_text(text_x, text_y + 298U,
-                               "UP/DOWN DRIVE  F1 UEFI  F2 BIOS  F3 DUAL",
-                               1, 170, 191, 211);
-            graphics_draw_text(text_x, text_y + 316U,
-                               "ENTER CONTINUE  ESC HOME",
-                               1, 170, 191, 211);
+            graphics_draw_text(text_x, text_y + 348U,
+                               "ARROWS OR DRIVE BUTTONS TO SELECT  |  ESC TO EXIT",
+                               1U, 170U, 191U, 211U);
+            graphics_draw_text(text_x, text_y + 370U,
+                               "Your existing disks are not changed during this preview.",
+                               1U, 170U, 191U, 211U);
         } else {
             const struct nexus_block_device *device =
                 blockdev_at(installer_selected_device);
-            graphics_draw_text(text_x, text_y, "NEXUS INSTALLATION WIZARD",
-                               2, 239, 249, 255);
+            graphics_draw_text(text_x, text_y, "REVIEW BEFORE INSTALLING",
+                               2U, 239U, 249U, 255U);
             if (device != NULL) {
-                graphics_draw_text(text_x, text_y + 36U, device->model,
-                                   1, 170, 225, 190);
-                graphics_draw_text(text_x, text_y + 54U, device->stable_id,
-                                   1, 119, 229, 211);
+                graphics_draw_text(text_x, text_y + 38U, device->model,
+                                   1U, 170U, 225U, 190U);
+                graphics_draw_text(text_x, text_y + 56U, device->stable_id,
+                                   1U, 119U, 229U, 211U);
+                graphics_draw_text(text_x, text_y + 78U,
+                                   installer_transport_label(device),
+                                   1U, 170U, 191U, 211U);
             }
             if (installer_ui_state == INSTALLER_UI_CONFIRM_ID) {
-                graphics_draw_text(text_x, text_y + 100U,
-                                   "TYPE THE COMPLETE TARGET ID TO CONTINUE",
-                                   1, 239, 177, 119);
-            } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
-                graphics_draw_text(text_x, text_y + 116U,
-                                   "FINAL WARNING: THIS ERASES THE SELECTED DISK",
-                                   1, 239, 177, 119);
+                graphics_draw_text(text_x, text_y + 112U,
+                                   "STEP 1 OF 2 - TYPE THE COMPLETE DRIVE ID",
+                                   1U, 239U, 177U, 119U);
                 graphics_draw_text(text_x, text_y + 140U,
-                                   "TYPE ERASE TO AUTHORIZE THE INSTALL",
-                                   1, 239, 177, 119);
+                                   "This confirms that you selected the correct disk.",
+                                   1U, 170U, 225U, 190U);
+            } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
+                graphics_draw_text(text_x, text_y + 112U,
+                                   "STEP 2 OF 2 - THIS WILL ERASE THE WHOLE DRIVE",
+                                   1U, 239U, 177U, 119U);
+                graphics_draw_text(text_x, text_y + 140U,
+                                   "Type ERASE to authorize writing the new partition layout.",
+                                   1U, 239U, 177U, 119U);
             } else if (installer_ui_state == INSTALLER_UI_RUNNING) {
                 graphics_draw_text(text_x, text_y + 116U,
-                                   "INSTALLATION IN PROGRESS - DO NOT POWER OFF",
-                                   1, 239, 177, 119);
+                                   "INSTALLING NEXUS - DO NOT POWER OFF",
+                                   1U, 239U, 177U, 119U);
             } else if (installer_ui_state == INSTALLER_UI_COMPLETE) {
                 graphics_draw_text(text_x, text_y + 116U,
-                                   "INSTALLATION DEPLOYMENT COMPLETED",
-                                   1, 108, 216, 229);
+                                   "NEXUS INSTALLATION COMPLETED",
+                                   1U, 108U, 216U, 229U);
                 graphics_draw_text(text_x, text_y + 146U,
-                                   "SHUT DOWN, REMOVE THE LIVE MEDIA, THEN BOOT",
-                                   1, 170, 225, 190);
+                                   "Shut down, remove the installer media, then boot Nexus.",
+                                   1U, 170U, 225U, 190U);
             } else if (installer_ui_state == INSTALLER_UI_FAILED) {
                 graphics_draw_text(text_x, text_y + 116U,
-                                   "INSTALLATION STOPPED - RECOVERY MAY BE REQUIRED",
-                                   1, 239, 177, 119);
+                                   "INSTALLATION STOPPED - CHECK THE MESSAGE BELOW",
+                                   1U, 239U, 177U, 119U);
             }
-            graphics_draw_text(text_x, text_y + 160U, installer_status_text,
-                               1, 170, 225, 190);
+            graphics_draw_text(text_x, text_y + 174U, installer_status_text,
+                               1U, 170U, 225U, 190U);
             if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
                 installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
-                graphics_fill_rect(text_x, text_y + 194U, 520U, 30U,
-                                   11, 20, 39);
-                graphics_draw_rect(text_x, text_y + 194U, 520U, 30U,
-                                   56, 88, 119);
-                graphics_draw_text(text_x + 8U, text_y + 204U,
-                                   installer_input, 1, 239, 249, 255);
+                graphics_fill_rect(text_x, text_y + 206U, 520U, 30U,
+                                   11U, 20U, 39U);
+                graphics_draw_rect(text_x, text_y + 206U, 520U, 30U,
+                                   56U, 88U, 119U);
+                graphics_draw_text(text_x + 8U, text_y + 216U,
+                                   installer_input, 1U, 239U, 249U, 255U);
+                installer_draw_button(text_x, text_y + 264U, 112U, 26U,
+                                      "BACK", false, false);
+                installer_draw_button(text_x + 128U, text_y + 264U, 172U, 26U,
+                    installer_ui_state == INSTALLER_UI_CONFIRM_ID
+                        ? "VERIFY DRIVE ID" : "CONFIRM ERASE",
+                    false, installer_ui_state == INSTALLER_UI_CONFIRM_ERASE);
+                graphics_draw_text(text_x, text_y + 306U,
+                                   "Type in the field, then press Enter or click Confirm.",
+                                   1U, 170U, 191U, 211U);
+            } else if (installer_ui_state == INSTALLER_UI_COMPLETE ||
+                       installer_ui_state == INSTALLER_UI_FAILED) {
+                installer_draw_button(text_x, text_y + 264U, 210U, 26U,
+                                      "RETURN TO DRIVE SELECTION", false, false);
             }
-            graphics_draw_text(text_x, text_y + 260U,
-                               "ENTER CONFIRM  BACKSPACE EDIT  ESC CANCEL",
-                               1, 170, 191, 211);
         }
     } else if (active_view == DESKTOP_FILES) {
         graphics_draw_text(text_x, text_y, "NEXUS FILES",
@@ -2262,6 +2308,129 @@ static void installer_set_status(const char *message) {
     installer_status_text[i] = '\0';
 }
 
+static const char *installer_transport_label(
+    const struct nexus_block_device *device) {
+    if (device == NULL) return "UNKNOWN DEVICE";
+    switch (device->transport) {
+        case NEXUS_BLOCKDEV_TRANSPORT_NVME: return "NVME SOLID STATE DRIVE";
+        case NEXUS_BLOCKDEV_TRANSPORT_AHCI: return "SATA / AHCI DRIVE";
+        case NEXUS_BLOCKDEV_TRANSPORT_USB: return "USB STORAGE";
+        case NEXUS_BLOCKDEV_TRANSPORT_OPTICAL: return "OPTICAL DRIVE";
+        case NEXUS_BLOCKDEV_TRANSPORT_NETWORK: return "NETWORK STORAGE";
+        default: return "STORAGE DEVICE";
+    }
+}
+
+static void installer_select_delta(bool next) {
+    const size_t count = blockdev_count();
+    if (count == 0U) return;
+    if (next) {
+        if (installer_selected_device + 1U < count)
+            ++installer_selected_device;
+    } else if (installer_selected_device > 0U) {
+        --installer_selected_device;
+    }
+    installer_refresh_plan();
+    installer_log_selected_target();
+}
+
+static bool installer_begin_confirmation(void) {
+    const struct nexus_block_device *device =
+        blockdev_at(installer_selected_device);
+    if (device != NULL && installer_plan_valid &&
+        blockdev_boot_media_detection_complete() &&
+        !blockdev_is_boot_media(device) &&
+        !blockdev_is_mounted(device) &&
+        blockdev_identity_is_unique(device) &&
+        blockdev_install_write_supported(device)) {
+        installer_ui_state = INSTALLER_UI_CONFIRM_ID;
+        installer_confirmed_id[0] = '\0';
+        installer_input_length = 0U;
+        installer_input[0] = '\0';
+        installer_set_status("No disk writes have occurred");
+        return true;
+    }
+    installer_set_status("Target is not eligible for installation");
+    return false;
+}
+
+static void installer_confirm_target_id(void) {
+    const struct nexus_block_device *device =
+        blockdev_at(installer_selected_device);
+    if (device != NULL &&
+        installer_text_equal_ci(installer_input, device->stable_id)) {
+        size_t n = 0U;
+        while (device->stable_id[n] != '\0' &&
+               n < sizeof(installer_confirmed_id) - 1U) {
+            installer_confirmed_id[n] = device->stable_id[n];
+            ++n;
+        }
+        installer_confirmed_id[n] = '\0';
+        installer_ui_state = INSTALLER_UI_CONFIRM_ERASE;
+        installer_input_length = 0U;
+        installer_input[0] = '\0';
+        installer_set_status("Target identity verified; final erase phrase required");
+    } else {
+        installer_set_status("Target ID did not match");
+    }
+}
+
+#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
+static void installer_apply_typed_erase(void) {
+    if (!installer_text_equal_ci(installer_input, "ERASE")) {
+        installer_set_status("Type ERASE exactly to continue");
+        return;
+    }
+    const struct nexus_block_device *device =
+        blockdev_at(installer_selected_device);
+    installer_ui_state = INSTALLER_UI_RUNNING;
+    installer_set_status("Starting guarded installation");
+    draw_shell();
+    draw_pointer();
+    const enum nexus_installer_runtime_result result =
+        nexus_installer_runtime_apply(
+            device, installer_firmware, installer_confirmed_id,
+            "ERASE", installer_progress_update, NULL);
+    if (result == NEXUS_INSTALL_RESULT_OK) {
+        installer_ui_state = INSTALLER_UI_COMPLETE;
+        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
+    } else {
+        installer_ui_state = INSTALLER_UI_FAILED;
+        installer_set_status(installer_result_message(result));
+        serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
+        serial_write(installer_result_message(result));
+        serial_write("\r\n");
+    }
+}
+#else
+static void installer_apply_typed_erase(void) {
+    if (!installer_text_equal_ci(installer_input, "ERASE")) {
+        installer_set_status("Type ERASE exactly to continue");
+        return;
+    }
+    installer_ui_state = INSTALLER_UI_FAILED;
+    installer_set_status(
+        "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
+    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
+}
+#endif
+
+static void installer_draw_button(uint64_t x, uint64_t y,
+                                  uint64_t width, uint64_t height,
+                                  const char *label, bool selected,
+                                  bool warning) {
+    const uint8_t red = warning ? 139U : (selected ? 34U : 27U);
+    const uint8_t green = warning ? 54U : (selected ? 111U : 46U);
+    const uint8_t blue = warning ? 62U : (selected ? 139U : 68U);
+    graphics_fill_rect(x, y, width, height, red, green, blue);
+    graphics_draw_rect(x, y, width, height,
+                       warning ? 224U : (selected ? 105U : 69U),
+                       warning ? 104U : (selected ? 194U : 102U),
+                       warning ? 110U : (selected ? 220U : 131U));
+    graphics_draw_text(x + 8U, y + (height / 2U) - 3U,
+                       label, 1U, 242U, 248U, 253U);
+}
+
 #ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
 static void installer_progress_update(
     void *context, enum nexus_installer_runtime_phase phase,
@@ -2454,6 +2623,89 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_pointer();
             return;
         }
+        if (clicked && active_view == DESKTOP_INSTALLER) {
+            const uint64_t top = clamp_min(screen_height / 16U, 34U);
+            const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
+            uint64_t pw = screen_width * 3U / 4U;
+            uint64_t ph = 512U;
+            if (pw > 920U) pw = 920U;
+            if (pw > screen_width - 16U) pw = screen_width - 16U;
+            if (ph > screen_height - top - bottom - 16U)
+                ph = screen_height - top - bottom - 16U;
+            if (window_maximized) {
+                pw = screen_width - 32U;
+                ph = screen_height - top - bottom - 16U;
+            }
+            uint64_t px = (screen_width - pw) / 2U;
+            uint64_t py = window_maximized ? top + 8U
+                : top + (screen_height - top - bottom - ph) / 2U;
+            if (window_positioned && !window_maximized) {
+                px = window_position_x;
+                py = window_position_y;
+            }
+            const int64_t relative_x = pointer_x - (int64_t)(px + 32U);
+            const int64_t relative_y = pointer_y - (int64_t)(py + 48U);
+            if (relative_x >= 0 && relative_y >= 0) {
+                if (installer_ui_state == INSTALLER_UI_SELECT) {
+                    if (relative_y >= 158 && relative_y < 182) {
+                        if (relative_x < 104) {
+                            installer_firmware = NEXUS_FIRMWARE_UEFI;
+                            installer_refresh_plan();
+                        } else if (relative_x >= 112 && relative_x < 216) {
+                            installer_firmware = NEXUS_FIRMWARE_LEGACY_BIOS;
+                            installer_refresh_plan();
+                        } else if (relative_x >= 224 && relative_x < 336) {
+                            installer_firmware = NEXUS_FIRMWARE_DUAL;
+                            installer_refresh_plan();
+                        }
+                    } else if (relative_y >= 310 && relative_y < 334) {
+                        if (relative_x < 104) {
+                            installer_select_delta(false);
+                        } else if (relative_x >= 112 && relative_x < 216) {
+                            installer_select_delta(true);
+                        } else if (relative_x >= 228 && relative_x < 448) {
+                            (void)installer_begin_confirmation();
+                        }
+                    }
+                } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
+                           installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
+                    if (relative_y >= 264 && relative_y < 290) {
+                        if (relative_x < 112) {
+                            if (installer_ui_state == INSTALLER_UI_CONFIRM_ID) {
+                                installer_ui_state = INSTALLER_UI_SELECT;
+                                installer_input_length = 0U;
+                                installer_input[0] = '\0';
+                                installer_set_status("Select a supported target disk");
+                            } else {
+                                installer_ui_state = INSTALLER_UI_CONFIRM_ID;
+                                installer_input_length = 0U;
+                                installer_input[0] = '\0';
+                                installer_set_status("Re-enter the complete selected drive ID");
+                            }
+                        } else if (relative_x >= 128 && relative_x < 300) {
+                            if (installer_ui_state == INSTALLER_UI_CONFIRM_ID)
+                                installer_confirm_target_id();
+                            else
+                                installer_apply_typed_erase();
+                        }
+                    }
+                } else if (installer_ui_state == INSTALLER_UI_COMPLETE ||
+                           installer_ui_state == INSTALLER_UI_FAILED) {
+                    if (relative_y >= 264 && relative_y < 290 &&
+                        relative_x < 210) {
+                        installer_ui_state = INSTALLER_UI_SELECT;
+                        installer_input_length = 0U;
+                        installer_input[0] = '\0';
+                        installer_confirmed_id[0] = '\0';
+                        installer_set_status("Select a supported target disk");
+                        installer_refresh_plan();
+                    }
+                }
+            }
+            draw_shell();
+            draw_pointer();
+            return;
+        }
         if (clicked && active_view == DESKTOP_FILES && files_vfs_ready) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
@@ -2619,30 +2871,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 installer_firmware = NEXUS_FIRMWARE_DUAL;
                 installer_refresh_plan();
             } else if (event->scancode == 0x48U && blockdev_count() > 0U) {
-                if (installer_selected_device > 0U) --installer_selected_device;
-                installer_refresh_plan();
-                installer_log_selected_target();
+                installer_select_delta(false);
             } else if (event->scancode == 0x50U && blockdev_count() > 0U) {
-                if (installer_selected_device + 1U < blockdev_count())
-                    ++installer_selected_device;
-                installer_refresh_plan();
-                installer_log_selected_target();
+                installer_select_delta(true);
             } else if (event->scancode == 0x1CU) {
-                const struct nexus_block_device *device =
-                    blockdev_at(installer_selected_device);
-                if (device != NULL && installer_plan_valid &&
-                    blockdev_boot_media_detection_complete() &&
-                    !blockdev_is_boot_media(device) &&
-                    !blockdev_is_mounted(device) &&
-                    blockdev_identity_is_unique(device) &&
-                    blockdev_install_write_supported(device)) {
-                    installer_ui_state = INSTALLER_UI_CONFIRM_ID;
-                    installer_input_length = 0U;
-                    installer_input[0] = '\0';
-                    installer_set_status("No disk writes have occurred");
-                } else {
-                    installer_set_status("Target is not eligible for installation");
-                }
+                (void)installer_begin_confirmation();
             } else {
                 return;
             }
@@ -2652,58 +2885,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 if (installer_input_length > 0U)
                     installer_input[--installer_input_length] = '\0';
             } else if (event->scancode == 0x1CU) {
-                if (installer_ui_state == INSTALLER_UI_CONFIRM_ID) {
-                    const struct nexus_block_device *device =
-                        blockdev_at(installer_selected_device);
-                    if (device != NULL &&
-                        installer_text_equal_ci(installer_input,
-                                                 device->stable_id)) {
-                        size_t n = 0U;
-                        while (device->stable_id[n] != '\0' &&
-                               n < sizeof(installer_confirmed_id) - 1U) {
-                            installer_confirmed_id[n] = device->stable_id[n];
-                            ++n;
-                        }
-                        installer_confirmed_id[n] = '\0';
-                        installer_ui_state = INSTALLER_UI_CONFIRM_ERASE;
-                        installer_input_length = 0U;
-                        installer_input[0] = '\0';
-                        installer_set_status("Second confirmation is required");
-                    } else {
-                        installer_set_status("Target ID did not match");
-                    }
-                } else if (installer_text_equal_ci(installer_input, "ERASE")) {
-                    const struct nexus_block_device *device =
-                        blockdev_at(installer_selected_device);
-#ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
-                    installer_ui_state = INSTALLER_UI_RUNNING;
-                    installer_set_status("Starting guarded installation");
-                    draw_shell();
-                    draw_pointer();
-                    const enum nexus_installer_runtime_result result =
-                        nexus_installer_runtime_apply(
-                            device, installer_firmware, installer_confirmed_id,
-                            "ERASE", installer_progress_update, NULL);
-                    if (result == NEXUS_INSTALL_RESULT_OK) {
-                        installer_ui_state = INSTALLER_UI_COMPLETE;
-                        serial_write("NEXUS INSTALLER RESULT: SUCCESS\r\n");
-                    } else {
-                        installer_ui_state = INSTALLER_UI_FAILED;
-                        installer_set_status(installer_result_message(result));
-                        serial_write("NEXUS INSTALLER RESULT: FAILURE: ");
-                        serial_write(installer_result_message(result));
-                        serial_write("\r\n");
-                    }
-#else
-                    (void)device;
-                    installer_ui_state = INSTALLER_UI_FAILED;
-                    installer_set_status(
-                        "DISK WRITES LOCKED: END-TO-END VALIDATION NOT PASSED");
-                    serial_write("NEXUS INSTALLER RESULT: LOCKED\r\n");
-#endif
-                } else {
-                    installer_set_status("Type ERASE exactly to continue");
-                }
+                if (installer_ui_state == INSTALLER_UI_CONFIRM_ID)
+                    installer_confirm_target_id();
+                else
+                    installer_apply_typed_erase();
             } else {
                 const char ch = terminal_scancode_char(event->scancode);
                 if (ch >= 0x20 && ch <= 0x7E &&

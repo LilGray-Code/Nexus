@@ -68,6 +68,11 @@ jobs:
             kernel/src/sha256.c kernel/tests/sha256_test.c \
             -o /tmp/nexus-sha256-test
           /tmp/nexus-sha256-test
+      - name: Test Nexus freestanding libc primitives
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/tests/libc_test.c -o /tmp/nexus-libc-test
+          /tmp/nexus-libc-test
       - name: Fetch and checksum-verify pinned Mbed TLS source
         run: sh toolchain/fetch-mbedtls.sh
       - name: Compile pinned Mbed TLS libraries

@@ -145,9 +145,12 @@ static void sha1_digest(const uint8_t *data, size_t length,
     sha1_final(&context, digest);
 }
 
-static void hmac_sha1(const uint8_t *key, size_t key_length,
-                      const uint8_t *data, size_t data_length,
-                      uint8_t digest[SHA1_DIGEST_BYTES]) {
+static void hmac_sha1_parts(
+    const uint8_t *key, size_t key_length,
+    const uint8_t *part1, size_t part1_length,
+    const uint8_t *part2, size_t part2_length,
+    const uint8_t *part3, size_t part3_length,
+    uint8_t digest[SHA1_DIGEST_BYTES]) {
     uint8_t key_block[SHA1_BLOCK_BYTES] = {0U};
     uint8_t inner_pad[SHA1_BLOCK_BYTES];
     uint8_t outer_pad[SHA1_BLOCK_BYTES];
@@ -170,7 +173,9 @@ static void hmac_sha1(const uint8_t *key, size_t key_length,
     struct sha1_context context;
     sha1_init(&context);
     sha1_update(&context, inner_pad, sizeof(inner_pad));
-    sha1_update(&context, data, data_length);
+    sha1_update(&context, part1, part1_length);
+    sha1_update(&context, part2, part2_length);
+    sha1_update(&context, part3, part3_length);
     sha1_final(&context, inner_digest);
 
     sha1_init(&context);
@@ -182,6 +187,132 @@ static void hmac_sha1(const uint8_t *key, size_t key_length,
     secure_zero(inner_pad, sizeof(inner_pad));
     secure_zero(outer_pad, sizeof(outer_pad));
     secure_zero(inner_digest, sizeof(inner_digest));
+}
+
+static void hmac_sha1(const uint8_t *key, size_t key_length,
+                      const uint8_t *data, size_t data_length,
+                      uint8_t digest[SHA1_DIGEST_BYTES]) {
+    hmac_sha1_parts(key, key_length, data, data_length,
+                    NULL, 0U, NULL, 0U, digest);
+}
+
+static int compare_bytes(const uint8_t *a, const uint8_t *b,
+                         size_t length) {
+    for (size_t i = 0U; i < length; ++i) {
+        if (a[i] < b[i]) return -1;
+        if (a[i] > b[i]) return 1;
+    }
+    return 0;
+}
+
+static void copy_bytes(uint8_t *destination, const uint8_t *source,
+                       size_t length) {
+    for (size_t i = 0U; i < length; ++i)
+        destination[i] = source[i];
+}
+
+bool nexus_wpa2_derive_ptk(
+    const uint8_t pmk[NEXUS_WPA2_PMK_BYTES],
+    const uint8_t authenticator_mac[6],
+    const uint8_t supplicant_mac[6],
+    const uint8_t authenticator_nonce[32],
+    const uint8_t supplicant_nonce[32],
+    uint8_t ptk[NEXUS_WPA2_PTK_BYTES]) {
+    static const uint8_t label[] = "Pairwise key expansion";
+    if (ptk == NULL) return false;
+    secure_zero(ptk, NEXUS_WPA2_PTK_BYTES);
+    if (pmk == NULL || authenticator_mac == NULL ||
+        supplicant_mac == NULL || authenticator_nonce == NULL ||
+        supplicant_nonce == NULL) return false;
+
+    uint8_t context[12U + 64U];
+    uint8_t input[sizeof(label) + sizeof(context) + 1U];
+    uint8_t digest[SHA1_DIGEST_BYTES];
+    size_t offset = 0U;
+
+    const uint8_t *mac_first = authenticator_mac;
+    const uint8_t *mac_second = supplicant_mac;
+    if (compare_bytes(mac_first, mac_second, 6U) > 0) {
+        mac_first = supplicant_mac;
+        mac_second = authenticator_mac;
+    }
+    copy_bytes(context, mac_first, 6U);
+    copy_bytes(context + 6U, mac_second, 6U);
+
+    const uint8_t *nonce_first = authenticator_nonce;
+    const uint8_t *nonce_second = supplicant_nonce;
+    if (compare_bytes(nonce_first, nonce_second, 32U) > 0) {
+        nonce_first = supplicant_nonce;
+        nonce_second = authenticator_nonce;
+    }
+    copy_bytes(context + 12U, nonce_first, 32U);
+    copy_bytes(context + 44U, nonce_second, 32U);
+
+    /* PRF input: label || NUL || context || one-byte block counter. */
+    for (size_t i = 0U; i < sizeof(label); ++i)
+        input[offset++] = label[i];
+    copy_bytes(input + offset, context, sizeof(context));
+    offset += sizeof(context);
+
+    size_t output_offset = 0U;
+    for (uint8_t counter = 0U;
+         output_offset < NEXUS_WPA2_PTK_BYTES; ++counter) {
+        input[offset] = counter;
+        hmac_sha1(pmk, NEXUS_WPA2_PMK_BYTES, input, offset + 1U, digest);
+        size_t amount = NEXUS_WPA2_PTK_BYTES - output_offset;
+        if (amount > SHA1_DIGEST_BYTES) amount = SHA1_DIGEST_BYTES;
+        copy_bytes(ptk + output_offset, digest, amount);
+        output_offset += amount;
+    }
+
+    secure_zero(context, sizeof(context));
+    secure_zero(input, sizeof(input));
+    secure_zero(digest, sizeof(digest));
+    return true;
+}
+
+bool nexus_wpa2_eapol_mic(
+    const uint8_t kck[NEXUS_WPA2_KCK_BYTES],
+    const uint8_t *eapol_frame, size_t frame_length, size_t mic_offset,
+    uint8_t mic[NEXUS_WPA2_EAPOL_MIC_BYTES]) {
+    if (mic == NULL) return false;
+    secure_zero(mic, NEXUS_WPA2_EAPOL_MIC_BYTES);
+    if (kck == NULL || eapol_frame == NULL ||
+        frame_length == 0U || frame_length > NEXUS_WPA2_MAX_EAPOL_BYTES ||
+        mic_offset > frame_length ||
+        frame_length - mic_offset < NEXUS_WPA2_EAPOL_MIC_BYTES)
+        return false;
+
+    static const uint8_t zero_mic[NEXUS_WPA2_EAPOL_MIC_BYTES] = {0U};
+    uint8_t digest[SHA1_DIGEST_BYTES];
+    const size_t suffix_offset = mic_offset + NEXUS_WPA2_EAPOL_MIC_BYTES;
+    hmac_sha1_parts(kck, NEXUS_WPA2_KCK_BYTES,
+                    eapol_frame, mic_offset,
+                    zero_mic, sizeof(zero_mic),
+                    eapol_frame + suffix_offset,
+                    frame_length - suffix_offset, digest);
+    copy_bytes(mic, digest, NEXUS_WPA2_EAPOL_MIC_BYTES);
+    secure_zero(digest, sizeof(digest));
+    return true;
+}
+
+bool nexus_wpa2_eapol_mic_verify(
+    const uint8_t kck[NEXUS_WPA2_KCK_BYTES],
+    const uint8_t *eapol_frame, size_t frame_length, size_t mic_offset) {
+    if (kck == NULL || eapol_frame == NULL ||
+        frame_length == 0U || frame_length > NEXUS_WPA2_MAX_EAPOL_BYTES ||
+        mic_offset > frame_length ||
+        frame_length - mic_offset < NEXUS_WPA2_EAPOL_MIC_BYTES)
+        return false;
+
+    uint8_t expected[NEXUS_WPA2_EAPOL_MIC_BYTES];
+    if (!nexus_wpa2_eapol_mic(kck, eapol_frame, frame_length,
+                               mic_offset, expected)) return false;
+    uint8_t difference = 0U;
+    for (size_t i = 0U; i < NEXUS_WPA2_EAPOL_MIC_BYTES; ++i)
+        difference |= (uint8_t)(expected[i] ^ eapol_frame[mic_offset + i]);
+    secure_zero(expected, sizeof(expected));
+    return difference == 0U;
 }
 
 bool nexus_wpa2_psk_derive_pmk(const uint8_t *passphrase,

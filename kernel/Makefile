@@ -20,18 +20,18 @@ CFLAGS += -I$(MBEDTLS_BUILD)/generated/include \
 	-I$(MBEDTLS_SOURCE)/tf-psa-crypto/drivers/builtin/include
 TLS_OBJECTS := $(OUT)/tls_heap.o $(OUT)/mbedtls_heap.o \
 	$(OUT)/mbedtls_random.o $(OUT)/mbedtls_time.o \
-	$(OUT)/tls_client.o $(OUT)/net_https.o
+	$(OUT)/tls_client.o $(OUT)/net_https.o $(OUT)/tls_libc.o
 TLS_LIBS := $(MBEDTLS_BUILD)/library/libmbedtls.a \
 	$(MBEDTLS_BUILD)/library/libmbedx509.a \
 	$(MBEDTLS_BUILD)/tf-psa-crypto/core/libtfpsacrypto.a
-TLS_LINK_FLAGS := --start-group $(TLS_LIBS) --end-group
+TLS_LINK_FLAGS := --start-group $(TLS_LIBS) --end-group $(shell $(CC) -print-libgcc-file-name)
 else
 TLS_OBJECTS := $(OUT)/net_https_stub.o
 TLS_LINK_FLAGS :=
 endif
 CFLAGS += $(EXTRA_CFLAGS)
 LDFLAGS := -nostdlib -static -z max-page-size=0x1000 -T linker/x86_64.ld
-C_OBJECTS := $(OUT)/main.o $(OUT)/boot_payload.o $(OUT)/gdt.o $(OUT)/elf64.o $(OUT)/e1000.o $(OUT)/netdev.o $(OUT)/net.o $(OUT)/http.o $(OUT)/html_text.o $(OUT)/wpa2_psk.o $(OUT)/aes_ccm.o $(OUT)/wpa2_eapol.o $(OUT)/wpa2_ccmp.o $(OUT)/wpa2_handshake.o $(OUT)/sha256.o $(OUT)/random.o $(OUT)/rtc.o $(OUT)/file_list.o $(OUT)/wifi.o $(OUT)/wifi_80211.o $(OUT)/browser_history.o $(OUT)/text_buffer.o $(OUT)/process.o $(OUT)/usermode.o $(OUT)/serial.o $(OUT)/memory.o $(OUT)/acpi.o $(OUT)/pci.o $(OUT)/blockdev.o $(OUT)/gpt.o $(OUT)/fat32.o $(OUT)/nxfs.o $(OUT)/vfs.o $(OUT)/graphics.o $(OUT)/desktop.o $(OUT)/input.o $(OUT)/usb_hid.o $(OUT)/xhci.o $(OUT)/nvme.o $(OUT)/ahci.o $(OUT)/storage.o $(OUT)/ioapic.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o $(OUT)/scheduler.o $(OUT)/partition_plan.o $(OUT)/gpt_image.o $(OUT)/installer_journal.o $(OUT)/gpt_install.o $(OUT)/installer_storage.o $(OUT)/installer_runtime.o $(OUT)/fat32_format.o $(OUT)/fat32_file.o $(OUT)/bios_install.o $(TLS_OBJECTS)
+C_OBJECTS := $(OUT)/main.o $(OUT)/boot_payload.o $(OUT)/gdt.o $(OUT)/elf64.o $(OUT)/e1000.o $(OUT)/netdev.o $(OUT)/net.o $(OUT)/http.o $(OUT)/html_text.o $(OUT)/wpa2_psk.o $(OUT)/aes_ccm.o $(OUT)/wpa2_eapol.o $(OUT)/wpa2_ccmp.o $(OUT)/wpa2_handshake.o $(OUT)/sha256.o $(OUT)/random.o $(OUT)/rtc.o $(OUT)/file_list.o $(OUT)/wifi.o $(OUT)/wifi_80211.o $(OUT)/browser_history.o $(OUT)/text_buffer.o $(OUT)/process.o $(OUT)/usermode.o $(OUT)/serial.o $(OUT)/libc.o $(OUT)/memory.o $(OUT)/acpi.o $(OUT)/pci.o $(OUT)/blockdev.o $(OUT)/gpt.o $(OUT)/fat32.o $(OUT)/nxfs.o $(OUT)/vfs.o $(OUT)/graphics.o $(OUT)/desktop.o $(OUT)/input.o $(OUT)/usb_hid.o $(OUT)/xhci.o $(OUT)/nvme.o $(OUT)/ahci.o $(OUT)/storage.o $(OUT)/ioapic.o $(OUT)/paging.o $(OUT)/interrupts.o $(OUT)/timer.o $(OUT)/scheduler.o $(OUT)/partition_plan.o $(OUT)/gpt_image.o $(OUT)/installer_journal.o $(OUT)/gpt_install.o $(OUT)/installer_storage.o $(OUT)/installer_runtime.o $(OUT)/fat32_format.o $(OUT)/fat32_file.o $(OUT)/bios_install.o $(TLS_OBJECTS)
 OBJECTS := $(C_OBJECTS) $(OUT)/isr.o $(OUT)/context.o $(OUT)/gdt_asm.o $(OUT)/usermode_asm.o
 
 .PHONY: all clean

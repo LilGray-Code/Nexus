@@ -1231,12 +1231,16 @@ static void files_editor_scroll_to_end(void) {
 }
 
 static void files_editor_keep_cursor_visible(void) {
-    if (files_edit_cursor < files_edit_view_offset ||
-        files_edit_cursor >= files_edit_view_offset + FILES_EDITOR_VIEW_BYTES) {
+    const size_t maximum = files_editor_max_view_offset();
+    if (files_edit_cursor < files_edit_view_offset) {
+        files_edit_view_offset = files_edit_cursor;
+    } else if (files_edit_cursor >
+               files_edit_view_offset + FILES_EDITOR_VIEW_BYTES) {
         files_edit_view_offset =
-            (files_edit_cursor / FILES_EDITOR_VIEW_BYTES) *
-            FILES_EDITOR_VIEW_BYTES;
+            files_edit_cursor - FILES_EDITOR_VIEW_BYTES;
     }
+    if (files_edit_view_offset > maximum)
+        files_edit_view_offset = maximum;
     files_edit_follow_end = false;
 }
 

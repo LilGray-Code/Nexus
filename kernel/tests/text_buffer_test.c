@@ -25,7 +25,7 @@ static void test_backspace_and_delete(void) {
     assert(nexus_text_buffer_backspace(data,sizeof(data),&length,&cursor));
     assert(strcmp(data,"abdef")==0 && length==5U && cursor==2U);
     assert(nexus_text_buffer_delete(data,sizeof(data),&length,cursor));
-    assert(strcmp(data,"adef")==0 && length==4U);
+    assert(strcmp(data,"abef")==0 && length==4U);
     assert(!nexus_text_buffer_backspace(data,sizeof(data),&length,&(size_t){0U}));
     assert(!nexus_text_buffer_delete(data,sizeof(data),&length,length));
 }

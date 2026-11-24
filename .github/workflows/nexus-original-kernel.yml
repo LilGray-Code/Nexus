@@ -386,7 +386,7 @@ jobs:
           grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log
           grep -q "STORAGE: controller " bios-serial.log
-          grep -q "NEXUS K2 PREEMPTIVE THREAD SCHEDULER READY" bios-serial.log
+          grep -q "NEXUS K2 COOPERATIVE THREAD SCHEDULER READY" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 
       - name: Test the graphical installer on a disposable NVMe target

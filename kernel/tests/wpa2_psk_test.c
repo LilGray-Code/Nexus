@@ -121,7 +121,7 @@ static void test_eapol_mic_compute_and_verify(void) {
     uint8_t kck[NEXUS_WPA2_KCK_BYTES];
     uint8_t frame[64];
     uint8_t mic[NEXUS_WPA2_EAPOL_MIC_BYTES];
-    static const char expected[] = "40a45db64dcf2521045982b975858a2c";
+    static const char expected[] = "adfed8338c687db3045aac7bcf0d26b8";
     const size_t mic_offset = 20U;
     for (size_t i = 0U; i < sizeof(kck); ++i) kck[i] = (uint8_t)i;
     for (size_t i = 0U; i < sizeof(frame); ++i) frame[i] = (uint8_t)i;

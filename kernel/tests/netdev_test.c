@@ -64,31 +64,43 @@ int main(void) {
     assert(netdev_count() == 0U);
     assert(!netdev_get_info(&info));
     assert(!netdev_get_info_at(0U, &info));
-    assert(!netdev_register("bad0", zero_mac, 128U, &ops, &ethernet));
-    assert(!netdev_register("bad0", multicast_mac, 128U, &ops, &ethernet));
-    assert(!netdev_register("bad0", ethernet_mac, NEXUS_NETDEV_MIN_FRAME - 1U,
+    assert(!netdev_register("bad0", (enum nexus_netdev_medium)0,
+                            ethernet_mac, 128U, &ops, &ethernet));
+    assert(!netdev_register("bad0", NEXUS_NETDEV_MEDIUM_ETHERNET,
+                            zero_mac, 128U, &ops, &ethernet));
+    assert(!netdev_register("bad0", NEXUS_NETDEV_MEDIUM_ETHERNET,
+                            multicast_mac, 128U, &ops, &ethernet));
+    assert(!netdev_register("bad0", NEXUS_NETDEV_MEDIUM_ETHERNET,
+                            ethernet_mac, NEXUS_NETDEV_MIN_FRAME - 1U,
                             &ops, &ethernet));
-    assert(!netdev_register("bad0", ethernet_mac, 128U,
-                            NULL, &ethernet));
+    assert(!netdev_register("bad0", NEXUS_NETDEV_MEDIUM_ETHERNET,
+                            ethernet_mac, 128U, NULL, &ethernet));
 
-    assert(netdev_register("eth0", ethernet_mac, 128U, &ops, &ethernet));
+    assert(netdev_register("eth0", NEXUS_NETDEV_MEDIUM_ETHERNET,
+                           ethernet_mac, 128U, &ops, &ethernet));
     assert(netdev_ready() && netdev_count() == 1U);
     assert(!netdev_link_up());
     assert(netdev_get_info(&info));
     assert(info.name[0] == 'e' && !info.link_up);
     assert(info.max_frame_size == 128U);
-    assert(!netdev_register("eth0", wireless_mac, 128U, &ops, &wireless));
-    assert(!netdev_register("wlan0", ethernet_mac, 128U, &ops, &wireless));
+    assert(info.medium == NEXUS_NETDEV_MEDIUM_ETHERNET);
+    assert(!netdev_register("eth0", NEXUS_NETDEV_MEDIUM_WIFI,
+                            wireless_mac, 128U, &ops, &wireless));
+    assert(!netdev_register("wlan0", NEXUS_NETDEV_MEDIUM_ETHERNET,
+                            ethernet_mac, 128U, &ops, &wireless));
 
     wireless.link = true;
-    assert(netdev_register("wlan0", wireless_mac, 128U, &ops, &wireless));
+    assert(netdev_register("wlan0", NEXUS_NETDEV_MEDIUM_WIFI,
+                           wireless_mac, 128U, &ops, &wireless));
     assert(netdev_count() == 2U);
     assert(netdev_link_up());
     assert(netdev_get_info(&info));
     assert(info.name[0] == 'w' && info.link_up);
+    assert(info.medium == NEXUS_NETDEV_MEDIUM_WIFI);
     assert(info.mac[1] == wireless_mac[1]);
     assert(netdev_get_info_at(0U, &info));
     assert(info.name[0] == 'e' && !info.link_up);
+    assert(info.medium == NEXUS_NETDEV_MEDIUM_ETHERNET);
     assert(!netdev_get_info_at(2U, &info));
 
     assert(netdev_send_frame(frame, NEXUS_NETDEV_MIN_FRAME));

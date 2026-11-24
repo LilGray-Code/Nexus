@@ -46,6 +46,7 @@ struct net_state {
     bool ready;
     bool link_up;
     char interface_name[16];
+    enum nexus_netdev_medium interface_medium;
     uint8_t mac[6];
     uint8_t ipv4[4];
     uint16_t ipv4_id;
@@ -685,6 +686,7 @@ bool net_init(void) {
     copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
     copy_bytes(network.interface_name, device_info.name,
                sizeof(network.interface_name));
+    network.interface_medium = device_info.medium;
     network.ready = true;
     network.ipv4_id = 1U;
     network.link_up = netdev_link_up();
@@ -748,10 +750,12 @@ void net_poll(void) {
     const bool link_up = netdev_link_up();
     struct nexus_netdev_info device_info;
     if (!netdev_get_info(&device_info)) return;
-    if (!equal_bytes(device_info.mac, network.mac, sizeof(network.mac))) {
+    if (!equal_bytes(device_info.mac, network.mac, sizeof(network.mac)) ||
+        device_info.medium != network.interface_medium) {
         copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
         copy_bytes(network.interface_name, device_info.name,
                    sizeof(network.interface_name));
+        network.interface_medium = device_info.medium;
         for (size_t i = 0U; i < 4U; ++i) {
             network.ipv4[i] = 0U;
             offered_ipv4[i] = 0U;

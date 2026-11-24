@@ -374,8 +374,8 @@ bool e1000_init(void) {
         .receive_frame = e1000_netdev_receive,
         .link_up = e1000_netdev_link_up
     };
-    if (!netdev_register("e1000", state.mac, E1000_BUFFER_SIZE,
-                         &netdev_ops, NULL)) {
+    if (!netdev_register("e1000", NEXUS_NETDEV_MEDIUM_ETHERNET,
+                         state.mac, E1000_BUFFER_SIZE, &netdev_ops, NULL)) {
         state.ready = false;
         (void)register_write(E1000_REG_RCTL, 0U);
         (void)register_write(E1000_REG_TCTL, 0U);

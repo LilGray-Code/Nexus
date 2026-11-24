@@ -10,6 +10,11 @@
 #define NEXUS_NETDEV_MIN_FRAME 14U
 #define NEXUS_NETDEV_MAX_FRAME 2048U
 
+enum nexus_netdev_medium {
+    NEXUS_NETDEV_MEDIUM_ETHERNET = 1,
+    NEXUS_NETDEV_MEDIUM_WIFI = 2
+};
+
 /*
  * Drivers exchange Ethernet-II frames with the IPv4 stack. An IEEE 802.11
  * station driver must own scanning, association, authentication, encryption,
@@ -27,12 +32,13 @@ struct nexus_netdev_info {
     char name[NEXUS_NETDEV_NAME_MAX];
     uint8_t mac[6];
     size_t max_frame_size;
+    enum nexus_netdev_medium medium;
     bool link_up;
 };
 
 void netdev_init(void);
-bool netdev_register(const char *name, const uint8_t mac[6],
-                     size_t max_frame_size,
+bool netdev_register(const char *name, enum nexus_netdev_medium medium,
+                     const uint8_t mac[6], size_t max_frame_size,
                      const struct nexus_netdev_ops *ops, void *context);
 size_t netdev_count(void);
 bool netdev_get_info_at(size_t index, struct nexus_netdev_info *info);

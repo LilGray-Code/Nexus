@@ -949,9 +949,13 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, text_y + 126U,
                                "NETWORK:", 1, 233U, 243U, 252U);
             graphics_draw_text(text_x + 76U, text_y + 126U,
-                               info.interface_name, 1,
+                               info.interface_medium == NEXUS_NETDEV_MEDIUM_WIFI
+                                   ? "WI-FI" : "ETHERNET", 1,
                                119U, 229U, 211U);
-            graphics_draw_text(text_x + 200U, text_y + 126U,
+            graphics_draw_text(text_x + 160U, text_y + 126U,
+                               info.interface_name, 1,
+                               233U, 243U, 252U);
+            graphics_draw_text(text_x + 260U, text_y + 126U,
                                network_status, 1,
                                info.link_up ? 108U : 239U,
                                info.link_up ? 216U : 177U,

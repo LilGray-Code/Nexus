@@ -66,11 +66,13 @@ void netdev_init(void) {
     active_device_index = 0U;
 }
 
-bool netdev_register(const char *name, const uint8_t mac[6],
-                     size_t max_frame_size,
+bool netdev_register(const char *name, enum nexus_netdev_medium medium,
+                     const uint8_t mac[6], size_t max_frame_size,
                      const struct nexus_netdev_ops *ops, void *context) {
     if (device_count >= NEXUS_NETDEV_MAX_DEVICES ||
         name == NULL || name[0] == '\0' ||
+        (medium != NEXUS_NETDEV_MEDIUM_ETHERNET &&
+         medium != NEXUS_NETDEV_MEDIUM_WIFI) ||
         mac == NULL || !valid_mac(mac) || ops == NULL ||
         ops->send_frame == NULL || ops->receive_frame == NULL ||
         max_frame_size < NEXUS_NETDEV_MIN_FRAME ||
@@ -92,6 +94,7 @@ bool netdev_register(const char *name, const uint8_t mac[6],
     copy_bytes(device->info.name, name, name_length);
     copy_bytes(device->info.mac, mac, sizeof(device->info.mac));
     device->info.max_frame_size = max_frame_size;
+    device->info.medium = medium;
     device->ops = *ops;
     device->context = context;
     if (device_count == 0U) active_device_index = 0U;

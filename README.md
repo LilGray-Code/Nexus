@@ -28,8 +28,14 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   mounts the dedicated NXFS Data partition after the Recovery partition;
   it does not expose the NXFS System partition as the user's file store.
   FAT32 volumes are read-only; RAM-only fallback saves are volatile.
-- An early E1000 networking stack with DHCP, DNS, TCP, and a plain HTTP text
-  viewer.
+- An early IPv4 stack with DHCP, DNS, TCP, and a plain HTTP text viewer.
+  The network-device layer supports multiple registered adapters and tags
+  wired Ethernet versus Wi-Fi media, but only the E1000 Ethernet driver is
+  implemented; no Wi-Fi chipset, firmware, scanning, or WPA authentication
+  is currently supported.
+- The HTTP viewer validates bounded HTTP/1.x response framing (including
+  content-length and chunked bodies) and provides keyboard page scrolling.
+  It remains a text-only viewer, not a modern HTML/CSS/JavaScript browser.
 
 The desktop applications and current system services are integrated into the
 kernel. The presence of an ELF loader and ring-3 execution tests does **not**

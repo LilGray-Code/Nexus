@@ -7,6 +7,7 @@
 
 struct nexus_net_info {
     char interface_name[16];
+    enum nexus_netdev_medium interface_medium;
     bool interface_ready;
     bool link_up;
     bool ipv4_configured;

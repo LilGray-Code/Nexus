@@ -16,6 +16,8 @@ static uint32_t last_data_sequence;
 static size_t attempts_for_sequence;
 static bool have_data_sequence;
 static bool drop_all_data_acks;
+static bool inject_bad_ack_once;
+static bool bad_ack_injected;
 static uint8_t last_data_payload[NET_TCP_MAX_PAYLOAD];
 static size_t last_data_payload_length;
 
@@ -138,8 +140,16 @@ bool netdev_send_frame(const void *frame_data, size_t length) {
         }
 
         if (!drop_all_data_acks && attempts_for_sequence >= 2U) {
-            queue_tcp_response(TCP_FLAG_ACK, tcp_connection.remote_sequence,
-                               sequence + (uint32_t)payload_length);
+            if (inject_bad_ack_once && !bad_ack_injected) {
+                /* Future peer sequence: must not acknowledge the send. */
+                queue_tcp_response(TCP_FLAG_ACK,
+                                   tcp_connection.remote_sequence + 1U,
+                                   sequence + (uint32_t)payload_length);
+                bad_ack_injected = true;
+            } else {
+                queue_tcp_response(TCP_FLAG_ACK, tcp_connection.remote_sequence,
+                                   sequence + (uint32_t)payload_length);
+            }
         }
     }
     return true;
@@ -155,6 +165,8 @@ static void setup_network(void) {
     attempts_for_sequence = 0U;
     have_data_sequence = false;
     drop_all_data_acks = false;
+    inject_bad_ack_once = true;
+    bad_ack_injected = false;
     last_data_payload_length = 0U;
 
     network = (struct net_state){0};
@@ -191,7 +203,8 @@ int main(void) {
         payload[i] = (uint8_t)(i & 0xFFU);
 
     assert(net_tcp_send(payload, (uint16_t)sizeof(payload)));
-    assert(data_transmissions == 4U); /* two chunks, each retransmitted once */
+    assert(data_transmissions == 5U); /* one bad ACK is ignored; both chunks recover */
+    assert(bad_ack_injected);
     assert(tcp_connection.local_sequence ==
            first_data_sequence + (uint32_t)sizeof(payload));
     assert(!tcp_connection.ack_waiting);

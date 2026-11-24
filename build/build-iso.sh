@@ -38,6 +38,10 @@ Path("build/limine-binary/limine-bios-hdd.bin").write_bytes(image)
 print(f"Extracted Limine BIOS HDD image: {len(image)} bytes")
 PY
 
+sh toolchain/fetch-mbedtls.sh
+sh toolchain/fetch-ca-bundle.sh
+sh toolchain/build-mbedtls-kernel.sh
+
 make -C kernel clean all
 
 ISO_ROOT="$ROOT/build/iso-root"

@@ -31,17 +31,22 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - An early IPv4 stack with DHCP, DNS, TCP, and a plain HTTP text viewer.
   The network-device layer supports multiple registered adapters and tags
   wired Ethernet versus Wi-Fi media, but only the E1000 Ethernet driver is
-  implemented; no Wi-Fi chipset, firmware, or scanning is currently supported.
-  WPA2-Personal PMK derivation, pairwise-key expansion (PTK), EAPOL-Key MIC
-  compute/verify, AES-128-CCM for CCMP, RFC 3394 AES key unwrap, and bounded
-  EAPOL-Key frame/GTK KDE parsing have known-answer or structural tests. A
-  The WPA2-Personal supplicant now has a bounded M1-M4 handshake engine
-  with MIC/replay checks, GTK unwrap/extraction, and driver callbacks for key
-  installation. Its SNonce must come from a cryptographically secure caller
-  RNG. The CCMP layer builds 802.11 AAD/nonces, protects data frames, and
-  enforces per-TID packet-number replay windows. Radio scanning/association,
-  retransmission timers, hardware key programming, and a working wireless
-  station/chipset driver remain unimplemented.
+  implemented; no Wi-Fi chipset driver or firmware is registered, so live radio
+  scanning and association are not available. A bounded 802.11 beacon and
+  probe-response parser plus generic Wi-Fi state/driver interface are included
+  as a test-backed foundation only.
+  WPA2-Personal PMK/PTK derivation, EAPOL-Key MIC verification, AES-128-CCM,
+  RFC 3394 key unwrap, EAPOL-Key/GTK parsing, and a bounded supplicant M1-M4
+  handshake engine have known-answer or integration tests. The engine
+  requires a caller-supplied cryptographically random SNonce and callbacks
+  for EAPOL transmission and hardware key installation. The CCMP layer builds
+  802.11 AAD/nonces, protects data frames, and enforces per-TID replay windows.
+  A bounded 802.11 beacon/probe-response parser and generic Wi-Fi driver/state
+  interface can describe discovered networks and security advertisements,
+  but no radio driver is registered and no live scans or associations occur.
+  Retransmission timers and hardware key programming remain platform work.
+  SHA-256, HMAC-SHA256, and HKDF-SHA256 primitives have known-answer tests as
+  TLS building blocks; they do not constitute TLS.
 - The HTTP viewer validates bounded HTTP/1.x response framing (including
   content-length and chunked bodies) and provides keyboard page scrolling. Its
   bounded HTML-to-text stage formats common block elements, list items, and

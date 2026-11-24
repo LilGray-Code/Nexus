@@ -1,0 +1,36 @@
+name: Nexus SHA-256 HMAC and HKDF tests
+
+on:
+  push:
+    branches:
+      - nexus-installed-desktop-separation
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/sha256.c"
+      - "kernel/src/sha256.h"
+      - "kernel/tests/sha256_test.c"
+      - ".github/workflows/nexus-sha256-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/sha256.c"
+      - "kernel/src/sha256.h"
+      - "kernel/tests/sha256_test.c"
+      - ".github/workflows/nexus-sha256-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sha256-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile SHA-256 tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/sha256.c \
+            kernel/tests/sha256_test.c -o /tmp/nexus-sha256-test
+      - name: Run SHA-256, HMAC, and HKDF known-answer tests
+        run: /tmp/nexus-sha256-test

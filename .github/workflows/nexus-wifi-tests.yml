@@ -1,0 +1,49 @@
+name: Nexus Wi-Fi state and 802.11 parser tests
+
+on:
+  push:
+    branches:
+      - nexus-installed-desktop-separation
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wifi.c"
+      - "kernel/src/wifi.h"
+      - "kernel/src/wifi_80211.c"
+      - "kernel/src/wifi_80211.h"
+      - "kernel/tests/wifi_test.c"
+      - "kernel/tests/wifi_80211_test.c"
+      - ".github/workflows/nexus-wifi-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wifi.c"
+      - "kernel/src/wifi.h"
+      - "kernel/src/wifi_80211.c"
+      - "kernel/src/wifi_80211.h"
+      - "kernel/tests/wifi_test.c"
+      - "kernel/tests/wifi_80211_test.c"
+      - ".github/workflows/nexus-wifi-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  wifi-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Wi-Fi state tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi.c kernel/tests/wifi_test.c \
+            -o /tmp/nexus-wifi-test
+      - name: Run Wi-Fi state tests
+        run: /tmp/nexus-wifi-test
+      - name: Compile 802.11 beacon parser tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi_80211.c \
+            kernel/tests/wifi_80211_test.c -o /tmp/nexus-wifi-80211-test
+      - name: Run 802.11 beacon parser tests
+        run: /tmp/nexus-wifi-80211-test

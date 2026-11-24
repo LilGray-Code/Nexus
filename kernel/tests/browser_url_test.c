@@ -61,7 +61,8 @@ static void test_security_and_bounds(void) {
         "/bad\001path", strlen("/bad\001path"), output, sizeof(output), &output_length));
     assert(!nexus_browser_resolve_redirect(
         "origin.test", strlen("origin.test"), "/page", 5U, true,
-        "https://long.example/path/that/will/not/fit",\n        strlen("https://long.example/path/that/will/not/fit"),
+        "https://long.example/path/that/will/not/fit",
+        strlen("https://long.example/path/that/will/not/fit"),
         output, sizeof(output), &output_length));
 }
 

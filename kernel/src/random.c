@@ -8,20 +8,16 @@
 #define RDRAND_RETRY_LIMIT 10U
 
 static bool cpu_has_rdrand(void) {
-    uint32_t maximum_leaf = 0U;
-    uint32_t unused_b = 0U, unused_c = 0U, unused_d = 0U;
+    uint32_t eax = 0U, ebx = 0U, ecx = 0U, edx = 0U;
     __asm__ volatile ("cpuid"
-                      : "=a"(maximum_leaf), "=b"(unused_b),
-                        "=c"(unused_c), "=d"(unused_d)
+                      : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
                       : "a"(0U), "c"(0U));
-    if (maximum_leaf < CPUID_LEAF_FEATURES) return false;
+    if (eax < CPUID_LEAF_FEATURES) return false;
 
-    uint32_t features = 0U;
     __asm__ volatile ("cpuid"
-                      : "=a"(unused_b), "=b"(unused_b),
-                        "=c"(features), "=d"(unused_d)
+                      : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
                       : "a"(CPUID_LEAF_FEATURES), "c"(0U));
-    return (features & CPUID_RDRAND_ECX_BIT) != 0U;
+    return (ecx & CPUID_RDRAND_ECX_BIT) != 0U;
 }
 
 static bool hardware_random_u64(uint64_t *value) {
@@ -30,7 +26,7 @@ static bool hardware_random_u64(uint64_t *value) {
         uint64_t candidate = 0U;
         unsigned char success = 0U;
         __asm__ volatile ("rdrand %0; setc %1"
-                          : "=r"(candidate), "=qm"(success)
+                          : "=&r"(candidate), "=qm"(success)
                           :
                           : "cc");
         if (success != 0U) {
@@ -73,7 +69,8 @@ bool nexus_rng_fill(void *output, size_t length) {
             bytes[offset + i] = word_bytes[i];
 
         /* Do not keep an extra copy of generated key material on the stack. */
-        random_word = 0U;
+        volatile uint64_t *wipe_word = &random_word;
+        *wipe_word = 0U;
         offset += amount;
     }
     return true;
@@ -87,6 +84,7 @@ bool nexus_rng_u32(uint32_t *value) {
         return false;
     }
     *value = candidate;
-    candidate = 0U;
+    volatile uint32_t *wipe_candidate = &candidate;
+    *wipe_candidate = 0U;
     return true;
 }

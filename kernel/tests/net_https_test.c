@@ -1,4 +1,5 @@
 #include "net_https.h"
+#include "tls_client.h"
 
 #include "net.h"
 #include "timer.h"

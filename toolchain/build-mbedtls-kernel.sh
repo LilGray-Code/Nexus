@@ -20,7 +20,7 @@ for tool in cmake make; do
     }
 done
 
-KERNEL_CFLAGS="-std=gnu11 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -DMBEDTLS_PLATFORM_SNPRINTF_MACRO=snprintf -include stdint.h -include stdio.h"
+KERNEL_CFLAGS="-std=gnu11 -O2 -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -DMBEDTLS_PLATFORM_SNPRINTF_MACRO=snprintf -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0 -include stdint.h -include stdio.h"
 
 cmake -S "$SOURCE" -B "$BUILD" \
     -DCMAKE_BUILD_TYPE=Release \
@@ -45,4 +45,13 @@ printf 'Freestanding Mbed TLS 4.1.2 libraries built at %s\\n' "$BUILD"
 find "$BUILD" -type f -name '*.a' -print | sort
 printf 'Undefined symbols referenced by Mbed TLS archives (kernel link review):\\n'
 nm -u $(find "$BUILD" -type f -name '*.a' -print | sort) |
-    awk '{print $NF}' | sort -u
+    awk '{print $NF}' | sort -u |
+    grep -Ev '^(mbedtls_|psa_|mbed|tfpsa|Hacl_|Hacl|__.*)
+ || true
+
+printf 'TLS archive contents:\\n'
+for archive in $(find "$BUILD" -type f -name '*.a' -print | sort); do
+    printf '%s: ' "$archive"
+    ar t "$archive" | head -n 3 | tr '\\n' ' '
+    printf '\\n'
+done

@@ -49,19 +49,19 @@ static void test_security_and_bounds(void) {
     char output[32];
     size_t output_length = 0U;
     assert(!nexus_browser_resolve_redirect(
-        "origin.test", 11U, "/page", 5U, true,
-        "http://insecure.test/", 21U, output, sizeof(output),
+        "origin.test", strlen("origin.test"), "/page", 5U, true,
+        "http://insecure.test/", strlen("http://insecure.test/"), output, sizeof(output),
         &output_length));
     assert(!nexus_browser_resolve_redirect(
-        "origin.test", 11U, "/page", 5U, false,
-        "javascript:alert(1)", 19U, output, sizeof(output),
+        "origin.test", strlen("origin.test"), "/page", 5U, false,
+        "javascript:alert(1)", strlen("javascript:alert(1)"), output, sizeof(output),
         &output_length));
     assert(!nexus_browser_resolve_redirect(
-        "origin.test", 11U, "/page", 5U, true,
-        "/bad\001path", 9U, output, sizeof(output), &output_length));
+        "origin.test", strlen("origin.test"), "/page", 5U, true,
+        "/bad\001path", strlen("/bad\001path"), output, sizeof(output), &output_length));
     assert(!nexus_browser_resolve_redirect(
-        "origin.test", 11U, "/page", 5U, true,
-        "https://long.example/path/that/will/not/fit", 44U,
+        "origin.test", strlen("origin.test"), "/page", 5U, true,
+        "https://long.example/path/that/will/not/fit",\n        strlen("https://long.example/path/that/will/not/fit"),
         output, sizeof(output), &output_length));
 }
 

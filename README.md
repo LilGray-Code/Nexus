@@ -32,12 +32,14 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   The network-device layer supports multiple registered adapters and tags
   wired Ethernet versus Wi-Fi media, but only the E1000 Ethernet driver is
   implemented; no Wi-Fi chipset, firmware, or scanning is currently supported.
-  WPA2-Personal PMK derivation, pairwise-key expansion (PTK), EAPOL-Key
-  MIC compute/verify, and a bounded AES-128-CCM primitive for the CCMP profile
-  have been implemented with known-answer tests. A complete EAPOL four-way
-  state machine, replay/nonce policy, key installation, 802.11 header/nonce
-  assembly, scanning/association, and a working wireless station/chipset
-  driver remain unimplemented.
+  WPA2-Personal PMK derivation, pairwise-key expansion (PTK), EAPOL-Key MIC
+  compute/verify, AES-128-CCM for CCMP, RFC 3394 AES key unwrap, and bounded
+  EAPOL-Key frame/GTK KDE parsing have known-answer or structural tests. A
+  complete EAPOL four-way state machine and replay-counter policy, GTK
+  installation, scanning/association, and a working wireless station/chipset
+  driver remain unimplemented. The bounded CCMP layer now builds 802.11
+  AAD/nonces, protects data frames, and enforces per-TID packet-number replay
+  windows.
 - The HTTP viewer validates bounded HTTP/1.x response framing (including
   content-length and chunked bodies) and provides keyboard page scrolling. Its
   bounded HTML-to-text stage formats common block elements, list items, and

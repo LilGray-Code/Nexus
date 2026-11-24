@@ -1,0 +1,36 @@
+name: Nexus WPA2 EAPOL parser tests
+
+on:
+  push:
+    branches:
+      - nexus-wpa2-eapol-parser
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wpa2_eapol.c"
+      - "kernel/src/wpa2_eapol.h"
+      - "kernel/tests/wpa2_eapol_test.c"
+      - ".github/workflows/nexus-wpa2-eapol-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/wpa2_eapol.c"
+      - "kernel/src/wpa2_eapol.h"
+      - "kernel/tests/wpa2_eapol_test.c"
+      - ".github/workflows/nexus-wpa2-eapol-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  eapol-parser-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile EAPOL parser tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wpa2_eapol.c kernel/tests/wpa2_eapol_test.c \
+            -o /tmp/nexus-eapol-parser-test
+      - name: Run EAPOL parser and GTK KDE tests
+        run: /tmp/nexus-eapol-parser-test

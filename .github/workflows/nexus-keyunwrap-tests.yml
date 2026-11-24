@@ -1,0 +1,36 @@
+name: Nexus AES Key Unwrap tests
+
+on:
+  push:
+    branches:
+      - nexus-wpa2-keyunwrap-foundation
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/aes_ccm.c"
+      - "kernel/src/aes_ccm.h"
+      - "kernel/tests/aes_ccm_test.c"
+      - ".github/workflows/nexus-keyunwrap-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/aes_ccm.c"
+      - "kernel/src/aes_ccm.h"
+      - "kernel/tests/aes_ccm_test.c"
+      - ".github/workflows/nexus-keyunwrap-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  aes-key-unwrap-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile AES key unwrap tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/aes_ccm.c kernel/tests/aes_ccm_test.c \
+            -o /tmp/nexus-key-unwrap-test
+      - name: Run RFC 3394 key unwrap known-answer tests
+        run: /tmp/nexus-key-unwrap-test

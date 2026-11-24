@@ -10,6 +10,9 @@
 #define NEXUS_AES_CCM_TAG_BYTES 8U
 #define NEXUS_AES_CCM_MAX_AAD_BYTES 1024U
 #define NEXUS_AES_CCM_MAX_PAYLOAD_BYTES 4096U
+#define NEXUS_AES_KEY_WRAP_OVERHEAD_BYTES 8U
+#define NEXUS_AES_KEY_WRAP_MIN_CIPHERTEXT_BYTES 24U
+#define NEXUS_AES_KEY_WRAP_MAX_PLAINTEXT_BYTES 4096U
 
 /*
  * Bounded AES-128-CCM profile used by WPA2-CCMP:
@@ -43,5 +46,17 @@ bool nexus_aes_ccm_decrypt_128(
     const uint8_t *ciphertext, size_t ciphertext_length,
     const uint8_t tag[NEXUS_AES_CCM_TAG_BYTES],
     uint8_t *plaintext);
+
+/*
+ * RFC 3394 AES-128 Key Unwrap (KW). Input is a wrapped key of at least
+ * 24 bytes and a multiple of 8; plaintext capacity is bounded to 4096 bytes.
+ * On integrity failure, the output buffer is zeroed and *plaintext_length=0.
+ * The input and output buffers must not overlap.
+ */
+bool nexus_aes_key_unwrap_128(
+    const uint8_t kek[NEXUS_AES128_KEY_BYTES],
+    const uint8_t *wrapped, size_t wrapped_length,
+    uint8_t *plaintext, size_t plaintext_capacity,
+    size_t *plaintext_length);
 
 #endif

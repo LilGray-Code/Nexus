@@ -48,6 +48,32 @@ static uint8_t aes_sub_byte(uint8_t value) {
                      rotate_left_byte(inverse, 4U) ^ 0x63U);
 }
 
+static uint8_t gf256_inverse(uint8_t value) {
+    const uint8_t x2 = gf256_multiply(value, value);
+    const uint8_t x4 = gf256_multiply(x2, x2);
+    const uint8_t x8 = gf256_multiply(x4, x4);
+    const uint8_t x16 = gf256_multiply(x8, x8);
+    const uint8_t x32 = gf256_multiply(x16, x16);
+    const uint8_t x64 = gf256_multiply(x32, x32);
+    const uint8_t x128 = gf256_multiply(x64, x64);
+
+    uint8_t inverse = gf256_multiply(x128, x64);
+    inverse = gf256_multiply(inverse, x32);
+    inverse = gf256_multiply(inverse, x16);
+    inverse = gf256_multiply(inverse, x8);
+    inverse = gf256_multiply(inverse, x4);
+    inverse = gf256_multiply(inverse, x2);
+    return inverse;
+}
+
+static uint8_t aes_inv_sub_byte(uint8_t value) {
+    const uint8_t affine_inverse =
+        (uint8_t)(rotate_left_byte(value, 1U) ^
+                  rotate_left_byte(value, 3U) ^
+                  rotate_left_byte(value, 6U) ^ 0x05U);
+    return gf256_inverse(affine_inverse);
+}
+
 static void secure_zero(void *memory, size_t length) {
     volatile uint8_t *bytes = (volatile uint8_t *)memory;
     for (size_t i = 0U; i < length; ++i) bytes[i] = 0U;
@@ -127,6 +153,55 @@ static void aes_shift_rows(uint8_t state[AES_BLOCK_BYTES]) {
     state[7] = temporary;
 }
 
+static void aes_inv_shift_rows(uint8_t state[AES_BLOCK_BYTES]) {
+    uint8_t temporary;
+    temporary = state[13];
+    state[13] = state[9];
+    state[9] = state[5];
+    state[5] = state[1];
+    state[1] = temporary;
+
+    temporary = state[2];
+    state[2] = state[10];
+    state[10] = temporary;
+    temporary = state[6];
+    state[6] = state[14];
+    state[14] = temporary;
+
+    temporary = state[3];
+    state[3] = state[7];
+    state[7] = state[11];
+    state[11] = state[15];
+    state[15] = temporary;
+}
+
+static void aes_inv_sub_bytes(uint8_t state[AES_BLOCK_BYTES]) {
+    for (size_t i = 0U; i < AES_BLOCK_BYTES; ++i)
+        state[i] = aes_inv_sub_byte(state[i]);
+}
+
+static void aes_inv_mix_columns(uint8_t state[AES_BLOCK_BYTES]) {
+    for (size_t column = 0U; column < 4U; ++column) {
+        const size_t base = column * 4U;
+        const uint8_t a = state[base];
+        const uint8_t b = state[base + 1U];
+        const uint8_t c = state[base + 2U];
+        const uint8_t d = state[base + 3U];
+        state[base] = (uint8_t)(
+            gf256_multiply(a, 0x0EU) ^ gf256_multiply(b, 0x0BU) ^
+            gf256_multiply(c, 0x0DU) ^ gf256_multiply(d, 0x09U));
+        state[base + 1U] = (uint8_t)(
+            gf256_multiply(a, 0x09U) ^ gf256_multiply(b, 0x0EU) ^
+            gf256_multiply(c, 0x0BU) ^ gf256_multiply(d, 0x0DU));
+        state[base + 2U] = (uint8_t)(
+            gf256_multiply(a, 0x0DU) ^ gf256_multiply(b, 0x09U) ^
+            gf256_multiply(c, 0x0EU) ^ gf256_multiply(d, 0x0BU));
+        state[base + 3U] = (uint8_t)(
+            gf256_multiply(a, 0x0BU) ^ gf256_multiply(b, 0x0DU) ^
+            gf256_multiply(c, 0x09U) ^ gf256_multiply(d, 0x0EU));
+    }
+}
+
 static void aes_mix_columns(uint8_t state[AES_BLOCK_BYTES]) {
     for (size_t column = 0U; column < 4U; ++column) {
         const size_t base = column * 4U;
@@ -157,6 +232,25 @@ static void aes_encrypt_block(const uint8_t round_keys[AES_ROUND_KEY_BYTES],
     aes_sub_bytes(state);
     aes_shift_rows(state);
     aes_add_round_key(state, round_keys + 10U * AES_BLOCK_BYTES);
+    copy_bytes(output, state, sizeof(state));
+    secure_zero(state, sizeof(state));
+}
+
+static void aes_decrypt_block(const uint8_t round_keys[AES_ROUND_KEY_BYTES],
+                              const uint8_t input[AES_BLOCK_BYTES],
+                              uint8_t output[AES_BLOCK_BYTES]) {
+    uint8_t state[AES_BLOCK_BYTES];
+    copy_bytes(state, input, sizeof(state));
+    aes_add_round_key(state, round_keys + 10U * AES_BLOCK_BYTES);
+    for (size_t round = 9U; round > 0U; --round) {
+        aes_inv_shift_rows(state);
+        aes_inv_sub_bytes(state);
+        aes_add_round_key(state, round_keys + round * AES_BLOCK_BYTES);
+        aes_inv_mix_columns(state);
+    }
+    aes_inv_shift_rows(state);
+    aes_inv_sub_bytes(state);
+    aes_add_round_key(state, round_keys);
     copy_bytes(output, state, sizeof(state));
     secure_zero(state, sizeof(state));
 }
@@ -354,3 +448,71 @@ bool nexus_aes_ccm_decrypt_128(
     secure_zero(expected, sizeof(expected));
     return difference == 0U;
 }
+
+bool nexus_aes_key_unwrap_128(
+    const uint8_t kek[NEXUS_AES128_KEY_BYTES],
+    const uint8_t *wrapped, size_t wrapped_length,
+    uint8_t *plaintext, size_t plaintext_capacity,
+    size_t *plaintext_length) {
+    static const uint8_t default_iv[8] = {
+        0xA6U,0xA6U,0xA6U,0xA6U,0xA6U,0xA6U,0xA6U,0xA6U
+    };
+    if (plaintext_length == NULL) return false;
+    *plaintext_length = 0U;
+    if (kek == NULL || wrapped == NULL ||
+        wrapped_length < NEXUS_AES_KEY_WRAP_MIN_CIPHERTEXT_BYTES ||
+        (wrapped_length % 8U) != 0U ||
+        wrapped_length - NEXUS_AES_KEY_WRAP_OVERHEAD_BYTES >
+            NEXUS_AES_KEY_WRAP_MAX_PLAINTEXT_BYTES)
+        return false;
+
+    const size_t output_bytes =
+        wrapped_length - NEXUS_AES_KEY_WRAP_OVERHEAD_BYTES;
+    if (plaintext == NULL || plaintext_capacity < output_bytes ||
+        wrapped == plaintext || kek == plaintext ||
+        ranges_partially_overlap(wrapped, wrapped_length,
+                                 plaintext, output_bytes) ||
+        ranges_partially_overlap(kek, NEXUS_AES128_KEY_BYTES,
+                                 plaintext, output_bytes))
+        return false;
+
+    const size_t block_count = output_bytes / 8U;
+    uint8_t a[8];
+    copy_bytes(a, wrapped, sizeof(a));
+    copy_bytes(plaintext, wrapped + 8U, output_bytes);
+
+    uint8_t round_keys[AES_ROUND_KEY_BYTES];
+    uint8_t block[AES_BLOCK_BYTES];
+    uint8_t decrypted[AES_BLOCK_BYTES];
+    aes_expand_key(kek, round_keys);
+
+    for (int j = 5; j >= 0; --j) {
+        for (size_t i = block_count; i > 0U; --i) {
+            const uint64_t t = (uint64_t)block_count * (uint64_t)j +
+                               (uint64_t)i;
+            copy_bytes(block, a, sizeof(a));
+            for (size_t byte = 0U; byte < 8U; ++byte)
+                block[byte] ^= (uint8_t)(t >> (56U - 8U * byte));
+            copy_bytes(block + 8U, plaintext + (i - 1U) * 8U, 8U);
+            aes_decrypt_block(round_keys, block, decrypted);
+            copy_bytes(a, decrypted, 8U);
+            copy_bytes(plaintext + (i - 1U) * 8U, decrypted + 8U, 8U);
+        }
+    }
+
+    uint8_t integrity_difference = 0U;
+    for (size_t i = 0U; i < sizeof(default_iv); ++i)
+        integrity_difference |= (uint8_t)(a[i] ^ default_iv[i]);
+
+    secure_zero(a, sizeof(a));
+    secure_zero(round_keys, sizeof(round_keys));
+    secure_zero(block, sizeof(block));
+    secure_zero(decrypted, sizeof(decrypted));
+    if (integrity_difference != 0U) {
+        secure_zero(plaintext, output_bytes);
+        return false;
+    }
+    *plaintext_length = output_bytes;
+    return true;
+}
+

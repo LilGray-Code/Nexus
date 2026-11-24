@@ -122,10 +122,101 @@ static void test_reject_limits_nulls_and_partial_overlap(void) {
         key, nonce, NULL, 0U, buffer, 1U, tag, NULL));
 }
 
+
+
+static void test_rfc3394_aes128_key_unwrap_vector(void) {
+    static const uint8_t kek[NEXUS_AES128_KEY_BYTES] = {
+        0x00U,0x01U,0x02U,0x03U,0x04U,0x05U,0x06U,0x07U,
+        0x08U,0x09U,0x0AU,0x0BU,0x0CU,0x0DU,0x0EU,0x0FU
+    };
+    static const uint8_t wrapped[24] = {
+        0x1FU,0xA6U,0x8BU,0x0AU,0x81U,0x12U,0xB4U,0x47U,
+        0xAEU,0xF3U,0x4BU,0xD8U,0xFBU,0x5AU,0x7BU,0x82U,
+        0x9DU,0x3EU,0x86U,0x23U,0x71U,0xD2U,0xCFU,0xE5U
+    };
+    static const char expected[] = "00112233445566778899aabbccddeeff";
+    uint8_t plaintext[16];
+    size_t plaintext_length = 99U;
+    assert(nexus_aes_key_unwrap_128(kek, wrapped, sizeof(wrapped),
+                                    plaintext, sizeof(plaintext),
+                                    &plaintext_length));
+    assert(plaintext_length == sizeof(plaintext));
+    expect_hex(plaintext, sizeof(plaintext), expected);
+}
+
+static void test_rfc3394_aes128_key_unwrap_longer_vector(void) {
+    static const uint8_t kek[NEXUS_AES128_KEY_BYTES] = {
+        0x00U,0x01U,0x02U,0x03U,0x04U,0x05U,0x06U,0x07U,
+        0x08U,0x09U,0x0AU,0x0BU,0x0CU,0x0DU,0x0EU,0x0FU
+    };
+    static const uint8_t wrapped[32] = {
+        0x88U,0x96U,0x71U,0x10U,0x65U,0x35U,0xA9U,0xF8U,
+        0x6DU,0x9FU,0x9AU,0x26U,0x2FU,0x67U,0x45U,0x69U,
+        0xEFU,0xA3U,0x8DU,0x75U,0x35U,0xAAU,0xC7U,0x75U,
+        0x27U,0xCAU,0xB9U,0x28U,0x55U,0xBDU,0xDDU,0x6EU
+    };
+    static const char expected[] =
+        "00112233445566778899aabbccddeeff0001020304050607";
+    uint8_t plaintext[24];
+    size_t plaintext_length = 0U;
+    assert(nexus_aes_key_unwrap_128(kek, wrapped, sizeof(wrapped),
+                                    plaintext, sizeof(plaintext),
+                                    &plaintext_length));
+    assert(plaintext_length == sizeof(plaintext));
+    expect_hex(plaintext, sizeof(plaintext), expected);
+}
+
+static void test_rfc3394_key_unwrap_rejects_bad_iv_and_lengths(void) {
+    static const uint8_t kek[NEXUS_AES128_KEY_BYTES] = {
+        0x00U,0x01U,0x02U,0x03U,0x04U,0x05U,0x06U,0x07U,
+        0x08U,0x09U,0x0AU,0x0BU,0x0CU,0x0DU,0x0EU,0x0FU
+    };
+    static const uint8_t valid_wrapped[24] = {
+        0x1FU,0xA6U,0x8BU,0x0AU,0x81U,0x12U,0xB4U,0x47U,
+        0xAEU,0xF3U,0x4BU,0xD8U,0xFBU,0x5AU,0x7BU,0x82U,
+        0x9DU,0x3EU,0x86U,0x23U,0x71U,0xD2U,0xCFU,0xE5U
+    };
+    uint8_t modified[24];
+    uint8_t plaintext[16];
+    size_t plaintext_length = 123U;
+
+    for (size_t i = 0U; i < sizeof(modified); ++i)
+        modified[i] = valid_wrapped[i];
+    modified[0] ^= 0x01U;
+    for (size_t i = 0U; i < sizeof(plaintext); ++i) plaintext[i] = 0xA5U;
+    assert(!nexus_aes_key_unwrap_128(
+        kek, modified, sizeof(modified), plaintext, sizeof(plaintext),
+        &plaintext_length));
+    assert(plaintext_length == 0U);
+    for (size_t i = 0U; i < sizeof(plaintext); ++i) assert(plaintext[i] == 0U);
+
+    assert(!nexus_aes_key_unwrap_128(
+        kek, valid_wrapped, 23U, plaintext, sizeof(plaintext),
+        &plaintext_length));
+    assert(!nexus_aes_key_unwrap_128(
+        kek, valid_wrapped, 25U, plaintext, sizeof(plaintext),
+        &plaintext_length));
+    assert(!nexus_aes_key_unwrap_128(
+        kek, valid_wrapped, sizeof(valid_wrapped), plaintext, 15U,
+        &plaintext_length));
+    assert(!nexus_aes_key_unwrap_128(
+        kek, valid_wrapped, sizeof(valid_wrapped), plaintext,
+        sizeof(plaintext), NULL));
+    assert(!nexus_aes_key_unwrap_128(
+        kek, valid_wrapped, sizeof(valid_wrapped), NULL, 0U,
+        &plaintext_length));
+    assert(!nexus_aes_key_unwrap_128(
+        kek, valid_wrapped, sizeof(valid_wrapped), (uint8_t *)valid_wrapped,
+        sizeof(valid_wrapped), &plaintext_length));
+}
+
 int main(void) {
     test_ccm_independent_vector_and_round_trip();
     test_empty_payload_vector();
     test_in_place_and_authentication_failure();
     test_reject_limits_nulls_and_partial_overlap();
+    test_rfc3394_aes128_key_unwrap_vector();
+    test_rfc3394_aes128_key_unwrap_longer_vector();
+    test_rfc3394_key_unwrap_rejects_bad_iv_and_lengths();
     return 0;
 }

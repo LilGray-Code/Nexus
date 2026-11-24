@@ -83,6 +83,7 @@ static bool files_listing_truncated;
 enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
+    FILES_EDITOR_DIRECTORY_NAME,
     FILES_EDITOR_CONTENT
 };
 static enum files_editor_state files_editor_state;
@@ -781,7 +782,9 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, text_y + 48U,
                 files_editor_state == FILES_EDITOR_NAME
                     ? "NEW FILE - ENTER A NAME"
-                    : "TEXT EDITOR - 4096 BYTE LIMIT",
+                    : (files_editor_state == FILES_EDITOR_DIRECTORY_NAME
+                        ? "NEW FOLDER - ENTER A NAME"
+                        : "TEXT EDITOR - 4096 BYTE LIMIT"),
                 1, 108, 216, 229);
             graphics_draw_text(text_x, text_y + 82U, "NAME:",
                                1, 233, 243, 252);
@@ -824,10 +827,14 @@ static void draw_shell(void) {
                     1, 170, 191, 211);
             } else {
                 graphics_draw_text(text_x, text_y + 124U,
-                    "UP TO 31 CHARS: LETTERS, NUMBERS, _ - AND ONE DOT",
+                    files_editor_state == FILES_EDITOR_DIRECTORY_NAME
+                        ? "FOLDER NAME: LETTERS, NUMBERS, _ - AND DOT"
+                        : "UP TO 31 CHARS: LETTERS, NUMBERS, _ - AND ONE DOT",
                     1, 170, 191, 211);
                 graphics_draw_text(text_x, text_y + 156U,
-                    "ENTER CONTINUE  ESC CANCEL",
+                    files_editor_state == FILES_EDITOR_DIRECTORY_NAME
+                        ? "ENTER CREATE FOLDER  ESC CANCEL"
+                        : "ENTER CONTINUE  ESC CANCEL",
                     1, 170, 191, 211);
             }
             graphics_draw_text(text_x, text_y + 340U, files_edit_status,
@@ -895,18 +902,19 @@ static void draw_shell(void) {
             }
         }
         if (files_vfs_ready) {
-            static const char *const actions[4] = {
-                "NEW FILE", "OPEN / EDIT", "DELETE", "REFRESH"
+            static const char *const actions[5] = {
+                "NEW FILE", "NEW FOLDER", "OPEN/EDIT", "DELETE", "REFRESH"
             };
-            static const uint8_t action_colors[4][3] = {
-                {37U, 139U, 165U}, {60U, 116U, 170U},
-                {153U, 69U, 78U}, {67U, 133U, 111U}
+            static const uint8_t action_colors[5][3] = {
+                {37U, 139U, 165U}, {80U, 154U, 125U},
+                {60U, 116U, 170U}, {153U, 69U, 78U},
+                {67U, 133U, 111U}
             };
-            for (size_t action = 0U; action < 4U; ++action) {
-                const uint64_t action_x = text_x + (uint64_t)action * 100U;
-                graphics_fill_rect(action_x, text_y + 270U, 92U, 25U,
+            for (size_t action = 0U; action < 5U; ++action) {
+                const uint64_t action_x = text_x + (uint64_t)action * 76U;
+                graphics_fill_rect(action_x, text_y + 270U, 72U, 25U,
                                    29U, 47U, 69U);
-                graphics_draw_rect(action_x, text_y + 270U, 92U, 25U,
+                graphics_draw_rect(action_x, text_y + 270U, 72U, 25U,
                                    action_colors[action][0],
                                    action_colors[action][1],
                                    action_colors[action][2]);
@@ -914,7 +922,7 @@ static void draw_shell(void) {
                                    action_colors[action][0],
                                    action_colors[action][1],
                                    action_colors[action][2]);
-                graphics_draw_text(action_x + 9U, text_y + 279U,
+                graphics_draw_text(action_x + 5U, text_y + 279U,
                                    actions[action], 1U, 234U, 244U, 252U);
             }
             char current_path[96];
@@ -1315,6 +1323,28 @@ static void files_editor_begin_new(void) {
     files_editor_state = FILES_EDITOR_NAME;
 }
 
+static void files_editor_begin_directory(void) {
+    if (!vfs_nxfs_writable() || !vfs_current_directory_writable()) {
+        const char *message = "PERSISTENT NXFS WRITE ACCESS REQUIRED";
+        size_t i = 0U;
+        while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
+            files_edit_status[i] = message[i];
+            ++i;
+        }
+        files_edit_status[i] = '\0';
+        return;
+    }
+    files_edit_name[0] = '\0';
+    files_edit_content[0] = '\0';
+    files_edit_name_length = 0U;
+    files_edit_content_length = 0U;
+    files_edit_cursor = 0U;
+    files_edit_view_offset = 0U;
+    files_edit_follow_end = true;
+    files_edit_status[0] = '\0';
+    files_editor_state = FILES_EDITOR_DIRECTORY_NAME;
+}
+
 static void files_editor_begin_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_listing_count ||
@@ -1398,19 +1428,17 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         files_editor_state = FILES_EDITOR_CLOSED;
         return;
     }
-    if (files_editor_state == FILES_EDITOR_NAME) {
+    if (files_editor_state == FILES_EDITOR_NAME ||
+        files_editor_state == FILES_EDITOR_DIRECTORY_NAME) {
+        const bool creating_directory =
+            files_editor_state == FILES_EDITOR_DIRECTORY_NAME;
         if (event->scancode == 0x0EU) {
             if (files_edit_name_length != 0U)
                 files_edit_name[--files_edit_name_length] = '\0';
         } else if (event->scancode == 0x1CU) {
             if (files_edit_name_length == 0U) {
-                const char *message = "ENTER A FILE NAME";
-                for (size_t i = 0U; i < sizeof(files_edit_status); ++i) {
-                    files_edit_status[i] = message[i];
-                    if (message[i] == '\0') break;
-                }
-            } else if (files_editor_name_exists()) {
-                const char *message = "FILE EXISTS - PRESS E TO EDIT";
+                const char *message = creating_directory
+                    ? "ENTER A FOLDER NAME" : "ENTER A FILE NAME";
                 size_t i = 0U;
                 while (message[i] != '\0' &&
                        i < sizeof(files_edit_status) - 1U) {
@@ -1418,6 +1446,35 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
                     ++i;
                 }
                 files_edit_status[i] = '\0';
+            } else if (files_editor_name_exists()) {
+                const char *message = creating_directory
+                    ? "NAME ALREADY EXISTS" : "FILE EXISTS - PRESS E TO EDIT";
+                size_t i = 0U;
+                while (message[i] != '\0' &&
+                       i < sizeof(files_edit_status) - 1U) {
+                    files_edit_status[i] = message[i];
+                    ++i;
+                }
+                files_edit_status[i] = '\0';
+            } else if (creating_directory) {
+                if (vfs_create_directory(files_edit_name)) {
+                    serial_write("FILES: created persistent folder ");
+                    serial_write(files_edit_name);
+                    serial_write("\r\n");
+                    files_editor_state = FILES_EDITOR_CLOSED;
+                    refresh_files_listing();
+                    files_edit_status[0] = '\0';
+                } else {
+                    const char *message =
+                        "FOLDER CREATE FAILED - CHECK NAME OR STORAGE";
+                    size_t i = 0U;
+                    while (message[i] != '\0' &&
+                           i < sizeof(files_edit_status) - 1U) {
+                        files_edit_status[i] = message[i];
+                        ++i;
+                    }
+                    files_edit_status[i] = '\0';
+                }
             } else {
                 files_editor_state = FILES_EDITOR_CONTENT;
                 files_edit_status[0] = '\0';
@@ -2813,25 +2870,34 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const int64_t relative_y = pointer_y - (int64_t)(ty + 270U);
             const int64_t relative_x = pointer_x - (int64_t)tx;
             if (relative_y >= 0 && relative_y < 25 &&
-                relative_x >= 0 && relative_x < 392) {
-                const size_t action = (size_t)relative_x / 100U;
+                relative_x >= 0 && relative_x < 380) {
+                const size_t action = (size_t)relative_x / 76U;
                 if (action == 0U) {
-                    if (vfs_directory_depth() == 0U)
+                    if (vfs_current_directory_writable())
                         files_editor_begin_new();
                 } else if (action == 1U) {
-                    files_open_selected();
+                    files_editor_begin_directory();
                 } else if (action == 2U) {
+                    files_open_selected();
+                } else if (action == 3U) {
                     struct nexus_vfs_dirent selected;
                     if (files_selected_index < files_listing_count &&
-                        vfs_root_entry(files_selected_index, &selected) &&
-                        selected.type == NEXUS_VFS_FILE &&
-                        vfs_remove_file(selected.name)) {
-                        serial_write("FILES: removed writable file ");
-                        serial_write(selected.name);
-                        serial_write("\r\n");
+                        vfs_root_entry(files_selected_index, &selected)) {
+                        const bool removed = selected.type == NEXUS_VFS_DIRECTORY
+                            ? vfs_remove_directory(selected.name)
+                            : vfs_remove_file(selected.name);
+                        if (removed) {
+                            serial_write(selected.type == NEXUS_VFS_DIRECTORY
+                                ? "FILES: removed empty persistent folder "
+                                : "FILES: removed writable file ");
+                            serial_write(selected.name);
+                            serial_write("\r\n");
+                        } else {
+                            serial_write("FILES: delete refused (read-only or folder not empty)\r\n");
+                        }
                     }
                     refresh_files_listing();
-                } else if (action == 3U) {
+                } else if (action == 4U) {
                     refresh_files_listing();
                     serial_write("FILES: listing refreshed by mouse\r\n");
                 }
@@ -3061,7 +3127,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
         if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x31U) {
-            if (vfs_directory_depth() == 0U) files_editor_begin_new();
+            if (vfs_current_directory_writable()) files_editor_begin_new();
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x20U) {
+            files_editor_begin_directory();
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x12U) {
@@ -3116,14 +3186,19 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if (event->scancode == 0x53U &&
             files_selected_index < files_listing_count) {
             struct nexus_vfs_dirent selected;
-            if (vfs_root_entry(files_selected_index, &selected) &&
-                selected.type == NEXUS_VFS_FILE &&
-                vfs_remove_file(selected.name)) {
-                serial_write("FILES: removed writable file ");
-                serial_write(selected.name);
-                serial_write("\r\n");
-            } else {
-                serial_write("FILES: delete refused (read-only or unsupported file)\r\n");
+            if (vfs_root_entry(files_selected_index, &selected)) {
+                const bool removed = selected.type == NEXUS_VFS_DIRECTORY
+                    ? vfs_remove_directory(selected.name)
+                    : vfs_remove_file(selected.name);
+                if (removed) {
+                    serial_write(selected.type == NEXUS_VFS_DIRECTORY
+                        ? "FILES: removed empty persistent folder "
+                        : "FILES: removed writable file ");
+                    serial_write(selected.name);
+                    serial_write("\r\n");
+                } else {
+                    serial_write("FILES: delete refused (read-only or folder not empty)\r\n");
+                }
             }
             refresh_files_listing();
             draw_shell();

@@ -2824,6 +2824,34 @@ static void browser_append_page_char(char value) {
     line[length + 1U] = '\0';
 }
 
+static bool browser_content_type_is(const char *value,
+                                       const char *expected) {
+    if (value == NULL || expected == NULL) return false;
+    size_t i = 0U;
+    while (expected[i] != '\0') {
+        char actual = value[i];
+        char wanted = expected[i];
+        if (actual >= 'A' && actual <= 'Z')
+            actual = (char)(actual - 'A' + 'a');
+        if (wanted >= 'A' && wanted <= 'Z')
+            wanted = (char)(wanted - 'A' + 'a');
+        if (actual == '\0' || actual != wanted) return false;
+        ++i;
+    }
+    return value[i] == '\0' || value[i] == ';' || value[i] == ' ' ||
+           value[i] == '\t';
+}
+
+static void browser_render_plain_body(const uint8_t *data, size_t length) {
+    browser_clear_page();
+    if (data == NULL) return;
+    for (size_t i = 0U; i < length; ++i) {
+        char value = (char)data[i];
+        if ((unsigned char)value > 0x7EU) value = '?';
+        browser_append_page_char(value);
+    }
+}
+
 static void browser_render_body(const uint8_t *data, size_t length) {
     browser_clear_page();
     if (data == NULL) return;
@@ -3343,15 +3371,34 @@ browser_retry:
         return;
     }
 
-    browser_render_body(body, parsed.body_length);
+    bool rendered_plain_text = false;
+    if (parsed.has_content_type) {
+        if (browser_content_type_is(parsed.content_type, "text/plain") ||
+            browser_content_type_is(parsed.content_type, "application/json") ||
+            browser_content_type_is(parsed.content_type, "application/xml") ||
+            browser_content_type_is(parsed.content_type, "text/xml") ||
+            browser_content_type_is(parsed.content_type, "text/css")) {
+            browser_render_plain_body(body, parsed.body_length);
+            rendered_plain_text = true;
+        } else if (!browser_content_type_is(parsed.content_type, "text/html") &&
+                   !browser_content_type_is(
+                       parsed.content_type, "application/xhtml+xml")) {
+            browser_set_status("Unsupported content type (text and HTML only)");
+            return;
+        }
+    }
+    if (!rendered_plain_text)
+        browser_render_body(body, parsed.body_length);
     if (browser_content_truncated) {
         browser_set_status("Page text clipped to the bounded browser view");
     } else if (use_https) {
-        browser_set_status(
-            "HTTPS certificate verified (TLS 1.3); HTML text only");
+        browser_set_status(rendered_plain_text
+            ? "HTTPS certificate verified (TLS 1.3); plain text"
+            : "HTTPS certificate verified (TLS 1.3); HTML text only");
     } else {
-        browser_set_status(
-            "HTTP loaded without encryption; HTML text only");
+        browser_set_status(rendered_plain_text
+            ? "HTTP loaded without encryption; plain text"
+            : "HTTP loaded without encryption; HTML text only");
     }
 }
 static void browser_history_navigate(bool forward) {

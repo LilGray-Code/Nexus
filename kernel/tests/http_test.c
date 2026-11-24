@@ -95,7 +95,7 @@ static void test_redirect_and_content_type_metadata(void) {
         "Content-Length: 0\r\n\r\n";
     static const uint8_t unsafe_location[] =
         "HTTP/1.1 302 Found\r\n"
-        "Location: /bad%0d%0aInjected:yes\r\n"
+        "Location: /bad\001Injected\r\n"
         "Content-Length: 0\r\n\r\n";
     uint8_t body[8] = {0};
     struct nexus_http_response response;

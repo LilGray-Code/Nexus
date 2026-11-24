@@ -289,7 +289,7 @@ static void test_random_nonce_initializer_fails_closed(void) {
         assert(nonce_nonzero);
         nexus_wpa2_supplicant_deinit(&supplicant);
     } else {
-        assert(supplicant.state == 0);
+        assert(supplicant.state == NEXUS_WPA2_SUPPLICANT_UNINITIALIZED);
         for (size_t i = 0U; i < sizeof(supplicant.pmk); ++i)
             assert(supplicant.pmk[i] == 0U);
     }

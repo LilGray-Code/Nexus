@@ -208,6 +208,11 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                 syscall_frame_trace("return", mutable_frame);
                 return;
 
+            case NEXUS_SYS_ABI_VERSION:
+                mutable_frame->rax = NEXUS_SYSCALL_ABI_VERSION;
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
             case NEXUS_SYS_EXIT:
                 usermode_exit_status = frame->rdi;
                 usermode_exit_seen = true;

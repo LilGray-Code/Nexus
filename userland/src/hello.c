@@ -1,6 +1,8 @@
 #include "nexus/syscall.h"
 
 int main(void) {
+    if (nexus_abi_version() != NEXUS_SYSCALL_ABI_VERSION) return 10;
+
     static const char filename[] = "README.TXT";
     static const char expected_prefix[] = "Nexus OS read-only FAT32";
     char contents[32];

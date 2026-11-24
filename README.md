@@ -180,8 +180,10 @@ under `userland/`. Build and inspect the sample with:
 make -C userland inspect
 ```
 
-The SDK wraps the current Nexus `int 0x80` ABI for process exit, console
-write, read-only file open/read/close, and bounded file writes. The bundled C
+The SDK wraps the Nexus `int 0x80` ABI for process exit, console write,
+read-only file open/read/close, bounded file writes, and runtime ABI version
+discovery. ABI version 1 is reported by syscall 7; applications should check
+`nexus_abi_version()` before using version-specific services. The bundled C
 application opens `README.TXT`, reads and verifies its contents, closes the
 descriptor, writes a success message, and exits with status 7. The BIOS/UEFI
 QEMU workflow builds the application and inserts the compiled ELF into its

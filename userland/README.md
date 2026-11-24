@@ -28,9 +28,11 @@ the disposable FAT32 boot-test image.
 | `nexus_read(fd, buffer, length)` | 4 | Read a bounded chunk into the process |
 | `nexus_close(fd)` | 5 | Close a descriptor |
 | `nexus_file_write(path, buffer, length)` | 6 | Write through the current VFS policy |
+| `nexus_abi_version()` | 7 | Query the kernel syscall ABI version |
 
 Arguments use RDI/RSI/RDX, the syscall number and result use RAX, and errors
-are returned as negative errno values. The kernel validates user-memory ranges
+are returned as negative errno values. The ABI version is currently 1; native
+programs should query `nexus_abi_version()` before using other wrappers. The kernel validates user-memory ranges
 before copying. File names are simple volume-local names; the early interface
 does not support path separators or directory descriptors.
 

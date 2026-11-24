@@ -30,6 +30,31 @@ jobs:
           make -C userland clean inspect
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
+          kernel = Path("kernel/src/syscall.h").read_text()
+          sdk = Path("userland/include/nexus/syscall.h").read_text()
+
+          def definitions(source):
+              return {
+                  name: int(value)
+                  for name, value in re.findall(
+                      r"^#define\s+(NEXUS_(?:SYS_[A-Z0-9_]+|SYSCALL_ABI_VERSION))\s+(\d+)(?:ULL|UL|U|LL|L)?$",
+                      source, re.MULTILINE
+                  )
+              }
+
+          kernel_defs = definitions(kernel)
+          sdk_defs = definitions(sdk)
+          assert kernel_defs == sdk_defs, (
+              f"kernel/SDK ABI mismatch: {kernel_defs} != {sdk_defs}"
+          )
+          assert kernel_defs.get("NEXUS_SYSCALL_ABI_VERSION") == 1
+          assert kernel_defs.get("NEXUS_SYS_ABI_VERSION") == 7
+          print(f"PASS: synchronized Nexus syscall ABI v1 ({len(kernel_defs)} constants)")
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
           import struct
 
           path = Path("build/userland/HELLO.ELF")

@@ -18,6 +18,8 @@
 #define NEXUS_SYS_READ       4ULL
 #define NEXUS_SYS_CLOSE      5ULL
 #define NEXUS_SYS_FILE_WRITE 6ULL
+#define NEXUS_SYS_ABI_VERSION 7ULL
+#define NEXUS_SYSCALL_ABI_VERSION 1ULL
 
 #define NEXUS_ENOENT         2LL
 #define NEXUS_EIO            5LL
@@ -40,6 +42,10 @@ static inline int64_t nexus_syscall3(uint64_t number,
                       : "D"(arg1), "S"(arg2), "d"(arg3)
                       : "rcx", "r11", "memory", "cc");
     return (int64_t)result;
+}
+
+static inline uint64_t nexus_abi_version(void) {
+    return (uint64_t)nexus_syscall3(NEXUS_SYS_ABI_VERSION, 0U, 0U, 0U);
 }
 
 static inline int64_t nexus_write(int descriptor,

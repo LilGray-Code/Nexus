@@ -1079,3 +1079,13 @@ does not yet supply a full libc/POSIX environment, dynamic loader, background
 concurrent process scheduler, GUI SDK, graphics/audio services, or Windows
 binary compatibility. The current app test remains a single synchronous
 process.
+
+
+### Syscall ABI version negotiation
+
+The initial syscall surface now exposes ABI version 1 through syscall number 7.
+The first-party SDK provides `nexus_abi_version()`, and the compiler-built
+sample checks the returned value before exercising file and console calls.
+The native SDK host workflow compares the kernel and SDK syscall number/version
+definitions so the two interfaces cannot silently drift. Future incompatible
+changes must increment the ABI version and update both headers together.

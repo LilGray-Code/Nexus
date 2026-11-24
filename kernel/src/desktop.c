@@ -6,6 +6,7 @@
 #include "vfs.h"
 #include "process.h"
 #include "net.h"
+#include "http.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -107,13 +108,16 @@ static char installer_status_text[96] = "Select a supported target disk";
 /* Destructive installation remains compile-time locked until end-to-end
  * disposable-disk validation is recorded. */
 
-#define NEXUS_BROWSER_LINE_COUNT 9U
+#define NEXUS_BROWSER_LINE_COUNT 48U
+#define NEXUS_BROWSER_VISIBLE_LINES 9U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
 static char browser_address[96];
 static size_t browser_address_length;
 static char browser_status[80] = "Enter host/path; HTTP only, no HTTPS";
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
+static size_t browser_line_scroll;
+static bool browser_content_truncated;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -906,13 +910,18 @@ static void draw_shell(void) {
                            1, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 66U, browser_status,
                            1, 170, 225, 190);
-        for (size_t row = 0; row < browser_line_count; ++row) {
+        for (size_t row = 0U; row < NEXUS_BROWSER_VISIBLE_LINES; ++row) {
+            const size_t line = browser_line_scroll + row;
+            if (line >= browser_line_count) break;
             graphics_draw_text(text_x, text_y + 108U + row * 24U,
-                               browser_lines[row], 1,
+                               browser_lines[line], 1,
                                233, 243, 252);
         }
+        if (browser_content_truncated)
+            graphics_draw_text(text_x + 360U, text_y + 66U,
+                               "TRUNCATED", 1, 239, 177, 119);
         graphics_draw_text(text_x, text_y + 360U,
-                           "ENTER LOADS  BACKSPACE EDITS  ESC HOME",
+                           "PGUP/PGDN SCROLL  HOME/END  ENTER LOADS  ESC HOME",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 382U,
                            "PLAIN HTTP ONLY - DO NOT SEND PRIVATE DATA",
@@ -1532,6 +1541,8 @@ static void browser_set_status(const char *message) {
 
 static void browser_clear_page(void) {
     browser_line_count = 1U;
+    browser_line_scroll = 0U;
+    browser_content_truncated = false;
     for (size_t row = 0; row < NEXUS_BROWSER_LINE_COUNT; ++row) {
         for (size_t column = 0; column < NEXUS_BROWSER_LINE_WIDTH; ++column)
             browser_lines[row][column] = '\0';
@@ -1544,6 +1555,8 @@ static void browser_append_page_char(char value) {
     if (value == '\n') {
         if (browser_line_count < NEXUS_BROWSER_LINE_COUNT)
             ++browser_line_count;
+        else
+            browser_content_truncated = true;
         return;
     }
     if (value == '\t') value = ' ';
@@ -1556,7 +1569,10 @@ static void browser_append_page_char(char value) {
     if (value == ' ' && (length == 0U || line[length - 1U] == ' '))
         return;
     if (length >= NEXUS_BROWSER_LINE_WIDTH - 1U) {
-        if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT) return;
+        if (browser_line_count >= NEXUS_BROWSER_LINE_COUNT) {
+            browser_content_truncated = true;
+            return;
+        }
         ++browser_line_count;
         line = browser_lines[browser_line_count - 1U];
         length = 0U;
@@ -1569,18 +1585,9 @@ static void browser_render_body(const uint8_t *data, size_t length) {
     browser_clear_page();
     if (data == NULL) return;
 
-    size_t body = 0U;
-    for (size_t i = 0; i + 3U < length; ++i) {
-        if (data[i] == '\r' && data[i + 1U] == '\n' &&
-            data[i + 2U] == '\r' && data[i + 3U] == '\n') {
-            body = i + 4U;
-            break;
-        }
-    }
-
     bool in_tag = false;
     bool in_entity = false;
-    for (size_t i = body; i < length; ++i) {
+    for (size_t i = 0U; i < length; ++i) {
         const char ch = (char)data[i];
         if (in_tag) {
             if (ch == '>') {
@@ -1754,10 +1761,12 @@ static void browser_navigate(void) {
     }
 
     uint8_t response[1536];
+    uint8_t body[1536];
+    struct nexus_http_response parsed;
     size_t response_length = 0U;
     const uint64_t start = timer_ticks();
     uint64_t last_data = start;
-    browser_set_status("Receiving plain HTTP response...");
+    browser_set_status("Receiving HTTP response...");
     while (timer_ticks() - start < 600U &&
            (response_length == 0U || timer_ticks() - last_data < 40U) &&
            response_length < sizeof(response)) {
@@ -1777,8 +1786,27 @@ static void browser_navigate(void) {
         browser_set_status("No HTTP response received");
         return;
     }
-    browser_render_body(response, response_length);
-    browser_set_status("Loaded HTTP text; no TLS or script execution");
+    if (!nexus_http_decode_response(response, response_length, body,
+                                    sizeof(body), &parsed)) {
+        browser_set_status("Invalid, truncated, or unsupported HTTP framing");
+        return;
+    }
+    if (parsed.status_code < 200U || parsed.status_code >= 300U) {
+        char number[21];
+        char message[80] = "HTTP status ";
+        format_u64(parsed.status_code, number);
+        size_t length = 12U;
+        for (size_t i = 0U; number[i] != '\\0' && length < sizeof(message)-1U; ++i)
+            message[length++] = number[i];
+        message[length] = '\\0';
+        browser_set_status(message);
+        return;
+    }
+    browser_render_body(body, parsed.body_length);
+    if (browser_content_truncated)
+        browser_set_status("Loaded HTTP text; page truncated at 48 lines");
+    else
+        browser_set_status("Loaded HTTP text; no TLS, CSS, or JavaScript");
 }
 
 static void terminal_execute(void) {
@@ -2708,6 +2736,19 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (event->scancode == 0x1CU) {
             browser_navigate();
+        } else if (event->scancode == 0x49U) {
+            browser_line_scroll = browser_line_scroll > NEXUS_BROWSER_VISIBLE_LINES
+                ? browser_line_scroll - NEXUS_BROWSER_VISIBLE_LINES : 0U;
+        } else if (event->scancode == 0x51U) {
+            const size_t max_scroll = browser_line_count > NEXUS_BROWSER_VISIBLE_LINES
+                ? browser_line_count - NEXUS_BROWSER_VISIBLE_LINES : 0U;
+            browser_line_scroll += NEXUS_BROWSER_VISIBLE_LINES;
+            if (browser_line_scroll > max_scroll) browser_line_scroll = max_scroll;
+        } else if (event->scancode == 0x47U) {
+            browser_line_scroll = 0U;
+        } else if (event->scancode == 0x4FU) {
+            browser_line_scroll = browser_line_count > NEXUS_BROWSER_VISIBLE_LINES
+                ? browser_line_count - NEXUS_BROWSER_VISIBLE_LINES : 0U;
         } else if (event->scancode == 0x0EU) {
             if (browser_address_length > 0U)
                 browser_address[--browser_address_length] = '\0';

@@ -2941,8 +2941,8 @@ static bool browser_https_send_all(struct nexus_https_connection *connection,
             sent += (size_t)result;
             continue;
         }
-        if (result != MBEDTLS_ERR_SSL_WANT_READ &&
-            result != MBEDTLS_ERR_SSL_WANT_WRITE) return false;
+        if (result != NEXUS_HTTPS_WANT_READ &&
+            result != NEXUS_HTTPS_WANT_WRITE) return false;
         net_poll();
         __asm__ volatile ("pause" ::: "memory");
     }
@@ -2976,8 +2976,8 @@ static bool browser_https_receive_response(
             *orderly_eof = true;
             break;
         }
-        if (result != MBEDTLS_ERR_SSL_WANT_READ &&
-            result != MBEDTLS_ERR_SSL_WANT_WRITE) return false;
+        if (result != NEXUS_HTTPS_WANT_READ &&
+            result != NEXUS_HTTPS_WANT_WRITE) return false;
         net_poll();
         if (*response_length != 0U &&
             timer_ticks() - last_data >= 200U) break;

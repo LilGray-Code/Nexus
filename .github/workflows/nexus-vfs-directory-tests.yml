@@ -1,0 +1,41 @@
+name: Nexus VFS nested directory integration tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - "kernel/src/nxfs.c"
+      - "kernel/src/nxfs.h"
+      - "kernel/src/fat32.h"
+      - "kernel/tests/vfs_directory_test.c"
+      - ".github/workflows/nexus-vfs-directory-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - "kernel/src/nxfs.c"
+      - "kernel/src/nxfs.h"
+      - "kernel/src/fat32.h"
+      - "kernel/tests/vfs_directory_test.c"
+      - ".github/workflows/nexus-vfs-directory-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  vfs-directory-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile VFS directory integration tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/nxfs.c kernel/src/vfs.c \
+            kernel/tests/vfs_directory_test.c -o /tmp/nexus-vfs-directory-test
+      - name: Verify persistent NXFS and read-only FAT32 folder behavior
+        run: /tmp/nexus-vfs-directory-test

@@ -63,5 +63,12 @@ jobs:
             kernel/src/sha256.c kernel/tests/sha256_test.c \
             -o /tmp/nexus-sha256-test
           /tmp/nexus-sha256-test
+      - name: Fetch and checksum-verify pinned Mbed TLS source
+        run: sh toolchain/fetch-mbedtls.sh
+      - name: Compile pinned Mbed TLS libraries
+        run: |
+          cmake -S build/deps/mbedtls-4.1.2 -B build/deps/mbedtls-build \
+            -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF
+          cmake --build build/deps/mbedtls-build --parallel 2
       - name: Build freestanding kernel
         run: make -C kernel

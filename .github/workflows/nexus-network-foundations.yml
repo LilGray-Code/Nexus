@@ -32,5 +32,14 @@ jobs:
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
             kernel/tests/net_tcp_test.c -o /tmp/nexus-net-tcp-test
           /tmp/nexus-net-tcp-test
+      - name: Test WPA2 handshake nonce generation
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/tests/wpa2_handshake_test.c kernel/src/wpa2_handshake.c \
+            kernel/src/wpa2_eapol.c kernel/src/wpa2_psk.c \
+            kernel/src/wpa2_ccmp.c kernel/src/aes_ccm.c \
+            kernel/src/sha256.c kernel/src/random.c \
+            -o /tmp/nexus-wpa2-handshake-test
+          /tmp/nexus-wpa2-handshake-test
       - name: Build freestanding kernel
         run: make -C kernel

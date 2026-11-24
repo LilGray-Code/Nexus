@@ -2,6 +2,7 @@
 
 #include "aes_ccm.h"
 #include "wpa2_eapol.h"
+#include "random.h"
 
 #include <assert.h>
 #include <stddef.h>
@@ -267,9 +268,35 @@ static void test_init_requires_valid_identity_and_nonce(void) {
     nexus_wpa2_supplicant_deinit(&supplicant);
 }
 
+static void test_random_nonce_initializer_fails_closed(void) {
+    uint8_t pmk[32] = {1U};
+    uint8_t sta[6] = {0x02U,0U,0U,0U,0U,1U};
+    uint8_t ap[6] = {0x02U,0U,0U,0U,0U,2U};
+    struct test_radio radio = {0};
+    const struct nexus_wpa2_handshake_ops ops = {
+        .send_eapol = send_eapol,
+        .install_ccmp128_keys = install_keys,
+        .clear_ccmp128_keys = clear_keys
+    };
+    struct nexus_wpa2_supplicant supplicant;
+    const bool initialized = nexus_wpa2_supplicant_init_random(
+        &supplicant, pmk, sta, ap, &ops, &radio);
+    if (initialized) {
+        assert(supplicant.state == NEXUS_WPA2_SUPPLICANT_WAIT_M1);
+        assert(!bytes_are_zero(supplicant.supplicant_nonce,
+                               sizeof(supplicant.supplicant_nonce)));
+        nexus_wpa2_supplicant_deinit(&supplicant);
+    } else {
+        assert(!nexus_rng_available() || supplicant.state == 0);
+        for (size_t i = 0U; i < sizeof(supplicant.pmk); ++i)
+            assert(supplicant.pmk[i] == 0U);
+    }
+}
+
 int main(void) {
     test_four_way_handshake_m1_to_m4();
     test_handshake_rejects_bad_mic_and_replay();
     test_init_requires_valid_identity_and_nonce();
+    test_random_nonce_initializer_fails_closed();
     return 0;
 }

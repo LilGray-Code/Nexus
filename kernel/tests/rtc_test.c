@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 static void expect_epoch(struct nexus_rtc_fields fields, uint64_t expected) {

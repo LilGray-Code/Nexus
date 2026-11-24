@@ -19,7 +19,7 @@ CFLAGS += -I../build/mbedtls-kernel/generated/include \
 C_OBJECTS += $(OUT)/tls_heap.o $(OUT)/mbedtls_heap.o \
 	$(OUT)/mbedtls_random.o $(OUT)/mbedtls_time.o \
 	$(OUT)/mbedtls_zeroize.o $(OUT)/tls_client.o \
-	$(OUT)/net_https.o $(OUT)/cert_store.o
+	$(OUT)/net_https.o $(OUT)/cert_store.o $(OUT)/mbedtls_libc.o
 
 TLS_LIBRARIES := \
 	../build/mbedtls-kernel/library/libmbedtls.a \
@@ -38,7 +38,7 @@ $(OUT):
 
 $(OUT)/nexus_ca_bundle.o: $(OUT)/nexus-ca-bundle.pem
 	cd .. && objcopy -I binary -O elf64-x86-64 -B i386:x86-64 \
-		build/nexus-ca-bundle.pem build/nexus_ca_bundle.o
+		build/nexus-ca-bundle.pem build/nexus_ca_bundle.o --rename-section .data=.rodata,alloc,load,readonly,data,contents
 
 $(OUT)/%.o: src/%.c | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -77,7 +77,7 @@ $(OUT)/usermode_asm.o: src/usermode.S | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/nexus-kernel.elf: $(OBJECTS) linker/x86_64.ld
-	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) --start-group $(TLS_LIBRARIES) --end-group
+	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) --start-group $(TLS_LIBRARIES) --end-group $(shell $(CC) -print-libgcc-file-name)
 
 clean:
 	rm -f $(OBJECTS) $(OUT)/nexus-kernel.elf

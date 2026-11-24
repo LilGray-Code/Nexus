@@ -6,7 +6,7 @@ BUILD_ROOT="${NEXUS_BUILD_ROOT:-$ROOT/build}"
 DEST="$BUILD_ROOT/nexus-ca-bundle.pem"
 TMP="$DEST.tmp"
 URL="https://raw.githubusercontent.com/composer/ca-bundle/024ad1476500f7593a6c08061b1273fd44f35158/res/cacert.pem"
-SHA256="beb7e6dfe6499926e52c075c27bcfbe4c957f8609c575b3860273ae2806f63eb"
+SHA256="796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe"
 
 for tool in curl sha256sum; do
     command -v "$tool" >/dev/null 2>&1 || {

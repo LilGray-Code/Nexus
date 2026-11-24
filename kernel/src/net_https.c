@@ -2,6 +2,9 @@
 
 #include "net.h"
 #include "timer.h"
+#include "tls_client.h"
+
+static struct nexus_tls_client https_tls_client;
 
 #include <stddef.h>
 #include <stdint.h>
@@ -63,7 +66,7 @@ static uint64_t remaining_ticks(uint64_t start, uint64_t budget) {
 
 void nexus_https_close(struct nexus_https_connection *connection) {
     if (connection == NULL) return;
-    nexus_tls_client_free(&connection->tls);
+    nexus_tls_client_free(&https_tls_client);
     if (connection->tcp_open) net_tcp_close();
     *connection = (struct nexus_https_connection){0};
 }
@@ -102,15 +105,16 @@ int nexus_https_connect(struct nexus_https_connection *connection,
         .receive = https_tcp_receive
     };
     int result = nexus_tls_client_init(
-        &connection->tls, hostname, ca_pem, ca_pem_length, &io);
+        &https_tls_client, hostname, ca_pem, ca_pem_length, &io);
     if (result != 0) {
         nexus_https_close(connection);
         return result;
     }
     connection->tls_ready = true;
+    connection->private_state = &https_tls_client;
 
     for (;;) {
-        result = nexus_tls_client_handshake(&connection->tls);
+        result = nexus_tls_client_handshake(&https_tls_client);
         if (result == 0) break;
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
@@ -125,7 +129,7 @@ int nexus_https_connect(struct nexus_https_connection *connection,
         __asm__ volatile ("pause" ::: "memory");
     }
 
-    if (!nexus_tls_client_is_verified(&connection->tls)) {
+    if (!nexus_tls_client_is_verified(&https_tls_client)) {
         nexus_https_close(connection);
         return NEXUS_HTTPS_ERR_TLS;
     }
@@ -137,19 +141,25 @@ bool nexus_https_is_verified(
     const struct nexus_https_connection *connection) {
     return connection != NULL && connection->tcp_open &&
            connection->tls_ready && connection->verified &&
-           nexus_tls_client_is_verified(&connection->tls);
+           nexus_tls_client_is_verified(&https_tls_client);
 }
 
 int nexus_https_write(struct nexus_https_connection *connection,
                       const unsigned char *buffer, size_t length) {
     if (!nexus_https_is_verified(connection))
         return NEXUS_TLS_ERR_NOT_CONNECTED;
-    return nexus_tls_client_write(&connection->tls, buffer, length);
+    const int result = nexus_tls_client_write(&https_tls_client, buffer, length);
+    if (result == MBEDTLS_ERR_SSL_WANT_READ) return NEXUS_HTTPS_WANT_READ;
+    if (result == MBEDTLS_ERR_SSL_WANT_WRITE) return NEXUS_HTTPS_WANT_WRITE;
+    return result;
 }
 
 int nexus_https_read(struct nexus_https_connection *connection,
                      unsigned char *buffer, size_t capacity) {
     if (!nexus_https_is_verified(connection))
         return NEXUS_TLS_ERR_NOT_CONNECTED;
-    return nexus_tls_client_read(&connection->tls, buffer, capacity);
+    const int result = nexus_tls_client_read(&https_tls_client, buffer, capacity);
+    if (result == MBEDTLS_ERR_SSL_WANT_READ) return NEXUS_HTTPS_WANT_READ;
+    if (result == MBEDTLS_ERR_SSL_WANT_WRITE) return NEXUS_HTTPS_WANT_WRITE;
+    return result;
 }

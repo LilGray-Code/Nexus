@@ -986,6 +986,18 @@ static void receive_tcp(const uint8_t *segment, size_t length,
 
     if (!tcp_connection.connected || (flags & TCP_FLAG_ACK) == 0U) return;
 
+    /*
+     * This first-generation client has no out-of-order reassembly. Accept
+     * only the next in-order peer sequence. A duplicate old segment gets a
+     * cumulative ACK so a peer can recover from a lost acknowledgement;
+     * future/out-of-order data is discarded rather than appended incorrectly.
+     */
+    if (sequence != tcp_connection.remote_sequence) {
+        if ((int32_t)(sequence - tcp_connection.remote_sequence) < 0)
+            (void)send_tcp_segment(TCP_FLAG_ACK, NULL, 0U);
+        return;
+    }
+
     if ((flags & TCP_FLAG_ACK) != 0U) {
         if (tcp_connection.ack_waiting &&
             acknowledgement == tcp_connection.ack_expected) {

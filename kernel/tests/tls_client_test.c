@@ -1,6 +1,10 @@
 #include "tls_client.h"
 
 #include "random.h"
+#include "rtc.h"
+#include "timer.h"
+#include "mbedtls/platform_time.h"
+#include "mbedtls/platform_util.h"
 #include "tls_heap.h"
 #include "mbedtls_time.h"
 
@@ -8,9 +12,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-bool nexus_mbedtls_time_init(void) {
-    /* Wall-clock conversion/registration is exercised by its dedicated test. */
+static mbedtls_time_t (*registered_time)(mbedtls_time_t *);
+static uint64_t fake_epoch = 1795500000ULL;
+static uint64_t fake_ticks;
+
+bool rtc_get_unix_time(uint64_t *seconds) {
+    if (seconds == NULL || fake_epoch == 0U) return false;
+    *seconds = fake_epoch;
     return true;
+}
+
+uint64_t timer_ticks(void) { return ++fake_ticks; }
+
+int mbedtls_platform_set_time(mbedtls_time_t (*callback)(mbedtls_time_t *)) {
+    registered_time = callback;
+    return 0;
 }
 
 bool nexus_rng_fill(void *output, size_t length) {
@@ -74,6 +90,7 @@ int main(int argc, char **argv) {
     assert(pem != NULL && pem_length > 1U);
 
     assert(nexus_tls_heap_init());
+    assert(registered_time == NULL);
     struct nexus_tls_io io = {
         .context = NULL,
         .send = blocked_send,

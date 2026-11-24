@@ -2875,6 +2875,117 @@ static bool browser_starts_with(const char *value, size_t length,
     return true;
 }
 
+static bool browser_load_ca_bundle(size_t *pem_length) {
+    if (pem_length == NULL) return false;
+    *pem_length = 0U;
+    scan_files_once();
+
+    struct nexus_vfs_file file = {0};
+    if (!vfs_open_root_readonly(NEXUS_BROWSER_CA_FILE, &file))
+        return false;
+    /* Only persistent Nexus Data may supply trust anchors. */
+    if (!file.nxfs_file) {
+        vfs_close(&file);
+        return false;
+    }
+
+    uint32_t file_size = 0U;
+    if (!vfs_file_size(&file, &file_size) || file_size == 0U ||
+        file_size > NEXUS_BROWSER_CA_MAX_BYTES) {
+        vfs_close(&file);
+        return false;
+    }
+
+    size_t total = 0U;
+    bool read_ok = true;
+    while (total < (size_t)file_size) {
+        size_t received = 0U;
+        if (!vfs_read(&file, browser_ca_bundle + total,
+                      (size_t)file_size - total, &received) ||
+            received == 0U || received > (size_t)file_size - total) {
+            read_ok = false;
+            break;
+        }
+        total += received;
+    }
+    vfs_close(&file);
+    if (!read_ok || total != (size_t)file_size) {
+        for (size_t i = 0U; i < sizeof(browser_ca_bundle); ++i)
+            browser_ca_bundle[i] = 0U;
+        return false;
+    }
+    browser_ca_bundle[total] = 0U;
+    *pem_length = total + 1U;
+    return true;
+}
+
+static void browser_clear_ca_bundle(void) {
+    volatile unsigned char *bytes =
+        (volatile unsigned char *)browser_ca_bundle;
+    for (size_t i = 0U; i < sizeof(browser_ca_bundle); ++i)
+        bytes[i] = 0U;
+}
+
+static bool browser_https_send_all(struct nexus_https_connection *connection,
+                                   const unsigned char *request,
+                                   size_t request_length) {
+    if (connection == NULL || request == NULL || request_length == 0U)
+        return false;
+    const uint64_t start = timer_ticks();
+    size_t sent = 0U;
+    while (sent < request_length && timer_ticks() - start < 500U) {
+        const int result = nexus_https_write(
+            connection, request + sent, request_length - sent);
+        if (result > 0) {
+            if ((size_t)result > request_length - sent) return false;
+            sent += (size_t)result;
+            continue;
+        }
+        if (result != MBEDTLS_ERR_SSL_WANT_READ &&
+            result != MBEDTLS_ERR_SSL_WANT_WRITE) return false;
+        net_poll();
+        __asm__ volatile ("pause" ::: "memory");
+    }
+    return sent == request_length;
+}
+
+static bool browser_https_receive_response(
+    struct nexus_https_connection *connection,
+    uint8_t *response, size_t response_capacity, size_t *response_length,
+    bool *orderly_eof) {
+    if (connection == NULL || response == NULL || response_capacity == 0U ||
+        response_length == NULL || orderly_eof == NULL) return false;
+    *response_length = 0U;
+    *orderly_eof = false;
+    const uint64_t start = timer_ticks();
+    uint64_t last_data = start;
+
+    while (*response_length < response_capacity &&
+           timer_ticks() - start < 1800U) {
+        const int result = nexus_https_read(
+            connection, response + *response_length,
+            response_capacity - *response_length);
+        if (result > 0) {
+            if ((size_t)result > response_capacity - *response_length)
+                return false;
+            *response_length += (size_t)result;
+            last_data = timer_ticks();
+            continue;
+        }
+        if (result == 0) {
+            *orderly_eof = true;
+            break;
+        }
+        if (result != MBEDTLS_ERR_SSL_WANT_READ &&
+            result != MBEDTLS_ERR_SSL_WANT_WRITE) return false;
+        net_poll();
+        if (*response_length != 0U &&
+            timer_ticks() - last_data >= 200U) break;
+        __asm__ volatile ("pause" ::: "memory");
+    }
+    return *response_length != 0U;
+}
+
 static void browser_navigate(bool record_history) {
     browser_clear_page();
     if (browser_address_length == 0U) {

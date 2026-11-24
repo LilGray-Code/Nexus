@@ -16,6 +16,7 @@
 #include "serial.h"
 #include "memory.h"
 #include "timer.h"
+#include "calculator.h"
 #include "text_buffer.h"
 #include "partition_plan.h"
 #include "installer_runtime.h"
@@ -29,7 +30,8 @@ enum desktop_view {
     DESKTOP_BROWSER,
     DESKTOP_SETTINGS,
     DESKTOP_TERMINAL,
-    DESKTOP_INSTALLER
+    DESKTOP_INSTALLER,
+    DESKTOP_CALCULATOR
 };
 
 static enum desktop_view active_view = DESKTOP_HOME;
@@ -137,6 +139,11 @@ static size_t installer_selected_device;
 static struct nexus_partition_plan installer_plan;
 static bool installer_plan_valid;
 static char terminal_output[160];
+static char calculator_expression[64];
+static size_t calculator_expression_length;
+static char calculator_result_text[22];
+static char calculator_status[64] = "READY";
+static bool calculator_result_valid;
 
 enum installer_ui_state {
     INSTALLER_UI_SELECT = 0,
@@ -282,6 +289,95 @@ static void format_u64(uint64_t value, char output[21]) {
     output[count] = '\0';
 }
 
+static void format_i64(int64_t value, char output[22]) {
+    const bool negative = value < 0;
+    const uint64_t magnitude = negative
+        ? (uint64_t)(-(value + 1)) + 1U : (uint64_t)value;
+    char digits[21];
+    format_u64(magnitude, digits);
+    size_t used = 0U;
+    if (negative) output[used++] = '-';
+    for (size_t i = 0U; digits[i] != '\0' && used < 21U; ++i)
+        output[used++] = digits[i];
+    output[used] = '\0';
+}
+
+static void calculator_set_status(const char *message) {
+    if (message == NULL) message = "";
+    size_t i = 0U;
+    while (message[i] != '\0' && i < sizeof(calculator_status) - 1U) {
+        calculator_status[i] = message[i];
+        ++i;
+    }
+    calculator_status[i] = '\0';
+}
+
+static const char *calculator_error_text(enum nexus_calculator_error error) {
+    switch (error) {
+        case NEXUS_CALCULATOR_ERROR_EMPTY: return "ENTER AN EXPRESSION";
+        case NEXUS_CALCULATOR_ERROR_SYNTAX: return "INVALID EXPRESSION";
+        case NEXUS_CALCULATOR_ERROR_DIVIDE_BY_ZERO: return "DIVISION BY ZERO";
+        case NEXUS_CALCULATOR_ERROR_OVERFLOW: return "INTEGER OVERFLOW";
+        case NEXUS_CALCULATOR_ERROR_INVALID_ARGUMENT: return "INVALID INPUT";
+        case NEXUS_CALCULATOR_ERROR_NONE:
+        default: return "READY";
+    }
+}
+
+static void calculator_evaluate(void) {
+    int64_t value = 0;
+    enum nexus_calculator_error error = NEXUS_CALCULATOR_ERROR_NONE;
+    if (!nexus_calculator_eval(calculator_expression,
+                               calculator_expression_length,
+                               &value, &error)) {
+        calculator_result_valid = false;
+        calculator_set_status(calculator_error_text(error));
+        return;
+    }
+    format_i64(value, calculator_result_text);
+    calculator_result_valid = true;
+    calculator_set_status("OK");
+}
+
+static void calculator_handle_key(const struct nexus_input_event *event) {
+    if (event == NULL || (event->scancode & 0x80U) != 0U) return;
+    if (event->scancode == 0x01U) {
+        active_view = DESKTOP_HOME;
+        return;
+    }
+    if (event->scancode == 0x2EU) {
+        calculator_expression_length = 0U;
+        calculator_expression[0] = '\0';
+        calculator_result_text[0] = '\0';
+        calculator_result_valid = false;
+        calculator_set_status("CLEARED");
+        return;
+    }
+    if (event->scancode == 0x1CU) {
+        calculator_evaluate();
+        return;
+    }
+    if (event->scancode == 0x0EU) {
+        if (calculator_expression_length > 0U)
+            calculator_expression[--calculator_expression_length] = '\0';
+        calculator_result_valid = false;
+        calculator_set_status("EDITING");
+        return;
+    }
+    const char ch = terminal_scancode_char(event->scancode);
+    const bool allowed =
+        (ch >= '0' && ch <= '9') || ch == '+' || ch == '-' ||
+        ch == '*' || ch == '/' || ch == '%' || ch == '(' || ch == ')' ||
+        ch == ' ';
+    if (allowed && calculator_expression_length <
+                       sizeof(calculator_expression) - 1U) {
+        calculator_expression[calculator_expression_length++] = ch;
+        calculator_expression[calculator_expression_length] = '\0';
+        calculator_result_valid = false;
+        calculator_set_status("PRESS ENTER TO CALCULATE");
+    }
+}
+
 static void format_labeled_u64(const char *label, uint64_t value,
                                  char output[64]) {
     size_t length = 0U;
@@ -367,7 +463,9 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
         case 1U: return DESKTOP_BROWSER;
         case 2U: return DESKTOP_SETTINGS;
         case 3U: return DESKTOP_TERMINAL;
-        default: return DESKTOP_INSTALLER;
+        case 4U: return DESKTOP_INSTALLER;
+        case 5U: return DESKTOP_CALCULATOR;
+        default: return DESKTOP_HOME;
     }
 }
 
@@ -390,7 +488,7 @@ static void desktop_open_view(enum desktop_view view) {
 }
 
 static void desktop_open_app(size_t app_index) {
-    if (app_index >= 5U) return;
+    if (app_index >= 6U) return;
     desktop_open_view(desktop_view_for_app(app_index));
 }
 
@@ -424,16 +522,16 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
                        desktop_theme_is_light() ? 49U : 247U,
                        desktop_theme_is_light() ? 69U : 255U);
 
-    static const char *const labels[5] = {
-        "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL"
+    static const char *const labels[6] = {
+        "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL", "CALC"
     };
-    static const uint8_t accents[5][3] = {
+    static const uint8_t accents[6][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {239U, 177U, 119U}
+        {217U, 164U, 83U}, {239U, 177U, 119U}, {72U, 193U, 156U}
     };
-    const uint64_t tab_width = 72U;
-    const uint64_t tab_step = 78U;
-    for (size_t i = 0U; i < 5U; ++i) {
+    const uint64_t tab_width = 64U;
+    const uint64_t tab_step = 67U;
+    for (size_t i = 0U; i < 6U; ++i) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
@@ -478,7 +576,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
     if (!start_menu_open) return;
     const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-    const uint64_t menu_height = 238U;
+    const uint64_t menu_height = 272U;
     uint64_t menu_x = 12U;
     uint64_t menu_y = screen_height - bottom_bar - menu_height + 4U;
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
@@ -513,18 +611,19 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         desktop_theme_is_light() ? 54U : 247U,
         desktop_theme_is_light() ? 76U : 255U);
 
-    static const char *const names[5] = {
+    static const char *const names[6] = {
         "FILES - MANAGE YOUR DATA",
         "WEB - NETWORK TEXT BROWSER",
         "SETTINGS - SYSTEM OVERVIEW",
         "TERMINAL - COMMAND LINE",
-        "INSTALL - DISK INSTALL WIZARD"
+        "INSTALL - DISK INSTALL WIZARD",
+        "CALCULATOR - INTEGER ARITHMETIC"
     };
-    static const uint8_t accents[5][3] = {
+    static const uint8_t accents[6][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {239U, 177U, 119U}
+        {217U, 164U, 83U}, {239U, 177U, 119U}, {72U, 193U, 156U}
     };
-    for (size_t i = 0U; i < 5U; ++i) {
+    for (size_t i = 0U; i < 6U; ++i) {
         const uint64_t row_y = menu_y + 49U + (uint64_t)i * 34U;
         graphics_fill_rect(menu_x + 8U, row_y,
                            menu_width - 16U, 29U,
@@ -668,6 +767,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
+    if (active_view == DESKTOP_CALCULATOR) window_title = "CALCULATOR";
     graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
                        1U,
                        desktop_theme_is_light() ? 41U : 234U,
@@ -699,17 +799,17 @@ static void draw_shell(void) {
                            1U, 111U, 207U, 231U);
 
         const uint64_t tile_y = text_y + 76U;
-        uint64_t tile_width = (panel_width - 100U) / 5U;
+        uint64_t tile_width = (panel_width - 100U) / 6U;
         if (tile_width > 190U) tile_width = 190U;
-        static const char *const labels[5] = {
-            "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL"
+        static const char *const labels[6] = {
+            "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL", "CALC"
         };
-        static const uint8_t accent[5][3] = {
+        static const uint8_t accent[6][3] = {
             {45U, 177U, 202U}, {117U, 136U, 244U},
             {82U, 198U, 155U}, {217U, 164U, 83U},
-            {239U, 177U, 119U}
+            {239U, 177U, 119U}, {72U, 193U, 156U}
         };
-        for (uint32_t i = 0U; i < 5U; ++i) {
+        for (uint32_t i = 0U; i < 6U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
             graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
@@ -1406,6 +1506,30 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 382U,
                            "PLAIN HTTP ONLY - DO NOT SEND PRIVATE DATA",
                            1, 239, 177, 119);
+} else if (active_view == DESKTOP_CALCULATOR) {
+        graphics_draw_text(text_x, text_y, "NEXUS CALCULATOR",
+                           2, 239, 249, 255);
+        graphics_draw_text(text_x, text_y + 38U,
+                           "INTEGER ARITHMETIC  /  + - * / %  /  PARENTHESES",
+                           1, 108, 216, 229);
+        graphics_draw_text(text_x, text_y + 92U, "EXPRESSION:",
+                           1, 170, 191, 211);
+        graphics_draw_text(text_x, text_y + 122U,
+                           calculator_expression, 1, 239, 249, 255);
+        graphics_draw_text(text_x, text_y + 182U, "RESULT:",
+                           1, 170, 191, 211);
+        graphics_draw_text(text_x, text_y + 214U,
+                           calculator_result_valid
+                               ? calculator_result_text : "--",
+                           2, 119, 229, 211);
+        graphics_draw_text(text_x, text_y + 274U, "STATUS:",
+                           1, 170, 191, 211);
+        graphics_draw_text(text_x, text_y + 304U,
+                           calculator_status, 1, 239, 177, 119);
+        graphics_draw_text(text_x, text_y + 364U,
+                           "ENTER CALCULATE  BACKSPACE DELETE  C CLEAR  ESC HOME",
+                           1, 170, 191, 211);
+        
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
                            2, 239, 249, 255);
@@ -3257,14 +3381,14 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {
                 const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-                const uint64_t menu_height = 238U;
+                const uint64_t menu_height = 272U;
                 uint64_t menu_y = taskbar_top - menu_height + 4U;
                 const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
                 if (menu_y < top_limit) menu_y = top_limit;
                 if ((uint64_t)pointer_x >= 12U &&
                     (uint64_t)pointer_x < 12U + menu_width &&
                     (uint64_t)pointer_y >= menu_y + 49U &&
-                    (uint64_t)pointer_y < menu_y + 49U + 5U * 34U) {
+                    (uint64_t)pointer_y < menu_y + 49U + 6U * 34U) {
                     const size_t app = (size_t)((uint64_t)pointer_y -
                         (menu_y + 49U)) / 34U;
                     desktop_open_app(app);
@@ -3280,10 +3404,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     start_menu_open = !start_menu_open;
                     shell_click_handled = true;
                 } else {
-                    for (size_t app = 0U; app < 5U; ++app) {
-                        const uint64_t tab_x = 110U + (uint64_t)app * 78U;
+                    for (size_t app = 0U; app < 6U; ++app) {
+                        const uint64_t tab_x = 110U + (uint64_t)app * 67U;
                         if ((uint64_t)pointer_x >= tab_x &&
-                            (uint64_t)pointer_x < tab_x + 72U) {
+                            (uint64_t)pointer_x < tab_x + 64U) {
                             desktop_open_app(app);
                             shell_click_handled = true;
                             break;
@@ -3539,10 +3663,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t px = (screen_width - pw) / 2U;
             const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
             const uint64_t ty = py + 82U + 76U;
-            uint64_t tw = (pw - 100U) / 5U;
+            uint64_t tw = (pw - 100U) / 6U;
             if (tw > 190U) tw = 190U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (size_t app = 0U; app < 5U; ++app) {
+                for (size_t app = 0U; app < 6U; ++app) {
                     const uint64_t tx = px + 28U + (uint64_t)app * (tw + 10U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {
@@ -3704,7 +3828,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_pointer();
             return;
         }
-        if (event->scancode >= 0x02U && event->scancode <= 0x06U) {
+        if (event->scancode >= 0x02U && event->scancode <= 0x07U) {
             desktop_open_app((size_t)(event->scancode - 0x02U));
             draw_shell();
             draw_pointer();
@@ -3830,6 +3954,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
         }
         draw_shell(); draw_pointer(); return;
+    }
+    if (active_view == DESKTOP_CALCULATOR) {
+        calculator_handle_key(event);
+        draw_shell();
+        draw_pointer();
+        return;
     }
     if (active_view == DESKTOP_TERMINAL) {
         if ((event->scancode & 0x80U) != 0U) return;
@@ -3996,6 +4126,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         case 0x3DU: next_view = DESKTOP_SETTINGS; break;
         case 0x3EU: next_view = DESKTOP_TERMINAL; break;
         case 0x3FU: next_view = DESKTOP_INSTALLER; break;
+        case 0x41U: next_view = DESKTOP_CALCULATOR; break;
         case 0x01U: next_view = DESKTOP_HOME; break;
         default: return;
     }

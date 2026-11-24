@@ -767,11 +767,28 @@ bool vfs_open_root_readonly(const char *name, struct nexus_vfs_file *file) {
     }
 
     if (root_mounted) {
+        /* FAT32 enumeration is stateful. Switch to the root to locate the
+         * root entry, copy its metadata, then restore the active directory.
+         */
+        const uint32_t restore_cluster =
+            directory_backend == VFS_DIRECTORY_FAT32 &&
+            directory_depth != 0U
+                ? directory_stack[directory_depth] : fat32_root_cluster();
+        if (!fat32_read_directory(fat32_root_cluster())) return false;
+
+        bool found = false;
+        struct nexus_fat32_entry snapshot = {0};
         for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
             const struct nexus_fat32_entry *entry = fat32_root_entry_at(i);
             if (entry == NULL || !name_equal(entry->name, name) ||
                 (entry->attributes & 0x10U) != 0U) continue;
-            file->fat32_snapshot = *entry;
+            snapshot = *entry;
+            found = true;
+            break;
+        }
+        if (!fat32_read_directory(restore_cluster)) return false;
+        if (found) {
+            file->fat32_snapshot = snapshot;
             file->open = true;
             file->fat32_file = true;
             return true;

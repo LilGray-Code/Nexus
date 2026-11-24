@@ -408,6 +408,8 @@ int main(void) {
     assert(root_bytes == 12U);
     assert(memcmp(root_config, "ROOT CONTENT", 12U) == 0);
     vfs_close(&root_file);
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/BOOT/MANUALS") == 0);
     assert(vfs_write_root_file("NEXUS.CFG", preferences_a,
                                sizeof(preferences_a)));
     assert(vfs_open_root_readonly("NEXUS.CFG", &root_file));

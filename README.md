@@ -56,7 +56,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   limited to the current folder and the bounded 128-entry cache, not recursive
   full-volume search. Results retain their original VFS entry identity while
   sorting by name, file type, or size with the `S` key. Regular files support
-  persistent rename (`R`), copy (`C`), and move (`M`). Copies stream through
+  persistent rename (`R`), copy (`C`), and move (`M`). The selected file can
+  also be launched with the Files toolbar's Run ELF action or `Ctrl+Enter`.
+  This uses the native Nexus ELF64 loader, has a 128 KiB image limit and a
+  15-character process-name limit, executes synchronously, and displays PID
+  and exit status. It is not a Windows `.exe` launcher. Copies stream through
   a bounded block buffer and verify the source CRC before journaled metadata
   makes the new file visible. Destination paths containing a slash are
   volume-root relative; a simple name uses the current directory. Names/path

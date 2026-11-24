@@ -1020,3 +1020,20 @@ subdirectories or recursively scan an entire volume. A folder change or parent
 navigation resets the query so a search cannot silently carry into a different
 directory. The host-side file-list tests cover case-insensitive matches,
 extension fragments, empty queries, no-match results, and invalid bounds.
+
+
+### Files-native ELF launch action
+
+The Files view exposes a Run ELF action and `Ctrl+Enter` for the selected
+regular file. It routes through the same validated VFS read, ELF64 parser,
+user address-space loader, and CPL3 execution path used by the existing
+process manager. The Files page reports the process ID and exit status, or a
+bounded error reason when the program cannot be loaded. The file is opened
+read-only and is not modified by launch.
+
+This is a synchronous bootstrap execution path: the foreground shell pauses
+until the native program exits, user memory is reclaimed, and the process
+record becomes EXITED. It is not yet an independent background process
+scheduler, terminal emulator attached to the user process, package manager,
+or Windows PE/COFF compatibility layer. Process image size and process-name
+limits remain enforced by the existing ELF/process subsystem.

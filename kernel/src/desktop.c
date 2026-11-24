@@ -143,6 +143,7 @@ static size_t files_edit_cursor;
 static size_t files_edit_view_offset;
 static bool files_edit_follow_end;
 static char files_edit_status[64];
+static char files_app_status[64];
 static char terminal_input[64];
 static size_t terminal_input_length;
 static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
@@ -1434,15 +1435,15 @@ static void draw_shell(void) {
             }
         }
         if (files_vfs_ready) {
-            static const char *const actions[5] = {
-                "NEW FILE", "NEW FOLDER", "OPEN/EDIT", "DELETE", "REFRESH"
+            static const char *const actions[6] = {
+                "NEW FILE", "NEW FOLDER", "OPEN/EDIT", "DELETE", "RUN ELF", "REFRESH"
             };
-            static const uint8_t action_colors[5][3] = {
+            static const uint8_t action_colors[6][3] = {
                 {37U, 139U, 165U}, {80U, 154U, 125U},
                 {60U, 116U, 170U}, {153U, 69U, 78U},
-                {67U, 133U, 111U}
+                {109U, 139U, 88U}, {67U, 133U, 111U}
             };
-            for (size_t action = 0U; action < 5U; ++action) {
+            for (size_t action = 0U; action < 6U; ++action) {
                 const uint64_t action_x = text_x + (uint64_t)action * 76U;
                 graphics_fill_rect(action_x, text_y + 270U, 72U, 25U,
                                    29U, 47U, 69U);
@@ -1529,8 +1530,12 @@ static void draw_shell(void) {
                         ? "NO MATCHES" : "NO FILES",
                     1U, 170U, 191U, 211U);
             }
-            graphics_draw_text(text_x, text_y + 390U,
-                "CTRL+F SEARCH  ENTER OPEN  R RENAME  C COPY  M MOVE  S SORT  BKSP UP",
+            graphics_draw_text(text_x, text_y + 374U, files_app_status,
+                1U, files_app_status[0] == '\0' ? 139U : 119U,
+                files_app_status[0] == '\0' ? 163U : 229U,
+                files_app_status[0] == '\0' ? 188U : 190U);
+            graphics_draw_text(text_x, text_y + 394U,
+                "CTRL+F SEARCH  CTRL+ENTER RUN ELF  ENTER OPEN  R RENAME  C COPY  M MOVE",
                 1, 170, 191, 211);
             if (files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 414U,
@@ -2220,6 +2225,97 @@ static void files_open_selected(void) {
         return;
     }
     files_editor_begin_selected();
+}
+
+static void files_set_app_status(const char *message) {
+    size_t length = 0U;
+    while (message != NULL && message[length] != '\0' &&
+           length < sizeof(files_app_status) - 1U) {
+        files_app_status[length] = message[length];
+        ++length;
+    }
+    files_app_status[length] = '\0';
+}
+
+/* Run a selected file only through the validated Nexus ELF64 process loader.
+ * This remains synchronous: the foreground shell is paused until the
+ * bootstrap process exits and its user address space is reclaimed.
+ */
+static void files_run_selected(void) {
+    struct nexus_vfs_dirent selected;
+    if (files_selected_index >= files_filtered_count ||
+        !files_listing_get_entry(files_selected_index, &selected)) {
+        files_set_app_status("SELECT A PROGRAM TO RUN");
+        return;
+    }
+    if (selected.type != NEXUS_VFS_FILE) {
+        files_set_app_status("FOLDERS CANNOT BE EXECUTED");
+        return;
+    }
+
+    size_t name_length = 0U;
+    while (name_length < NEXUS_VFS_NAME_MAX &&
+           selected.name[name_length] != '\0') ++name_length;
+    if (name_length == 0U || name_length >= NEXUS_PROCESS_NAME_MAX) {
+        files_set_app_status("PROGRAM NAME LIMIT: 15 CHARACTERS");
+        return;
+    }
+
+    struct nexus_process_result result;
+    enum nexus_process_error error = NEXUS_PROCESS_ERROR_NONE;
+    if (!process_execute_file(selected.name, &result, &error)) {
+        const char *message = "NATIVE PROGRAM FAILED";
+        switch (error) {
+            case NEXUS_PROCESS_ERROR_NO_VOLUME:
+                message = "NO MOUNTED USER VOLUME"; break;
+            case NEXUS_PROCESS_ERROR_NOT_FOUND:
+                message = "PROGRAM NOT FOUND"; break;
+            case NEXUS_PROCESS_ERROR_IO:
+                message = "PROGRAM READ ERROR"; break;
+            case NEXUS_PROCESS_ERROR_TOO_LARGE:
+                message = "PROGRAM EXCEEDS 128 KIB"; break;
+            case NEXUS_PROCESS_ERROR_TABLE_FULL:
+                message = "PROCESS TABLE FULL"; break;
+            case NEXUS_PROCESS_ERROR_BAD_ELF:
+                message = "INVALID OR UNSUPPORTED NEXUS ELF"; break;
+            case NEXUS_PROCESS_ERROR_EXECUTION:
+                message = "NATIVE PROGRAM EXECUTION FAILED"; break;
+            default:
+                break;
+        }
+        files_set_app_status(message);
+        serial_write("FILES: run failed: ");
+        serial_write(message);
+        serial_write("\r\n");
+        return;
+    }
+
+    size_t out = 0U;
+    const char *prefix = "PID ";
+    while (prefix[out] != '\0' && out < sizeof(files_app_status) - 1U) {
+        files_app_status[out] = prefix[out];
+        ++out;
+    }
+    char number[21];
+    format_u64(result.pid, number);
+    for (size_t i = 0U; number[i] != '\0' &&
+         out < sizeof(files_app_status) - 1U; ++i)
+        files_app_status[out++] = number[i];
+    const char *middle = " EXIT ";
+    for (size_t i = 0U; middle[i] != '\0' &&
+         out < sizeof(files_app_status) - 1U; ++i)
+        files_app_status[out++] = middle[i];
+    format_u64(result.exit_status, number);
+    for (size_t i = 0U; number[i] != '\0' &&
+         out < sizeof(files_app_status) - 1U; ++i)
+        files_app_status[out++] = number[i];
+    files_app_status[out] = '\0';
+
+    serial_write("FILES: native ELF exited, pid=");
+    serial_write_hex(result.pid);
+    serial_write(" status=");
+    serial_write_hex(result.exit_status);
+    serial_write("\r\n");
 }
 
 static void files_editor_begin_operation(enum files_editor_state state) {
@@ -3856,7 +3952,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             files_search_focus = false;
             const int64_t relative_y = pointer_y - (int64_t)(ty + 270U);
             if (relative_y >= 0 && relative_y < 25 &&
-                relative_x >= 0 && relative_x < 380) {
+                relative_x >= 0 && relative_x < 456) {
                 const size_t action = (size_t)relative_x / 76U;
                 if (action == 0U) {
                     if (vfs_current_directory_writable())
@@ -3884,6 +3980,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     }
                     refresh_files_listing();
                 } else if (action == 4U) {
+                    files_run_selected();
+                } else if (action == 5U) {
                     refresh_files_listing();
                     serial_write("FILES: listing refreshed by mouse\r\n");
                 }
@@ -4288,6 +4386,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                          event->scancode == 0x50U)
                     files_search_focus = false;
             }
+            draw_shell(); draw_pointer(); return;
+        }
+        if (keyboard_left_control && event->scancode == 0x1CU) {
+            files_run_selected();
             draw_shell(); draw_pointer(); return;
         }
         if (event->scancode == 0x31U) {

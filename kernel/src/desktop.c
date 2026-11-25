@@ -1010,8 +1010,8 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS OS INSTALLER";
-    graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
-                       1U,
+    graphics_draw_text_aa(panel_x + 33U, panel_y + 15U, window_title,
+                           98304U,
                        desktop_theme_is_light() ? 41U : 234U,
                        desktop_theme_is_light() ? 59U : 244U,
                        desktop_theme_is_light() ? 80U : 252U);
@@ -1036,8 +1036,8 @@ static void draw_shell(void) {
     const uint64_t text_y = panel_y +
         (active_view == DESKTOP_INSTALLER ? 48U : 82U);
     if (active_view == DESKTOP_HOME) {
-        graphics_draw_text(text_x, text_y, "YOUR NEXUS WORKSPACE",
-                           2U, 241U, 248U, 255U);
+        graphics_draw_text_aa(text_x, text_y, "YOUR NEXUS WORKSPACE",
+                               163840U, 241U, 248U, 255U);
         graphics_draw_text(text_x + 2U, text_y + 30U,
                            "A CUSTOM DESKTOP. YOUR TOOLS. YOUR FILES.",
                            1U, 111U, 207U, 231U);

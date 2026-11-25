@@ -111,9 +111,11 @@ manager, not a complete hierarchical desktop file manager.
 - No claim of arbitrary GPU, audio, Wi-Fi, Bluetooth, or motherboard support.
 - The browser is a bounded text-oriented client, not a full HTML5/CSS/JavaScript
   engine. Its online path uses verified TLS 1.3, a built-in CA trust bundle,
-  HTTP response framing, redirect handling, and server-rendered Bing search
-  results with a DuckDuckGo HTML fallback. Provider anti-bot challenges and
-  modern page features can still prevent some sites from working.
+  complete HTTP response framing, redirects, and server-rendered Bing search
+  results with a DuckDuckGo HTML fallback. The QEMU live-desktop acceptance
+  test now performs a real HTTPS search and verifies that result links are
+  parsed. Provider anti-bot challenges and modern page features can still
+  prevent some sites from working.
 - DNS currently supports IPv4 A queries, verified question matching, bounded
   CNAME-chain resolution, and a small positive cache with a maximum five-minute
   TTL. This is not a complete recursive resolver or full IPv6 DNS implementation.

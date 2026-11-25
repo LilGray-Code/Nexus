@@ -437,7 +437,18 @@ bool virtio_pci_queue_submit_pair(struct nexus_virtio_queue *queue,
         }
         if ((timeout_ticks != 0U &&
              timer_ticks() - start >= timeout_ticks) ||
-            ++spins >= maximum_spins) return false;
+            ++spins >= maximum_spins) {
+            serial_write("VIRTIO PCI: queue submit timeout q=");
+            serial_write_hex(queue->index);
+            serial_write(" avail=");
+            serial_write_hex(*queue->available_index_ptr);
+            serial_write(" used=");
+            serial_write_hex(*queue->used_index_ptr);
+            serial_write(" spins=");
+            serial_write_hex(spins);
+            serial_write("\r\n");
+            return false;
+        }
         __asm__ volatile ("pause" ::: "memory");
     }
 }

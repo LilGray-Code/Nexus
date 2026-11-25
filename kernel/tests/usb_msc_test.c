@@ -15,6 +15,7 @@ struct mock_usb {
     bool fail_recovery;
     unsigned recoveries;
     unsigned commands;
+    unsigned capacity16_commands;
     uint8_t last_opcode;
     uint8_t last_cdb[16];
     uint8_t last_cdb_length;
@@ -55,6 +56,7 @@ static bool mock_bulk_out(void *context, uint8_t endpoint,
         mock->last_cdb_length = bytes[14];
         for (size_t i=0U;i<16U;++i) mock->last_cdb[i]=bytes[15U+i];
         ++mock->commands;
+        if (mock->last_opcode == 0x9EU) ++mock->capacity16_commands;
         *actual = length;
         return true;
     }
@@ -156,8 +158,11 @@ static void test_initialize_and_read_capacity_16(void) {
     assert(device.block_size==512U);
     assert(device.block_count==0x0000000100000001ULL);
     assert(device.max_blocks_per_request==8U);
-    assert(mock.commands==4U);
-    assert(mock.last_opcode==0x9EU);
+    /* INQUIRY, TEST UNIT READY, READ CAPACITY(10/16), then two
+     * optional unit-serial VPD INQUIRY commands.
+     */
+    assert(mock.commands==6U);
+    assert(mock.capacity16_commands==1U);
     assert(device.vendor[0]=='N' && device.product[0]=='U');
     assert(device.revision[0]=='2');
     assert(device.unit_serial[0]=='N');

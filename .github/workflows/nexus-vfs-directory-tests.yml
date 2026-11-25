@@ -6,6 +6,8 @@ on:
       - nexus-original-kernel-roadmap
     paths:
       - "kernel/src/vfs.c"
+      - "kernel/src/boot_pack.c"
+      - "kernel/src/boot_pack.h"
       - "kernel/src/vfs.h"
       - "kernel/src/nxfs.c"
       - "kernel/src/nxfs.h"
@@ -36,6 +38,7 @@ jobs:
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src kernel/src/nxfs.c kernel/src/vfs.c \
-            kernel/tests/vfs_directory_test.c -o /tmp/nexus-vfs-directory-test
-      - name: Verify persistent NXFS and read-only FAT32 folder behavior
+            kernel/src/boot_pack.c kernel/tests/vfs_directory_test.c \
+            -o /tmp/nexus-vfs-directory-test
+      - name: Verify persistent NXFS, read-only FAT32, and bundled system-pack overlay
         run: /tmp/nexus-vfs-directory-test

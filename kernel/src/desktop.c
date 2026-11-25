@@ -3558,6 +3558,25 @@ browser_retry:
     }
     if (!nexus_http_decode_response(response, response_length, body,
                                     NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
+        if (search_request) {
+            serial_write(search_use_bing
+                ? "NEXUS BING HTTP DECODE FAILED bytes="
+                : "NEXUS DUCKDUCKGO HTTP DECODE FAILED bytes=");
+            serial_write_hex(response_length);
+            serial_write(" tail=");
+            char tail[129];
+            const size_t tail_length = response_length < sizeof(tail) - 1U
+                ? response_length : sizeof(tail) - 1U;
+            const size_t tail_start = response_length - tail_length;
+            for (size_t i = 0U; i < tail_length; ++i) {
+                const uint8_t value = response[tail_start + i];
+                tail[i] = value >= 0x20U && value <= 0x7EU
+                    ? (char)value : '.';
+            }
+            tail[tail_length] = '\0';
+            serial_write(tail);
+            serial_write("\\r\\n");
+        }
         if (browser_search_fallback(
                 search_request, &search_use_bing,
                 &search_fallback_attempted)) goto browser_retry;

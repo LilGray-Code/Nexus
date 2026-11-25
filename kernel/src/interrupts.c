@@ -110,6 +110,7 @@ void idt_init(void) {
     __asm__ volatile ("lidt %0" : : "m"(idtr));
 }
 
+#ifdef NEXUS_SYSCALL_TRACE
 static void syscall_frame_trace(const char *phase,
                                  const struct interrupt_frame *frame) {
     serial_write("SYSCALL ");
@@ -128,7 +129,9 @@ static void syscall_frame_trace(const char *phase,
     serial_write_hex(frame->user_stack_segment);
     serial_write("\r\n");
 }
-
+#else
+#define syscall_frame_trace(phase, frame) ((void)0)
+#endif
 __attribute__((noreturn))
 void exception_dispatch(const struct interrupt_frame *frame) {
     uint16_t current_cs = 0U;
@@ -210,6 +213,29 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
 
             case NEXUS_SYS_ABI_VERSION:
                 mutable_frame->rax = NEXUS_SYSCALL_ABI_VERSION;
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
+            case NEXUS_SYS_INPUT_POLL:
+                mutable_frame->rax = (uint64_t)usermode_sys_input_poll(
+                    frame->rdi);
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
+            case NEXUS_SYS_DISPLAY_INFO:
+                mutable_frame->rax = (uint64_t)usermode_sys_display_info(
+                    frame->rdi);
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
+            case NEXUS_SYS_CLOCK_TICKS:
+                mutable_frame->rax = (uint64_t)usermode_sys_clock_ticks();
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
+            case NEXUS_SYS_FRAMEBUFFER_BLIT:
+                mutable_frame->rax = (uint64_t)
+                    usermode_sys_framebuffer_blit(frame->rdi);
                 syscall_frame_trace("return", mutable_frame);
                 return;
 

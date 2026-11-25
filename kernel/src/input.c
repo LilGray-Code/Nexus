@@ -29,6 +29,8 @@ static uint8_t keyboard_e1_remaining;
 static bool keyboard_ready;
 static bool mouse_ready;
 
+static void queue_event(const struct nexus_input_event *event);
+
 static inline void outb(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
 }
@@ -266,8 +268,7 @@ void input_keyboard_interrupt(void) {
     input_process_keyboard_scancode(inb(PS2_DATA_PORT));
 }
 
-void input_mouse_interrupt(void) {
-    const uint8_t value = inb(PS2_DATA_PORT);
+static void input_process_mouse_byte(uint8_t value) {
     if (mouse_packet_index == 0U && (value & 0x08U) == 0U) return;
 
     mouse_packet[mouse_packet_index++] = value;
@@ -298,6 +299,23 @@ void input_mouse_interrupt(void) {
     };
     queue_event(&event);
 }
+
+void input_mouse_interrupt(void) {
+    input_process_mouse_byte(inb(PS2_DATA_PORT));
+}
+
+#ifdef NEXUS_INPUT_HOST_TEST
+void input_test_mouse_device_id(uint8_t id) {
+    mouse_packet_index = 0U;
+    mouse_explorer_buttons = id == 4U;
+    mouse_packet_length = (id == 3U || id == 4U)
+        ? PS2_MOUSE_PACKET_WHEEL : PS2_MOUSE_PACKET_STANDARD;
+}
+
+void input_test_mouse_byte(uint8_t value) {
+    input_process_mouse_byte(value);
+}
+#endif
 
 void input_usb_keyboard_report(const uint8_t report[8]) {
     /* Eight modifier transitions plus six releases and six key makes. */

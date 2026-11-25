@@ -2002,17 +2002,18 @@ static void draw_shell(void) {
                            nexus_firmware_type_label(),
                            1U, 119U, 229U, 211U);
         if (firmware->smbios_present) {
-            char smbios_version[8] = "SMBIOS ";
-            smbios_version[7] = '\0';
+            char smbios_version[16] = "SMBIOS ";
             char major[4];
             char minor[4];
             format_u64(firmware->smbios_major, major);
             format_u64(firmware->smbios_minor, minor);
             size_t used = 7U;
-            for (size_t i = 0U; major[i] != '\0' && used < 7U; ++i)
+            for (size_t i = 0U; major[i] != '\0' &&
+                 used < sizeof(smbios_version) - 1U; ++i)
                 smbios_version[used++] = major[i];
             smbios_version[used++] = '.';
-            for (size_t i = 0U; minor[i] != '\0' && used < sizeof(smbios_version) - 1U; ++i)
+            for (size_t i = 0U; minor[i] != '\0' &&
+                 used < sizeof(smbios_version) - 1U; ++i)
                 smbios_version[used++] = minor[i];
             smbios_version[used] = '\0';
             graphics_draw_text(text_x, text_y + 282U, smbios_version,

@@ -958,6 +958,179 @@ static bool xhci_configure_interrupt_endpoint(struct xhci_controller *xhci,
                         ((uint32_t)device->slot_id << 24), NULL);
 }
 
+static bool xhci_configure_bulk_endpoints(
+    struct xhci_controller *xhci, struct xhci_hid_device *device,
+    uint8_t bulk_in_address, uint16_t bulk_in_packet,
+    uint8_t bulk_out_address, uint16_t bulk_out_packet) {
+    if (xhci == NULL || device == NULL ||
+        (bulk_in_address & 0x80U) == 0U ||
+        (bulk_out_address & 0x80U) != 0U ||
+        bulk_in_packet == 0U || bulk_out_packet == 0U ||
+        bulk_in_packet > 1024U || bulk_out_packet > 1024U)
+        return false;
+
+    const uint8_t in_number = bulk_in_address & 0x0FU;
+    const uint8_t out_number = bulk_out_address & 0x0FU;
+    if (in_number == 0U || out_number == 0U) return false;
+    device->bulk_in_endpoint_id = (uint8_t)(in_number * 2U + 1U);
+    device->bulk_out_endpoint_id = (uint8_t)(out_number * 2U);
+    if (device->bulk_in_endpoint_id > 31U ||
+        device->bulk_out_endpoint_id > 31U ||
+        device->bulk_in_endpoint_id == device->bulk_out_endpoint_id)
+        return false;
+    if (!xhci_ring_init(&device->bulk_in_ring) ||
+        !xhci_ring_init(&device->bulk_out_ring)) return false;
+
+    device->bulk_in_address = bulk_in_address;
+    device->bulk_out_address = bulk_out_address;
+    device->bulk_in_max_packet = bulk_in_packet;
+    device->bulk_out_max_packet = bulk_out_packet;
+
+    volatile uint8_t *input_page =
+        (volatile uint8_t *)memory_phys_to_virt(
+            device->input_context_physical);
+    volatile uint8_t *output_page =
+        (volatile uint8_t *)memory_phys_to_virt(
+            device->device_context_physical);
+    if (input_page == NULL || output_page == NULL) return false;
+    for (size_t i = 0U; i < XHCI_PAGE_SIZE; ++i) input_page[i] = 0U;
+
+    volatile uint32_t *input = (volatile uint32_t *)(uintptr_t)input_page;
+    volatile uint32_t *out_slot = (volatile uint32_t *)(uintptr_t)output_page;
+    volatile uint32_t *out_ep0 = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)output_page + xhci->context_size);
+    volatile uint32_t *in_slot = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page + xhci->context_size);
+    volatile uint32_t *in_ep0 = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page + 2U * xhci->context_size);
+    volatile uint32_t *in_bulk_in = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page +
+        (size_t)(device->bulk_in_endpoint_id + 1U) * xhci->context_size);
+    volatile uint32_t *in_bulk_out = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page +
+        (size_t)(device->bulk_out_endpoint_id + 1U) * xhci->context_size);
+
+    const uint8_t max_dci = device->bulk_in_endpoint_id >
+        device->bulk_out_endpoint_id
+            ? device->bulk_in_endpoint_id : device->bulk_out_endpoint_id;
+    input[1] = 1U |
+        (1U << device->bulk_in_endpoint_id) |
+        (1U << device->bulk_out_endpoint_id);
+    for (size_t i = 0U;
+         i < xhci->context_size / sizeof(uint32_t); ++i) {
+        in_slot[i] = out_slot[i];
+        in_ep0[i] = out_ep0[i];
+    }
+    in_slot[0] = (in_slot[0] & 0x07FFFFFFU) |
+                 ((uint32_t)max_dci << 27);
+
+    /* xHCI endpoint type 6 is Bulk IN; type 2 is Bulk OUT. */
+    in_bulk_in[0] = 0U;
+    in_bulk_in[1] = (3U << 1) | (6U << 3) |
+                    ((uint32_t)bulk_in_packet << 16);
+    in_bulk_in[2] = (uint32_t)(device->bulk_in_ring.physical | 1U);
+    in_bulk_in[3] = (uint32_t)(device->bulk_in_ring.physical >> 32);
+    in_bulk_in[4] = bulk_in_packet;
+
+    in_bulk_out[0] = 0U;
+    in_bulk_out[1] = (3U << 1) | (2U << 3) |
+                     ((uint32_t)bulk_out_packet << 16);
+    in_bulk_out[2] = (uint32_t)(device->bulk_out_ring.physical | 1U);
+    in_bulk_out[3] = (uint32_t)(device->bulk_out_ring.physical >> 32);
+    in_bulk_out[4] = bulk_out_packet;
+
+    return xhci_command(xhci, device->input_context_physical,
+                        XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
+                        ((uint32_t)device->slot_id << 24), NULL);
+}
+
+static bool xhci_bulk_transfer(struct xhci_controller *xhci,
+                               struct xhci_hid_device *device,
+                               bool input, void *buffer, size_t length) {
+    if (xhci == NULL || device == NULL || !device->active ||
+        device->kind != XHCI_HID_MASS_STORAGE ||
+        buffer == NULL || length == 0U || length > XHCI_PAGE_SIZE)
+        return false;
+
+    struct xhci_ring *ring = input
+        ? &device->bulk_in_ring : &device->bulk_out_ring;
+    const uint8_t endpoint = input
+        ? device->bulk_in_endpoint_id : device->bulk_out_endpoint_id;
+    if (ring->trbs == NULL) return false;
+
+    if (input) {
+        for (size_t i = 0U; i < length; ++i)
+            device->report_buffer[i] = 0U;
+    } else {
+        const uint8_t *source = (const uint8_t *)buffer;
+        for (size_t i = 0U; i < length; ++i)
+            device->report_buffer[i] = source[i];
+    }
+
+    const uint32_t control = XHCI_TRB_TYPE(1U) | XHCI_TRB_IOC |
+                             (input ? XHCI_TRB_ISP : 0U);
+    if (xhci_ring_push(ring, device->report_buffer_physical,
+                       (uint32_t)length, control) == NULL) return false;
+    volatile uint32_t *doorbell = xhci_map_register(
+        xhci, (uint64_t)xhci->doorbell_offset +
+              (uint64_t)device->slot_id * 4U);
+    if (doorbell == NULL) return false;
+    *doorbell = endpoint;
+    __asm__ volatile ("sfence" : : : "memory");
+
+    struct xhci_trb completion;
+    if (!xhci_wait_transfer(xhci, device->slot_id, endpoint,
+                            &completion)) return false;
+    const uint32_t residual = completion.status & 0x00FFFFFFU;
+    if (residual > length || (size_t)residual != 0U) return false;
+
+    if (input) {
+        uint8_t *destination = (uint8_t *)buffer;
+        for (size_t i = 0U; i < length; ++i)
+            destination[i] = device->report_buffer[i];
+    }
+    return true;
+}
+
+static bool xhci_msc_bulk_in(void *context, void *buffer, size_t length,
+                             size_t *transferred) {
+    struct xhci_hid_device *device = context;
+    if (transferred == NULL) return false;
+    *transferred = 0U;
+    if (!xhci_bulk_transfer(&controller, device, true, buffer, length))
+        return false;
+    *transferred = length;
+    return true;
+}
+
+static bool xhci_msc_bulk_out(void *context, const void *buffer,
+                              size_t length, size_t *transferred) {
+    struct xhci_hid_device *device = context;
+    if (transferred == NULL) return false;
+    *transferred = 0U;
+    if (!xhci_bulk_transfer(&controller, device, false,
+                            (void *)buffer, length)) return false;
+    *transferred = length;
+    return true;
+}
+
+static bool xhci_msc_reset(void *context) {
+    struct xhci_hid_device *device = context;
+    if (device == NULL || !device->active ||
+        device->kind != XHCI_HID_MASS_STORAGE) return false;
+
+    /* USB MSC Bulk-Only Transport reset, then clear both endpoint halts. */
+    if (!xhci_control_transfer(&controller, device, 0x21U, 0xFFU,
+                               0U, device->interface_number, NULL, 0U))
+        return false;
+    if (!xhci_control_transfer(&controller, device, 0x02U, 0x01U,
+                               0U, device->bulk_in_address, NULL, 0U) ||
+        !xhci_control_transfer(&controller, device, 0x02U, 0x01U,
+                               0U, device->bulk_out_address, NULL, 0U))
+        return false;
+    return false; /* Do not resume unless endpoint dequeue state is recovered. */
+}
+
 static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
                                          struct xhci_hid_device *device) {
     if (device == NULL || !device->active ||

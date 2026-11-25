@@ -53,7 +53,7 @@ entries as read-only root files; they can be opened and run through the
 existing static ELF process launcher.
 
 The ISO build generates the pack from the native SDK examples plus
-`README.TXT` and `APPS.TXT`. The installer writes this exact pack to the EFI
+`NEXUS-README.TXT` and `NEXUS-APPS.TXT`. The installer writes this exact pack to the EFI
 System Partition and records it as a Limine module in the installed boot
 configuration. The 2 MiB bound keeps boot-time validation and installer
 deployment bounded. This makes the demo apps available after installation,

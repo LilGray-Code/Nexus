@@ -55,8 +55,8 @@ make -C kernel clean all NEXUS_TLS=1
 make -C sdk clean all CC="${NEXUS_SDK_CC:-gcc}"
 python3 build/make-system-pack.py \
   --output build/system-pack/NEXUS-SYSTEM.NXP \
-  --file README.TXT=system/README.TXT \
-  --file APPS.TXT=system/APPS.TXT \
+  --file NEXUS-README.TXT=system/README.TXT \
+  --file NEXUS-APPS.TXT=system/APPS.TXT \
   --file KINETIC.ELF=sdk/build/kinetic_demo.elf \
   --file GAMEPAD.ELF=sdk/build/gamepad_demo.elf \
   --file AUDIO.ELF=sdk/build/audio_demo.elf \

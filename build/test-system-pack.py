@@ -16,13 +16,13 @@ spec.loader.exec_module(module)
 
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp)
-    (root / "README.TXT").write_bytes(b"nexus test readme\n")
+    (root / "NEXUS-README.TXT").write_bytes(b"nexus test readme\n")
     (root / "APP.ELF").write_bytes(
         b"\x7fELF\x02\x01" + bytes(10) + struct.pack("<H", 2) +
         struct.pack("<H", 62) + bytes(46)
     )
     inputs = [
-        ("README.TXT", root / "README.TXT"),
+        ("NEXUS-README.TXT", root / "NEXUS-README.TXT"),
         ("APP.ELF", root / "APP.ELF"),
     ]
     first = module.build_pack(inputs)
@@ -48,6 +48,6 @@ with tempfile.TemporaryDirectory() as tmp:
         assert flags == 0 and offset >= header_size
         assert offset + size <= len(first)
         assert zlib.crc32(first[offset:offset + size]) & 0xFFFFFFFF == crc
-    assert seen == {"SYSTEM.MAN", "README.TXT", "APP.ELF"}
+    assert seen == {"SYSTEM.MAN", "NEXUS-README.TXT", "APP.ELF"}
 
 print("NEXUS SYSTEM PACK BUILDER TESTS PASSED")

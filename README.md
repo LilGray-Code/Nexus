@@ -119,7 +119,11 @@ boot pack. It contains a system manifest, quick-start/index text, and the four
 first-party SDK examples (`KINETIC.ELF`, `GAMEPAD.ELF`, `AUDIO.ELF`, and
 `PIE.ELF`). The installer copies the pack to the EFI System Partition and
 adds it as a Limine boot module, so the installed desktop can use the same
-built-in apps after reboot. The kernel validates the pack header, file table,
+built-in apps after reboot. The boot pack uses `NEXUS-`-prefixed documentation filenames so bundled
+resources cannot shadow common user-volume names such as the FAT32 test
+`README.TXT`.
+
+The kernel validates the pack header, file table,
 non-overlapping file ranges, table/payload CRCs, and per-file CRCs before
 publishing it. The read-only VFS overlay exposes its files to the Files view;
 the existing Run ELF action can launch the included native demos. These are

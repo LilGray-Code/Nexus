@@ -7,7 +7,7 @@ The first Nexus-owned native application ABI targets x86-64 **static ELF64 ET_EX
 - stable ABI version query and process exit;
 - standard-output writes and bounded root-file open/read/write/close calls;
 - keyboard and mouse event polling through the original stable 12-byte input event;
-- separate gamepad polling for up to four xHCI-attached generic HID controllers, with a 32-bit button mask, up to eight normalized axes, and an eight-way hat;
+- separate gamepad polling for up to four xHCI-attached generic HID controllers, with a 32-bit button mask, up to eight normalized axes, an eight-way hat, and a disconnect flag;
 - display size, pixel format, and byte stride;
 - monotonic timer ticks and interruptible sleep;
 - bounded XRGB8888 framebuffer blits.
@@ -22,7 +22,7 @@ Install an x86-64 bare-metal GCC cross compiler, then run:
 make -C sdk
 ```
 
-This produces `sdk/build/kinetic_demo.elf`. The executable is a static, freestanding ELF image with no dynamic interpreter or shared-library dependencies. Put the file on a readable Nexus volume and use the desktop Files app's Run action to launch it. Press Escape to exit the demo.
+This produces `sdk/build/kinetic_demo.elf` and `sdk/build/gamepad_demo.elf`. Both are static, freestanding ELF images with no dynamic interpreter or shared-library dependencies. Put either file on a readable Nexus volume and use the desktop Files app's Run action to launch it. Press Escape to exit either demo. The gamepad demo displays normalized axis bars and button state, and clears its connected state when xHCI reports a controller disconnect.
 
 Override the toolchain prefix when needed:
 
@@ -34,6 +34,6 @@ The example uses a 128×96 software-rendered frame, submits it through the nativ
 
 ## Compatibility boundary
 
-This is a first-party native ABI, not POSIX, Win32, SDL, Vulkan, OpenGL, or Direct3D. Native app code can use x87/SSE2 floating-point and vector math, but must not use AVX/AVX2/FMA. The current process runner is a foreground, synchronous launcher; it does not yet provide general-purpose multitasking, dynamic linking, shared libraries, a window manager API, audio, or a 3D rendering API. Generic USB HID gamepads are decoded through xHCI when their report descriptor fits the supported bounded single-report format. Boot-protocol keyboards/mice and common generic HID gamepads are supported; composite controllers, USB hubs, Bluetooth pairing, vendor-specific HID extensions, and arbitrary HID report formats are not guaranteed. VirtIO-GPU support here is **2D scanout and presentation only**; it must not be described as hardware-accelerated 3D rendering.
+This is a first-party native ABI, not POSIX, Win32, SDL, Vulkan, OpenGL, or Direct3D. Native app code can use x87/SSE2 floating-point and vector math, but must not use AVX/AVX2/FMA. The current process runner is a foreground, synchronous launcher; it does not yet provide general-purpose multitasking, dynamic linking, shared libraries, a window manager API, audio, or a 3D rendering API. Generic USB HID gamepads are decoded through xHCI when their report descriptor fits the supported bounded single-report format. Boot-protocol keyboards/mice and common generic HID gamepads are supported, including disconnect events; composite controllers, USB hubs, Bluetooth pairing, vendor-specific HID extensions, and arbitrary HID report formats are not guaranteed. VirtIO-GPU support here is **2D scanout and presentation only**; it must not be described as hardware-accelerated 3D rendering.
 
 Windows PE applications and commercial Windows games do not run through this ABI. Native packages, publisher signatures, runtime libraries, and compatible device drivers remain required ecosystem work. Applications should query the ABI version and display capabilities instead of assuming a particular machine.

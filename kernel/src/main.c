@@ -18,6 +18,7 @@
 #include "ioapic.h"
 #include "memory.h"
 #include "pci.h"
+#include "gpu.h"
 #include "paging.h"
 #include "serial.h"
 #include "storage.h"
@@ -261,6 +262,7 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("NEXUS PCI DISCOVERY READY\r\n");
+    (void)gpu_init();
     serial_write("PCI: retained network controllers (class 02):\r\n");
     for (uint32_t pci_index = 0U;
          pci_index < pci_stored_device_count(); ++pci_index) {

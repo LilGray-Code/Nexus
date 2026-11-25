@@ -524,7 +524,7 @@ static void hardware_append_hex(char *output, size_t capacity,
 static void format_hardware_pci_identity(
     uint16_t vendor, uint16_t device, uint8_t revision,
     uint16_t subsystem_vendor, uint16_t subsystem_device,
-    char output[80]) {
+    uint8_t bus, uint8_t slot, uint8_t function, char output[80]) {
     size_t length = 0U;
     output[0] = '\0';
     hardware_append_text(output, 80U, &length, "PCI ");
@@ -537,6 +537,12 @@ static void format_hardware_pci_identity(
     hardware_append_hex(output, 80U, &length, subsystem_vendor, 4U);
     hardware_append_text(output, 80U, &length, ":");
     hardware_append_hex(output, 80U, &length, subsystem_device, 4U);
+    hardware_append_text(output, 80U, &length, " BDF ");
+    hardware_append_hex(output, 80U, &length, bus, 2U);
+    hardware_append_text(output, 80U, &length, ":");
+    hardware_append_hex(output, 80U, &length, slot, 2U);
+    hardware_append_text(output, 80U, &length, ".");
+    hardware_append_hex(output, 80U, &length, function, 1U);
 }
 
 static void hardware_append_flag(char *output, size_t capacity,
@@ -567,7 +573,6 @@ static void desktop_draw_hardware_overview(uint64_t x, uint64_t y) {
     format_labeled_u64("MODEL: ", cpu->model, line);
     graphics_draw_text(x + 330U, y + 36U, line, 1U, 170U, 225U, 190U);
 
-    hardware_append_text(line, sizeof(line), &(size_t){0}, "");
     size_t flags_length = 0U;
     line[0] = '\0';
     hardware_append_flag(line, sizeof(line), &flags_length,
@@ -656,7 +661,8 @@ static void desktop_draw_hardware_overview(uint64_t x, uint64_t y) {
         char ids[80];
         format_hardware_pci_identity(gpu->vendor_id, gpu->device_id,
             gpu->revision_id, gpu->subsystem_vendor_id,
-            gpu->subsystem_device_id, ids);
+            gpu->subsystem_device_id, gpu->bus, gpu->slot,
+            gpu->function, ids);
         graphics_draw_text(x + 10U, row, ids, 1U,
                            170U, 191U, 211U);
         row += 16U;
@@ -703,7 +709,8 @@ static void desktop_draw_hardware_overview(uint64_t x, uint64_t y) {
         char ids[80];
         format_hardware_pci_identity(radio->vendor_id, radio->device_id,
             radio->revision_id, radio->subsystem_vendor_id,
-            radio->subsystem_device_id, ids);
+            radio->subsystem_device_id, radio->bus, radio->slot,
+            radio->function, ids);
         graphics_draw_text(x + 10U, row, ids, 1U,
                            170U, 191U, 211U);
         row += 16U;

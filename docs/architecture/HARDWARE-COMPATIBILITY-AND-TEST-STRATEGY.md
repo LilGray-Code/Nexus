@@ -75,24 +75,34 @@ will be validated across multiple vendors and generations as drivers mature.
 
 Nexus now has a runtime CPUID inventory that reports the processor vendor,
 brand string, family/model/stepping, package core/thread counts, and selected
-instruction capabilities. AVX-family features are reported only when the
-processor advertises them **and** the OS has enabled the required extended
-register state in XCR0. Merely detecting a CPU feature never enables that
-instruction for kernel code. SIMD execution remains gated until scheduler and
-user-process context switching preserve the corresponding register state.
+instruction capabilities. It also records physical/virtual address widths and
+capabilities such as PCID, FSGSBASE, SMEP, SMAP, UMIP, INVPCID, 1 GiB pages,
+RDTSCP, CLFLUSHOPT, and CLWB when advertised. AVX-family features are reported
+only when the processor advertises them **and** the OS has enabled the required
+extended register state in XCR0. Merely detecting a CPU feature never enables
+that instruction or turns on a protection mode for kernel code. SIMD execution
+remains gated until scheduler and user-process context switching preserve the
+corresponding register state.
 
 PCI display discovery retains a bounded list of display adapters and their
-vendor/device identifiers. The generic layer does not program unknown GPU BARs
-or issue commands to Intel, AMD, or NVIDIA hardware. The current VirtIO-GPU
-path provides host scanout using a CPU-rendered backing surface; it is not a
-general 2D/3D shader driver. The renderer tracks changed pixels and can submit
-bounded dirty rectangles to the VirtIO display transport.
+vendor/device, revision, subsystem vendor/device, and bus/device/function
+identifiers. The same OEM-aware PCI identity is retained for wireless
+candidates; this is useful for matching future driver and firmware packages to
+the exact board variant instead of relying on a broad vendor name. The generic
+layer does not program unknown GPU BARs or issue commands to Intel, AMD, or
+NVIDIA hardware. The current VirtIO-GPU path provides host scanout using a
+CPU-rendered backing surface; it is not a general 2D/3D shader driver. The
+renderer tracks changed pixels and can submit bounded dirty rectangles to the
+VirtIO display transport.
 
 PCI wireless inventory records common PCI network-class wireless candidates.
 This is deliberately separate from a working Wi-Fi radio driver: scan,
 authentication, firmware loading, regulatory behavior, and packet I/O still
 require a chipset-specific implementation registered with the Wi-Fi manager.
-USB wireless devices need USB-class discovery and their own drivers.
+USB wireless devices need USB-class discovery and their own drivers. The
+Settings hardware overview presents per-device PCI identity, CPU capability
+details, firmware inventory, and the active graphics path while clearly
+distinguishing a detected device from a registered driver or active engine.
 
 Firmware reporting currently inventories the boot firmware mode plus ACPI and
 SMBIOS entry-point availability/version. Nexus does not rewrite or flash the

@@ -682,6 +682,50 @@ bool paging_copy_to_address_space(uint64_t root_physical,
     return true;
 }
 
+bool paging_copy_from_address_space(uint64_t root_physical,
+                                    void *destination,
+                                    uint64_t source, size_t length) {
+    if (length == 0U) return true;
+    if (destination == NULL || !memory_page_is_allocated(root_physical))
+        return false;
+
+    const uint64_t byte_count = (uint64_t)length;
+    if ((size_t)byte_count != length || source > UINT64_MAX - byte_count)
+        return false;
+
+    uint64_t cr4;
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    const unsigned int user_address_bits = levels == 5U ? 56U : 47U;
+    const uint64_t user_limit = 1ULL << user_address_bits;
+    const uint64_t end = source + byte_count;
+    if (source >= user_limit || end > user_limit) return false;
+
+    uint8_t *output = (uint8_t *)destination;
+    uint64_t current = source;
+    uint64_t remaining = byte_count;
+    while (remaining != 0U) {
+        uint64_t physical;
+        uint64_t mapping_size;
+        if (!translate_user_address(root_physical, levels, current,
+                                    &physical, &mapping_size, false))
+            return false;
+
+        const uint64_t mapping_offset = current & (mapping_size - 1ULL);
+        uint64_t chunk = mapping_size - mapping_offset;
+        if (chunk > remaining) chunk = remaining;
+        const volatile uint8_t *input =
+            (const volatile uint8_t *)memory_phys_to_virt(physical);
+        if (input == NULL) return false;
+        for (uint64_t i = 0U; i < chunk; ++i) output[i] = input[i];
+
+        output += (size_t)chunk;
+        current += chunk;
+        remaining -= chunk;
+    }
+    return true;
+}
+
 bool paging_copy_from_user(void *destination, uint64_t source, size_t length) {
     if (length == 0U) return true;
     if (destination == NULL) return false;

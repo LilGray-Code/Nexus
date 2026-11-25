@@ -7,6 +7,7 @@
 
 #define NEXUS_HTTP_LOCATION_MAX 255U
 #define NEXUS_HTTP_CONTENT_TYPE_MAX 63U
+#define NEXUS_HTTP_DISPOSITION_MAX 255U
 
 struct nexus_http_response {
     uint16_t status_code;
@@ -17,6 +18,8 @@ struct nexus_http_response {
     char location[NEXUS_HTTP_LOCATION_MAX + 1U];
     bool has_content_type;
     char content_type[NEXUS_HTTP_CONTENT_TYPE_MAX + 1U];
+    bool has_content_disposition;
+    char content_disposition[NEXUS_HTTP_DISPOSITION_MAX + 1U];
 };
 
 /*

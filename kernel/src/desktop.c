@@ -3717,7 +3717,7 @@ browser_retry:
         return;
     }
     if (!nexus_http_decode_response(response, response_length, body,
-                                    NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
+                                    NEXUS_NXFS_MAX_FILE_BYTES, &parsed)) {
         if (browser_search_fallback(
                 search_request, &search_use_bing,
                 &search_fallback_attempted)) goto browser_retry;
@@ -3906,7 +3906,6 @@ browser_retry:
             browser_address_edited = false;
             browser_set_status("Verified HTTPS file ready; press F6 or click SAVE");
             return;
-        }
         }
     }
     if (!rendered_plain_text)
@@ -5213,12 +5212,6 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view != DESKTOP_INSTALLER &&
         keyboard_left_control && event->scancode == 0x01U) {
-        desktop_start_menu_toggle();
-        draw_shell();
-        draw_pointer();
-        return;
-    }
-    if (active_view != DESKTOP_INSTALLER && event->scancode == 0x40U) {
         desktop_start_menu_toggle();
         draw_shell();
         draw_pointer();

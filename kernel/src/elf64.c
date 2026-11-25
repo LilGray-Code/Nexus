@@ -188,6 +188,11 @@ static bool elf64_supported_dynamic_tag(int64_t tag) {
         case ELF64_DT_GNU_HASH:
         case ELF64_DT_RELACOUNT:
         case ELF64_DT_FLAGS_1:
+        case ELF64_DT_INIT:
+        case ELF64_DT_FINI:
+        case ELF64_DT_INIT_ARRAY:
+        case ELF64_DT_FINI_ARRAY:
+        case ELF64_DT_PREINIT_ARRAY:
             return true;
         default:
             return false;
@@ -258,6 +263,7 @@ static bool elf64_parse_dynamic(
     uint64_t rela_size = 0U;
     uint64_t rela_entry_size = 0U;
     uint64_t rela_count_hint = 0U;
+    bool have_rela_count_hint = false;
 
     const uint64_t count = dynamic->file_size /
                            sizeof(struct elf64_dynamic_entry);
@@ -285,7 +291,9 @@ static bool elf64_parse_dynamic(
             case ELF64_DT_INIT_ARRAY:
             case ELF64_DT_FINI_ARRAY:
             case ELF64_DT_PREINIT_ARRAY:
-                return false;
+                /* No constructors are run yet; accept only empty hooks. */
+                if (entry->value != 0U) return false;
+                break;
             case ELF64_DT_RELA:
                 if (have_rela) return false;
                 have_rela = true;
@@ -302,11 +310,18 @@ static bool elf64_parse_dynamic(
                 rela_entry_size = entry->value;
                 break;
             case ELF64_DT_RELACOUNT:
+                if (have_rela_count_hint) return false;
+                have_rela_count_hint = true;
                 rela_count_hint = entry->value;
                 break;
             case ELF64_DT_FLAGS:
                 /* DF_TEXTREL is not accepted. */
                 if ((entry->value & 0x4ULL) != 0U) return false;
+                break;
+            case ELF64_DT_FLAGS_1:
+                /* Permit NOW and PIE only; reject loader features we lack. */
+                if ((entry->value & ~(0x1ULL | 0x08000000ULL)) != 0U)
+                    return false;
                 break;
             default:
                 break;

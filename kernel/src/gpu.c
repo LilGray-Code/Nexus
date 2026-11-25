@@ -4,6 +4,7 @@
 #include "serial.h"
 
 static struct nexus_gpu_info primary_gpu;
+static bool virtio_display_active;
 
 static enum nexus_gpu_vendor identify_vendor(uint16_t vendor_id) {
     switch (vendor_id) {
@@ -31,6 +32,7 @@ static const char *vendor_name(enum nexus_gpu_vendor vendor) {
 
 bool gpu_init(void) {
     primary_gpu = (struct nexus_gpu_info){0};
+    virtio_display_active = false;
 
     /* PCI class 03 is a display controller. Firmware remains responsible for
      * the active scanout mode until a reviewed device driver is available.
@@ -80,9 +82,11 @@ const char *gpu_primary_name(void) {
 }
 
 const char *gpu_render_path_name(void) {
+    if (virtio_display_active)
+        return "VIRTIO GPU SCANOUT / CPU RASTER";
     return primary_gpu.firmware_framebuffer_active
-        ? "GPU SCANOUT / CPU RENDERER"
-        : "CPU RENDERER / FRAMEBUFFER PENDING";
+        ? "FIRMWARE FRAMEBUFFER / CPU RASTER"
+        : "CPU RASTER / FRAMEBUFFER PENDING";
 }
 
 bool gpu_hardware_acceleration_available(void) {
@@ -92,5 +96,9 @@ bool gpu_hardware_acceleration_available(void) {
 
 void gpu_set_firmware_framebuffer_active(bool active) {
     primary_gpu.firmware_framebuffer_active = active;
+}
+
+void gpu_set_virtio_display_active(bool active) {
+    virtio_display_active = active;
 }
 

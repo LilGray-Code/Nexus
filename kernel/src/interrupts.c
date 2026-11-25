@@ -239,6 +239,12 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                 syscall_frame_trace("return", mutable_frame);
                 return;
 
+            case NEXUS_SYS_SLEEP_TICKS:
+                mutable_frame->rax = (uint64_t)
+                    usermode_sys_sleep_ticks(frame->rdi);
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
             case NEXUS_SYS_EXIT:
                 usermode_exit_status = frame->rdi;
                 usermode_exit_seen = true;

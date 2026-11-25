@@ -363,6 +363,31 @@ jobs:
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 
+      - name: Boot-test the Realtek RTL8139-only internet path
+        shell: bash
+        run: |
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-rtl8139-vars.fd
+          set +e
+          timeout -k 2s 18s qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -netdev user,id=rtl0 -device rtl8139,netdev=rtl0 \
+            -device virtio-gpu-pci,disable-legacy=on \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-rtl8139-vars.fd \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
+            -boot d -display none -serial file:rtl8139-serial.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
+            echo "RTL8139-only UEFI QEMU boot exited unexpectedly: $status"
+            exit "$status"
+          fi
+          cat rtl8139-serial.log
+          grep -q "RTL8139: Realtek 10EC:8139 registered" rtl8139-serial.log
+          grep -q "NEXUS RTL8139 TX/RX READY" rtl8139-serial.log
+          grep -q "NEXUS DHCP READY" rtl8139-serial.log
+
       - name: Test installed desktop HTTPS web search
         shell: bash
         run: |

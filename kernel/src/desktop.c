@@ -3166,12 +3166,6 @@ static void browser_clear_ca_bundle(void) {
     browser_ca_bundle_data = NULL;
 }
 
-static bool browser_append_u64_decimal(char *buffer, size_t capacity,
-                                        size_t *length, size_t value) {
-    char digits[21];
-    format_u64((uint64_t)value, digits);
-    return browser_append_text(buffer, capacity, length, digits);
-}
 
 static bool browser_https_send_all(struct nexus_https_connection *connection,
                                    const unsigned char *request,

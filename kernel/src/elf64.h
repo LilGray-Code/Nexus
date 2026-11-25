@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define NEXUS_ELF64_MAX_LOAD_SEGMENTS 16U
+#define NEXUS_ELF64_MAX_RELATIVE_RELOCATIONS 4096U
 
 #define NEXUS_ELF64_SEGMENT_READ  0x04U
 #define NEXUS_ELF64_SEGMENT_WRITE 0x02U
@@ -22,11 +23,15 @@ struct nexus_elf64_segment {
 
 struct nexus_elf64_image {
     uint64_t entry_point;
+    uint64_t load_bias;
+    uint64_t relocation_file_offset;
+    uint32_t relocation_count;
+    bool position_independent;
     uint16_t segment_count;
     struct nexus_elf64_segment segments[NEXUS_ELF64_MAX_LOAD_SEGMENTS];
 };
 
-/* Validate a bounded little-endian x86-64 ET_EXEC image without loading it. */
+/* Validate a bounded little-endian x86-64 static ET_EXEC or constrained ET_DYN image. */
 bool nexus_elf64_parse(const void *file, size_t file_size,
                        struct nexus_elf64_image *image);
 

@@ -14,11 +14,18 @@
 #define PS2_QUEUE_MASK (PS2_QUEUE_SIZE - 1U)
 #define PS2_WAIT_LIMIT 100000U
 
+#define PS2_MOUSE_PACKET_STANDARD 3U
+#define PS2_MOUSE_PACKET_WHEEL    4U
+
 static struct nexus_input_event event_queue[PS2_QUEUE_SIZE];
 static volatile uint8_t event_head;
 static volatile uint8_t event_tail;
-static uint8_t mouse_packet[3];
+static uint8_t mouse_packet[4];
 static uint8_t mouse_packet_index;
+static uint8_t mouse_packet_length = PS2_MOUSE_PACKET_STANDARD;
+static bool mouse_explorer_buttons;
+static bool keyboard_e0_prefix;
+static uint8_t keyboard_e1_remaining;
 static bool keyboard_ready;
 static bool mouse_ready;
 
@@ -86,6 +93,85 @@ static bool mouse_command(uint8_t command) {
     return response == 0xFAU;
 }
 
+static bool mouse_set_sample_rate(uint8_t rate) {
+    return mouse_command(0xF3U) && mouse_command(rate);
+}
+
+static bool mouse_read_id(uint8_t *id) {
+    uint8_t acknowledgement = 0U;
+    if (id == NULL || !controller_command(0xD4U) ||
+        !controller_write(0xF2U) ||
+        !controller_read(&acknowledgement) || acknowledgement != 0xFAU ||
+        !controller_read(id)) return false;
+    return true;
+}
+
+static void mouse_enable_wheel_if_supported(void) {
+    uint8_t id = 0U;
+    /* IntelliMouse Explorer sequence enables wheel + side buttons (ID 4). */
+    if (mouse_set_sample_rate(200U) &&
+        mouse_set_sample_rate(200U) &&
+        mouse_set_sample_rate(80U) &&
+        mouse_read_id(&id) && id == 4U) {
+        mouse_packet_length = PS2_MOUSE_PACKET_WHEEL;
+        mouse_explorer_buttons = true;
+        serial_write("INPUT: PS/2 IntelliMouse wheel and side buttons enabled\\r\\n");
+        return;
+    }
+
+    /* Standard IntelliMouse wheel sequence (ID 3) is the common fallback. */
+    if (mouse_set_sample_rate(200U) &&
+        mouse_set_sample_rate(100U) &&
+        mouse_set_sample_rate(80U) &&
+        mouse_read_id(&id) && id == 3U) {
+        mouse_packet_length = PS2_MOUSE_PACKET_WHEEL;
+        mouse_explorer_buttons = false;
+        serial_write("INPUT: PS/2 IntelliMouse wheel enabled\\r\\n");
+    } else {
+        mouse_packet_length = PS2_MOUSE_PACKET_STANDARD;
+        mouse_explorer_buttons = false;
+        serial_write("INPUT: PS/2 standard three-byte mouse mode\\r\\n");
+    }
+}
+
+static void input_process_keyboard_scancode(uint8_t scancode) {
+    if (keyboard_e1_remaining != 0U) {
+        --keyboard_e1_remaining;
+        return; /* Pause/Break is a multi-byte sequence; no desktop binding yet. */
+    }
+    if (scancode == 0xE1U) {
+        keyboard_e0_prefix = false;
+        keyboard_e1_remaining = 5U;
+        return;
+    }
+    if (scancode == 0xE0U) {
+        keyboard_e0_prefix = true;
+        return;
+    }
+
+    const bool extended = keyboard_e0_prefix;
+    keyboard_e0_prefix = false;
+
+    /* Print Screen uses fake Shift bytes. Never let them stick Shift state. */
+    if (extended && (scancode == 0x2AU || scancode == 0xAAU)) return;
+
+    const struct nexus_input_event event = {
+        .type = NEXUS_INPUT_KEYBOARD,
+        .scancode = (uint16_t)scancode | (extended ? 0x0100U : 0U),
+        .mouse_buttons = 0U,
+        .mouse_dx = 0,
+        .mouse_dy = 0,
+        .mouse_wheel = 0
+    };
+    queue_event(&event);
+}
+
+#ifdef NEXUS_INPUT_HOST_TEST
+void input_test_keyboard_scancode(uint8_t scancode) {
+    input_process_keyboard_scancode(scancode);
+}
+#endif
+
 static void queue_event(const struct nexus_input_event *event) {
     const uint8_t next = (uint8_t)((event_tail + 1U) & PS2_QUEUE_MASK);
     if (next == event_head) return; /* Drop newest event rather than overwrite. */
@@ -117,7 +203,11 @@ static void input_interrupt_restore(uint64_t flags) {
 bool input_init(void) {
     event_head = 0;
     event_tail = 0;
-    mouse_packet_index = 0;
+    mouse_packet_index = 0U;
+    mouse_packet_length = PS2_MOUSE_PACKET_STANDARD;
+    mouse_explorer_buttons = false;
+    keyboard_e0_prefix = false;
+    keyboard_e1_remaining = 0U;
     keyboard_ready = false;
     mouse_ready = false;
 
@@ -147,8 +237,9 @@ bool input_init(void) {
     }
 
     if (controller_command(0xA8U)) {
-        /* Set defaults, then enable mouse packet reporting. */
+        /* Set defaults, negotiate IntelliMouse extensions, then report. */
         (void)mouse_command(0xF6U);
+        mouse_enable_wheel_if_supported();
         mouse_ready = mouse_command(0xF4U);
     }
 
@@ -172,43 +263,47 @@ bool input_init(void) {
 }
 
 void input_keyboard_interrupt(void) {
-    const uint8_t scancode = inb(PS2_DATA_PORT);
-    struct nexus_input_event event = {
-        .type = NEXUS_INPUT_KEYBOARD,
-        .scancode = scancode,
-        .mouse_buttons = 0,
-        .mouse_dx = 0,
-        .mouse_dy = 0
-    };
-    queue_event(&event);
+    input_process_keyboard_scancode(inb(PS2_DATA_PORT));
 }
 
 void input_mouse_interrupt(void) {
     const uint8_t value = inb(PS2_DATA_PORT);
-    if (mouse_packet_index == 0 && (value & 0x08U) == 0) return;
+    if (mouse_packet_index == 0U && (value & 0x08U) == 0U) return;
 
     mouse_packet[mouse_packet_index++] = value;
-    if (mouse_packet_index < 3U) return;
-    mouse_packet_index = 0;
+    if (mouse_packet_index < mouse_packet_length) return;
+    mouse_packet_index = 0U;
 
     const uint8_t flags = mouse_packet[0];
-    if ((flags & 0xC0U) != 0) return; /* Ignore overflow packets. */
+    if ((flags & 0xC0U) != 0U) return; /* Ignore X/Y overflow packets. */
 
-    struct nexus_input_event event = {
+    uint8_t buttons = (uint8_t)(flags & 0x07U);
+    int8_t wheel = 0;
+    if (mouse_packet_length == PS2_MOUSE_PACKET_WHEEL) {
+        const uint8_t nibble = (uint8_t)(mouse_packet[3] & 0x0FU);
+        wheel = (int8_t)((nibble & 0x08U) != 0U
+            ? (int16_t)nibble - 16 : nibble);
+        if (mouse_explorer_buttons) {
+            buttons |= (uint8_t)((mouse_packet[3] & 0x30U) >> 1);
+        }
+    }
+
+    const struct nexus_input_event event = {
         .type = NEXUS_INPUT_MOUSE,
-        .scancode = 0,
-        .mouse_buttons = (uint8_t)(flags & 0x07U),
+        .scancode = 0U,
+        .mouse_buttons = buttons,
         .mouse_dx = (int16_t)(int8_t)mouse_packet[1],
-        .mouse_dy = (int16_t)-(int16_t)(int8_t)mouse_packet[2]
+        .mouse_dy = (int16_t)-(int16_t)(int8_t)mouse_packet[2],
+        .mouse_wheel = wheel
     };
     queue_event(&event);
 }
 
 void input_usb_keyboard_report(const uint8_t report[8]) {
     /* Eight modifier transitions plus six releases and six key makes. */
-    uint8_t scancodes[24];
-    const size_t count = usb_hid_keyboard_decode(report, scancodes,
-                                                 sizeof(scancodes));
+    uint16_t scancodes[24];
+    const size_t count = usb_hid_keyboard_decode(
+        report, scancodes, sizeof(scancodes) / sizeof(scancodes[0]));
     const uint64_t interrupt_flags = input_interrupt_save();
     for (size_t i = 0U; i < count; ++i) {
         struct nexus_input_event event = {

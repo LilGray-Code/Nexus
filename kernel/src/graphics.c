@@ -398,3 +398,95 @@ void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
         }
     }
 }
+
+/* Blend a single antialiased glyph pixel. The destination is kept in the
+ * framebuffer's declared channel layout, just like the other primitives.
+ */
+static void graphics_blend_text_pixel(uint64_t x, uint64_t y,
+                                      uint8_t red, uint8_t green,
+                                      uint8_t blue, uint8_t alpha) {
+    if (alpha == 0U || x >= active_surface.width ||
+        y >= active_surface.height) return;
+    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+    volatile uint32_t *pixel = (volatile uint32_t *)(uintptr_t)
+        (base + y * active_surface.pitch + x * 4U);
+    const uint32_t old = *pixel;
+    *pixel = pack_rgb(
+        blend_channel(red, unpack_channel(old,
+            active_surface.red_mask_size, active_surface.red_mask_shift), alpha),
+        blend_channel(green, unpack_channel(old,
+            active_surface.green_mask_size, active_surface.green_mask_shift), alpha),
+        blend_channel(blue, unpack_channel(old,
+            active_surface.blue_mask_size, active_surface.blue_mask_shift), alpha));
+}
+
+/* The 5x7 glyph bitmap is scaled as fractional rectangles. Pixel coverage is
+ * calculated from the exact overlap with each destination pixel, which keeps
+ * fractional font sizes smooth rather than stretching jagged integer blocks.
+ */
+void graphics_draw_text_aa(uint64_t x, uint64_t y, const char *text,
+                           uint32_t scale_16_16, uint8_t red,
+                           uint8_t green, uint8_t blue) {
+    const uint32_t one = 1U << 16;
+    const uint32_t maximum_scale = 4U << 16;
+    if (!initialized || text == NULL || x >= active_surface.width ||
+        y >= active_surface.height || scale_16_16 < one ||
+        scale_16_16 > maximum_scale ||
+        active_surface.width > (UINT64_MAX >> 16) ||
+        active_surface.height > (UINT64_MAX >> 16)) return;
+
+    const uint64_t max_width = active_surface.width - x;
+    const uint64_t max_height = active_surface.height - y;
+    const uint64_t max_width_fp = max_width << 16;
+    const uint64_t max_height_fp = max_height << 16;
+
+    for (size_t index = 0U; text[index] != '\0'; ++index) {
+        if ((uint64_t)index >
+            (UINT64_MAX / scale_16_16 - 5U) / 6U) break;
+        const uint64_t advance_fp =
+            ((uint64_t)index * 6U) * scale_16_16;
+        if (advance_fp >= max_width_fp) break;
+        const struct glyph *glyph = find_glyph(text[index]);
+
+        for (uint32_t gy = 0U; gy < 7U; ++gy) {
+            const uint64_t top_fp = (uint64_t)gy * scale_16_16;
+            if (top_fp >= max_height_fp) break;
+            const uint64_t bottom_fp = top_fp + scale_16_16;
+            const uint64_t first_y = top_fp >> 16;
+            uint64_t last_y = (bottom_fp - 1U) >> 16;
+            if (last_y >= max_height) last_y = max_height - 1U;
+
+            for (uint32_t gx = 0U; gx < 5U; ++gx) {
+                if ((glyph->rows[gy] & (1U << (4U - gx))) == 0U)
+                    continue;
+                const uint64_t left_fp =
+                    advance_fp + (uint64_t)gx * scale_16_16;
+                if (left_fp >= max_width_fp) continue;
+                const uint64_t right_fp = left_fp + scale_16_16;
+                const uint64_t first_x = left_fp >> 16;
+                uint64_t last_x = (right_fp - 1U) >> 16;
+                if (last_x >= max_width) last_x = max_width - 1U;
+
+                for (uint64_t py = first_y; py <= last_y; ++py) {
+                    const uint64_t pixel_top = py << 16;
+                    const uint64_t pixel_bottom = pixel_top + one;
+                    const uint64_t overlap_y =
+                        (bottom_fp < pixel_bottom ? bottom_fp : pixel_bottom) -
+                        (top_fp > pixel_top ? top_fp : pixel_top);
+                    for (uint64_t px = first_x; px <= last_x; ++px) {
+                        const uint64_t pixel_left = px << 16;
+                        const uint64_t pixel_right = pixel_left + one;
+                        const uint64_t overlap_x =
+                            (right_fp < pixel_right ? right_fp : pixel_right) -
+                            (left_fp > pixel_left ? left_fp : pixel_left);
+                        const uint64_t area = overlap_x * overlap_y;
+                        const uint8_t alpha = (uint8_t)(
+                            (area * 255U + (1ULL << 31)) >> 32);
+                        graphics_blend_text_pixel(x + px, y + py,
+                                                  red, green, blue, alpha);
+                    }
+                }
+            }
+        }
+    }
+}

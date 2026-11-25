@@ -3193,9 +3193,11 @@ static bool browser_https_send_all(struct nexus_https_connection *connection,
 static bool browser_https_receive_response(
     struct nexus_https_connection *connection,
     uint8_t *response, size_t response_capacity, size_t *response_length,
-    bool *orderly_eof) {
+    bool *orderly_eof, int *failure_result) {
     if (connection == NULL || response == NULL || response_capacity == 0U ||
-        response_length == NULL || orderly_eof == NULL) return false;
+        response_length == NULL || orderly_eof == NULL ||
+        failure_result == NULL) return false;
+    *failure_result = 0;
     *response_length = 0U;
     *orderly_eof = false;
     const uint64_t start = timer_ticks();
@@ -3207,8 +3209,10 @@ static bool browser_https_receive_response(
             connection, response + *response_length,
             response_capacity - *response_length);
         if (result > 0) {
-            if ((size_t)result > response_capacity - *response_length)
+            if ((size_t)result > response_capacity - *response_length) {
+                *failure_result = -1;
                 return false;
+            }
             *response_length += (size_t)result;
             last_data = timer_ticks();
             continue;
@@ -3218,12 +3222,17 @@ static bool browser_https_receive_response(
             break;
         }
         if (result != NEXUS_HTTPS_WANT_READ &&
-            result != NEXUS_HTTPS_WANT_WRITE) return false;
+            result != NEXUS_HTTPS_WANT_WRITE) {
+            *failure_result = result;
+            return false;
+        }
         net_poll();
         if (*response_length != 0U &&
             timer_ticks() - last_data >= 200U) break;
         __asm__ volatile ("pause" ::: "memory");
     }
+    if (*response_length == 0U && !*orderly_eof)
+        *failure_result = -2; /* Response deadline expired with no TLS data. */
     return *response_length != 0U;
 }
 
@@ -3418,13 +3427,20 @@ browser_retry:
     struct nexus_http_response parsed;
     size_t response_length = 0U;
     bool orderly_eof = false;
+    int receive_error = 0;
     bool receive_ok = true;
     browser_set_status(use_https
         ? "Receiving encrypted HTTPS response..."
         : "Receiving unencrypted HTTP response...");
     if (use_https) {
         receive_ok = browser_https_receive_response(
-            &https, response, NEXUS_BROWSER_RESPONSE_CAPACITY, &response_length, &orderly_eof);
+            &https, response, NEXUS_BROWSER_RESPONSE_CAPACITY,
+            &response_length, &orderly_eof, &receive_error);
+        if (search_request && !receive_ok) {
+            serial_write("NEXUS BING SEARCH TLS READ FAILED code=");
+            serial_write_hex((uint64_t)(int64_t)receive_error);
+            serial_write("\r\n");
+        }
         nexus_https_close(&https);
         https_open = false;
     } else {

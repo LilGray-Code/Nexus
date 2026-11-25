@@ -20,13 +20,14 @@ CFLAGS += -I$(MBEDTLS_BUILD)/generated/include \
 	-I$(MBEDTLS_SOURCE)/tf-psa-crypto/drivers/builtin/include
 TLS_OBJECTS := $(OUT)/tls_heap.o $(OUT)/mbedtls_heap.o \
 	$(OUT)/mbedtls_random.o $(OUT)/mbedtls_time.o \
-	$(OUT)/tls_client.o $(OUT)/net_https.o $(OUT)/tls_libc.o
+	$(OUT)/tls_client.o $(OUT)/net_https.o $(OUT)/tls_libc.o \
+	$(OUT)/ca_bundle.o $(OUT)/ca_bundle_api.o
 TLS_LIBS := $(MBEDTLS_BUILD)/library/libmbedtls.a \
 	$(MBEDTLS_BUILD)/library/libmbedx509.a \
 	$(MBEDTLS_BUILD)/tf-psa-crypto/core/libtfpsacrypto.a
 TLS_LINK_FLAGS := --start-group $(TLS_LIBS) --end-group $(shell $(CC) -print-libgcc-file-name)
 else
-TLS_OBJECTS := $(OUT)/net_https_stub.o
+TLS_OBJECTS := $(OUT)/net_https_stub.o $(OUT)/ca_bundle_stub.o
 TLS_LINK_FLAGS :=
 endif
 CFLAGS += $(EXTRA_CFLAGS)
@@ -62,6 +63,9 @@ $(OUT)/installer_journal.o: ../installer/installer_journal.c ../installer/instal
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/bios_install.o: ../installer/bios_install.c ../installer/bios_install.h | $(OUT)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUT)/ca_bundle.o: src/ca_bundle.S ../build/deps/ca-bundle/cacert.pem | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/isr.o: src/isr.S | $(OUT)

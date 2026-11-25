@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define NEXUS_TLS_HEAP_CAPACITY (1024U * 1024U)
+#define NEXUS_TLS_HEAP_CAPACITY (4U * 1024U * 1024U)
 
 /* Initialize the bounded allocator once. Safe to call more than once. */
 bool nexus_tls_heap_init(void);

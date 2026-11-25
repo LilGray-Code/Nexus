@@ -12,6 +12,7 @@
 #include "http.h"
 #include "browser_url.h"
 #include "browser_search.h"
+#include "ca_bundle.h"
 #include "html_text.h"
 #include "browser_history.h"
 #include "nxfs.h"
@@ -193,7 +194,7 @@ static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_address[NEXUS_BROWSER_SEARCH_URL_MAX];
 static size_t browser_address_length;
 static bool browser_address_edited;
-static char browser_status[80] = "HTTPS-first; requires NEXUS.CRT on Nexus Data";
+static char browser_status[80] = "HTTPS-first with built-in Mozilla trust roots";
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 static size_t browser_line_scroll;
@@ -205,8 +206,9 @@ static struct nexus_browser_search_result
     browser_search_results[NEXUS_BROWSER_SEARCH_MAX_RESULTS];
 static struct nexus_browser_history browser_history;
 #define NEXUS_BROWSER_CA_FILE "NEXUS.CRT"
-#define NEXUS_BROWSER_CA_MAX_BYTES (64U * 1024U)
+#define NEXUS_BROWSER_CA_MAX_BYTES (512U * 1024U)
 static unsigned char browser_ca_bundle[NEXUS_BROWSER_CA_MAX_BYTES + 1U];
+static const unsigned char *browser_ca_bundle_data;
 
 static uint64_t clamp_min(uint64_t value, uint64_t minimum) {
     return value < minimum ? minimum : value;
@@ -3104,44 +3106,57 @@ static bool browser_is_http_redirect(uint16_t status_code) {
 static bool browser_load_ca_bundle(size_t *pem_length) {
     if (pem_length == NULL) return false;
     *pem_length = 0U;
+    browser_ca_bundle_data = NULL;
     scan_files_once();
 
+    /* NEXUS.CRT on the writable Nexus Data volume is an administrator
+     * override. Invalid overrides fall back to the immutable release roots.
+     */
     struct nexus_vfs_file file = {0};
-    if (!vfs_open_root_readonly(NEXUS_BROWSER_CA_FILE, &file))
-        return false;
-    /* Only persistent Nexus Data may supply trust anchors. */
-    if (!file.nxfs_file) {
-        vfs_close(&file);
-        return false;
-    }
-
-    uint32_t file_size = 0U;
-    if (!vfs_file_size(&file, &file_size) || file_size == 0U ||
-        file_size > NEXUS_BROWSER_CA_MAX_BYTES) {
-        vfs_close(&file);
-        return false;
-    }
-
-    size_t total = 0U;
-    bool read_ok = true;
-    while (total < (size_t)file_size) {
-        size_t received = 0U;
-        if (!vfs_read(&file, browser_ca_bundle + total,
-                      (size_t)file_size - total, &received) ||
-            received == 0U || received > (size_t)file_size - total) {
-            read_ok = false;
-            break;
+    if (vfs_open_root_readonly(NEXUS_BROWSER_CA_FILE, &file)) {
+        if (file.nxfs_file) {
+            uint32_t file_size = 0U;
+            if (vfs_file_size(&file, &file_size) &&
+                file_size != 0U &&
+                file_size <= NEXUS_BROWSER_CA_MAX_BYTES) {
+                size_t total = 0U;
+                bool read_ok = true;
+                while (total < (size_t)file_size) {
+                    size_t received = 0U;
+                    if (!vfs_read(&file, browser_ca_bundle + total,
+                                  (size_t)file_size - total, &received) ||
+                        received == 0U ||
+                        received > (size_t)file_size - total) {
+                        read_ok = false;
+                        break;
+                    }
+                    total += received;
+                }
+                vfs_close(&file);
+                if (read_ok && total == (size_t)file_size) {
+                    browser_ca_bundle[total] = 0U;
+                    browser_ca_bundle_data = browser_ca_bundle;
+                    *pem_length = total + 1U;
+                    return true;
+                }
+            } else {
+                vfs_close(&file);
+            }
+        } else {
+            vfs_close(&file);
         }
-        total += received;
-    }
-    vfs_close(&file);
-    if (!read_ok || total != (size_t)file_size) {
         for (size_t i = 0U; i < sizeof(browser_ca_bundle); ++i)
             browser_ca_bundle[i] = 0U;
-        return false;
     }
-    browser_ca_bundle[total] = 0U;
-    *pem_length = total + 1U;
+
+    size_t builtin_length = 0U;
+    const unsigned char *builtin =
+        nexus_builtin_ca_bundle_get(&builtin_length);
+    if (builtin == NULL || builtin_length < 100000U ||
+        builtin_length > NEXUS_BROWSER_CA_MAX_BYTES + 1U ||
+        builtin[builtin_length - 1U] != 0U) return false;
+    browser_ca_bundle_data = builtin;
+    *pem_length = builtin_length;
     return true;
 }
 
@@ -3150,6 +3165,7 @@ static void browser_clear_ca_bundle(void) {
         (volatile unsigned char *)browser_ca_bundle;
     for (size_t i = 0U; i < sizeof(browser_ca_bundle); ++i)
         bytes[i] = 0U;
+    browser_ca_bundle_data = NULL;
 }
 
 static bool browser_append_u64_decimal(char *buffer, size_t capacity,
@@ -3319,16 +3335,16 @@ browser_retry:
     bool https_open = false;
     if (use_https) {
         size_t ca_length = 0U;
-        browser_set_status("Loading persistent CA trust store...");
+        browser_set_status("Loading built-in Mozilla trust store...");
         if (!browser_load_ca_bundle(&ca_length)) {
             browser_set_status(
-                "HTTPS needs a valid NEXUS.CRT PEM bundle on Nexus Data");
+                "No built-in CA store; add a valid NEXUS.CRT to Nexus Data");
             browser_clear_ca_bundle();
             return;
         }
         browser_set_status("Opening verified TLS 1.3 connection...");
         const int connect_result = nexus_https_connect(
-            &https, host, browser_ca_bundle, ca_length, 1800U);
+            &https, host, browser_ca_bundle_data, ca_length, 1800U);
         browser_clear_ca_bundle();
         if (connect_result != 0 || !nexus_https_is_verified(&https)) {
             nexus_https_close(&https);

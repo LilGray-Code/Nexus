@@ -23,7 +23,8 @@
 #define AC97_PCM_OUT_CONTROL          0x0BU
 
 #define AC97_GLOBAL_COLD_RESET        0x00000002U
-#define AC97_CODEC_PRIMARY_READY      0x00000001U
+/* ICH AC97 GLOB_STA.PCR: primary codec-ready status is bit 8. */
+#define AC97_CODEC_PRIMARY_READY      (1U << 8)
 #define AC97_STATUS_DCH               0x0001U
 #define AC97_STATUS_ERROR             0x0010U
 #define AC97_STATUS_W1C               0x001CU
@@ -83,6 +84,21 @@ static bool io_window_valid(const struct nexus_pci_bar *bar) {
 }
 
 static bool wait_codec_ready(void) {
+    /*
+     * Intel ICH AC97 requires up to 600 ms after GLOB_CNT.COLD_RESET for
+     * the codec to initialize. The platform timer is already running here.
+     * Enable interrupts around HLT so this wait works even when the caller
+     * entered with IF clear.
+     */
+    const uint64_t start_tick = timer_ticks();
+    uint32_t spin = 0U;
+    while (timer_ticks() - start_tick < 60U &&
+           spin < AC97_RESET_SPIN_LIMIT * 8U) {
+        __asm__ volatile ("sti; hlt; cli" : : : "memory");
+        ++spin;
+    }
+    if (timer_ticks() - start_tick < 60U) return false;
+
     for (uint32_t i = 0U; i < AC97_RESET_SPIN_LIMIT; ++i) {
         if ((io_in32((uint16_t)(busmaster_base +
                 AC97_BUSMASTER_GLOBAL_STATUS)) &
@@ -90,6 +106,10 @@ static bool wait_codec_ready(void) {
             return true;
         __asm__ volatile ("pause");
     }
+    serial_write("AC97: primary codec-ready bit absent; GLOB_STA=");
+    serial_write_hex(io_in32((uint16_t)(busmaster_base +
+                          AC97_BUSMASTER_GLOBAL_STATUS)));
+    serial_write("\r\n");
     return false;
 }
 

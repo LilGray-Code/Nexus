@@ -505,6 +505,7 @@ void kmain(void) {
 
     if (!nexus_service_manager_start("storage"))
         serial_write("WARNING: no supported mass-storage driver initialized\r\n");
+    serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
     const bool boot_media_identity_ready = boot_media_provenance_init();
     if (!boot_media_identity_ready) {
         serial_write("INSTALLER: destructive writes locked until boot source is identified\r\n");

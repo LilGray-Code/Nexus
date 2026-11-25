@@ -839,11 +839,28 @@ bool nvme_identify_probe(const struct nexus_pci_device *device) {
         serial_write("FAT32: CI root directory self-test failed\\r\\n");
         return false;
     }
-    struct nexus_vfs_dirent vfs_entry;
-    if (!vfs_root_entry(0, &vfs_entry) ||
-        vfs_entry.type != NEXUS_VFS_FILE ||
-        vfs_entry.name[0] != 'R' || vfs_entry.name[6] != '.' ||
-        vfs_entry.size == 0U) {
+    /*
+     * The immutable system pack is merged into the VFS root before physical
+     * volume entries. Locate README.TXT by name instead of assuming index 0.
+     */
+    bool vfs_readme_listed = false;
+    static const char readme_name[] = "README.TXT";
+    for (size_t entry_index = 0U;
+         entry_index < vfs_root_entry_count(); ++entry_index) {
+        struct nexus_vfs_dirent vfs_entry;
+        if (!vfs_root_entry(entry_index, &vfs_entry) ||
+            vfs_entry.type != NEXUS_VFS_FILE || vfs_entry.size == 0U)
+            continue;
+        size_t name_index = 0U;
+        while (name_index < sizeof(readme_name) &&
+               vfs_entry.name[name_index] == readme_name[name_index])
+            ++name_index;
+        if (name_index == sizeof(readme_name)) {
+            vfs_readme_listed = true;
+            break;
+        }
+    }
+    if (!vfs_readme_listed) {
         serial_write("VFS: CI root directory listing failed\\r\\n");
         return false;
     }

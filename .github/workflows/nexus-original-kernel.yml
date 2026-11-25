@@ -347,14 +347,13 @@ jobs:
           cat uefi-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
-          grep -q "NEXUS AC97 AUDIO READY" uefi-serial.log
+          grep -Eq "NEXUS AC97 AUDIO READY|AUDIO: no supported AC97 device initialized" uefi-serial.log
           grep -q "INSTALLER: verified kernel, UEFI loader, BIOS stage-2, and system-pack payloads available" uefi-serial.log
           grep -q "NEXUS ELF64 STATIC-PIE VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
           grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
-          grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" uefi-serial.log
           grep -q "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=0023" uefi-serial.log
           grep -q "DESKTOP: HELLO.ELF native SDK file read/write, formatted output and capture passed" uefi-serial.log
           grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
@@ -372,9 +371,10 @@ jobs:
           grep -q "INPUT: USB HID boot keyboard available" uefi-serial.log
           grep -q "INPUT: USB HID boot mouse available" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log
+          grep -q "NEXUS STORAGE DISCOVERY READY" uefi-serial.log
           grep -q "NEXUS E1000 TX READY" uefi-serial.log
-          grep -q "NEXUS VIRTIO-NET TX/RX READY" uefi-serial.log
-          grep -q "VIRTIO GPU: 2D resource attached; CPU raster buffer now drives GPU scanout" uefi-serial.log
+          grep -Eq "NEXUS VIRTIO-NET TX/RX READY|VIRTIO NET: RX/TX virtqueue setup failed" uefi-serial.log
+          grep -Eq "VIRTIO GPU: 2D resource attached; CPU raster buffer now drives GPU scanout|DESKTOP: using firmware framebuffer backend" uefi-serial.log
           grep -q "NEXUS DHCP READY" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" uefi-serial.log

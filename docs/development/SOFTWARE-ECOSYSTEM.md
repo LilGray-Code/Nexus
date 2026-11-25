@@ -2,7 +2,7 @@
 
 ## Native package (`.NUP`)
 
-The first native package format is intentionally one static x86-64 ELF64 app per package. Version 1 is canonical UTF-8/ASCII text followed by the exact payload bytes:
+The first native package format is intentionally one static x86-64 ELF64 app per package. The loader accepts ET_EXEC and a restricted ET_DYN static-PIE subset with only symbol-free `R_X86_64_RELATIVE` relocations; PIE images with an interpreter, TLS, dependencies, symbol relocations, or unsupported dynamic tags are rejected. Version 1 is canonical UTF-8/ASCII text followed by the exact payload bytes:
 
 ```text
 NEXUS-PACKAGE/1
@@ -21,7 +21,7 @@ SIGNATURE=<128 lowercase hexadecimal characters>
 
 The Ed25519 signature authenticates the exact header bytes from the beginning of `NEXUS-PACKAGE/1` through the newline after `KEY=...`. `SIGNATURE=` and the payload are not part of that signed message; the SHA-256 payload digest is in the signed header. The verifier must reject an unknown key ID, an invalid signature, or any payload whose SHA-256 differs. The package parser rejects non-canonical field order, CRLF, extra fields, unsupported architecture/ABI/entry names, malformed semantic versions, bad sizes, and trailing bytes.
 
-`kernel/src/package.c` verifies this structure, then requires the payload to pass the static Nexus ELF64 loader's validation. It installs the executable under `APPS/<ID>-<VERSION>.ELF` and writes `APPS/<ID>.NPK` last. The receipt is the installed-state marker. Updating an app stages a separate versioned executable and only switches the receipt after the new payload is present. The previous version is removed after the receipt commit. A failed receipt commit removes a newly staged executable and leaves the previous receipt intact.
+`kernel/src/package.c` verifies this structure, then requires the payload to pass the Nexus ELF64 loader's validation (static ET_EXEC or the constrained static-PIE subset). It installs the executable under `APPS/<ID>-<VERSION>.ELF` and writes `APPS/<ID>.NPK` last. The receipt is the installed-state marker. Updating an app stages a separate versioned executable and only switches the receipt after the new payload is present. The previous version is removed after the receipt commit. A failed receipt commit removes a newly staged executable and leaves the previous receipt intact.
 
 Installation requires a writable NexusFS Data volume. It never writes to FAT32 or the volatile RAM overlay. NXFS currently provides at most 64 entries and 1 MiB per file, so the first format supports a single executable payload up to 1 MiB; it does not package assets, shared libraries, or runtime dependencies yet.
 
@@ -51,4 +51,4 @@ The Store is not yet connected to this package/catalog API. The old Steam/Discor
 
 ## Next compatibility layers
 
-After a release trust provider and package download path are in place, the next layers are shared runtime libraries and a native window API, then audio and game-controller services, followed by a 3D graphics driver/API. The current user app is a foreground synchronous static ELF with a 2D framebuffer syscall. This package format does not make Windows PE/Win32 applications, Steam, Discord, Spotify, or commercial PC games runnable.
+A constrained static-PIE path and initial gamepad/AC'97 service foundations now exist. The next layers are a complete shared-library dynamic linker and runtime ABI, multiple protected user processes, a native window API, full audio services, and a 3D graphics driver/API. The current user app is a foreground synchronous static ELF with a 2D framebuffer syscall. This package format does not make Windows PE/Win32 applications, Steam, Discord, Spotify, or commercial PC games runnable.

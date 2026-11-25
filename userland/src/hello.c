@@ -70,7 +70,7 @@ int main(void) {
     if (nexus_puts(cpu_ready) != (int64_t)(sizeof(cpu_ready) - 1U))
         return 25;
     if ((cpu.feature_flags & NEXUS_CPU_FEATURE_AVX2) != 0U) {
-        if (nexus_puts("NEXUS AVX2 USER SIMD READY") != 25) return 26;
+        if (nexus_puts("NEXUS AVX2 USER SIMD READY") != 26) return 26;
     } else if (nexus_puts("NEXUS SCALAR USER SIMD FALLBACK READY") != 37) {
         return 27;
     }

@@ -95,3 +95,9 @@ can select code paths based on features the running kernel has actually
 enabled. AVX and AVX2 are reported only when the kernel has configured and
 preserves XSAVE x87/SSE/YMM state; hardware CPUID support alone is not enough.
 AVX-512 is not exposed until its opmask/ZMM state is implemented and saved.
+
+
+The freestanding runtime selects AVX2 bulk copy/fill routines for requests of
+256 bytes or larger when the kernel's CPU-capability syscall confirms AVX2
+and active OS-managed YMM state. Older CPUs and failed capability queries use
+the scalar fallback. Applications can query the same feature record directly.

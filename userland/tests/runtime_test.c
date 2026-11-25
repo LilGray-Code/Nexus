@@ -28,6 +28,26 @@ static int64_t test_syscall(uint64_t number, uint64_t arg1,
     switch (number) {
         case NEXUS_SYS_ABI_VERSION:
             return (int64_t)NEXUS_SYSCALL_ABI_VERSION;
+        case NEXUS_SYS_CPU_INFO: {
+            struct nexus_cpu_capabilities *info =
+                (struct nexus_cpu_capabilities *)(uintptr_t)arg1;
+            if (info == NULL) return -NEXUS_EFAULT;
+            nexus_memset(info, 0, sizeof(*info));
+            info->structure_size = sizeof(*info);
+            info->abi_version = NEXUS_SYSCALL_ABI_VERSION;
+            info->feature_flags = NEXUS_CPU_FEATURE_SSE2;
+#if defined(__GNUC__)
+            __builtin_cpu_init();
+            if (__builtin_cpu_supports("avx2"))
+                info->feature_flags |= NEXUS_CPU_FEATURE_AVX |
+                                       NEXUS_CPU_FEATURE_AVX2;
+#endif
+            info->physical_cores = 4U;
+            info->logical_processors = 8U;
+            info->vendor[0] = 'T';
+            info->brand[0] = 'N';
+            return 0;
+        }
         case NEXUS_SYS_OPEN: {
             const char *path = (const char *)(uintptr_t)arg1;
             if (path == NULL || test_missing_file) return -NEXUS_ENOENT;
@@ -94,6 +114,25 @@ static int64_t test_syscall(uint64_t number, uint64_t arg1,
 int64_t nexus_test_syscall3(uint64_t number, uint64_t arg1,
                             uint64_t arg2, uint64_t arg3) {
     return test_syscall(number, arg1, arg2, arg3);
+}
+
+static void test_runtime_cpu_query_and_bulk_memory(void) {
+    struct nexus_cpu_capabilities cpu = {0};
+    assert(nexus_query_cpu_capabilities(&cpu) == 0);
+    assert(cpu.structure_size == sizeof(cpu));
+    assert(cpu.abi_version == NEXUS_SYSCALL_ABI_VERSION);
+    assert((cpu.feature_flags & NEXUS_CPU_FEATURE_SSE2) != 0U);
+    assert(cpu.physical_cores == 4U && cpu.logical_processors == 8U);
+    assert(cpu.vendor[0] == 'T' && cpu.brand[0] == 'N');
+
+    uint8_t source[777], destination[777];
+    for (size_t i = 0U; i < sizeof(source); ++i)
+        source[i] = (uint8_t)((i * 37U) & 0xFFU);
+    assert(nexus_memset(destination, 0xA5, sizeof(destination)) == destination);
+    for (size_t i = 0U; i < sizeof(destination); ++i)
+        assert(destination[i] == 0xA5U);
+    assert(nexus_memcpy(destination, source, sizeof(source)) == destination);
+    assert(nexus_memcmp(destination, source, sizeof(source)) == 0);
 }
 
 static void test_string_and_memory_helpers(void) {
@@ -196,6 +235,7 @@ static void test_partial_console_writes_and_errors(void) {
 
 int main(void) {
     assert(nexus_abi_version() == NEXUS_SYSCALL_ABI_VERSION);
+    test_runtime_cpu_query_and_bulk_memory();
     test_string_and_memory_helpers();
     test_bounded_file_read_and_overflow();
     test_file_write_and_readback();

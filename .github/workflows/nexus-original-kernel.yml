@@ -9,6 +9,7 @@ on:
       - "boot/**"
       - "build/**"
       - "installer/**"
+      - "userland/**"
       - ".github/workflows/nexus-original-kernel.yml"
   pull_request:
     branches:
@@ -378,6 +379,7 @@ jobs:
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
           grep -q "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=0023" uefi-serial.log
           grep -q "DESKTOP: HELLO.ELF native SDK file read/write, formatted output and capture passed" uefi-serial.log
+          grep -q "NEXUS CPU CAPABILITY QUERY READY" uefi-serial.log
           grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
           grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log

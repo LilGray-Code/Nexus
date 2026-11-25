@@ -5,10 +5,54 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <immintrin.h>
 
 
 #define NEXUS_RUNTIME_READ_CHUNK 256U
 #define NEXUS_RUNTIME_WRITE_CHUNK 128U
+
+static bool runtime_cpu_features_loaded;
+static uint64_t runtime_cpu_feature_flags;
+
+static uint64_t runtime_cpu_features(void) {
+    if (!runtime_cpu_features_loaded) {
+        struct nexus_cpu_capabilities capabilities = {0};
+        if (nexus_query_cpu_capabilities(&capabilities) == 0 &&
+            capabilities.structure_size == sizeof(capabilities) &&
+            capabilities.abi_version == NEXUS_SYSCALL_ABI_VERSION) {
+            runtime_cpu_feature_flags = capabilities.feature_flags;
+        }
+        /* Failure remains a safe scalar fallback for the process lifetime. */
+        runtime_cpu_features_loaded = true;
+    }
+    return runtime_cpu_feature_flags;
+}
+
+__attribute__((target("avx2")))
+static void *nexus_memcpy_avx2(void *destination, const void *source,
+                               size_t length) {
+    uint8_t *out = (uint8_t *)destination;
+    const uint8_t *in = (const uint8_t *)source;
+    size_t offset = 0U;
+    for (; offset + 32U <= length; offset += 32U) {
+        const __m256i chunk =
+            _mm256_loadu_si256((const __m256i *)(const void *)(in + offset));
+        _mm256_storeu_si256((__m256i *)(void *)(out + offset), chunk);
+    }
+    for (; offset < length; ++offset) out[offset] = in[offset];
+    return destination;
+}
+
+__attribute__((target("avx2")))
+static void *nexus_memset_avx2(void *destination, int value, size_t length) {
+    uint8_t *out = (uint8_t *)destination;
+    const __m256i fill = _mm256_set1_epi8((char)value);
+    size_t offset = 0U;
+    for (; offset + 32U <= length; offset += 32U)
+        _mm256_storeu_si256((__m256i *)(void *)(out + offset), fill);
+    for (; offset < length; ++offset) out[offset] = (uint8_t)value;
+    return destination;
+}
 
 size_t nexus_strlen(const char *text) {
     if (text == NULL) return 0U;
@@ -48,6 +92,10 @@ int nexus_strncmp(const char *left, const char *right, size_t maximum) {
 
 void *nexus_memcpy(void *destination, const void *source, size_t length) {
     if (destination == NULL || source == NULL) return destination;
+    if (length >= 256U &&
+        (runtime_cpu_features() & NEXUS_CPU_FEATURE_AVX2) != 0U)
+        return nexus_memcpy_avx2(destination, source, length);
+
     uint8_t *out = (uint8_t *)destination;
     const uint8_t *in = (const uint8_t *)source;
     for (size_t i = 0U; i < length; ++i) out[i] = in[i];
@@ -56,6 +104,10 @@ void *nexus_memcpy(void *destination, const void *source, size_t length) {
 
 void *nexus_memset(void *destination, int value, size_t length) {
     if (destination == NULL) return destination;
+    if (length >= 256U &&
+        (runtime_cpu_features() & NEXUS_CPU_FEATURE_AVX2) != 0U)
+        return nexus_memset_avx2(destination, value, length);
+
     uint8_t *out = (uint8_t *)destination;
     for (size_t i = 0U; i < length; ++i) out[i] = (uint8_t)value;
     return destination;

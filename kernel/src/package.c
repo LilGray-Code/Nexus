@@ -14,6 +14,12 @@
 #define PACKAGE_RECEIPT_SUFFIX ".NPK"
 #define PACKAGE_EXECUTABLE_SUFFIX ".ELF"
 
+static enum nexus_package_error last_package_error;
+
+enum nexus_package_error nexus_package_last_error(void) {
+    return last_package_error;
+}
+
 static bool bytes_equal(const uint8_t *a, const char *b, size_t length) {
     if (a == NULL || b == NULL) return false;
     for (size_t i = 0U; i < length; ++i)
@@ -466,20 +472,36 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
                            nexus_package_signature_verifier verifier,
                            void *verifier_context,
                            struct nexus_package_install_result *result) {
-    if (verifier == NULL || !vfs_nxfs_writable()) return false;
+    last_package_error = NEXUS_PACKAGE_ERROR_NONE;
+    if (verifier == NULL || package_bytes == NULL) {
+        last_package_error = NEXUS_PACKAGE_ERROR_ARGUMENT;
+        return false;
+    }
+    if (!vfs_nxfs_writable()) {
+        last_package_error = NEXUS_PACKAGE_ERROR_STORAGE;
+        return false;
+    }
     struct nexus_package_manifest manifest;
     if (!nexus_package_verify(package_bytes, package_length, verifier,
-                              verifier_context, &manifest)) return false;
+                              verifier_context, &manifest)) {
+        last_package_error = NEXUS_PACKAGE_ERROR_VERIFY;
+        return false;
+    }
 
     const uint8_t *bytes = (const uint8_t *)package_bytes;
     const uint8_t *payload = bytes + manifest.payload_offset;
     struct nexus_elf64_image executable_image;
-    if (!nexus_elf64_parse(payload, manifest.payload_size, &executable_image))
+    if (!nexus_elf64_parse(payload, manifest.payload_size, &executable_image)) {
+        last_package_error = NEXUS_PACKAGE_ERROR_EXECUTABLE;
         return false;
+    }
 
     char executable[32], receipt[32];
     if (!make_paths(&manifest, executable, receipt) ||
-        !vfs_create_root_directory(PACKAGE_APP_DIRECTORY)) return false;
+        !vfs_create_root_directory(PACKAGE_APP_DIRECTORY)) {
+        last_package_error = NEXUS_PACKAGE_ERROR_STORAGE;
+        return false;
+    }
 
     struct nexus_package_manifest old_manifest = {0};
     char old_executable[32] = {0};
@@ -490,26 +512,35 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
         char ignored_receipt[32];
         if (old_manifest.id[0] == '\0' ||
             !make_paths(&old_manifest, old_executable, ignored_receipt) ||
-            !installed_payload_matches(old_executable, &old_manifest))
+            !installed_payload_matches(old_executable, &old_manifest)) {
+            last_package_error = NEXUS_PACKAGE_ERROR_RECEIPT;
             return false;
+        }
     } else {
         struct nexus_vfs_file unknown;
         if (vfs_open_root_readonly_path(receipt, &unknown)) {
             vfs_close(&unknown);
+            last_package_error = NEXUS_PACKAGE_ERROR_RECEIPT;
             return false;
         }
     }
 
     bool executable_exists = false;
     if (!file_matches(executable, payload, manifest.payload_size,
-                      &executable_exists)) return false;
-    if (!executable_exists &&
-        !vfs_write_root_path(executable, payload, manifest.payload_size))
+                      &executable_exists)) {
+        last_package_error = NEXUS_PACKAGE_ERROR_VERSION_CONFLICT;
         return false;
+    }
+    if (!executable_exists &&
+        !vfs_write_root_path(executable, payload, manifest.payload_size)) {
+        last_package_error = NEXUS_PACKAGE_ERROR_WRITE_EXECUTABLE;
+        return false;
+    }
 
     /* Commit the signed receipt last: it is the installation visibility bit. */
     if (!vfs_write_root_path(receipt, bytes, manifest.header_size)) {
         if (!executable_exists) (void)vfs_remove_root_path(executable);
+        last_package_error = NEXUS_PACKAGE_ERROR_COMMIT_RECEIPT;
         return false;
     }
 

@@ -33,10 +33,6 @@ static uint32_t read_le32(const volatile uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
-static uint64_t read_le64(const volatile uint8_t *p) {
-    return (uint64_t)read_le32(p) |
-           ((uint64_t)read_le32(p + 4U) << 32);
-}
 static void write_le16(volatile uint8_t *p, uint16_t value) {
     p[0] = (uint8_t)value;
     p[1] = (uint8_t)(value >> 8);

@@ -335,7 +335,7 @@ int main(int argc,char **argv) {
     assert(nexus_boot_pack_init(system_pack_payload,system_pack_payload_size));
     assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks));
-    assert(target.flushes == 30U);
+    assert(target.flushes == 31U);
     assert(bytes_contain_text(target.format_area, sizeof(target.format_area),
                               "NXSPACK1"));
     /* The target disk must boot straight into the installed desktop, never
@@ -355,7 +355,7 @@ int main(int argc,char **argv) {
     struct nexus_gpt_partition bios_copy=*bios_part;
     assert(nexus_installer_install_bios_bootloader(target_handle,&identity,
         identity.stable_id,"ERASE",&bios_copy));
-    assert(target.flushes==32U);
+    assert(target.flushes==33U);
     assert(memcmp(target.bios_area,bios_hdd_payload+512U,
         bios_hdd_payload_size-512U)==0);
     assert(target.first[510U]==0x55U&&target.first[511U]==0xAAU);
@@ -393,7 +393,7 @@ int main(int argc,char **argv) {
         &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
     assert(journal_readback.sequence==2U&&
            journal_readback.phase==NEXUS_JOURNAL_GPT_WRITTEN);
-    assert(target.flushes==34U);
+    assert(target.flushes==35U);
     journal.disk_guid[0]^=0xFFU;
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
         identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_INVALID);
@@ -488,7 +488,7 @@ int main(int argc,char **argv) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 39U);
+    assert(target.flushes == 40U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy the actual kernel ELF and basic system-volume documentation. */
@@ -503,7 +503,7 @@ int main(int argc,char **argv) {
         (kernel_payload_size + NEXUS_NXFS_MAX_FILE_BYTES - 1U) /
         NEXUS_NXFS_MAX_FILE_BYTES;
     assert(kernel_chunk_count_for_flush>=1U&&kernel_chunk_count_for_flush<=2U);
-    assert(target.flushes==51U+4U*(kernel_chunk_count_for_flush-1U));
+    assert(target.flushes==52U+4U*(kernel_chunk_count_for_flush-1U));
     assert(gpt_scan_device(target_handle));
     const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
     assert(data_part!=NULL);
@@ -516,7 +516,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 55U+4U*(kernel_chunk_count_for_flush-1U));
+    assert(target.flushes == 56U+4U*(kernel_chunk_count_for_flush-1U));
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

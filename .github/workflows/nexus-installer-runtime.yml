@@ -35,7 +35,7 @@ jobs:
             installer/fat32_format.c installer/fat32_file.c \
             installer/bios_install.c kernel/src/installer_storage.c \
             kernel/src/installer_runtime.c kernel/src/boot_payload.c \
-            kernel/src/blockdev.c \
+            kernel/src/boot_pack.c kernel/src/blockdev.c \
             kernel/src/gpt.c kernel/src/nxfs.c kernel/src/serial.c \
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test

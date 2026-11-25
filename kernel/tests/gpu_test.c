@@ -20,7 +20,10 @@ void serial_write_hex(uint64_t value) { (void)value; }
 static void test_intel_adapter_and_cpu_fallback(void) {
     devices[0] = (struct nexus_pci_device){
         .class_code = 0x03U, .subclass = 0x00U,
-        .vendor_id = 0x8086U, .device_id = 0x1234U
+        .vendor_id = 0x8086U, .device_id = 0x1234U,
+        .revision_id = 0x07U,
+        .subsystem_vendor_id = 0x1028U,
+        .subsystem_device_id = 0x0A5CU
     };
     device_count = 1U;
     assert(gpu_init());
@@ -31,6 +34,10 @@ static void test_intel_adapter_and_cpu_fallback(void) {
     assert(gpu_adapter_at(1U) == NULL);
     assert(info->vendor == NEXUS_GPU_VENDOR_INTEL);
     assert(info->vendor_id == 0x8086U);
+    assert(info->device_id == 0x1234U);
+    assert(info->revision_id == 0x07U);
+    assert(info->subsystem_vendor_id == 0x1028U);
+    assert(info->subsystem_device_id == 0x0A5CU);
     assert(!gpu_hardware_acceleration_available());
     assert(!info->firmware_framebuffer_active);
     gpu_set_firmware_framebuffer_active(true);

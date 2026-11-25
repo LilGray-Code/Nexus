@@ -2,7 +2,7 @@
 #include "pci.h"
 #include <assert.h>
 #include <stdint.h>
-static uint32_t failed_probe_count, successful_probe_count;
+static uint32_t failed_probe_count, successful_probe_count, remove_count;
 static bool fail_probe(const struct nexus_driver_device *device, void *context) {
     assert(device != NULL && context == (void *)(uintptr_t)0x11U);
     ++failed_probe_count;
@@ -15,6 +15,7 @@ static bool succeed_probe(const struct nexus_driver_device *device, void *contex
     ++successful_probe_count;
     return true;
 }
+static void remove_device(const struct nexus_driver_device *device, void *context) { assert(device != NULL && context == (void *)(uintptr_t)0x1234U); ++remove_count; }
 static struct nexus_driver_descriptor make_driver(
     const char *name, int16_t priority, nexus_driver_probe_fn probe,
     void *context) {
@@ -27,7 +28,7 @@ static struct nexus_driver_descriptor make_driver(
             .subclass = NEXUS_DRIVER_WILDCARD_U8,
             .programming_interface = NEXUS_DRIVER_WILDCARD_U8
         },
-        .probe = probe, .context = context
+        .probe = probe, .remove = probe == succeed_probe ? remove_device : NULL, .context = context
     };
 }
 int main(void) {
@@ -56,6 +57,12 @@ int main(void) {
     assert(nexus_driver_manager_binding_at(1U, &info));
     assert(info.state == NEXUS_DRIVER_STATE_ACTIVE);
     assert(!nexus_driver_manager_binding_at(2U, &info));
+    const struct nexus_driver_device removed = { .bus=NEXUS_DRIVER_BUS_PCI, .vendor_id=0x8086U, .device_id=0x100EU, .class_code=0x02U, .bus_number=0U, .slot=3U, .function=0U };
+    assert(nexus_driver_manager_remove_device(&removed));
+    assert(remove_count == 1U);
+    assert(nexus_driver_manager_binding_at(1U, &info));
+    assert(info.state == NEXUS_DRIVER_STATE_REMOVED);
+    assert(!nexus_driver_manager_remove_device(&removed));
     pci.vendor_id = 0x1234U;
     assert(!nexus_driver_manager_probe_pci_device(&pci));
     assert(nexus_driver_manager_binding_count() == 2U);

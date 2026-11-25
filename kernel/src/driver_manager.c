@@ -13,6 +13,8 @@ struct registered_driver {
 static struct registered_driver drivers[NEXUS_DRIVER_MAX_DRIVERS];
 static struct nexus_driver_binding_info bindings[NEXUS_DRIVER_MAX_BINDINGS];
 static size_t drivers_used, bindings_used;
+static struct nexus_driver_device binding_devices[NEXUS_DRIVER_MAX_BINDINGS];
+static size_t binding_driver_indices[NEXUS_DRIVER_MAX_BINDINGS];
 static bool copy_name(char destination[NEXUS_DRIVER_NAME_MAX],
                       const char *source) {
     if (destination == NULL || source == NULL) return false;
@@ -72,6 +74,9 @@ static bool append_binding(const struct registered_driver *driver,
     b->slot = device->slot;
     b->function = device->function;
     b->interface_number = device->interface_number;
+    const size_t index = bindings_used - 1U;
+    binding_devices[index] = *device;
+    binding_driver_indices[index] = (size_t)(driver - drivers);
     return true;
 }
 void nexus_driver_manager_init(void) {
@@ -81,6 +86,10 @@ void nexus_driver_manager_init(void) {
         drivers[i] = (struct registered_driver){0};
     for (size_t i = 0U; i < NEXUS_DRIVER_MAX_BINDINGS; ++i)
         bindings[i] = (struct nexus_driver_binding_info){0};
+    for (size_t i = 0U; i < NEXUS_DRIVER_MAX_BINDINGS; ++i) {
+        binding_devices[i] = (struct nexus_driver_device){0};
+        binding_driver_indices[i] = 0U;
+    }
 }
 bool nexus_driver_manager_register(
     const struct nexus_driver_descriptor *descriptor) {
@@ -138,6 +147,32 @@ bool nexus_driver_manager_probe_pci_device(
     };
     return nexus_driver_manager_probe_device(&generic);
 }
+
+bool nexus_driver_manager_remove_device(
+    const struct nexus_driver_device *device) {
+    if (device == NULL) return false;
+    bool removed = false;
+    for (size_t i = 0U; i < bindings_used; ++i) {
+        struct nexus_driver_binding_info *binding = &bindings[i];
+        const struct nexus_driver_device *bound = &binding_devices[i];
+        if (binding->state != NEXUS_DRIVER_STATE_ACTIVE ||
+            bound->bus != device->bus ||
+            bound->vendor_id != device->vendor_id ||
+            bound->device_id != device->device_id ||
+            bound->bus_number != device->bus_number ||
+            bound->slot != device->slot ||
+            bound->function != device->function ||
+            bound->interface_number != device->interface_number)
+            continue;
+        const size_t driver_index = binding_driver_indices[i];
+        if (driver_index < drivers_used && drivers[driver_index].remove != NULL)
+            drivers[driver_index].remove(bound, drivers[driver_index].context);
+        binding->state = NEXUS_DRIVER_STATE_REMOVED;
+        removed = true;
+    }
+    return removed;
+}
+
 size_t nexus_driver_manager_driver_count(void) { return drivers_used; }
 size_t nexus_driver_manager_binding_count(void) { return bindings_used; }
 bool nexus_driver_manager_binding_at(

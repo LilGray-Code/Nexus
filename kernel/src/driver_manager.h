@@ -63,6 +63,9 @@ bool nexus_driver_manager_probe_device(
     const struct nexus_driver_device *device);
 bool nexus_driver_manager_probe_pci_device(
     const struct nexus_pci_device *device);
+/* Unbind a removed device and invoke the active driver's remove callback. */
+bool nexus_driver_manager_remove_device(
+    const struct nexus_driver_device *device);
 size_t nexus_driver_manager_driver_count(void);
 size_t nexus_driver_manager_binding_count(void);
 bool nexus_driver_manager_binding_at(

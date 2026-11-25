@@ -72,7 +72,14 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   the Recovery partition; it does not expose the NXFS System partition as the
   user's file store. Timestamps are not stored, so date sorting is unavailable.
   FAT32 volumes are read-only; RAM-only fallback saves are volatile.
-- An early IPv4 stack with DHCP, DNS, TCP, and a plain HTTP text viewer.
+- An early IPv4 stack with DHCP, DNS, TCP, and a bounded HTTP/HTTPS text
+  browser. The HTTPS client uses Mbed TLS 4.1.2 with TLS 1.3, certificate-chain
+  verification, Nexus-backed cryptographic randomness, RTC time, and a fixed
+  1 MiB TLS heap. HTTPS is the default for scheme-less addresses; plain HTTP
+  requires an explicit `http://` URL. The browser requires a PEM CA bundle
+  named `NEXUS.CRT` in the root of the persistent NXFS Data volume. Missing,
+  invalid, or unavailable trust anchors cause HTTPS to fail closed; there is
+  no certificate-verification bypass or silent downgrade.
   The network-device layer supports multiple registered adapters and tags
   wired Ethernet versus Wi-Fi media, but only the E1000 Ethernet driver is
   implemented; no Wi-Fi chipset driver or firmware is registered, so live radio
@@ -92,13 +99,20 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   Retransmission timers and hardware key programming remain platform work.
   SHA-256, HMAC-SHA256, and HKDF-SHA256 primitives have known-answer tests as
   TLS building blocks; they do not constitute TLS.
-- The HTTP viewer validates bounded HTTP/1.x response framing (including
-  content-length and chunked bodies), provides keyboard page scrolling, and
-  keeps a 12-entry session history with branch truncation and oldest-entry
-  eviction (Alt+Left / Alt+Right). Its bounded HTML-to-text stage formats
-  common block elements, list items, and entities while omitting comments and
-  script/style content. It does not yet provide CSS layout, JavaScript,
-  HTTPS/TLS, cookies, or a modern browser engine.
+- The browser validates bounded HTTP/1.x response framing, including
+  Content-Length and chunked bodies, parses bounded Location and Content-Type
+  headers, and follows at most five redirects. It supports absolute,
+  scheme-relative, root-relative, query-only, and directory-relative redirect
+  targets, and refuses HTTPS-to-HTTP downgrade redirects. Responses are
+  bounded to 16 KiB and plain text, JSON, XML, and CSS are displayed as text;
+  HTML/XHTML pass through a bounded HTML-to-text stage that formats common
+  block elements, list items, and entities while omitting comments and
+  script/style content. The browser provides keyboard page scrolling and a
+  12-entry session history with branch truncation and oldest-entry eviction
+  (Alt+Left / Alt+Right). This is not yet a general-purpose modern browser:
+  it has no CSS layout, JavaScript engine, DOM, cookies, tabbed browsing,
+  image/video/audio rendering, downloads, compression support, or full
+  browser compatibility layer.
 
 The desktop applications and current system services are integrated into the
 kernel. The ELF64 loader has a bounded ring-3 execution test, but this does
@@ -150,8 +164,11 @@ the latest run attached to the current branch.
 - No physical PC installation or hardware-compatibility matrix has been
   completed. Hardware testing remains required.
 - Secure Boot is not supported.
-- The browser is an early plain-HTTP text viewer; HTTPS/TLS and modern web
-  rendering are not implemented.
+- The browser now has a TLS 1.3 HTTPS transport and bounded redirect
+  handling, but it remains a text-only browser. The user must place a trusted
+  PEM CA bundle named `NEXUS.CRT` in the root of the persistent NXFS Data
+  volume. CSS layout, JavaScript, cookies, tabs, image/media decoding,
+  downloads, compression, and a full modern browser engine remain unimplemented.
 - The Files app is still bounded: it has a 128-entry display cache,
   current-folder-only filename search, 31-character path/name limits, and a
   4 KiB ASCII editor. Directory rename, recursive search, rich previews,

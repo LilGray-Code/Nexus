@@ -143,6 +143,10 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
 
     bool have_length = false;
     bool have_transfer_encoding = false;
+    bool have_location = false;
+    bool have_content_type = false;
+    char location[NEXUS_HTTP_LOCATION_MAX + 1U] = {0};
+    char content_type[NEXUS_HTTP_CONTENT_TYPE_MAX + 1U] = {0};
     size_t declared_length = 0U;
     size_t cursor = status_line_end + 2U;
     while (cursor < header_end) {
@@ -181,6 +185,28 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
                 !bytes_equal_ci(wire + value_start, value_length,
                                 "chunked")) return false;
             have_transfer_encoding = true;
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Location")) {
+            if (have_location || value_length == 0U ||
+                value_length > NEXUS_HTTP_LOCATION_MAX) return false;
+            for (size_t i = 0U; i < value_length; ++i) {
+                const uint8_t ch = wire[value_start + i];
+                if (ch <= 0x20U || ch >= 0x7FU) return false;
+                location[i] = (char)ch;
+            }
+            location[value_length] = '\0';
+            have_location = true;
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Content-Type")) {
+            if (have_content_type || value_length == 0U ||
+                value_length > NEXUS_HTTP_CONTENT_TYPE_MAX) return false;
+            for (size_t i = 0U; i < value_length; ++i) {
+                const uint8_t ch = wire[value_start + i];
+                if (ch < 0x20U || ch >= 0x7FU) return false;
+                content_type[i] = (char)ch;
+            }
+            content_type[value_length] = '\0';
+            have_content_type = true;
         }
         cursor = line_end + 2U;
     }
@@ -205,5 +231,11 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
     response->body_length = body_length;
     response->chunked = have_transfer_encoding;
     response->has_content_length = have_length;
+    response->has_location = have_location;
+    response->has_content_type = have_content_type;
+    for (size_t i = 0U; i < sizeof(response->location); ++i)
+        response->location[i] = location[i];
+    for (size_t i = 0U; i < sizeof(response->content_type); ++i)
+        response->content_type[i] = content_type[i];
     return true;
 }

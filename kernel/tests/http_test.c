@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 static void test_content_length(void) {
     static const uint8_t wire[] =
@@ -82,11 +83,44 @@ static void test_capacity_and_malformed_status(void) {
                                        body, sizeof(body), &response));
 }
 
+static void test_redirect_and_content_type_metadata(void) {
+    static const uint8_t redirect[] =
+        "HTTP/1.1 302 Found\r\n"
+        "Location: https://www.example.test/new-page\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "Content-Length: 0\r\n\r\n";
+    static const uint8_t duplicate_location[] =
+        "HTTP/1.1 301 Moved Permanently\r\n"
+        "Location: /first\r\nLocation: /second\r\n"
+        "Content-Length: 0\r\n\r\n";
+    static const uint8_t unsafe_location[] =
+        "HTTP/1.1 302 Found\r\n"
+        "Location: /bad\001Injected\r\n"
+        "Content-Length: 0\r\n\r\n";
+    uint8_t body[8] = {0};
+    struct nexus_http_response response;
+    assert(nexus_http_decode_response(
+        redirect, sizeof(redirect) - 1U, body, sizeof(body), &response));
+    assert(response.status_code == 302U && response.has_location);
+    assert(strcmp(response.location,
+                  "https://www.example.test/new-page") == 0);
+    assert(response.has_content_type);
+    assert(strcmp(response.content_type,
+                  "text/html; charset=utf-8") == 0);
+    assert(!nexus_http_decode_response(
+        duplicate_location, sizeof(duplicate_location) - 1U,
+        body, sizeof(body), &response));
+    assert(!nexus_http_decode_response(
+        unsafe_location, sizeof(unsafe_location) - 1U,
+        body, sizeof(body), &response));
+}
+
 int main(void) {
     test_content_length();
     test_chunked_extensions_and_trailers();
     test_close_delimited_and_error_status();
     test_reject_ambiguous_or_truncated();
     test_capacity_and_malformed_status();
+    test_redirect_and_content_type_metadata();
     return 0;
 }

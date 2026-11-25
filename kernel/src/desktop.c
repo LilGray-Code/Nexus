@@ -10,6 +10,7 @@
 #include "net.h"
 #include "net_https.h"
 #include "http.h"
+#include "browser_url.h"
 #include "html_text.h"
 #include "browser_history.h"
 #include "nxfs.h"
@@ -177,6 +178,14 @@ static char installer_status_text[96] = "Select a supported target disk";
 #define NEXUS_BROWSER_LINE_COUNT 48U
 #define NEXUS_BROWSER_VISIBLE_LINES 9U
 #define NEXUS_BROWSER_LINE_WIDTH 72U
+/* A larger bounded response window makes real HTML pages less likely to be
+ * clipped at the old 1.5 KiB limit. Buffers live in BSS, not the small kernel
+ * stack. TCP itself remains a single-connection, bounded receive transport.
+ */
+#define NEXUS_BROWSER_RESPONSE_CAPACITY (16U * 1024U)
+static uint8_t browser_response_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
+static uint8_t browser_body_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
+static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_address[96];
 static size_t browser_address_length;
 static char browser_status[80] = "HTTPS-first; requires NEXUS.CRT on Nexus Data";
@@ -2816,18 +2825,46 @@ static void browser_append_page_char(char value) {
     line[length + 1U] = '\0';
 }
 
+static bool browser_content_type_is(const char *value,
+                                       const char *expected) {
+    if (value == NULL || expected == NULL) return false;
+    size_t i = 0U;
+    while (expected[i] != '\0') {
+        char actual = value[i];
+        char wanted = expected[i];
+        if (actual >= 'A' && actual <= 'Z')
+            actual = (char)(actual - 'A' + 'a');
+        if (wanted >= 'A' && wanted <= 'Z')
+            wanted = (char)(wanted - 'A' + 'a');
+        if (actual == '\0' || actual != wanted) return false;
+        ++i;
+    }
+    return value[i] == '\0' || value[i] == ';' || value[i] == ' ' ||
+           value[i] == '\t';
+}
+
+static void browser_render_plain_body(const uint8_t *data, size_t length) {
+    browser_clear_page();
+    if (data == NULL) return;
+    for (size_t i = 0U; i < length; ++i) {
+        char value = (char)data[i];
+        if ((unsigned char)value > 0x7EU) value = '?';
+        browser_append_page_char(value);
+    }
+}
+
 static void browser_render_body(const uint8_t *data, size_t length) {
     browser_clear_page();
     if (data == NULL) return;
 
-    char text[1536];
     struct nexus_html_text_result result;
-    if (!nexus_html_to_text(data, length, text, sizeof(text), &result)) {
+    if (!nexus_html_to_text(data, length, browser_text_buffer,
+                            sizeof(browser_text_buffer), &result)) {
         browser_set_status("HTML text conversion rejected invalid input");
         return;
     }
     for (size_t i = 0U; i < result.output_length; ++i)
-        browser_append_page_char(text[i]);
+        browser_append_page_char(browser_text_buffer[i]);
     if (result.truncated || result.malformed)
         browser_content_truncated = result.truncated;
 }
@@ -2869,10 +2906,23 @@ static bool browser_starts_with(const char *value, size_t length,
                                  const char *prefix) {
     size_t i = 0U;
     while (prefix[i] != '\0') {
-        if (i >= length || value[i] != prefix[i]) return false;
+        if (i >= length) return false;
+        char actual = value[i];
+        char expected = prefix[i];
+        if (actual >= 'A' && actual <= 'Z')
+            actual = (char)(actual - 'A' + 'a');
+        if (expected >= 'A' && expected <= 'Z')
+            expected = (char)(expected - 'A' + 'a');
+        if (actual != expected) return false;
         ++i;
     }
     return true;
+}
+
+static bool browser_is_http_redirect(uint16_t status_code) {
+    return status_code == 301U || status_code == 302U ||
+           status_code == 303U || status_code == 307U ||
+           status_code == 308U;
 }
 
 static bool browser_load_ca_bundle(size_t *pem_length) {
@@ -2987,6 +3037,9 @@ static bool browser_https_receive_response(
 }
 
 static void browser_navigate(bool record_history) {
+    size_t redirect_count = 0U;
+    bool history_saved = false;
+browser_retry:
     browser_clear_page();
     if (browser_address_length == 0U) {
         browser_set_status("Enter a URL or host name");
@@ -3055,10 +3108,12 @@ static void browser_navigate(bool record_history) {
             "Invalid host; ports and IPv6 literals are not supported");
         return;
     }
-    if (record_history &&
-        !nexus_browser_history_push(&browser_history, browser_address)) {
-        browser_set_status("Browser history could not store this address");
-        return;
+    if (record_history && !history_saved) {
+        if (!nexus_browser_history_push(&browser_history, browser_address)) {
+            browser_set_status("Browser history could not store this address");
+            return;
+        }
+        history_saved = true;
     }
 
     struct nexus_https_connection https = {0};
@@ -3126,8 +3181,8 @@ static void browser_navigate(bool record_history) {
         return;
     }
 
-    uint8_t response[1536];
-    uint8_t body[1536];
+    uint8_t *response = browser_response_buffer;
+    uint8_t *body = browser_body_buffer;
     struct nexus_http_response parsed;
     size_t response_length = 0U;
     bool orderly_eof = false;
@@ -3137,7 +3192,7 @@ static void browser_navigate(bool record_history) {
         : "Receiving unencrypted HTTP response...");
     if (use_https) {
         receive_ok = browser_https_receive_response(
-            &https, response, sizeof(response), &response_length, &orderly_eof);
+            &https, response, NEXUS_BROWSER_RESPONSE_CAPACITY, &response_length, &orderly_eof);
         nexus_https_close(&https);
         https_open = false;
     } else {
@@ -3145,11 +3200,11 @@ static void browser_navigate(bool record_history) {
         uint64_t last_data = start;
         while (timer_ticks() - start < 600U &&
                (response_length == 0U || timer_ticks() - last_data < 40U) &&
-               response_length < sizeof(response)) {
+               response_length < NEXUS_BROWSER_RESPONSE_CAPACITY) {
             net_poll();
             const size_t received =
                 net_tcp_receive(response + response_length,
-                                sizeof(response) - response_length);
+                                NEXUS_BROWSER_RESPONSE_CAPACITY - response_length);
             if (received != 0U) {
                 response_length += received;
                 last_data = timer_ticks();
@@ -3166,7 +3221,7 @@ static void browser_navigate(bool record_history) {
         return;
     }
     if (!nexus_http_decode_response(response, response_length, body,
-                                    sizeof(body), &parsed)) {
+                                    NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
     }
@@ -3177,6 +3232,37 @@ static void browser_navigate(bool record_history) {
         !orderly_eof) {
         browser_set_status("HTTPS response ended before authenticated EOF");
         return;
+    }
+    if (browser_is_http_redirect(parsed.status_code)) {
+        if (!parsed.has_location) {
+            browser_set_status("Redirect response did not include Location");
+            return;
+        }
+        if (redirect_count >= 5U) {
+            browser_set_status("Redirect limit reached (maximum five hops)");
+            return;
+        }
+        char redirect_target[sizeof(browser_address)];
+        size_t redirect_length = 0U;
+        size_t location_length = 0U;
+        while (location_length < sizeof(parsed.location) &&
+               parsed.location[location_length] != '\0')
+            ++location_length;
+        if (location_length == sizeof(parsed.location) ||
+            !nexus_browser_resolve_redirect(
+                host, host_length, path, path_length, use_https,
+                parsed.location, location_length,
+                redirect_target, sizeof(redirect_target), &redirect_length)) {
+            browser_set_status(
+                "Redirect rejected (invalid URL or HTTPS downgrade)");
+            return;
+        }
+        for (size_t i = 0U; i < redirect_length; ++i)
+            browser_address[i] = redirect_target[i];
+        browser_address[redirect_length] = '\0';
+        browser_address_length = redirect_length;
+        ++redirect_count;
+        goto browser_retry;
     }
     if (parsed.status_code < 200U || parsed.status_code >= 300U) {
         char number[21];
@@ -3191,15 +3277,34 @@ static void browser_navigate(bool record_history) {
         return;
     }
 
-    browser_render_body(body, parsed.body_length);
+    bool rendered_plain_text = false;
+    if (parsed.has_content_type) {
+        if (browser_content_type_is(parsed.content_type, "text/plain") ||
+            browser_content_type_is(parsed.content_type, "application/json") ||
+            browser_content_type_is(parsed.content_type, "application/xml") ||
+            browser_content_type_is(parsed.content_type, "text/xml") ||
+            browser_content_type_is(parsed.content_type, "text/css")) {
+            browser_render_plain_body(body, parsed.body_length);
+            rendered_plain_text = true;
+        } else if (!browser_content_type_is(parsed.content_type, "text/html") &&
+                   !browser_content_type_is(
+                       parsed.content_type, "application/xhtml+xml")) {
+            browser_set_status("Unsupported content type (text and HTML only)");
+            return;
+        }
+    }
+    if (!rendered_plain_text)
+        browser_render_body(body, parsed.body_length);
     if (browser_content_truncated) {
         browser_set_status("Page text clipped to the bounded browser view");
     } else if (use_https) {
-        browser_set_status(
-            "HTTPS certificate verified (TLS 1.3); HTML text only");
+        browser_set_status(rendered_plain_text
+            ? "HTTPS certificate verified (TLS 1.3); plain text"
+            : "HTTPS certificate verified (TLS 1.3); HTML text only");
     } else {
-        browser_set_status(
-            "HTTP loaded without encryption; HTML text only");
+        browser_set_status(rendered_plain_text
+            ? "HTTP loaded without encryption; plain text"
+            : "HTTP loaded without encryption; HTML text only");
     }
 }
 static void browser_history_navigate(bool forward) {

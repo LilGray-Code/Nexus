@@ -309,6 +309,19 @@ void kmain(void) {
         serial_write("WARNING: no mass-storage PCI controller discovered\r\n");
     }
     serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
+
+    /* Enumerate USB storage before boot provenance is finalized. Otherwise a
+     * USB installer source could appear after the safety scan and mistakenly
+     * look like a disposable target.
+     */
+    const bool ps2_input_ready = input_init();
+    (void)xhci_init();
+    const bool usb_keyboard_ready = xhci_keyboard_ready();
+    const bool usb_mouse_ready = xhci_mouse_ready();
+    const bool usb_storage_ready = xhci_storage_ready();
+    if (usb_storage_ready)
+        serial_write("NEXUS USB MASS STORAGE BLOCK DEVICE READY\r\n");
+
     const bool boot_media_identity_ready = boot_media_provenance_init();
     if (!boot_media_identity_ready) {
         serial_write("INSTALLER: destructive writes locked until boot source is identified\r\n");
@@ -404,10 +417,6 @@ void kmain(void) {
     serial_write("NEXUS K2 COOPERATIVE THREAD SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
-    const bool ps2_input_ready = input_init();
-    (void)xhci_init();
-    const bool usb_keyboard_ready = xhci_keyboard_ready();
-    const bool usb_mouse_ready = xhci_mouse_ready();
     if (!ps2_input_ready && !usb_keyboard_ready) {
         serial_write("INPUT: no PS/2 or USB HID keyboard detected; keyboard input unavailable\r\n");
     }

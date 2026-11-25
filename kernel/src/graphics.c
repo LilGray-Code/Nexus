@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS 2048U
+
 struct glyph {
     char character;
     uint8_t rows[7];
@@ -120,6 +122,121 @@ void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
 }
 
 
+static uint8_t graphics_lerp_channel(uint8_t start, uint8_t end,
+                                        uint64_t position,
+                                        uint64_t extent) {
+    if (extent <= 1U) return start;
+    const uint64_t numerator = (uint64_t)start * (extent - 1U - position) +
+                               (uint64_t)end * position;
+    return (uint8_t)(numerator / (extent - 1U));
+}
+
+void graphics_gradient_rect(uint64_t x, uint64_t y, uint64_t width,
+                            uint64_t height, bool horizontal,
+                            uint8_t start_red, uint8_t start_green,
+                            uint8_t start_blue, uint8_t end_red,
+                            uint8_t end_green, uint8_t end_blue) {
+    if (!initialized || width == 0U || height == 0U ||
+        x >= active_surface.width || y >= active_surface.height) return;
+    if (width > active_surface.width - x)
+        width = active_surface.width - x;
+    if (height > active_surface.height - y)
+        height = active_surface.height - y;
+    const uint64_t extent = horizontal ? width : height;
+    for (uint64_t position = 0U; position < extent; ++position) {
+        const uint8_t red = graphics_lerp_channel(
+            start_red, end_red, position, extent);
+        const uint8_t green = graphics_lerp_channel(
+            start_green, end_green, position, extent);
+        const uint8_t blue = graphics_lerp_channel(
+            start_blue, end_blue, position, extent);
+        if (horizontal)
+            graphics_fill_rect(x + position, y, 1U, height,
+                               red, green, blue);
+        else
+            graphics_fill_rect(x, y + position, width, 1U,
+                               red, green, blue);
+    }
+}
+
+void graphics_draw_line(uint64_t x0, uint64_t y0,
+                        uint64_t x1, uint64_t y1, uint32_t thickness,
+                        uint8_t red, uint8_t green, uint8_t blue) {
+    if (!initialized || thickness == 0U ||
+        x0 >= active_surface.width || x1 >= active_surface.width ||
+        y0 >= active_surface.height || y1 >= active_surface.height)
+        return;
+    if (thickness > 64U) thickness = 64U;
+
+    int64_t x = (int64_t)x0;
+    int64_t y = (int64_t)y0;
+    const int64_t end_x = (int64_t)x1;
+    const int64_t end_y = (int64_t)y1;
+    const int64_t dx = end_x >= x ? end_x - x : x - end_x;
+    const int64_t sx = x < end_x ? 1 : -1;
+    const int64_t dy_abs = end_y >= y ? end_y - y : y - end_y;
+    const int64_t dy = -dy_abs;
+    const int64_t sy = y < end_y ? 1 : -1;
+    int64_t error = dx + dy;
+    for (;;) {
+        const uint64_t half = thickness / 2U;
+        const uint64_t draw_x = (uint64_t)x >= half
+            ? (uint64_t)x - half : 0U;
+        const uint64_t draw_y = (uint64_t)y >= half
+            ? (uint64_t)y - half : 0U;
+        graphics_fill_rect(draw_x, draw_y, thickness, thickness,
+                           red, green, blue);
+        if (x == end_x && y == end_y) break;
+        const int64_t twice_error = 2 * error;
+        if (twice_error >= dy) {
+            error += dy;
+            x += sx;
+        }
+        if (twice_error <= dx) {
+            error += dx;
+            y += sy;
+        }
+    }
+}
+
+static void graphics_circle_pixel(uint64_t x, uint64_t y,
+                                  uint8_t red, uint8_t green,
+                                  uint8_t blue) {
+    if (x < active_surface.width && y < active_surface.height)
+        graphics_fill_rect(x, y, 1U, 1U, red, green, blue);
+}
+
+void graphics_draw_circle(uint64_t center_x, uint64_t center_y,
+                          uint32_t radius, uint8_t red, uint8_t green,
+                          uint8_t blue) {
+    if (!initialized || radius > NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS) return;
+    int64_t x = (int64_t)radius;
+    int64_t y = 0;
+    int64_t error = 1 - x;
+    while (x >= y) {
+        const int64_t offsets_x[8] = {x, y, -y, -x, -x, -y, y, x};
+        const int64_t offsets_y[8] = {y, x, x, y, -y, -x, -x, -y};
+        for (size_t i = 0U; i < 8U; ++i) {
+            int64_t px;
+            int64_t py;
+            if (center_x > (uint64_t)INT64_MAX ||
+                center_y > (uint64_t)INT64_MAX) return;
+            px = (int64_t)center_x + offsets_x[i];
+            py = (int64_t)center_y + offsets_y[i];
+            if (px >= 0 && py >= 0)
+                graphics_circle_pixel((uint64_t)px, (uint64_t)py,
+                                      red, green, blue);
+        }
+        ++y;
+        if (error < 0) {
+            error += 2 * y + 1;
+        } else {
+            --x;
+            error += 2 * (y - x) + 1;
+        }
+    }
+}
+
 static uint8_t unpack_channel(uint32_t pixel, uint8_t size, uint8_t shift) {
     const uint32_t maximum = (1U << size) - 1U;
     const uint32_t value = (pixel >> shift) & maximum;
@@ -168,7 +285,7 @@ void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
 
 
 
-#define NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS 2048U
+
 
 /* Integer square root with a fixed, small search interval. Circle rasterization
  * is row-based, so the cost is bounded by 4097 scanlines rather than radius^2.

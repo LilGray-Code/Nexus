@@ -41,6 +41,28 @@ int main(void) {
     assert(guarded[1U + (HEIGHT - 1U) * WIDTH + (WIDTH - 1U)] ==
            0x0000FF00U);
 
+    /* Gradients interpolate their endpoints and clip to the surface. */
+    graphics_gradient_rect(0U, 0U, WIDTH, 1U, true,
+                           0U, 0U, 0U, 255U, 0U, 0U);
+    assert(guarded[1U] == 0x00000000U);
+    assert(guarded[1U + WIDTH - 1U] == 0x00FF0000U);
+    graphics_gradient_rect(0U, 1U, 1U, 3U, false,
+                           0U, 0U, 0U, 0U, 0U, 255U);
+    assert((guarded[1U + WIDTH] & 0xFFU) == 0U);
+    assert((guarded[1U + 3U * WIDTH] & 0xFFU) == 255U);
+
+    /* Vector strokes and circle outlines stay inside the framebuffer. */
+    graphics_clear(0U, 0U, 0U);
+    graphics_draw_line(0U, 0U, 7U, 5U, 1U, 0U, 255U, 0U);
+    assert(guarded[1U] == 0x0000FF00U);
+    assert(guarded[1U + 5U * WIDTH + 7U] == 0x0000FF00U);
+    graphics_draw_circle(4U, 3U, 2U, 255U, 255U, 0U);
+    assert(guarded[1U + 3U * WIDTH + 6U] == 0x00FFFF00U);
+    assert(guarded[1U + 3U * WIDTH + 4U] != 0x00FFFF00U);
+    graphics_draw_line(WIDTH, 0U, 0U, HEIGHT, 1U, 255U, 255U, 255U);
+    graphics_draw_circle(UINT64_MAX, UINT64_MAX, 2U,
+                         255U, 255U, 255U);
+
     /* Alpha blending preserves transparent pixels and composites opaque ones. */
     graphics_clear(0U, 0U, 0U);
     graphics_blend_rect(0U, 0U, 1U, 1U, 255U, 0U, 0U, 0U);

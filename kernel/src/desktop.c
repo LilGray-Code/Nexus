@@ -155,6 +155,7 @@ static char terminal_input[64];
 static size_t terminal_input_length;
 static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
 static size_t installer_selected_device;
+static bool installer_dropdown_open;
 static struct nexus_partition_plan installer_plan;
 static bool installer_plan_valid;
 static char terminal_output[160];
@@ -524,6 +525,17 @@ static const char *installer_target_status(
 }
 
 
+static const char *installer_target_short_status(
+    const struct nexus_block_device *device) {
+    if (device == NULL) return "NO DEVICE";
+    if (!blockdev_boot_media_detection_complete()) return "BOOT ID UNKNOWN";
+    if (blockdev_is_boot_media(device)) return "BOOT SOURCE - LOCKED";
+    if (blockdev_is_mounted(device)) return "IN USE - LOCKED";
+    if (!blockdev_identity_is_unique(device)) return "DUPLICATE ID - LOCKED";
+    if (!blockdev_install_write_supported(device)) return "READ ONLY - LOCKED";
+    return "READY TO INSTALL";
+}
+
 static enum desktop_view desktop_view_for_app(size_t app_index) {
     switch (app_index) {
         case 0U: return DESKTOP_FILES;
@@ -642,11 +654,18 @@ static void desktop_open_app(size_t app_index) {
 
 static void desktop_draw_taskbar(uint64_t bottom_bar) {
     const uint64_t y = screen_height - bottom_bar;
-    graphics_fill_rect(0U, y, screen_width, bottom_bar,
-        desktop_theme_is_light() ? 232U : 10U,
-        desktop_theme_is_light() ? 238U : 16U,
-        desktop_theme_is_light() ? 246U : 31U);
-    desktop_draw_accent(0U, y, screen_width, 2U);
+    graphics_gradient_rect(0U, y, screen_width, bottom_bar, false,
+        desktop_theme_is_light() ? 244U : 17U,
+        desktop_theme_is_light() ? 247U : 29U,
+        desktop_theme_is_light() ? 253U : 49U,
+        desktop_theme_is_light() ? 226U : 9U,
+        desktop_theme_is_light() ? 234U : 19U,
+        desktop_theme_is_light() ? 245U : 35U);
+    graphics_fill_rect(0U, y, screen_width, 1U,
+                       desktop_theme_is_light() ? 255U : 76U,
+                       desktop_theme_is_light() ? 255U : 113U,
+                       desktop_theme_is_light() ? 255U : 145U);
+    desktop_draw_accent(0U, y + 1U, screen_width, 2U);
     graphics_fill_rect(0U, y + 2U, screen_width, 1U,
         desktop_theme_is_light() ? 194U : 24U,
         desktop_theme_is_light() ? 205U : 43U,
@@ -654,14 +673,22 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 
     const uint64_t button_y = y + 7U;
     const uint64_t button_h = bottom_bar > 14U ? bottom_bar - 14U : 22U;
-    graphics_fill_rect(12U, button_y, 88U, button_h,
-        desktop_theme_is_light() ? 215U : 28U,
-        desktop_theme_is_light() ? 226U : 57U,
-        desktop_theme_is_light() ? 239U : 88U);
-    graphics_draw_rect(12U, button_y, 88U, button_h,
-        desktop_theme_is_light() ? 165U : 57U,
-        desktop_theme_is_light() ? 184U : 112U,
-        desktop_theme_is_light() ? 204U : 151U);
+    graphics_blend_round_rect(12U, button_y, 88U, button_h, 8U,
+        desktop_theme_is_light() ? 232U : 29U,
+        desktop_theme_is_light() ? 239U : 51U,
+        desktop_theme_is_light() ? 248U : 78U, 238U);
+    graphics_gradient_rect(13U, button_y + 1U, 86U,
+        button_h > 2U ? button_h - 2U : button_h, false,
+        desktop_theme_is_light() ? 247U : 49U,
+        desktop_theme_is_light() ? 250U : 91U,
+        desktop_theme_is_light() ? 255U : 124U,
+        desktop_theme_is_light() ? 213U : 25U,
+        desktop_theme_is_light() ? 225U : 45U,
+        desktop_theme_is_light() ? 239U : 73U);
+    graphics_round_rect(12U, button_y, 88U, button_h, 8U,
+        desktop_theme_is_light() ? 165U : 69U,
+        desktop_theme_is_light() ? 184U : 123U,
+        desktop_theme_is_light() ? 204U : 160U);
     desktop_draw_accent(22U, button_y + 7U, 22U, 22U);
     graphics_draw_text(27U, button_y + 14U, "N", 1U, 8U, 25U, 43U);
     graphics_draw_text(51U, button_y + button_h / 2U - 4U,
@@ -683,17 +710,29 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
-        graphics_fill_rect(x, button_y, tab_width, button_h,
-                           selected ? desktop_accent_palette[desktop_accent_index][0]
-                                    : (desktop_theme_is_light() ? 220U : 19U),
-                           selected ? desktop_accent_palette[desktop_accent_index][1]
-                                    : (desktop_theme_is_light() ? 228U : 31U),
-                           selected ? desktop_accent_palette[desktop_accent_index][2]
-                                    : (desktop_theme_is_light() ? 238U : 49U));
-        graphics_draw_rect(x, button_y, tab_width, button_h,
-                           selected ? 70U : (desktop_theme_is_light() ? 171U : 43U),
-                           selected ? 143U : (desktop_theme_is_light() ? 187U : 70U),
-                           selected ? 176U : (desktop_theme_is_light() ? 205U : 99U));
+        graphics_blend_round_rect(x, button_y, tab_width, button_h, 7U,
+            selected ? desktop_accent_palette[desktop_accent_index][0]
+                     : (desktop_theme_is_light() ? 224U : 20U),
+            selected ? desktop_accent_palette[desktop_accent_index][1]
+                     : (desktop_theme_is_light() ? 232U : 34U),
+            selected ? desktop_accent_palette[desktop_accent_index][2]
+                     : (desktop_theme_is_light() ? 242U : 54U),
+            selected ? 228U : 190U);
+        graphics_gradient_rect(x + 1U, button_y + 1U, tab_width - 2U,
+            button_h > 2U ? button_h - 2U : button_h, false,
+            selected ? desktop_accent_palette[desktop_accent_index][0] : 42U,
+            selected ? desktop_accent_palette[desktop_accent_index][1] : 60U,
+            selected ? desktop_accent_palette[desktop_accent_index][2] : 82U,
+            selected ? (uint8_t)(desktop_accent_palette[desktop_accent_index][0] / 2U)
+                     : 21U,
+            selected ? (uint8_t)(desktop_accent_palette[desktop_accent_index][1] / 2U)
+                     : 35U,
+            selected ? (uint8_t)(desktop_accent_palette[desktop_accent_index][2] / 2U)
+                     : 56U);
+        graphics_round_rect(x, button_y, tab_width, button_h, 7U,
+                            selected ? 94U : 59U,
+                            selected ? 155U : 91U,
+                            selected ? 190U : 126U);
         graphics_fill_rect(x + 8U, button_y + 9U, 5U,
                            button_h > 28U ? button_h - 18U : 10U,
                            accents[i][0], accents[i][1], accents[i][2]);
@@ -831,55 +870,74 @@ static void draw_shell(void) {
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
 
-    for (uint64_t y = 0; y < height; ++y) {
-        const uint8_t red = desktop_theme_is_light()
-            ? (uint8_t)(244U - (y * 12U / height))
-            : (uint8_t)(5U + (y * 8U / height));
-        const uint8_t green = desktop_theme_is_light()
-            ? (uint8_t)(247U - (y * 10U / height))
-            : (uint8_t)(11U + (y * 18U / height));
-        const uint8_t blue = desktop_theme_is_light()
-            ? (uint8_t)(252U - (y * 7U / height))
-            : (uint8_t)(25U + (y * 34U / height));
-        graphics_fill_rect(0U, y, width, 1U, red, green, blue);
-    }
-    /* Layered geometric wallpaper: deliberately native framebuffer artwork. */
-    graphics_fill_rect(width / 2U, 0U, width / 2U, height,
-        desktop_theme_is_light() ? 238U : 9U,
-        desktop_theme_is_light() ? 244U : 26U,
-        desktop_theme_is_light() ? 250U : 49U);
-    graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
-        desktop_theme_is_light() ? 234U : 10U,
-        desktop_theme_is_light() ? 241U : 31U,
-        desktop_theme_is_light() ? 249U : 58U);
-    graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
-        desktop_theme_is_light() ? 230U : 12U,
-        desktop_theme_is_light() ? 238U : 35U,
-        desktop_theme_is_light() ? 247U : 63U);
-    /* Subtle layered accent glows add depth while remaining software-rendered. */
-    uint64_t glow_radius = height / 4U;
-    if (glow_radius > 220U) glow_radius = 220U;
-    if (glow_radius < 32U) glow_radius = 32U;
+    /* Full-resolution software aurora wallpaper with layered color fields. */
+    graphics_gradient_rect(0U, 0U, width, height, false,
+        desktop_theme_is_light() ? 246U : 5U,
+        desktop_theme_is_light() ? 250U : 13U,
+        desktop_theme_is_light() ? 255U : 29U,
+        desktop_theme_is_light() ? 218U : 9U,
+        desktop_theme_is_light() ? 231U : 28U,
+        desktop_theme_is_light() ? 245U : 55U);
+    graphics_gradient_rect(0U, 0U, width, height, true,
+        desktop_theme_is_light() ? 248U : 8U,
+        desktop_theme_is_light() ? 249U : 16U,
+        desktop_theme_is_light() ? 255U : 36U,
+        desktop_theme_is_light() ? 229U : 12U,
+        desktop_theme_is_light() ? 239U : 30U,
+        desktop_theme_is_light() ? 250U : 59U);
+
+    uint64_t glow_radius = height / 3U;
+    if (glow_radius > 256U) glow_radius = 256U;
+    if (glow_radius < 24U) glow_radius = 24U;
     graphics_blend_circle(width * 4U / 5U, height / 3U,
         (uint32_t)glow_radius,
         desktop_accent_palette[desktop_accent_index][0],
         desktop_accent_palette[desktop_accent_index][1],
         desktop_accent_palette[desktop_accent_index][2],
-        desktop_theme_is_light() ? 22U : 38U);
-    graphics_blend_circle(width * 3U / 5U, height * 2U / 3U,
+        desktop_theme_is_light() ? 34U : 58U);
+    graphics_blend_circle(width / 3U, height * 4U / 5U,
+        (uint32_t)(glow_radius * 3U / 4U),
+        78U, 116U, 246U, desktop_theme_is_light() ? 25U : 43U);
+    graphics_blend_circle(width / 2U, height / 2U,
         (uint32_t)(glow_radius / 2U),
-        117U, 136U, 244U, desktop_theme_is_light() ? 16U : 28U);
-    for (uint64_t band = 0U; band < 5U; ++band) {
-        const uint64_t x = width / 2U + band * (width / 14U);
-        if (x < width)
-            graphics_fill_rect(x, top_bar, 1U, height - top_bar,
-                               14U, (uint8_t)(42U + band * 3U),
-                               (uint8_t)(70U + band * 4U));
+        44U, 198U, 203U, desktop_theme_is_light() ? 13U : 24U);
+
+    /* Long, low-contrast ribbons and orbit arcs produce a modern depth cue
+     * without bitmap assets, floating-point math, or unbounded raster work.
+     */
+    for (uint64_t band = 0U; band < 7U; ++band) {
+        const uint64_t offset = band * (width / 18U);
+        const uint64_t x0 = width / 3U + offset;
+        const uint64_t y0 = top_bar + 24U;
+        const uint64_t x1 = x0 > width - 1U - width / 5U
+            ? width - 1U : x0 + width / 5U;
+        const uint64_t y1 = height > 100U
+            ? height - 80U - band * (height / 90U) : height - 1U;
+        graphics_draw_line(x0 < width ? x0 : width - 1U, y0,
+                           x1, y1, 1U,
+                           desktop_theme_is_light() ? 211U : 40U,
+                           desktop_theme_is_light() ? 221U : 99U,
+                           desktop_theme_is_light() ? 237U : 145U);
     }
-    graphics_fill_rect(0U, 0U, width, top_bar,
-        desktop_theme_is_light() ? 239U : 10U,
-        desktop_theme_is_light() ? 243U : 17U,
-        desktop_theme_is_light() ? 249U : 33U);
+    graphics_draw_circle(width * 4U / 5U, height / 3U,
+                         (uint32_t)(glow_radius > 18U
+                             ? glow_radius - 18U : glow_radius),
+                         desktop_theme_is_light() ? 207U : 40U,
+                         desktop_theme_is_light() ? 219U : 106U,
+                         desktop_theme_is_light() ? 236U : 153U);
+    graphics_draw_circle(width * 4U / 5U, height / 3U,
+                         (uint32_t)(glow_radius / 2U),
+                         desktop_accent_palette[desktop_accent_index][0],
+                         desktop_accent_palette[desktop_accent_index][1],
+                         desktop_accent_palette[desktop_accent_index][2]);
+
+    graphics_gradient_rect(0U, 0U, width, top_bar, false,
+        desktop_theme_is_light() ? 248U : 10U,
+        desktop_theme_is_light() ? 250U : 18U,
+        desktop_theme_is_light() ? 255U : 36U,
+        desktop_theme_is_light() ? 230U : 16U,
+        desktop_theme_is_light() ? 238U : 29U,
+        desktop_theme_is_light() ? 249U : 48U);
     desktop_draw_accent(0U, top_bar - 2U, width, 2U);
     desktop_draw_accent(16U, 7U, 28U, top_bar - 14U);
     graphics_draw_text(25U, top_bar / 2U - 4U, "N", 1U, 7U, 23U, 39U);
@@ -991,14 +1049,23 @@ static void draw_shell(void) {
         for (uint32_t i = 0U; i < 5U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
-            graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
-                desktop_theme_is_light() ? 228U : 24U,
-                desktop_theme_is_light() ? 236U : 41U,
-                desktop_theme_is_light() ? 246U : 65U);
-            graphics_draw_rect(tile_x, tile_y, tile_width, 74U,
-                desktop_theme_is_light() ? 175U : 58U,
-                desktop_theme_is_light() ? 192U : 91U,
-                desktop_theme_is_light() ? 210U : 121U);
+            graphics_blend_round_rect(tile_x, tile_y, tile_width, 74U, 9U,
+                desktop_theme_is_light() ? 230U : 24U,
+                desktop_theme_is_light() ? 239U : 41U,
+                desktop_theme_is_light() ? 248U : 65U, 232U);
+            graphics_gradient_rect(tile_x + 1U, tile_y + 1U,
+                tile_width > 2U ? tile_width - 2U : tile_width,
+                72U, false,
+                desktop_theme_is_light() ? 244U : 37U,
+                desktop_theme_is_light() ? 248U : 61U,
+                desktop_theme_is_light() ? 253U : 89U,
+                desktop_theme_is_light() ? 224U : 20U,
+                desktop_theme_is_light() ? 234U : 38U,
+                desktop_theme_is_light() ? 246U : 60U);
+            graphics_round_rect(tile_x, tile_y, tile_width, 74U, 9U,
+                desktop_theme_is_light() ? 175U : 61U,
+                desktop_theme_is_light() ? 192U : 97U,
+                desktop_theme_is_light() ? 210U : 128U);
             graphics_fill_rect(tile_x, tile_y, 4U, 74U,
                                accent[i][0], accent[i][1], accent[i][2]);
             graphics_fill_rect(tile_x + 13U, tile_y + 12U, 25U, 25U,
@@ -1055,14 +1122,23 @@ static void draw_shell(void) {
         for (size_t i = 0U; i < 3U; ++i) {
             const uint64_t card_x = panel_x + 28U +
                                     (uint64_t)i * (card_width + card_gap);
-            graphics_fill_rect(card_x, card_y, card_width, card_h,
-                desktop_theme_is_light() ? 232U : 22U,
-                desktop_theme_is_light() ? 239U : 38U,
-                desktop_theme_is_light() ? 247U : 60U);
-            graphics_draw_rect(card_x, card_y, card_width, card_h,
-                desktop_theme_is_light() ? 177U : 50U,
-                desktop_theme_is_light() ? 193U : 79U,
-                desktop_theme_is_light() ? 211U : 107U);
+            graphics_blend_round_rect(card_x, card_y, card_width, card_h,
+                8U, desktop_theme_is_light() ? 235U : 23U,
+                desktop_theme_is_light() ? 241U : 40U,
+                desktop_theme_is_light() ? 249U : 64U, 225U);
+            graphics_gradient_rect(card_x + 1U, card_y + 1U,
+                card_width > 2U ? card_width - 2U : card_width,
+                card_h > 2U ? card_h - 2U : card_h, false,
+                desktop_theme_is_light() ? 246U : 38U,
+                desktop_theme_is_light() ? 250U : 59U,
+                desktop_theme_is_light() ? 254U : 83U,
+                desktop_theme_is_light() ? 228U : 19U,
+                desktop_theme_is_light() ? 238U : 34U,
+                desktop_theme_is_light() ? 247U : 54U);
+            graphics_round_rect(card_x, card_y, card_width, card_h, 8U,
+                desktop_theme_is_light() ? 177U : 58U,
+                desktop_theme_is_light() ? 193U : 89U,
+                desktop_theme_is_light() ? 211U : 118U);
             graphics_fill_rect(card_x, card_y, 3U, card_h,
                                card_accent[i][0], card_accent[i][1],
                                card_accent[i][2]);
@@ -1100,135 +1176,249 @@ static void draw_shell(void) {
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
-            graphics_draw_text(text_x, text_y, "INSTALL NEXUS - CHOOSE A DRIVE",
-                               2U, 239U, 249U, 255U);
-            graphics_draw_text(text_x, text_y + 28U,
-                               "Nothing is written until you confirm the target twice.",
-                               1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x, text_y, "INSTALL NEXUS",
+                               2U, 243U, 249U, 255U);
+            graphics_draw_text(text_x, text_y + 27U,
+                               "Choose where Nexus will be installed.",
+                               1U, 132U, 210U, 232U);
             const size_t device_count = blockdev_count();
             if (device_count == 0U) {
-                graphics_draw_text(text_x, text_y + 88U,
+                graphics_blend_round_rect(text_x, text_y + 66U, 456U, 90U,
+                                          10U, 35U, 43U, 61U, 220U);
+                graphics_draw_text(text_x + 16U, text_y + 88U,
                                    "NO SUPPORTED STORAGE DEVICES DETECTED",
-                                   1U, 239U, 177U, 119U);
-                graphics_draw_text(text_x, text_y + 118U,
-                                   "Connect an internal SSD or supported USB drive.",
-                                   1U, 170U, 191U, 211U);
+                                   1U, 255U, 188U, 132U);
+                graphics_draw_text(text_x + 16U, text_y + 116U,
+                                   "Connect an internal SSD or USB storage drive.",
+                                   1U, 174U, 194U, 213U);
             } else {
                 const struct nexus_block_device *device =
                     blockdev_at(installer_selected_device);
-                char drive_index[21], drive_total[21];
-                format_u64(installer_selected_device + 1U, drive_index);
-                format_u64(device_count, drive_total);
-                graphics_draw_text(text_x, text_y + 54U,
-                                   "SELECTED DRIVE:", 1U, 233U, 243U, 252U);
-                graphics_draw_text(text_x + 140U, text_y + 54U,
-                                   device != NULL ? device->name : "UNKNOWN",
-                                   1U, 119U, 229U, 211U);
-                graphics_draw_text(text_x + 260U, text_y + 54U,
-                                   "DRIVE", 1U, 170U, 191U, 211U);
-                graphics_draw_text(text_x + 300U, text_y + 54U,
-                                   drive_index, 1U, 119U, 229U, 211U);
-                graphics_draw_text(text_x + 312U, text_y + 54U,
-                                   "OF", 1U, 170U, 191U, 211U);
-                graphics_draw_text(text_x + 332U, text_y + 54U,
-                                   drive_total, 1U, 119U, 229U, 211U);
+                graphics_draw_text(text_x, text_y + 47U,
+                                   "DESTINATION DRIVE", 1U,
+                                   166U, 188U, 209U);
+
+                /* Dropdown control: click to show every detected disk. */
+                graphics_blend_round_rect(text_x, text_y + 62U, 456U, 34U,
+                                          8U, 24U, 40U, 61U, 238U);
+                graphics_gradient_rect(text_x + 1U, text_y + 63U,
+                                        454U, 32U, false,
+                                        38U, 62U, 88U,
+                                        24U, 41U, 65U);
+                graphics_round_rect(text_x, text_y + 62U, 456U, 34U, 8U,
+                                    93U, 130U, 160U);
                 if (device != NULL) {
-                    graphics_draw_text(text_x, text_y + 76U,
-                                       device->model, 1U, 170U, 225U, 190U);
-                    graphics_draw_text(text_x, text_y + 94U,
-                                       device->stable_id, 1U, 170U, 191U, 211U);
-                    graphics_draw_text(text_x + 340U, text_y + 76U,
-                                       installer_transport_label(device),
-                                       1U, 119U, 229U, 211U);
+                    graphics_draw_text(text_x + 14U, text_y + 76U,
+                                       device->name, 1U,
+                                       243U, 249U, 255U);
+                    graphics_draw_text(text_x + 116U, text_y + 76U,
+                                       device->model, 1U,
+                                       177U, 200U, 218U);
+                    graphics_draw_text(text_x + 370U, text_y + 76U,
+                                       "CHANGE", 1U,
+                                       111U, 221U, 236U);
+                } else {
+                    graphics_draw_text(text_x + 14U, text_y + 76U,
+                                       "SELECT A STORAGE DEVICE", 1U,
+                                       243U, 249U, 255U);
+                }
+                graphics_draw_line(text_x + 432U, text_y + 74U,
+                                   text_x + 438U, text_y + 80U, 2U,
+                                   143U, 216U, 231U);
+                graphics_draw_line(text_x + 438U, text_y + 80U,
+                                   text_x + 444U, text_y + 74U, 2U,
+                                   143U, 216U, 231U);
+
+                if (device != NULL) {
+                    graphics_blend_round_rect(text_x, text_y + 106U,
+                                              456U, 88U, 9U,
+                                              20U, 34U, 52U, 224U);
+                    graphics_round_rect(text_x, text_y + 106U,
+                                         456U, 88U, 9U,
+                                         63U, 91U, 116U);
+                    graphics_draw_text(text_x + 14U, text_y + 119U,
+                                       device->model, 1U,
+                                       237U, 245U, 251U);
+                    graphics_draw_text(text_x + 14U, text_y + 137U,
+                                       device->stable_id, 1U,
+                                       166U, 188U, 209U);
                     const uint64_t blocks_per_gib =
                         (1024ULL * 1024ULL * 1024ULL) / device->block_size;
                     char capacity[21], sector[21];
                     format_u64(blocks_per_gib == 0U ? 0U :
                                device->block_count / blocks_per_gib, capacity);
                     format_u64(device->block_size, sector);
-                    graphics_draw_text(text_x, text_y + 116U,
-                                       "CAPACITY:", 1U, 233U, 243U, 252U);
-                    graphics_draw_text(text_x + 92U, text_y + 116U,
-                                       capacity, 1U, 170U, 225U, 190U);
-                    graphics_draw_text(text_x + 124U, text_y + 116U,
-                                       "GiB", 1U, 170U, 191U, 211U);
-                    graphics_draw_text(text_x + 190U, text_y + 116U,
-                                       "SECTOR:", 1U, 233U, 243U, 252U);
-                    graphics_draw_text(text_x + 272U, text_y + 116U,
-                                       sector, 1U, 170U, 225U, 190U);
-                    graphics_draw_text(text_x + 380U, text_y + 116U,
-                                       blockdev_identity_is_unique(device)
-                                           ? "IDENTITY VERIFIED"
-                                           : "IDENTITY NOT SAFE",
-                                       1U, blockdev_identity_is_unique(device)
-                                           ? 108U : 239U,
-                                       blockdev_identity_is_unique(device)
-                                           ? 216U : 177U,
-                                       blockdev_identity_is_unique(device)
-                                           ? 229U : 119U);
-                    graphics_draw_text(text_x, text_y + 144U,
-                                       "INSTALL FOR:", 1U, 233U, 243U, 252U);
-                    installer_draw_button(text_x, text_y + 158U, 104U, 24U,
-                        "UEFI", installer_firmware == NEXUS_FIRMWARE_UEFI, false);
-                    installer_draw_button(text_x + 112U, text_y + 158U, 104U, 24U,
-                        "BIOS", installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS, false);
-                    installer_draw_button(text_x + 224U, text_y + 158U, 112U, 24U,
-                        "BOTH", installer_firmware == NEXUS_FIRMWARE_DUAL, false);
-                    if (installer_plan_valid) {
-                        graphics_draw_text(text_x, text_y + 190U,
-                                           "INSTALL LAYOUT - PREVIEW ONLY",
-                                           1U, 119U, 229U, 211U);
-                        for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
-                            const struct nexus_planned_partition *part =
-                                &installer_plan.partitions[i];
-                            const char *label =
-                                part->kind == NEXUS_PARTITION_ESP ? "EFI SYSTEM" :
-                                (part->kind == NEXUS_PARTITION_BIOS_BOOT
-                                    ? "BIOS BOOT" :
-                                (part->kind == NEXUS_PARTITION_SYSTEM
-                                    ? "NEXUS SYSTEM" :
-                                (part->kind == NEXUS_PARTITION_RECOVERY
-                                    ? "RECOVERY" : "USER DATA")));
-                            const uint64_t sectors_per_mib =
-                                (1024ULL * 1024ULL) / device->block_size;
-                            const uint64_t size_mib =
-                                (part->last_lba - part->first_lba + 1U) /
-                                sectors_per_mib;
-                            char size_text[21];
-                            format_u64(size_mib, size_text);
-                            const uint64_t row_y = text_y + 210U + i * 16U;
-                            graphics_draw_text(text_x, row_y, label,
-                                               1U, 233U, 243U, 252U);
-                            graphics_draw_text(text_x + 190U, row_y,
-                                               size_text, 1U, 170U, 225U, 190U);
-                            graphics_draw_text(text_x + 230U, row_y,
-                                               "MiB", 1U, 170U, 191U, 211U);
-                        }
-                    } else {
-                        graphics_draw_text(text_x, text_y + 210U,
-                                           "THIS DRIVE CANNOT USE THAT LAYOUT",
-                                           1U, 239U, 177U, 119U);
-                    }
-                    graphics_draw_text(text_x, text_y + 292U,
+                    graphics_draw_text(text_x + 14U, text_y + 157U,
+                                       "SIZE", 1U, 153U, 180U, 203U);
+                    graphics_draw_text(text_x + 54U, text_y + 157U,
+                                       capacity, 1U, 243U, 249U, 255U);
+                    graphics_draw_text(text_x + 80U, text_y + 157U,
+                                       "GiB", 1U, 153U, 180U, 203U);
+                    graphics_draw_text(text_x + 120U, text_y + 157U,
+                                       "SECTOR", 1U, 153U, 180U, 203U);
+                    graphics_draw_text(text_x + 184U, text_y + 157U,
+                                       sector, 1U, 243U, 249U, 255U);
+                    graphics_draw_text(text_x + 286U, text_y + 157U,
+                                       installer_transport_label(device), 1U,
+                                       120U, 219U, 231U);
+                    const bool target_safe =
+                        blockdev_boot_media_detection_complete() &&
+                        !blockdev_is_boot_media(device) &&
+                        !blockdev_is_mounted(device) &&
+                        blockdev_identity_is_unique(device) &&
+                        blockdev_install_write_supported(device);
+                    graphics_fill_circle(text_x + 15U, text_y + 181U, 3U,
+                        target_safe ? 91U : 244U,
+                        target_safe ? 220U : 162U,
+                        target_safe ? 171U : 112U);
+                    graphics_draw_text(text_x + 26U, text_y + 177U,
                                        installer_target_status(device), 1U,
-                                       170U, 225U, 190U);
+                                       target_safe ? 112U : 255U,
+                                       target_safe ? 224U : 177U,
+                                       target_safe ? 184U : 130U);
                 }
-                installer_draw_button(text_x, text_y + 310U, 104U, 24U,
-                                      "PREVIOUS", installer_selected_device > 0U,
-                                      false);
-                installer_draw_button(text_x + 112U, text_y + 310U, 104U, 24U,
-                                      "NEXT DRIVE",
-                                      installer_selected_device + 1U < device_count,
-                                      false);
-                installer_draw_button(text_x + 228U, text_y + 310U, 220U, 24U,
-                                      "CONTINUE", false, false);
+
+                graphics_draw_text(text_x, text_y + 205U, "FIRMWARE",
+                                   1U, 166U, 188U, 209U);
+                installer_draw_button(text_x, text_y + 218U, 104U, 24U,
+                    "UEFI", installer_firmware == NEXUS_FIRMWARE_UEFI, false);
+                installer_draw_button(text_x + 112U, text_y + 218U, 104U, 24U,
+                    "LEGACY BIOS",
+                    installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS, false);
+                installer_draw_button(text_x + 224U, text_y + 218U, 112U, 24U,
+                    "BOTH", installer_firmware == NEXUS_FIRMWARE_DUAL, false);
+
+                if (installer_plan_valid) {
+                    graphics_draw_text(text_x, text_y + 250U,
+                                       "PARTITION LAYOUT PREVIEW",
+                                       1U, 120U, 219U, 231U);
+                    for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
+                        const struct nexus_planned_partition *part =
+                            &installer_plan.partitions[i];
+                        const char *label =
+                            part->kind == NEXUS_PARTITION_ESP ? "EFI SYSTEM" :
+                            (part->kind == NEXUS_PARTITION_BIOS_BOOT
+                                ? "BIOS BOOT" :
+                            (part->kind == NEXUS_PARTITION_SYSTEM
+                                ? "NEXUS SYSTEM" :
+                            (part->kind == NEXUS_PARTITION_RECOVERY
+                                ? "RECOVERY" : "USER DATA")));
+                        const uint64_t sectors_per_mib =
+                            (1024ULL * 1024ULL) / device->block_size;
+                        const uint64_t size_mib =
+                            (part->last_lba - part->first_lba + 1U) /
+                            sectors_per_mib;
+                        char size_text[21];
+                        format_u64(size_mib, size_text);
+                        const uint64_t row_y = text_y + 270U + i * 15U;
+                        const uint8_t bar_color = part->kind ==
+                            NEXUS_PARTITION_ESP ? 95U :
+                            (part->kind == NEXUS_PARTITION_SYSTEM ? 80U : 116U);
+                        graphics_fill_rect(text_x, row_y + 2U, 3U, 8U,
+                                           bar_color, 188U, 212U);
+                        graphics_draw_text(text_x + 12U, row_y, label,
+                                           1U, 219U, 231U, 241U);
+                        graphics_draw_text(text_x + 190U, row_y,
+                                           size_text, 1U, 166U, 206U, 218U);
+                        graphics_draw_text(text_x + 228U, row_y,
+                                           "MiB", 1U, 140U, 163U, 185U);
+                    }
+                } else {
+                    graphics_draw_text(text_x, text_y + 270U,
+                                       "SELECTED DRIVE CANNOT USE THIS LAYOUT",
+                                       1U, 255U, 177U, 119U);
+                }
+
+                if (!installer_dropdown_open) {
+                    const bool live_source = device != NULL &&
+                        blockdev_is_boot_media(device);
+                    if (live_source) {
+                        graphics_draw_text(text_x, text_y + 349U,
+                            "THE USB/DRIVE YOU BOOTED FROM IS PROTECTED.",
+                            1U, 255U, 177U, 119U);
+                    } else {
+                        graphics_draw_text(text_x, text_y + 349U,
+                            "THE INSTALLER SOURCE IS PROTECTED FROM ERASE.",
+                            1U, 166U, 188U, 209U);
+                    }
+                }
+
+                const bool selected_target_safe = device != NULL &&
+                    installer_plan_valid &&
+                    blockdev_boot_media_detection_complete() &&
+                    !blockdev_is_boot_media(device) &&
+                    !blockdev_is_mounted(device) &&
+                    blockdev_identity_is_unique(device) &&
+                    blockdev_install_write_supported(device);
+                installer_draw_button(text_x + 252U, text_y + 365U,
+                                      204U, 26U, "CONTINUE",
+                                      selected_target_safe,
+                                      !selected_target_safe);
+                installer_draw_button(text_x, text_y + 365U,
+                                      104U, 26U, "CANCEL",
+                                      false, false);
+
+                if (installer_dropdown_open) {
+                    const uint64_t list_y = text_y + 100U;
+                    const uint64_t row_height = 32U;
+                    const uint64_t list_height =
+                        (uint64_t)device_count * row_height + 8U;
+                    graphics_blend_round_rect(text_x - 2U, list_y - 3U,
+                        460U, list_height, 10U, 12U, 23U, 38U, 250U);
+                    graphics_round_rect(text_x - 2U, list_y - 3U,
+                        460U, list_height, 10U, 95U, 133U, 162U);
+                    graphics_draw_text(text_x + 10U, list_y + 1U,
+                                       "DETECTED STORAGE DEVICES",
+                                       1U, 169U, 216U, 232U);
+                    for (size_t i = 0U; i < device_count; ++i) {
+                        const struct nexus_block_device *candidate =
+                            blockdev_at(i);
+                        if (candidate == NULL) continue;
+                        const uint64_t row_y = list_y + 18U + i * row_height;
+                        const bool selected = i == installer_selected_device;
+                        const bool eligible =
+                            blockdev_boot_media_detection_complete() &&
+                            !blockdev_is_boot_media(candidate) &&
+                            !blockdev_is_mounted(candidate) &&
+                            blockdev_identity_is_unique(candidate) &&
+                            blockdev_install_write_supported(candidate);
+                        graphics_blend_round_rect(text_x + 5U, row_y,
+                            446U, 29U, 6U,
+                            selected ? 52U : 25U,
+                            selected ? 94U : 45U,
+                            selected ? 119U : 67U,
+                            selected ? 242U : 218U);
+                        if (selected) {
+                            graphics_fill_rect(text_x + 10U, row_y + 7U,
+                                3U, 15U,
+                                desktop_accent_palette[desktop_accent_index][0],
+                                desktop_accent_palette[desktop_accent_index][1],
+                                desktop_accent_palette[desktop_accent_index][2]);
+                        }
+                        graphics_draw_text(text_x + 20U, row_y + 5U,
+                                           candidate->name, 1U,
+                                           241U, 247U, 253U);
+                        graphics_draw_text(text_x + 112U, row_y + 5U,
+                                           candidate->model, 1U,
+                                           182U, 204U, 221U);
+                        graphics_draw_text(text_x + 20U, row_y + 18U,
+                                           installer_transport_label(candidate),
+                                           1U, 147U, 185U, 205U);
+                        graphics_draw_text(text_x + 185U, row_y + 18U,
+                                           installer_target_short_status(candidate),
+                                           1U, eligible ? 111U : 255U,
+                                           eligible ? 220U : 174U,
+                                           eligible ? 170U : 128U);
+                    }
+                    graphics_draw_text(text_x + 12U,
+                        list_y + list_height - 2U,
+                        "SELECT A DRIVE  -  THE BOOT DEVICE STAYS LOCKED",
+                        1U, 166U, 188U, 209U);
+                }
             }
-            graphics_draw_text(text_x, text_y + 348U,
-                               "ARROWS OR DRIVE BUTTONS TO SELECT  |  ESC TO EXIT",
-                               1U, 170U, 191U, 211U);
-            graphics_draw_text(text_x, text_y + 370U,
-                               "Your existing disks are not changed during this preview.",
-                               1U, 170U, 191U, 211U);
+            graphics_draw_text(text_x, text_y + 402U,
+                               "Select a disk, review its size, then confirm its ID and erase phrase.",
+                               1U, 145U, 174U, 196U);
         } else {
             const struct nexus_block_device *device =
                 blockdev_at(installer_selected_device);
@@ -1870,6 +2060,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     browser_address[0] = '\0';
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
+    installer_dropdown_open = false;
     installer_refresh_plan();
     mouse_left_was_down = false;
     start_menu_open = false;
@@ -3790,17 +3981,25 @@ static const char *installer_transport_label(
     }
 }
 
+static void installer_select_device(size_t index) {
+    const size_t count = blockdev_count();
+    if (count == 0U || index >= count) return;
+    installer_selected_device = index;
+    installer_dropdown_open = false;
+    installer_refresh_plan();
+    installer_log_selected_target();
+}
+
 static void installer_select_delta(bool next) {
     const size_t count = blockdev_count();
     if (count == 0U) return;
+    size_t selected = installer_selected_device;
     if (next) {
-        if (installer_selected_device + 1U < count)
-            ++installer_selected_device;
-    } else if (installer_selected_device > 0U) {
-        --installer_selected_device;
+        if (selected + 1U < count) ++selected;
+    } else if (selected > 0U) {
+        --selected;
     }
-    installer_refresh_plan();
-    installer_log_selected_target();
+    installer_select_device(selected);
 }
 
 static bool installer_begin_confirmation(void) {
@@ -3812,6 +4011,7 @@ static bool installer_begin_confirmation(void) {
         !blockdev_is_mounted(device) &&
         blockdev_identity_is_unique(device) &&
         blockdev_install_write_supported(device)) {
+        installer_dropdown_open = false;
         installer_ui_state = INSTALLER_UI_CONFIRM_ID;
         installer_confirmed_id[0] = '\0';
         installer_input_length = 0U;
@@ -4212,7 +4412,28 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const int64_t relative_y = pointer_y - (int64_t)(py + 48U);
             if (relative_x >= 0 && relative_y >= 0) {
                 if (installer_ui_state == INSTALLER_UI_SELECT) {
-                    if (relative_y >= 158 && relative_y < 182) {
+                    const size_t device_count = blockdev_count();
+                    if (installer_dropdown_open) {
+                        const int64_t first_row_y = 118;
+                        const int64_t row_height = 32;
+                        if (relative_x < 456 &&
+                            relative_y >= first_row_y &&
+                            relative_y < first_row_y +
+                                (int64_t)device_count * row_height) {
+                            const size_t selected = (size_t)(
+                                (relative_y - first_row_y) / row_height);
+                            installer_select_device(selected);
+                        } else if (relative_y < 62 ||
+                                   relative_y >= 96 +
+                                       (int64_t)device_count * row_height) {
+                            installer_dropdown_open = false;
+                        } else if (relative_y >= 62 && relative_y < 96) {
+                            installer_dropdown_open = false;
+                        }
+                    } else if (relative_y >= 62 && relative_y < 96 &&
+                               relative_x < 456) {
+                        installer_dropdown_open = true;
+                    } else if (relative_y >= 218 && relative_y < 242) {
                         if (relative_x < 104) {
                             installer_firmware = NEXUS_FIRMWARE_UEFI;
                             installer_refresh_plan();
@@ -4223,12 +4444,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             installer_firmware = NEXUS_FIRMWARE_DUAL;
                             installer_refresh_plan();
                         }
-                    } else if (relative_y >= 310 && relative_y < 334) {
+                    } else if (relative_y >= 365 && relative_y < 391) {
                         if (relative_x < 104) {
-                            installer_select_delta(false);
-                        } else if (relative_x >= 112 && relative_x < 216) {
-                            installer_select_delta(true);
-                        } else if (relative_x >= 228 && relative_x < 448) {
+                            desktop_open_view(DESKTOP_HOME);
+                        } else if (relative_x >= 252 && relative_x < 456) {
                             (void)installer_begin_confirmation();
                         }
                     }
@@ -4567,22 +4786,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if ((event->scancode & 0x80U) != 0U ||
             installer_ui_state == INSTALLER_UI_RUNNING) return;
         if (event->scancode == 0x01U) {
-            if (installer_ui_state == INSTALLER_UI_SELECT) {
+            if (installer_ui_state == INSTALLER_UI_SELECT &&
+                installer_dropdown_open) {
+                installer_dropdown_open = false;
+            } else if (installer_ui_state == INSTALLER_UI_SELECT) {
                 desktop_open_view(DESKTOP_HOME);
             } else {
+                installer_dropdown_open = false;
                 installer_ui_state = INSTALLER_UI_SELECT;
                 installer_input_length = 0U;
                 installer_input[0] = '\0';
                 installer_set_status("Select a supported target disk");
             }
         } else if (installer_ui_state == INSTALLER_UI_SELECT) {
-            if (event->scancode == 0x3BU) {
+            if (event->scancode == 0x20U || event->scancode == 0x39U) {
+                installer_dropdown_open = !installer_dropdown_open;
+            } else if (event->scancode == 0x3BU) {
+                installer_dropdown_open = false;
                 installer_firmware = NEXUS_FIRMWARE_UEFI;
                 installer_refresh_plan();
             } else if (event->scancode == 0x3CU) {
+                installer_dropdown_open = false;
                 installer_firmware = NEXUS_FIRMWARE_LEGACY_BIOS;
                 installer_refresh_plan();
             } else if (event->scancode == 0x3DU) {
+                installer_dropdown_open = false;
                 installer_firmware = NEXUS_FIRMWARE_DUAL;
                 installer_refresh_plan();
             } else if (event->scancode == 0x48U && blockdev_count() > 0U) {
@@ -4590,7 +4818,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (event->scancode == 0x50U && blockdev_count() > 0U) {
                 installer_select_delta(true);
             } else if (event->scancode == 0x1CU) {
-                (void)installer_begin_confirmation();
+                if (installer_dropdown_open)
+                    installer_dropdown_open = false;
+                else
+                    (void)installer_begin_confirmation();
             } else {
                 return;
             }

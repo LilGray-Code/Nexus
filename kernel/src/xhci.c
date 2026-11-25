@@ -6,6 +6,7 @@
 #include "pci.h"
 #include "serial.h"
 #include "usb_hid.h"
+#include "usb_msc.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -90,7 +91,8 @@ struct xhci_mmio_mapping {
 enum xhci_hid_kind {
     XHCI_HID_NONE = 0,
     XHCI_HID_KEYBOARD = 1,
-    XHCI_HID_MOUSE = 2
+    XHCI_HID_MOUSE = 2,
+    XHCI_HID_MASS_STORAGE = 3
 };
 
 struct xhci_hid_device {
@@ -105,12 +107,22 @@ struct xhci_hid_device {
     volatile uint8_t *report_buffer;
     struct xhci_ring ep0_ring;
     struct xhci_ring interrupt_ring;
+    uint8_t interface_number;
+    uint8_t bulk_in_address;
+    uint8_t bulk_out_address;
+    uint8_t bulk_in_endpoint_id;
+    uint8_t bulk_out_endpoint_id;
+    uint16_t bulk_in_max_packet;
+    uint16_t bulk_out_max_packet;
+    struct xhci_ring bulk_in_ring;
+    struct xhci_ring bulk_out_ring;
 };
 
 struct xhci_controller {
     bool initialized;
     bool keyboard_active;
     bool mouse_active;
+    bool storage_active;
     uint64_t bar_base;
     uint8_t cap_length;
     uint8_t max_slots;
@@ -133,9 +145,13 @@ struct xhci_controller {
     /* One directly attached boot keyboard and one directly attached boot mouse. */
     struct xhci_hid_device keyboard;
     struct xhci_hid_device mouse;
+    struct xhci_hid_device storage;
 };
 
 static struct xhci_controller controller;
+
+static bool xhci_dispatch_hid_transfer_event(
+    struct xhci_controller *xhci, const struct xhci_trb *event);
 
 static bool xhci_alloc_page(uint64_t *physical, volatile uint8_t **virtual_address) {
     if (physical == NULL || virtual_address == NULL ||
@@ -309,7 +325,10 @@ static bool xhci_command(struct xhci_controller *xhci, uint64_t parameter,
             __asm__ volatile ("pause");
             continue;
         }
-        if (xhci_event_type(&event) != XHCI_TRB_COMMAND_EVENT) continue;
+        if (xhci_event_type(&event) != XHCI_TRB_COMMAND_EVENT) {
+            (void)xhci_dispatch_hid_transfer_event(xhci, &event);
+            continue;
+        }
         if (completion != NULL) *completion = event;
         if (xhci_event_code(&event) != XHCI_CC_SUCCESS) {
             const uint16_t last_index = xhci->command_ring.enqueue == 0U
@@ -374,10 +393,15 @@ static bool xhci_wait_transfer(struct xhci_controller *xhci,
             __asm__ volatile ("pause");
             continue;
         }
-        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
+        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) {
+            continue;
+        }
         const uint8_t event_slot = (uint8_t)(event.control >> 24);
         const uint8_t event_ep = (uint8_t)((event.control >> 16) & 0x1FU);
-        if (event_slot != slot_id || event_ep != endpoint_id) continue;
+        if (event_slot != slot_id || event_ep != endpoint_id) {
+            (void)xhci_dispatch_hid_transfer_event(xhci, &event);
+            continue;
+        }
         if (completion != NULL) *completion = event;
         const uint8_t code = xhci_event_code(&event);
         if (code != XHCI_CC_SUCCESS && code != XHCI_CC_SHORT_PACKET) {
@@ -810,6 +834,63 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
     return found && *configuration_value != 0U && *kind != XHCI_HID_NONE;
 }
 
+static bool xhci_find_mass_storage(
+    const uint8_t *configuration, size_t length,
+    uint8_t *interface_number, uint8_t *configuration_value,
+    uint8_t *bulk_in_address, uint16_t *bulk_in_packet,
+    uint8_t *bulk_out_address, uint16_t *bulk_out_packet) {
+    if (configuration == NULL || length < 9U ||
+        interface_number == NULL || configuration_value == NULL ||
+        bulk_in_address == NULL || bulk_in_packet == NULL ||
+        bulk_out_address == NULL || bulk_out_packet == NULL)
+        return false;
+
+    *configuration_value = configuration[5];
+    bool in_mass_storage = false;
+    bool have_in = false;
+    bool have_out = false;
+    size_t offset = 0U;
+    while (offset + 2U <= length) {
+        const uint8_t descriptor_length = configuration[offset];
+        const uint8_t descriptor_type = configuration[offset + 1U];
+        if (descriptor_length < 2U ||
+            offset + descriptor_length > length) return false;
+
+        if (descriptor_type == 4U && descriptor_length >= 9U) {
+            in_mass_storage =
+                configuration[offset + 5U] == 0x08U &&
+                configuration[offset + 6U] == 0x06U &&
+                configuration[offset + 7U] == 0x50U &&
+                configuration[offset + 3U] == 0U;
+            have_in = false;
+            have_out = false;
+            if (in_mass_storage)
+                *interface_number = configuration[offset + 2U];
+        } else if (descriptor_type == 5U &&
+                   descriptor_length >= 7U && in_mass_storage) {
+            const uint8_t address = configuration[offset + 2U];
+            const uint8_t attributes = configuration[offset + 3U] & 0x03U;
+            const uint16_t packet = (uint16_t)(
+                configuration[offset + 4U] |
+                ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
+            if (attributes == 2U && packet != 0U && packet <= 1024U) {
+                if ((address & 0x80U) != 0U && !have_in) {
+                    *bulk_in_address = address;
+                    *bulk_in_packet = packet;
+                    have_in = true;
+                } else if ((address & 0x80U) == 0U && !have_out) {
+                    *bulk_out_address = address;
+                    *bulk_out_packet = packet;
+                    have_out = true;
+                }
+                if (have_in && have_out) return *configuration_value != 0U;
+            }
+        }
+        offset += descriptor_length;
+    }
+    return false;
+}
+
 static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
     if (interval == 0U) interval = 1U;
     if (speed >= 3U) {
@@ -877,6 +958,179 @@ static bool xhci_configure_interrupt_endpoint(struct xhci_controller *xhci,
                         ((uint32_t)device->slot_id << 24), NULL);
 }
 
+static bool xhci_configure_bulk_endpoints(
+    struct xhci_controller *xhci, struct xhci_hid_device *device,
+    uint8_t bulk_in_address, uint16_t bulk_in_packet,
+    uint8_t bulk_out_address, uint16_t bulk_out_packet) {
+    if (xhci == NULL || device == NULL ||
+        (bulk_in_address & 0x80U) == 0U ||
+        (bulk_out_address & 0x80U) != 0U ||
+        bulk_in_packet == 0U || bulk_out_packet == 0U ||
+        bulk_in_packet > 1024U || bulk_out_packet > 1024U)
+        return false;
+
+    const uint8_t in_number = bulk_in_address & 0x0FU;
+    const uint8_t out_number = bulk_out_address & 0x0FU;
+    if (in_number == 0U || out_number == 0U) return false;
+    device->bulk_in_endpoint_id = (uint8_t)(in_number * 2U + 1U);
+    device->bulk_out_endpoint_id = (uint8_t)(out_number * 2U);
+    if (device->bulk_in_endpoint_id > 31U ||
+        device->bulk_out_endpoint_id > 31U ||
+        device->bulk_in_endpoint_id == device->bulk_out_endpoint_id)
+        return false;
+    if (!xhci_ring_init(&device->bulk_in_ring) ||
+        !xhci_ring_init(&device->bulk_out_ring)) return false;
+
+    device->bulk_in_address = bulk_in_address;
+    device->bulk_out_address = bulk_out_address;
+    device->bulk_in_max_packet = bulk_in_packet;
+    device->bulk_out_max_packet = bulk_out_packet;
+
+    volatile uint8_t *input_page =
+        (volatile uint8_t *)memory_phys_to_virt(
+            device->input_context_physical);
+    volatile uint8_t *output_page =
+        (volatile uint8_t *)memory_phys_to_virt(
+            device->device_context_physical);
+    if (input_page == NULL || output_page == NULL) return false;
+    for (size_t i = 0U; i < XHCI_PAGE_SIZE; ++i) input_page[i] = 0U;
+
+    volatile uint32_t *input = (volatile uint32_t *)(uintptr_t)input_page;
+    volatile uint32_t *out_slot = (volatile uint32_t *)(uintptr_t)output_page;
+    volatile uint32_t *out_ep0 = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)output_page + xhci->context_size);
+    volatile uint32_t *in_slot = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page + xhci->context_size);
+    volatile uint32_t *in_ep0 = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page + 2U * xhci->context_size);
+    volatile uint32_t *in_bulk_in = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page +
+        (size_t)(device->bulk_in_endpoint_id + 1U) * xhci->context_size);
+    volatile uint32_t *in_bulk_out = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page +
+        (size_t)(device->bulk_out_endpoint_id + 1U) * xhci->context_size);
+
+    const uint8_t max_dci = device->bulk_in_endpoint_id >
+        device->bulk_out_endpoint_id
+            ? device->bulk_in_endpoint_id : device->bulk_out_endpoint_id;
+    input[1] = 1U |
+        (1U << device->bulk_in_endpoint_id) |
+        (1U << device->bulk_out_endpoint_id);
+    for (size_t i = 0U;
+         i < xhci->context_size / sizeof(uint32_t); ++i) {
+        in_slot[i] = out_slot[i];
+        in_ep0[i] = out_ep0[i];
+    }
+    in_slot[0] = (in_slot[0] & 0x07FFFFFFU) |
+                 ((uint32_t)max_dci << 27);
+
+    /* xHCI endpoint type 6 is Bulk IN; type 2 is Bulk OUT. */
+    in_bulk_in[0] = 0U;
+    in_bulk_in[1] = (3U << 1) | (6U << 3) |
+                    ((uint32_t)bulk_in_packet << 16);
+    in_bulk_in[2] = (uint32_t)(device->bulk_in_ring.physical | 1U);
+    in_bulk_in[3] = (uint32_t)(device->bulk_in_ring.physical >> 32);
+    in_bulk_in[4] = bulk_in_packet;
+
+    in_bulk_out[0] = 0U;
+    in_bulk_out[1] = (3U << 1) | (2U << 3) |
+                     ((uint32_t)bulk_out_packet << 16);
+    in_bulk_out[2] = (uint32_t)(device->bulk_out_ring.physical | 1U);
+    in_bulk_out[3] = (uint32_t)(device->bulk_out_ring.physical >> 32);
+    in_bulk_out[4] = bulk_out_packet;
+
+    return xhci_command(xhci, device->input_context_physical,
+                        XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
+                        ((uint32_t)device->slot_id << 24), NULL);
+}
+
+static bool xhci_bulk_transfer(struct xhci_controller *xhci,
+                               struct xhci_hid_device *device,
+                               bool input, void *buffer, size_t length) {
+    if (xhci == NULL || device == NULL || !device->active ||
+        device->kind != XHCI_HID_MASS_STORAGE ||
+        buffer == NULL || length == 0U || length > XHCI_PAGE_SIZE)
+        return false;
+
+    struct xhci_ring *ring = input
+        ? &device->bulk_in_ring : &device->bulk_out_ring;
+    const uint8_t endpoint = input
+        ? device->bulk_in_endpoint_id : device->bulk_out_endpoint_id;
+    if (ring->trbs == NULL) return false;
+
+    if (input) {
+        for (size_t i = 0U; i < length; ++i)
+            device->report_buffer[i] = 0U;
+    } else {
+        const uint8_t *source = (const uint8_t *)buffer;
+        for (size_t i = 0U; i < length; ++i)
+            device->report_buffer[i] = source[i];
+    }
+
+    const uint32_t control = XHCI_TRB_TYPE(1U) | XHCI_TRB_IOC |
+                             (input ? XHCI_TRB_ISP : 0U);
+    if (xhci_ring_push(ring, device->report_buffer_physical,
+                       (uint32_t)length, control) == NULL) return false;
+    volatile uint32_t *doorbell = xhci_map_register(
+        xhci, (uint64_t)xhci->doorbell_offset +
+              (uint64_t)device->slot_id * 4U);
+    if (doorbell == NULL) return false;
+    *doorbell = endpoint;
+    __asm__ volatile ("sfence" : : : "memory");
+
+    struct xhci_trb completion;
+    if (!xhci_wait_transfer(xhci, device->slot_id, endpoint,
+                            &completion)) return false;
+    const uint32_t residual = completion.status & 0x00FFFFFFU;
+    if (residual > length || (size_t)residual != 0U) return false;
+
+    if (input) {
+        uint8_t *destination = (uint8_t *)buffer;
+        for (size_t i = 0U; i < length; ++i)
+            destination[i] = device->report_buffer[i];
+    }
+    return true;
+}
+
+static bool xhci_msc_bulk_in(void *context, void *buffer, size_t length,
+                             size_t *transferred) {
+    struct xhci_hid_device *device = context;
+    if (transferred == NULL) return false;
+    *transferred = 0U;
+    if (!xhci_bulk_transfer(&controller, device, true, buffer, length))
+        return false;
+    *transferred = length;
+    return true;
+}
+
+static bool xhci_msc_bulk_out(void *context, const void *buffer,
+                              size_t length, size_t *transferred) {
+    struct xhci_hid_device *device = context;
+    if (transferred == NULL) return false;
+    *transferred = 0U;
+    if (!xhci_bulk_transfer(&controller, device, false,
+                            (void *)buffer, length)) return false;
+    *transferred = length;
+    return true;
+}
+
+static bool xhci_msc_reset(void *context) {
+    struct xhci_hid_device *device = context;
+    if (device == NULL || !device->active ||
+        device->kind != XHCI_HID_MASS_STORAGE) return false;
+
+    /* USB MSC Bulk-Only Transport reset, then clear both endpoint halts. */
+    if (!xhci_control_transfer(&controller, device, 0x21U, 0xFFU,
+                               0U, device->interface_number, NULL, 0U))
+        return false;
+    if (!xhci_control_transfer(&controller, device, 0x02U, 0x01U,
+                               0U, device->bulk_in_address, NULL, 0U) ||
+        !xhci_control_transfer(&controller, device, 0x02U, 0x01U,
+                               0U, device->bulk_out_address, NULL, 0U))
+        return false;
+    return false; /* Do not resume unless endpoint dequeue state is recovered. */
+}
+
 static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
                                          struct xhci_hid_device *device) {
     if (device == NULL || !device->active ||
@@ -895,6 +1149,56 @@ static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
     return true;
 }
 
+static bool xhci_dispatch_hid_transfer_event(
+    struct xhci_controller *xhci, const struct xhci_trb *event) {
+    if (xhci == NULL || event == NULL ||
+        xhci_event_type(event) != XHCI_TRB_TRANSFER_EVENT)
+        return false;
+
+    const uint8_t slot = (uint8_t)(event->control >> 24);
+    const uint8_t endpoint = (uint8_t)((event->control >> 16) & 0x1FU);
+    struct xhci_hid_device *device = NULL;
+    if (xhci->keyboard_active && xhci->keyboard.active &&
+        slot == xhci->keyboard.slot_id &&
+        endpoint == xhci->keyboard.endpoint_id) {
+        device = &xhci->keyboard;
+    } else if (xhci->mouse_active && xhci->mouse.active &&
+               slot == xhci->mouse.slot_id &&
+               endpoint == xhci->mouse.endpoint_id) {
+        device = &xhci->mouse;
+    }
+    if (device == NULL) return false;
+
+    const uint8_t code = xhci_event_code(event);
+    if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
+        if (device->kind == XHCI_HID_KEYBOARD) {
+            input_usb_keyboard_report(
+                (const uint8_t *)(uintptr_t)device->report_buffer);
+        } else if (device->kind == XHCI_HID_MOUSE) {
+            input_usb_mouse_report(
+                (const uint8_t *)(uintptr_t)device->report_buffer);
+        }
+        if (!xhci_schedule_interrupt_read(xhci, device)) {
+            serial_write("xHCI: unable to re-arm HID input endpoint\r\n");
+            device->active = false;
+            if (device->kind == XHCI_HID_KEYBOARD)
+                xhci->keyboard_active = false;
+            else
+                xhci->mouse_active = false;
+        }
+    } else {
+        serial_write("xHCI: HID input transfer failed; code=");
+        serial_write_hex(code);
+        serial_write("\r\n");
+        device->active = false;
+        if (device->kind == XHCI_HID_KEYBOARD)
+            xhci->keyboard_active = false;
+        else
+            xhci->mouse_active = false;
+    }
+    return true;
+}
+
 static void xhci_release_hid_device(struct xhci_controller *xhci,
                                     struct xhci_hid_device *device) {
     if (xhci == NULL || device == NULL) return;
@@ -910,6 +1214,10 @@ static void xhci_release_hid_device(struct xhci_controller *xhci,
         (void)memory_free_page(device->ep0_ring.physical);
     if (device->interrupt_ring.physical != 0U)
         (void)memory_free_page(device->interrupt_ring.physical);
+    if (device->bulk_in_ring.physical != 0U)
+        (void)memory_free_page(device->bulk_in_ring.physical);
+    if (device->bulk_out_ring.physical != 0U)
+        (void)memory_free_page(device->bulk_out_ring.physical);
     if (device->report_buffer_physical != 0U)
         (void)memory_free_page(device->report_buffer_physical);
     *device = (struct xhci_hid_device){0};
@@ -990,6 +1298,127 @@ failed:
     return false;
 }
 
+static void xhci_format_storage_identity(
+    uint8_t port, char name[NEXUS_BLOCKDEV_NAME_MAX],
+    char stable_id[NEXUS_BLOCKDEV_ID_MAX]) {
+    static const char hex[] = "0123456789ABCDEF";
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_NAME_MAX; ++i)
+        name[i] = '\0';
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_ID_MAX; ++i)
+        stable_id[i] = '\0';
+    name[0] = 'U'; name[1] = 'S'; name[2] = 'B';
+    name[3] = hex[(port >> 4) & 0x0FU];
+    name[4] = hex[port & 0x0FU];
+    const char prefix[] = "USB-MSC-PORT-";
+    size_t length = 0U;
+    while (prefix[length] != '\0' &&
+           length + 1U < NEXUS_BLOCKDEV_ID_MAX) {
+        stable_id[length] = prefix[length];
+        ++length;
+    }
+    if (length + 2U < NEXUS_BLOCKDEV_ID_MAX) {
+        stable_id[length++] = hex[(port >> 4) & 0x0FU];
+        stable_id[length++] = hex[port & 0x0FU];
+    }
+    stable_id[length] = '\0';
+}
+
+static bool xhci_enumerate_msc_port(struct xhci_controller *xhci,
+                                   uint8_t port_number, uint8_t speed) {
+    if (xhci == NULL || xhci->storage_active) return false;
+    struct xhci_hid_device *device = &xhci->storage;
+    *device = (struct xhci_hid_device){0};
+    if (!xhci_command_enable_slot(xhci, &device->slot_id)) return false;
+
+    const uint16_t default_packet = speed == 3U ? 64U :
+                                   speed == 4U ? 512U : 8U;
+    if (!xhci_setup_device_context(xhci, device, port_number, speed,
+                                   default_packet)) goto failed;
+
+    uint8_t descriptor[18] = {0U};
+    if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U, 8U, descriptor))
+        goto failed;
+    const uint16_t descriptor_packet = speed == 4U ? 512U :
+        (descriptor[7] == 0U ? default_packet : descriptor[7]);
+    if (descriptor_packet != default_packet &&
+        !xhci_update_ep0_packet(xhci, device, descriptor_packet)) goto failed;
+    if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U,
+                             sizeof(descriptor), descriptor)) goto failed;
+
+    uint8_t config_header[9] = {0U};
+    if (!xhci_get_descriptor(xhci, device, 2U, 0U, 0U,
+                             sizeof(config_header), config_header)) goto failed;
+    const uint16_t total_length = (uint16_t)(
+        config_header[2] | ((uint16_t)config_header[3] << 8));
+    if (total_length < 9U || total_length > 512U) goto failed;
+
+    volatile uint8_t *config_buffer = NULL;
+    uint64_t config_buffer_physical = 0U;
+    if (!xhci_alloc_page(&config_buffer_physical, &config_buffer)) goto failed;
+    for (size_t i = 0U; i < XHCI_PAGE_SIZE; ++i)
+        config_buffer[i] = 0U;
+    if (!xhci_control_transfer(
+            xhci, device, 0x80U, 0x06U, 0x0200U, 0U,
+            (void *)(uintptr_t)config_buffer, total_length)) {
+        (void)memory_free_page(config_buffer_physical);
+        goto failed;
+    }
+
+    uint8_t interface_number = 0U;
+    uint8_t configuration_value = 0U;
+    uint8_t bulk_in_address = 0U;
+    uint8_t bulk_out_address = 0U;
+    uint16_t bulk_in_packet = 0U;
+    uint16_t bulk_out_packet = 0U;
+    const bool mass_storage = xhci_find_mass_storage(
+        (const uint8_t *)(uintptr_t)config_buffer, total_length,
+        &interface_number, &configuration_value,
+        &bulk_in_address, &bulk_in_packet,
+        &bulk_out_address, &bulk_out_packet);
+    (void)memory_free_page(config_buffer_physical);
+    if (!mass_storage) goto failed;
+
+    if (!xhci_control_transfer(xhci, device, 0x00U, 0x09U,
+                               configuration_value, 0U, NULL, 0U))
+        goto failed;
+
+    device->kind = XHCI_HID_MASS_STORAGE;
+    device->interface_number = interface_number;
+    if (!xhci_configure_bulk_endpoints(
+            xhci, device, bulk_in_address, bulk_in_packet,
+            bulk_out_address, bulk_out_packet)) goto failed;
+
+    char device_name[NEXUS_BLOCKDEV_NAME_MAX];
+    char stable_id[NEXUS_BLOCKDEV_ID_MAX];
+    xhci_format_storage_identity(port_number, device_name, stable_id);
+    const struct nexus_usb_msc_transport transport = {
+        .context = device,
+        .bulk_in = xhci_msc_bulk_in,
+        .bulk_out = xhci_msc_bulk_out,
+        .reset = xhci_msc_reset
+    };
+    struct nexus_usb_msc_transport identified = transport;
+    for (size_t i = 0U; i < sizeof(identified.device_name); ++i)
+        identified.device_name[i] = device_name[i];
+    for (size_t i = 0U; i < sizeof(identified.stable_id); ++i)
+        identified.stable_id[i] = stable_id[i];
+
+    device->active = true;
+    if (!nexus_usb_msc_attach(&identified)) goto failed;
+    xhci->storage_active = true;
+
+    serial_write("NEXUS USB MASS STORAGE READY: ");
+    serial_write(device_name);
+    serial_write(" ");
+    serial_write(stable_id);
+    serial_write("\r\n");
+    return true;
+
+failed:
+    xhci_release_hid_device(xhci, device);
+    return false;
+}
+
 static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     struct xhci_controller *xhci = &controller;
     *xhci = (struct xhci_controller){0};
@@ -1034,7 +1463,8 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     xhci->initialized = true;
 
     for (uint8_t port = 1U; port <= xhci->max_ports; ++port) {
-        if (xhci->keyboard_active && xhci->mouse_active) break;
+        if (xhci->keyboard_active && xhci->mouse_active &&
+            xhci->storage_active) break;
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port, &speed)) continue;
         serial_write("xHCI: connected root port ");
@@ -1044,8 +1474,11 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         serial_write("\r\n");
 
         struct xhci_hid_device device = {0};
-        if (!xhci_enumerate_hid_port(xhci, port, speed, &device))
+        if (!xhci_enumerate_hid_port(xhci, port, speed, &device)) {
+            if (!xhci->storage_active)
+                (void)xhci_enumerate_msc_port(xhci, port, speed);
             continue;
+        }
         if (device.kind == XHCI_HID_KEYBOARD && !xhci->keyboard_active) {
             xhci->keyboard = device;
             xhci->keyboard_active = true;
@@ -1059,8 +1492,9 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
             xhci_release_hid_device(xhci, &device);
         }
     }
-    if (!xhci->keyboard_active && !xhci->mouse_active) {
-        serial_write("xHCI: no directly attached HID boot input found\r\n");
+    if (!xhci->keyboard_active && !xhci->mouse_active &&
+        !xhci->storage_active) {
+        serial_write("xHCI: no supported HID input or mass storage device found\r\n");
         return false;
     }
     return true;
@@ -1075,7 +1509,7 @@ bool xhci_init(void) {
             device->programming_interface != 0x30U) continue;
         if (xhci_try_controller(device)) return true;
     }
-    serial_write("USB: no usable xHCI HID keyboard or mouse\r\n");
+    serial_write("USB: no usable xHCI HID or mass storage device\r\n");
     return false;
 }
 
@@ -1089,60 +1523,19 @@ bool xhci_mouse_ready(void) {
            controller.mouse.active;
 }
 
+bool xhci_storage_ready(void) {
+    return controller.initialized && controller.storage_active &&
+           controller.storage.active && nexus_usb_msc_ready();
+}
+
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized ||
-        (!xhci->keyboard_active && !xhci->mouse_active)) return;
+        (!xhci->keyboard_active && !xhci->mouse_active &&
+         !xhci->storage_active)) return;
 
     struct xhci_trb event;
     while (xhci_event_next(xhci, &event)) {
-        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
-        const uint8_t slot = (uint8_t)(event.control >> 24);
-        const uint8_t endpoint =
-            (uint8_t)((event.control >> 16) & 0x1FU);
-        struct xhci_hid_device *device = NULL;
-        if (xhci->keyboard_active &&
-            slot == xhci->keyboard.slot_id &&
-            endpoint == xhci->keyboard.endpoint_id) {
-            device = &xhci->keyboard;
-        } else if (xhci->mouse_active &&
-                   slot == xhci->mouse.slot_id &&
-                   endpoint == xhci->mouse.endpoint_id) {
-            device = &xhci->mouse;
-        }
-        if (device == NULL || !device->active) continue;
-
-        const uint8_t code = xhci_event_code(&event);
-        if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
-            if (device->kind == XHCI_HID_KEYBOARD) {
-                input_usb_keyboard_report(
-                    (const uint8_t *)(uintptr_t)device->report_buffer);
-            } else if (device->kind == XHCI_HID_MOUSE) {
-                input_usb_mouse_report(
-                    (const uint8_t *)(uintptr_t)device->report_buffer);
-            }
-        } else {
-            serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: USB keyboard transfer failed; code="
-                : "xHCI: USB mouse transfer failed; code=");
-            serial_write_hex(code);
-            serial_write("\r\n");
-            device->active = false;
-            if (device->kind == XHCI_HID_KEYBOARD)
-                xhci->keyboard_active = false;
-            else
-                xhci->mouse_active = false;
-            continue;
-        }
-        if (!xhci_schedule_interrupt_read(xhci, device)) {
-            serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: unable to re-arm USB keyboard endpoint\r\n"
-                : "xHCI: unable to re-arm USB mouse endpoint\r\n");
-            device->active = false;
-            if (device->kind == XHCI_HID_KEYBOARD)
-                xhci->keyboard_active = false;
-            else
-                xhci->mouse_active = false;
-        }
+        (void)xhci_dispatch_hid_transfer_event(xhci, &event);
     }
 }

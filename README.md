@@ -33,23 +33,32 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   saved placement. This makes window navigation more consistent but is not
   yet a multi-window compositor with independent overlapping app instances.
 - The framebuffer renderer supports clipped rectangles, alpha blending,
-  rounded panels, and bounded row-rasterized circles used for subtle wallpaper
-  lighting. This is CPU software rendering on a linear framebuffer, not GPU
-  acceleration or a DirectX/OpenGL implementation.
+  rounded panels, bounded circles, gradient fills, and line/circle vector
+  strokes. The desktop uses layered aurora gradients, orbit accents, refined
+  rounded launcher tiles and a gradient taskbar. This is CPU software rendering
+  on a linear framebuffer, not GPU acceleration or a DirectX/OpenGL implementation.
 - Root-scoped VFS configuration I/O reads/writes simple files at the NXFS Data
   volume root without changing the current directory. It prefers persistent
   NXFS writes, never writes FAT32, and uses the bounded RAM overlay only when
   persistent NXFS is unavailable or read-only. Host integration tests exercise
   root preferences while nested in NXFS/FAT32 directories and verify remount
   retention.
-- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
-- NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
-  and supports guarded installer writes when the device provides flush support.
+- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support, plus
+  direct-attached USB Mass Storage Bulk-Only Transport for SCSI disks. The USB
+  storage driver performs INQUIRY, TEST UNIT READY, READ CAPACITY, MODE SENSE,
+  READ/WRITE(10/16), and SYNCHRONIZE CACHE commands. It refuses installer writes
+  when write-protection cannot be checked. USB hubs and UASP are not yet supported.
+- NVMe, AHCI/SATA, and direct-attached USB block devices. The AHCI driver
+  identifies ATA disks and supports guarded installer writes when the device
+  provides flush support.
 - GPT, FAT32, NXFS, and a virtual filesystem layer.
-- A Nexus graphical installer. The installer builds a GPT layout with an EFI
-  System Partition, Nexus System volume, Recovery journal partition, and
-  separate Nexus Data volume; BIOS installs also include a BIOS Boot
-  partition.
+- A Nexus graphical installer with a detected-storage dropdown. It lists
+  registered disks with model, capacity, sector size, connection type, and a
+  per-device eligibility reason; the boot source, mounted disks, duplicate
+  identities, and unsupported/read-only targets remain blocked. The installer
+  builds a GPT layout with an EFI System Partition, Nexus System volume,
+  Recovery journal partition, and separate Nexus Data volume; BIOS installs
+  also include a BIOS Boot partition.
 - A Files view with bounded hierarchical directory navigation over NXFS,
   keyboard/mouse selection, create/open/edit/delete, and a 128-entry display
   cache (six rows visible at once). Entries are directory-first and can be
@@ -126,16 +135,24 @@ APIs, drivers, and then a substantial, separately tested compatibility runtime.
 
 ## Installer safety
 
-The installer requires the user to choose a target disk, confirm its stable
-device identity, and separately type `ERASE` before destructive operations.
-It revalidates the target and keeps a durable recovery journal. The Recovery
-partition is separate from the System and Data volumes. An interrupted install
-can be retried against the same target; the transaction tests verify resume
-after simulated restarts without rewriting an already-committed GPT.
+The installer lists detected candidate disks in a dropdown and shows
+their model, capacity, sector size, transport, and safety status. The user
+must choose a target, confirm its stable device identity, and separately type
+`ERASE` before destructive operations. The selected device is revalidated and
+a durable recovery journal is used. NVMe, SATA/AHCI, and directly attached USB
+mass-storage disks are supported when their drivers expose verified read/write
+and flush operations.
+
+**The disk you booted Nexus from is always protected.** A live installer cannot
+safely erase the same USB stick from which its kernel and installer are running.
+To install onto that physical stick, boot the installer from a different
+medium (for example, an optical ISO or a second USB drive), then select the
+first USB stick as the target. A second removable USB disk can also be selected
+as a target. USB hubs and UASP devices are not yet supported.
 
 **Installing erases the selected disk.** Use a disposable disk or virtual
-machine while evaluating Nexus. Back up important data and check the displayed
-model, capacity, and stable identity before confirming.
+machine while evaluating Nexus. Back up important data and verify the displayed
+model, capacity, transport, and stable ID before confirming.
 
 ## Validation evidence
 
@@ -144,9 +161,9 @@ and the installer-enabled kernel and exercise:
 
 - live UEFI boot with OVMF and live legacy-BIOS boot with SeaBIOS;
 - installed UEFI and BIOS boot;
-- graphical installation to disposable NVMe and AHCI/SATA targets;
-- persistent NXFS user-file creation and fresh-boot retention on NVMe and
-  AHCI/SATA targets;
+- graphical installation to disposable NVMe, AHCI/SATA, and USB mass-storage targets;
+- persistent NXFS user-file creation and fresh-boot retention on NVMe,
+  AHCI/SATA, and USB mass-storage targets;
 - a Files-editor keyboard edit followed by save, reboot, and verification of
   the edited file on the NVMe Data volume;
 - host-side installer fault injection across simulated power cycles, journal
@@ -163,6 +180,8 @@ the latest run attached to the current branch.
 
 - No physical PC installation or hardware-compatibility matrix has been
   completed. Hardware testing remains required.
+- USB Mass Storage support currently targets directly attached Bulk-Only
+  Transport SCSI devices on one xHCI controller; USB hubs and UASP are absent.
 - Secure Boot is not supported.
 - The browser now has a TLS 1.3 HTTPS transport and bounded redirect
   handling, but it remains a text-only browser. The user must place a trusted

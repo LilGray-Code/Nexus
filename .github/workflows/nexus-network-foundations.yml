@@ -52,6 +52,12 @@ jobs:
             kernel/src/browser_url.c kernel/tests/browser_url_test.c \
             -o /tmp/nexus-browser-url-test
           /tmp/nexus-browser-url-test
+      - name: Test USB mass-storage BOT and SCSI block driver
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Ikernel/src \
+            kernel/src/blockdev.c kernel/src/gpt.c kernel/src/usb_msc.c \
+            kernel/tests/usb_msc_test.c -o /tmp/nexus-usb-msc-test
+          /tmp/nexus-usb-msc-test
       - name: Test RTC date and epoch conversion
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \

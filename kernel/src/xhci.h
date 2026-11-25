@@ -3,14 +3,16 @@
 
 #include <stdbool.h>
 
-/* Initialize an xHCI controller and enumerate USB HID boot keyboards/mice.
+/* Initialize xHCI and enumerate boot keyboards/mice plus generic HID gamepads.
  * Root-port connect/disconnect events are handled after boot, so wired devices
  * and standard 2.4 GHz USB receivers can be attached or removed at runtime.
- * Bluetooth pairing, USB hubs, multi-interface receivers, and non-boot HID
- * remain unsupported; a Bluetooth receiver must itself expose boot-HID. */
+ * Up to four generic report-descriptor gamepads are tracked. Bluetooth pairing,
+ * USB hubs, composite multi-interface controllers, and non-gamepad HID remain
+ * unsupported; a wireless USB receiver must expose a compatible HID interface. */
 bool xhci_init(void);
 bool xhci_keyboard_ready(void);
 bool xhci_mouse_ready(void);
+bool xhci_gamepads_ready(void);
 
 /* Drain completed USB HID keyboard and mouse interrupt transfers. */
 void xhci_poll(void);

@@ -242,3 +242,10 @@ const char *nexus_cpu_feature_level_label(void) {
     if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE2)) return "SSE2 BASELINE";
     return "SCALAR BASELINE";
 }
+
+void nexus_cpu_disable_avx(void) {
+    cpu_info.features &= ~(NEXUS_CPU_FEATURE_OSXSAVE |
+                           NEXUS_CPU_FEATURE_AVX |
+                           NEXUS_CPU_FEATURE_AVX2 |
+                           NEXUS_CPU_FEATURE_FMA);
+}

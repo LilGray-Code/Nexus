@@ -6,6 +6,7 @@
 #include "pci.h"
 #include "serial.h"
 #include "usb_hid.h"
+#include "usb_msc.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -90,7 +91,8 @@ struct xhci_mmio_mapping {
 enum xhci_hid_kind {
     XHCI_HID_NONE = 0,
     XHCI_HID_KEYBOARD = 1,
-    XHCI_HID_MOUSE = 2
+    XHCI_HID_MOUSE = 2,
+    XHCI_HID_MASS_STORAGE = 3
 };
 
 struct xhci_hid_device {
@@ -105,12 +107,22 @@ struct xhci_hid_device {
     volatile uint8_t *report_buffer;
     struct xhci_ring ep0_ring;
     struct xhci_ring interrupt_ring;
+    uint8_t interface_number;
+    uint8_t bulk_in_address;
+    uint8_t bulk_out_address;
+    uint8_t bulk_in_endpoint_id;
+    uint8_t bulk_out_endpoint_id;
+    uint16_t bulk_in_max_packet;
+    uint16_t bulk_out_max_packet;
+    struct xhci_ring bulk_in_ring;
+    struct xhci_ring bulk_out_ring;
 };
 
 struct xhci_controller {
     bool initialized;
     bool keyboard_active;
     bool mouse_active;
+    bool storage_active;
     uint64_t bar_base;
     uint8_t cap_length;
     uint8_t max_slots;
@@ -133,9 +145,13 @@ struct xhci_controller {
     /* One directly attached boot keyboard and one directly attached boot mouse. */
     struct xhci_hid_device keyboard;
     struct xhci_hid_device mouse;
+    struct xhci_hid_device storage;
 };
 
 static struct xhci_controller controller;
+
+static bool xhci_dispatch_hid_transfer_event(
+    struct xhci_controller *xhci, const struct xhci_trb *event);
 
 static bool xhci_alloc_page(uint64_t *physical, volatile uint8_t **virtual_address) {
     if (physical == NULL || virtual_address == NULL ||

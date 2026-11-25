@@ -36,6 +36,18 @@ struct nexus_package_manifest {
     uint8_t signature[NEXUS_PACKAGE_SIGNATURE_BYTES];
 };
 
+enum nexus_package_error {
+    NEXUS_PACKAGE_ERROR_NONE = 0,
+    NEXUS_PACKAGE_ERROR_ARGUMENT,
+    NEXUS_PACKAGE_ERROR_VERIFY,
+    NEXUS_PACKAGE_ERROR_EXECUTABLE,
+    NEXUS_PACKAGE_ERROR_STORAGE,
+    NEXUS_PACKAGE_ERROR_RECEIPT,
+    NEXUS_PACKAGE_ERROR_VERSION_CONFLICT,
+    NEXUS_PACKAGE_ERROR_WRITE_EXECUTABLE,
+    NEXUS_PACKAGE_ERROR_COMMIT_RECEIPT
+};
+
 struct nexus_package_install_result {
     char id[NEXUS_PACKAGE_ID_MAX + 1U];
     char version[NEXUS_PACKAGE_VERSION_MAX + 1U];
@@ -62,6 +74,7 @@ bool nexus_package_is_installed(const char *id,
                                 nexus_package_signature_verifier verifier,
                                 void *verifier_context,
                                 struct nexus_package_install_result *result);
+enum nexus_package_error nexus_package_last_error(void);
 bool nexus_package_uninstall(const char *id,
                              nexus_package_signature_verifier verifier,
                              void *verifier_context);

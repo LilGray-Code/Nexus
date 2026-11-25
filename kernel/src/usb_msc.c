@@ -136,7 +136,7 @@ bool nexus_usb_msc_find_interface(
         }
         offset += descriptor_length;
 
-        if (active && offset < total_length &&
+        if (active && total_length - offset >= 2U &&
             configuration[offset + 1U] == 4U) {
             if (observed_endpoints < declared_endpoints) return false;
             if (candidate.bulk_in_endpoint != 0U &&

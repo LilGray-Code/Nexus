@@ -132,6 +132,7 @@ static const struct nexus_usb_msc_transport ops = {
 
 static void init_device(struct mock_usb *mock,
                         struct nexus_usb_msc_device *device) {
+    mock->large_capacity = true;
     assert(nexus_usb_msc_init(device,&ops,mock,4U,0x81U,0x02U,0U));
     assert(nexus_usb_msc_ready(device));
 }
@@ -244,14 +245,14 @@ static void test_configuration_descriptor_parser(void) {
     assert(found.bulk_in_max_packet==512U);
     assert(found.bulk_out_max_packet==512U);
 
-    descriptor[31] = 0x51U; /* UAS protocol, not Bulk-Only Transport. */
+    descriptor[32] = 0x51U; /* UAS protocol, not Bulk-Only Transport. */
     assert(!nexus_usb_msc_find_interface(
         descriptor,sizeof(descriptor),&found));
-    descriptor[31] = 0x50U;
-    descriptor[39] = 3U; /* Interrupt endpoint is not bulk. */
+    descriptor[32] = 0x50U;
+    descriptor[37] = 3U; /* Interrupt endpoint is not bulk. */
     assert(!nexus_usb_msc_find_interface(
         descriptor,sizeof(descriptor),&found));
-    descriptor[39] = 2U;
+    descriptor[37] = 2U;
     assert(!nexus_usb_msc_find_interface(
         descriptor,sizeof(descriptor)-1U,&found));
     descriptor[9] = 8U; /* Truncated interface descriptor. */
@@ -266,10 +267,10 @@ static void test_capacity_10_and_32bit_commands(void) {
     assert(nexus_usb_msc_init(&device,&ops,&mock,4U,0x81U,0x02U,0U));
     assert(device.block_count==4096U);
     uint8_t sector[512];
-    assert(nexus_usb_msc_read_blocks(&device,0x12345678U,1U,sector));
+    assert(nexus_usb_msc_read_blocks(&device,0x1234U,1U,sector));
     assert(mock.last_opcode==0x28U);
-    assert(be32(mock.last_cdb+2U)==0x12345678U);
-    assert(nexus_usb_msc_write_blocks(&device,0x12345678U,1U,sector));
+    assert(be32(mock.last_cdb+2U)==0x1234U);
+    assert(nexus_usb_msc_write_blocks(&device,0x1234U,1U,sector));
     assert(mock.last_opcode==0x2AU);
 }
 

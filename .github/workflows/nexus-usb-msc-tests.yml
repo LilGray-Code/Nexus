@@ -1,0 +1,35 @@
+name: Nexus USB mass-storage BOT and SCSI tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/usb_msc.c"
+      - "kernel/src/usb_msc.h"
+      - "kernel/tests/usb_msc_test.c"
+      - ".github/workflows/nexus-usb-msc-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/usb_msc.c"
+      - "kernel/src/usb_msc.h"
+      - "kernel/tests/usb_msc_test.c"
+      - ".github/workflows/nexus-usb-msc-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  usb-msc-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile USB mass-storage protocol tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_msc.c kernel/tests/usb_msc_test.c \
+            -o /tmp/nexus-usb-msc-test
+      - name: Run USB mass-storage BOT and SCSI tests
+        run: /tmp/nexus-usb-msc-test

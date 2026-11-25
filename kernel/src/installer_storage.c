@@ -269,37 +269,91 @@ static bool installer_is_exact_bios_partition(
     return false;
 }
 
+static bool installer_manifest_append(char *buffer, size_t capacity,
+                                      size_t *length, const char *text) {
+    if (buffer == NULL || length == NULL || text == NULL ||
+        *length >= capacity) return false;
+    size_t i = 0U;
+    while (text[i] != '\0') {
+        if (*length + i + 1U >= capacity) return false;
+        buffer[*length + i] = text[i];
+        ++i;
+    }
+    *length += i;
+    buffer[*length] = '\0';
+    return true;
+}
+
+static bool installer_manifest_append_u32(char *buffer, size_t capacity,
+                                          size_t *length, uint32_t value) {
+    char digits[10];
+    size_t count = 0U;
+    do {
+        digits[count++] = (char)('0' + (value % 10U));
+        value /= 10U;
+    } while (value != 0U && count < sizeof(digits));
+    if (*length + count + 1U > capacity) return false;
+    while (count != 0U) buffer[(*length)++] = digits[--count];
+    buffer[*length] = '\0';
+    return true;
+}
+
 enum nexus_installer_system_payload_result nexus_installer_deploy_system_payload(
     const struct nexus_block_device *device,
     const struct nexus_installer_disk_identity *identity,
     const char *typed_id,const char *typed_erase,
     const struct nexus_gpt_partition *system_partition) {
     const struct nexus_boot_payloads *payloads=nexus_boot_payloads_get();
+    const uint32_t chunk_limit = NEXUS_NXFS_MAX_FILE_BYTES;
     if(payloads==NULL||payloads->kernel_elf.data==NULL||
        payloads->kernel_elf.size==0U||
-       payloads->kernel_elf.size>NEXUS_NXFS_MAX_FILE_BYTES)
+       payloads->kernel_elf.size>2U*NEXUS_NXFS_MAX_FILE_BYTES)
         return NEXUS_SYSTEM_PAYLOAD_INVALID_PAYLOAD;
     if(!installer_is_exact_nxfs_partition(device,system_partition))
         return NEXUS_SYSTEM_PAYLOAD_INVALID_PARTITION;
-    static const char manifest[]=
-        "NEXUS SYSTEM IMAGE 1\n"
-        "ARCH=x86_64\n"
-        "KERNEL=KERNEL.ELF\n"
-        "KERNEL_FORMAT=ELF64\n"
-        "DESKTOP=FRAMEBUFFER\n"
-        "FILESYSTEM=NXFS\n"
-        "BOOT=UEFI+LEGACY_BIOS\n"
-        "RELEASE_STATUS=DEVELOPMENT_PROTOTYPE\n";
-    static const char readme[]=
+
+    const uint32_t kernel_size = payloads->kernel_elf.size;
+    const uint32_t chunk_count =
+        (kernel_size + chunk_limit - 1U) / chunk_limit;
+    if (chunk_count == 0U || chunk_count > 2U)
+        return NEXUS_SYSTEM_PAYLOAD_INVALID_PAYLOAD;
+
+    char manifest[256] = {0};
+    size_t manifest_length = 0U;
+    if (!installer_manifest_append(manifest, sizeof(manifest),
+            &manifest_length, "NEXUS SYSTEM IMAGE 2\nARCH=x86_64\nKERNEL_PREFIX=KERNEL.\nKERNEL_PARTS=") ||
+        !installer_manifest_append_u32(manifest, sizeof(manifest),
+            &manifest_length, chunk_count) ||
+        !installer_manifest_append(manifest, sizeof(manifest),
+            &manifest_length, "\nKERNEL_CHUNK_BYTES=1048576\nKERNEL_SIZE=") ||
+        !installer_manifest_append_u32(manifest, sizeof(manifest),
+            &manifest_length, kernel_size) ||
+        !installer_manifest_append(manifest, sizeof(manifest),
+            &manifest_length, "\nKERNEL_FORMAT=ELF64\nDESKTOP=FRAMEBUFFER\nFILESYSTEM=NXFS\nBOOT=UEFI+LEGACY_BIOS\nRELEASE_STATUS=DEVELOPMENT_PROTOTYPE\n"))
+        return NEXUS_SYSTEM_PAYLOAD_MANIFEST_WRITE_FAILED;
+
+    static const char readme[] =
         "Nexus OS\n"
-        "This NXFS system volume contains the installed Nexus kernel and system manifest.\n"
-        "The desktop, terminal, file browser, settings, and basic HTTP text viewer are currently integrated into the kernel.\n"
+        "The NXFS system volume stores the kernel as bounded KERNEL.000/KERNEL.001 chunks and a SYSTEM.MAN descriptor.\n"
+        "The bootable kernel copy is also deployed to the EFI System Partition.\n"
         "This is an engineering prototype, not a finished general-purpose desktop release.\n";
+
+    for (uint32_t index = 0U; index < chunk_count; ++index) {
+        char chunk_name[] = "KERNEL.000";
+        chunk_name[9] = (char)('0' + index);
+        const uint32_t offset = index * chunk_limit;
+        const uint32_t remaining = kernel_size - offset;
+        const uint32_t amount = remaining < chunk_limit
+            ? remaining : chunk_limit;
+        if (!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
+                system_partition,chunk_name,payloads->kernel_elf.data + offset,
+                amount))
+            return NEXUS_SYSTEM_PAYLOAD_KERNEL_WRITE_FAILED;
+    }
+
+    /* Commit the descriptor last so it always describes a complete chunk set. */
     if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
-        system_partition,"KERNEL.ELF",payloads->kernel_elf.data,
-        payloads->kernel_elf.size))return NEXUS_SYSTEM_PAYLOAD_KERNEL_WRITE_FAILED;
-    if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
-        system_partition,"SYSTEM.MAN",manifest,(uint32_t)(sizeof(manifest)-1U)))
+        system_partition,"SYSTEM.MAN",manifest,(uint32_t)manifest_length))
         return NEXUS_SYSTEM_PAYLOAD_MANIFEST_WRITE_FAILED;
     if(!nexus_installer_write_nxfs_file(device,identity,typed_id,typed_erase,
         system_partition,"README.TXT",readme,(uint32_t)(sizeof(readme)-1U)))

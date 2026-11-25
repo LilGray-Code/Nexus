@@ -25,5 +25,8 @@ _Static_assert(offsetof(struct nexus_app_blit_request, pixels) == 24U,
 int main(void) {
     return NEXUS_APP_SYS_FRAMEBUFFER_BLIT == 11ULL &&
            NEXUS_APP_SYS_SLEEP_TICKS == 12ULL &&
-           NEXUS_APP_SYS_GAMEPAD_POLL == 13ULL ? 0 : 1;
+           NEXUS_APP_SYS_GAMEPAD_POLL == 13ULL &&
+           NEXUS_APP_SYS_AUDIO_WRITE == 14ULL &&
+           NEXUS_APP_AUDIO_SAMPLE_RATE_HZ == 48000U &&
+           NEXUS_APP_AUDIO_MAX_FRAMES == 1024U ? 0 : 1;
 }

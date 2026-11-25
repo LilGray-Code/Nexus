@@ -85,6 +85,16 @@ jobs:
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test
 
+      - name: Test explicit desktop and installer boot-mode selection
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/boot_mode.c \
+            kernel/tests/boot_mode_test.c -o /tmp/nexus-boot-mode-test
+          /tmp/nexus-boot-mode-test
+          grep -q 'Install Nexus OS' boot/limine.conf
+          grep -q 'cmdline: nexus.mode=installer' boot/limine.conf
+          grep -q 'cmdline: nexus.mode=desktop' boot/limine.conf
+
       - name: Test USB HID boot-keyboard decoder
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

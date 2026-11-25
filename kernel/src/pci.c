@@ -77,8 +77,20 @@ static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
         saved->class_code = class_code;
         saved->subclass = subclass;
         saved->programming_interface = prog_if;
+        saved->revision_id = (uint8_t)class_revision;
         saved->vendor_id = vendor;
         saved->device_id = device;
+
+        /* Subsystem IDs distinguish OEM board variants that share one
+         * chipset/device ID. Offset 0x2C is present in Type 0 and Type 1
+         * PCI headers. This is a read-only inventory operation.
+         */
+        const uint32_t subsystem_ids =
+            pci_config_read(bus, slot, function, 0x2CU);
+        if (subsystem_ids != UINT32_MAX) {
+            saved->subsystem_vendor_id = (uint16_t)subsystem_ids;
+            saved->subsystem_device_id = (uint16_t)(subsystem_ids >> 16);
+        }
 
         const uint32_t command_status =
             pci_config_read(bus, slot, function, 0x04);

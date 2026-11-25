@@ -3,6 +3,7 @@
 #include "memory.h"
 #include "pci.h"
 #include "serial.h"
+#include "timer.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -42,6 +43,8 @@ static bool initialized;
 static bool playback_active;
 static bool playback_started;
 static bool playback_failed;
+static uint64_t playback_start_tick;
+static uint64_t playback_timeout_ticks;
 
 static inline void io_out8(uint16_t port, uint8_t value) {
     __asm__ volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
@@ -107,6 +110,8 @@ bool ac97_init(void) {
     playback_active = false;
     playback_started = false;
     playback_failed = false;
+    playback_start_tick = 0U;
+    playback_timeout_ticks = 0U;
     mixer_base = 0U;
     busmaster_base = 0U;
     bdl = NULL;
@@ -206,7 +211,11 @@ void ac97_poll(void) {
     }
     if ((status & AC97_STATUS_DCH) == 0U) {
         playback_started = true;
-    } else if (playback_started) {
+    } else if (playback_started ||
+               timer_ticks() - playback_start_tick >=
+                   playback_timeout_ticks) {
+        /* DCH means the DMA chain has halted; the deadline handles a
+         * device that completed before our first status poll. */
         playback_active = false;
     }
 }
@@ -245,5 +254,8 @@ enum nexus_ac97_submit_result ac97_write_pcm_s16_stereo_48k(
     playback_active = true;
     playback_started = false;
     playback_failed = false;
+    playback_start_tick = timer_ticks();
+    playback_timeout_ticks = ((uint64_t)sample_frames + 479ULL) /
+                             480ULL + 2ULL;
     return NEXUS_AC97_SUBMIT_OK;
 }

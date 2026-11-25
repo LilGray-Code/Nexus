@@ -1,5 +1,7 @@
 #include "wifi_pci.h"
 
+#include <stddef.h>
+
 #include "pci.h"
 
 static struct nexus_wifi_pci_candidate

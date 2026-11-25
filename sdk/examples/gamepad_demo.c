@@ -1,5 +1,7 @@
 #include "nexus/app.h"
 
+#include <stdbool.h>
+
 #define FRAME_WIDTH 256U
 #define FRAME_HEIGHT 192U
 

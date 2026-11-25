@@ -333,7 +333,10 @@ static void test_dns_cache_ttl_and_link_reset(void) {
     uint8_t result[4] = {0U, 0U, 0U, 0U};
 
     fake_ticks = 100U;
-    dns_cache_store("WWW.Example.COM.", address, 60U);
+    char normalized[NET_DNS_HOSTNAME_MAX + 1U];
+    assert(dns_normalize_hostname("WWW.Example.COM.", normalized));
+    assert(dns_name_equal(normalized, "www.example.com"));
+    dns_cache_store(normalized, address, 60U);
     assert(dns_cache_lookup("www.example.com", result));
     assert(equal_bytes(result, address, sizeof(address)));
     assert(!dns_cache_lookup("other.example.com", result));

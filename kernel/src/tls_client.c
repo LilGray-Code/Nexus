@@ -23,18 +23,18 @@
  * Optional diagnostics: the freestanding kernel supplies these serial
  * routines, while host-only TLS unit tests intentionally do not link them.
  */
-extern void tls_trace_text(const char *text) __attribute__((weak));
-extern void tls_trace_hex(uint64_t value) __attribute__((weak));
+extern void serial_write(const char *text) __attribute__((weak));
+extern void serial_write_hex(uint64_t value) __attribute__((weak));
 
 static unsigned int tls_receive_trace_events;
 static unsigned int tls_app_read_trace_events;
 
 static void tls_trace_text(const char *text) {
-    if (serial_write != NULL) tls_trace_text(text);
+    if (serial_write != NULL) serial_write(text);
 }
 
 static void tls_trace_hex(uint64_t value) {
-    if (serial_write_hex != NULL) tls_trace_hex(value);
+    if (serial_write_hex != NULL) serial_write_hex(value);
 }
 
 static void secure_zero(void *memory, size_t length) {

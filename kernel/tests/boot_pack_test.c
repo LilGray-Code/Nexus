@@ -48,7 +48,7 @@ static void make_pack(uint8_t image[128]) {
                crc32_bytes(image + header_size, sizeof(payload) - 1U));
 }
 int main(void) {
-    uint8_t image[96];
+    uint8_t image[128];
     make_pack(image);
     const uint32_t image_size = HEADER_BYTES + RECORD_BYTES +
                                 (uint32_t)(sizeof("hello from NXSPACK1") - 1U);

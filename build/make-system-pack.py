@@ -14,6 +14,7 @@ HEADER_SIZE = 32
 RECORD_SIZE = 48
 MAX_PACK_BYTES = 2 * 1024 * 1024
 MAX_FILES = 32
+MAX_NATIVE_EXECUTABLE_BYTES = 1024 * 1024
 NAME_RE = re.compile(r"^[A-Z0-9_.-]{1,31}$")
 
 
@@ -46,7 +47,7 @@ def build_pack(files: list[tuple[str, Path]]) -> bytes:
         "ABI=1",
         f"FILE_COUNT={len(ordered) + 1}",
     ]
-    manifest_lines.extend(f"FILE={name}" for name in names)
+    manifest_lines.extend(f"FILE={name}" for name in ["SYSTEM.MAN", *names])
     manifest = ("\n".join(manifest_lines) + "\n").encode("ascii")
     content = [("SYSTEM.MAN", manifest)]
     for name, path in ordered:
@@ -54,6 +55,10 @@ def build_pack(files: list[tuple[str, Path]]) -> bytes:
         if not data:
             raise ValueError(f"empty system-pack input: {path}")
         if name.endswith(".ELF"):
+            if len(data) > MAX_NATIVE_EXECUTABLE_BYTES:
+                raise ValueError(
+                    f"{path} exceeds the current 1 MiB native process-image limit"
+                )
             if len(data) < 64 or data[:6] != b"\x7fELF\x02\x01":
                 raise ValueError(f"{path} is not a little-endian ELF64 image")
             if struct.unpack_from("<H", data, 18)[0] != 62:

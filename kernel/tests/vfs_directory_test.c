@@ -2,6 +2,7 @@
 #include "fat32.h"
 #include "nxfs.h"
 #include "vfs.h"
+#include "boot_pack.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -253,6 +254,47 @@ static void read_current_bytes(const char *name, const uint8_t *expected,
     vfs_close(&file);
 }
 
+
+static uint32_t pack_test_crc32(const uint8_t *data, size_t length) {
+    uint32_t crc = 0xFFFFFFFFU;
+    for (size_t i = 0U; i < length; ++i) {
+        crc ^= data[i];
+        for (unsigned bit = 0U; bit < 8U; ++bit)
+            crc = (crc >> 1) ^ ((crc & 1U) ? 0xEDB88320U : 0U);
+    }
+    return ~crc;
+}
+static void pack_test_write_le32(uint8_t *p, uint32_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+    p[2] = (uint8_t)(value >> 16);
+    p[3] = (uint8_t)(value >> 24);
+}
+static void make_boot_pack(uint8_t image[128], uint32_t *image_size) {
+    static const uint8_t payload[] = "immutable bundled system file";
+    const uint32_t header = 32U + 48U;
+    const uint32_t total = header + (uint32_t)(sizeof(payload) - 1U);
+    memset(image, 0, 128U);
+    const uint8_t magic[8] = {'N','X','S','P','A','C','K','1'};
+    memcpy(image, magic, sizeof(magic));
+    pack_test_write_le32(image + 8U, 1U);
+    pack_test_write_le32(image + 12U, header);
+    pack_test_write_le32(image + 16U, total);
+    pack_test_write_le32(image + 20U, 1U);
+    uint8_t *record = image + 32U;
+    memcpy(record, "BUNDLED.TXT", sizeof("BUNDLED.TXT") - 1U);
+    pack_test_write_le32(record + 32U, header);
+    pack_test_write_le32(record + 36U, (uint32_t)(sizeof(payload) - 1U));
+    pack_test_write_le32(record + 40U,
+                         pack_test_crc32(payload, sizeof(payload) - 1U));
+    pack_test_write_le32(record + 44U, 0U);
+    pack_test_write_le32(image + 24U, pack_test_crc32(record, 48U));
+    memcpy(image + header, payload, sizeof(payload) - 1U);
+    pack_test_write_le32(image + 28U,
+                         pack_test_crc32(payload, sizeof(payload) - 1U));
+    *image_size = total;
+}
+
 int main(void) {
     struct nexus_block_device device = {0};
     memcpy(device.name, "VFS-TEST", sizeof("VFS-TEST"));
@@ -274,12 +316,25 @@ int main(void) {
     memcpy(partition.type_guid, nxfs_guid, sizeof(nxfs_guid));
 
     assert(nxfs_format(&device, &partition));
+    uint8_t system_pack[128];
+    uint32_t system_pack_size = 0U;
+    make_boot_pack(system_pack, &system_pack_size);
+    assert(nexus_boot_pack_init(system_pack, system_pack_size));
     assert(vfs_mount_root_nxfs(&device, &partition));
     assert(vfs_current_directory_writable());
-    assert(vfs_root_entry_count() == 0U);
+    assert(vfs_root_entry_count() == 1U);
+    struct nexus_vfs_dirent bundled_entry;
+    assert(find_entry("BUNDLED.TXT", &bundled_entry));
+    assert(bundled_entry.type == NEXUS_VFS_FILE);
+    assert(!vfs_file_writable("BUNDLED.TXT"));
+    read_current_file("BUNDLED.TXT", "immutable bundled system file");
+    assert(!vfs_remove_file("BUNDLED.TXT"));
     assert(vfs_create_directory("DOCUMENTS"));
     assert(find_entry("DOCUMENTS", NULL));
     assert(vfs_enter_directory("DOCUMENTS"));
+    assert(!find_entry("BUNDLED.TXT", NULL));
+    struct nexus_vfs_file hidden_system_file;
+    assert(!vfs_open_readonly("BUNDLED.TXT", &hidden_system_file));
 
     char path[96];
     assert(vfs_current_path(path, sizeof(path)));
@@ -353,6 +408,8 @@ int main(void) {
     /* Reboot-equivalent remount: VFS path resets but nested metadata persists. */
     nxfs_unmount();
     assert(vfs_mount_root_nxfs(&device, &partition));
+    assert(find_entry("BUNDLED.TXT", &bundled_entry));
+    read_current_file("BUNDLED.TXT", "immutable bundled system file");
     assert(vfs_open_root_readonly("NEXUS.CFG", &root_file));
     memset(root_config, 0, sizeof(root_config));
     root_bytes = 0U;

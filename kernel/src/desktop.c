@@ -17,6 +17,7 @@
 #include "browser_history.h"
 #include "download.h"
 #include "app_store.h"
+#include "boot_pack.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -2175,8 +2176,10 @@ static void draw_shell(void) {
         const char *storage_status = vfs_nxfs_mounted()
             ? (vfs_nxfs_writable() ? "PERSISTENT NXFS READY"
                                    : "NXFS READ ONLY")
-            : (vfs_has_filesystem() ? "VOLATILE RAM STORAGE"
-                                    : "NO USER STORAGE");
+            : (nexus_boot_pack_ready()
+                ? "BUNDLED SYSTEM FILES / RAM OVERLAY"
+                : (vfs_has_filesystem() ? "VOLATILE RAM STORAGE"
+                                        : "NO USER STORAGE"));
         graphics_draw_text(text_x, text_y + 322U, storage_status,
                            1U, 170U, 225U, 190U);
         graphics_draw_text(text_x, text_y + 350U,
@@ -2443,7 +2446,9 @@ static void draw_shell(void) {
                                1, 108, 216, 229);
         } else if (vfs_has_filesystem()) {
             graphics_draw_text(text_x, text_y + 234U,
-                               "STORAGE: VOLATILE RAM FILESYSTEM",
+                               nexus_boot_pack_ready()
+                                   ? "STORAGE: SYSTEM PACK + RAM OVERLAY"
+                                   : "STORAGE: VOLATILE RAM FILESYSTEM",
                                1, 239, 177, 119);
         } else {
             graphics_draw_text(text_x, text_y + 234U,
@@ -3483,6 +3488,8 @@ static void scan_files_once(void) {
     refresh_files_listing();
     if (files_scan_ok) {
         serial_write("FILES: unified VFS volumes ready\r\n");
+    } else if (nexus_boot_pack_ready()) {
+        serial_write("FILES: bundled read-only system files ready; user storage is unavailable\r\n");
     } else if (files_vfs_ready) {
         serial_write("FILES: using volatile RAM filesystem\r\n");
     } else {
@@ -4810,7 +4817,7 @@ static void terminal_execute(void) {
         terminal_output[out] = '\0';
     } else if (terminal_input[0]=='l' && terminal_input[1]=='s' &&
                terminal_input[2]=='\0') {
-        if (!vfs_has_filesystem()) scan_files_once();
+        if (!vfs_root_mounted() && !vfs_nxfs_mounted()) scan_files_once();
         size_t out=0;
         if (!vfs_has_filesystem()) {
             const char *s="no mounted volume";
@@ -4880,7 +4887,7 @@ static void terminal_execute(void) {
         terminal_output[out] = '\0';
     } else if (terminal_input[0]=='r' && terminal_input[1]=='u' &&
                terminal_input[2]=='n' && terminal_input[3]==' ') {
-        if (!vfs_root_mounted()) scan_files_once();
+        if (!vfs_root_mounted() && !vfs_nxfs_mounted()) scan_files_once();
         struct nexus_process_result result;
         enum nexus_process_error error = NEXUS_PROCESS_ERROR_NONE;
         if (process_execute_file(terminal_input + 4, &result, &error)) {
@@ -4928,7 +4935,7 @@ static void terminal_execute(void) {
         }
     } else if (terminal_input[0]=='c' && terminal_input[1]=='a' &&
                terminal_input[2]=='t' && terminal_input[3]==' ') {
-        if (!vfs_root_mounted()) scan_files_once();
+        if (!vfs_root_mounted() && !vfs_nxfs_mounted()) scan_files_once();
         const char *name=terminal_input+4;
         struct nexus_vfs_file file;
         if(vfs_open_readonly(name,&file)) {

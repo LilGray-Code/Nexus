@@ -10,7 +10,9 @@ on:
       - "kernel/tests/driver_manager_test.c"
       - "kernel/tests/service_manager_test.c"
       - "kernel/src/boot_pack.*"
+      - "kernel/src/vfs.*"
       - "kernel/tests/boot_pack_test.c"
+      - "kernel/tests/vfs_directory_test.c"
       - "build/make-system-pack.py"
       - "build/test-system-pack.py"
       - ".github/workflows/nexus-platform-foundations.yml"
@@ -43,6 +45,13 @@ jobs:
             -o /tmp/nexus-boot-pack-test
           /tmp/nexus-boot-pack-test
           python3 build/test-system-pack.py
+      - name: Test read-only system-pack VFS overlay
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/vfs.c kernel/src/nxfs.c \
+            kernel/src/boot_pack.c kernel/tests/vfs_directory_test.c \
+            -o /tmp/nexus-vfs-directory-test
+          /tmp/nexus-vfs-directory-test
       - name: Test dependency-aware service supervisor
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

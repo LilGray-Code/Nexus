@@ -248,7 +248,8 @@ jobs:
         run: |
           /tmp/nexus-installer-storage-test build/nexus-kernel.elf \
             build/limine-binary/BOOTX64.EFI build/limine-binary/limine-bios-hdd.bin \
-            build/limine-binary/limine-bios.sys /tmp/nexus-installed-uefi.img
+            build/limine-binary/limine-bios.sys build/system-pack/NEXUS-SYSTEM.NXP \
+            /tmp/nexus-installed-uefi.img
           echo "Installed disk MBR:"
           od -An -tx1 -N512 /tmp/nexus-installed-uefi.img
           echo "Installed disk GPT header signature:"

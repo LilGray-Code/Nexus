@@ -677,7 +677,10 @@ size_t vfs_root_entry_count(void) {
     if (directory_backend == VFS_DIRECTORY_NXFS) {
         char parent[NEXUS_VFS_NAME_MAX];
         if (!vfs_nxfs_current_path(parent)) return 0U;
-        return vfs_nxfs_child_count(parent);
+        size_t count = vfs_nxfs_child_count(parent);
+        /* The immutable system pack is overlaid at the user Data root only. */
+        if (parent[0] == '\0') count += nexus_boot_pack_count();
+        return count;
     }
     size_t count = 0U;
     for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i)
@@ -711,18 +714,35 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
         char parent[NEXUS_VFS_NAME_MAX];
         char leaf[NEXUS_VFS_NAME_MAX];
         if (!vfs_nxfs_current_path(parent)) return false;
-        const struct nexus_nxfs_entry *nx_entry =
-            vfs_nxfs_child_at(parent, index, leaf);
-        if (nx_entry == NULL) return false;
+        const size_t child_count = vfs_nxfs_child_count(parent);
+        if (index < child_count) {
+            const struct nexus_nxfs_entry *nx_entry =
+                vfs_nxfs_child_at(parent, index, leaf);
+            if (nx_entry == NULL) return false;
+            size_t n = 0U;
+            while (n < NEXUS_VFS_NAME_MAX - 1U && leaf[n] != '\0') {
+                entry->name[n] = leaf[n];
+                ++n;
+            }
+            entry->name[n] = '\0';
+            entry->type = nx_entry->directory
+                ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
+            entry->size = nx_entry->size;
+            entry->first_cluster = 0U;
+            return true;
+        }
+        if (parent[0] != '\0') return false;
+        const struct nexus_boot_pack_entry *boot =
+            nexus_boot_pack_entry_at(index - child_count);
+        if (boot == NULL) return false;
         size_t n = 0U;
-        while (n < NEXUS_VFS_NAME_MAX - 1U && leaf[n] != '\0') {
-            entry->name[n] = leaf[n];
+        while (n < NEXUS_VFS_NAME_MAX - 1U && boot->name[n] != '\0') {
+            entry->name[n] = boot->name[n];
             ++n;
         }
         entry->name[n] = '\0';
-        entry->type = nx_entry->directory
-            ? NEXUS_VFS_DIRECTORY : NEXUS_VFS_FILE;
-        entry->size = nx_entry->size;
+        entry->type = NEXUS_VFS_FILE;
+        entry->size = boot->size;
         entry->first_cluster = 0U;
         return true;
     }
@@ -823,7 +843,8 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
             }
         }
     }
-    if (directory_backend == VFS_DIRECTORY_ROOT) {
+    if (directory_backend == VFS_DIRECTORY_ROOT ||
+        (directory_backend == VFS_DIRECTORY_NXFS && directory_depth == 0U)) {
         const struct nexus_boot_pack_entry *boot = nexus_boot_pack_find(name);
         if (boot != NULL) {
             file->filesystem_entry = boot;

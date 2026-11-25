@@ -250,6 +250,12 @@ bool nexus_smp_init(struct limine_mp_response *response) {
         return true;
     }
 
+    /*
+     * Publish all AP slot metadata and the final expected count before
+     * releasing any secondary processor. Limine may invoke goto_address
+     * immediately, so setting expected_cpu_count after the first AP release
+     * lets a fast AP observe the old single-CPU limit and halt itself.
+     */
     uint32_t next_slot = 1U;
     lapic_ids[0] = response->bsp_lapic_id;
     for (uint32_t i = 0U; i < capacity; ++i) {
@@ -258,10 +264,18 @@ bool nexus_smp_init(struct limine_mp_response *response) {
         const uint32_t slot = next_slot++;
         lapic_ids[slot] = info->lapic_id;
         info->extra_argument = slot;
-        __atomic_store_n(&info->goto_address, smp_ap_entry, __ATOMIC_RELEASE);
     }
-
     expected_cpu_count = next_slot;
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+
+    /* Second pass is the release point for each AP. */
+    uint32_t slot = 1U;
+    for (uint32_t i = 0U; i < capacity; ++i) {
+        if (i == bsp_index) continue;
+        __atomic_store_n(&response->cpus[i]->goto_address,
+                         smp_ap_entry, __ATOMIC_RELEASE);
+        ++slot;
+    }
     for (uint64_t spin = 0U; spin < SMP_WAIT_SPINS; ++spin) {
         if (__atomic_load_n(&online_cpu_count, __ATOMIC_ACQUIRE) >=
             expected_cpu_count) break;

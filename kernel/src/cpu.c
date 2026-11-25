@@ -151,8 +151,7 @@ bool nexus_cpu_init(void) {
         /* AVX-512 requires both CPUID support and OS-managed ZMM/opmask
          * state. Merely detecting the silicon feature is not sufficient.
          */
-        const bool avx512_state_enabled =
-            avx_state_enabled && (xcr0 & 0xE0U) == 0xE0U;
+        const bool avx512_state_enabled = false;
         set_feature(NEXUS_CPU_FEATURE_AVX512F,
             avx512_state_enabled && (max7_ebx & (1U << 16)) != 0U);
         set_feature(NEXUS_CPU_FEATURE_AVX512DQ,

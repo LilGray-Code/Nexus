@@ -955,6 +955,7 @@ static void desktop_transition_view(enum desktop_view view,
     } else if (view == DESKTOP_STORE) {
         store_selected_index = store_selected_index < nexus_store_count()
             ? store_selected_index : 0U;
+        desktop_store_refresh();
     } else if (view == DESKTOP_SETTINGS) {
         scan_files_once();
         desktop_preferences_load();
@@ -5147,6 +5148,59 @@ static void installer_apply_typed_erase(void) {
 }
 #endif
 
+
+static void desktop_store_refresh(void) {
+    for (size_t i = 0U; i < NEXUS_STORE_MAX_APPS; ++i)
+        store_installed[i] = nexus_store_is_installed(i);
+}
+
+static void desktop_store_install_selected(void) {
+    if (store_selected_index >= nexus_store_count()) return;
+    if (nexus_store_install_shortcut(store_selected_index)) {
+        store_installed[store_selected_index] = true;
+        store_status = vfs_nxfs_writable()
+            ? "Website shortcut saved to the persistent Nexus Data volume."
+            : "Website shortcut saved to temporary RAM storage.";
+    } else {
+        store_status =
+            "Install blocked: a reserved shortcut name is occupied or storage is unavailable.";
+    }
+}
+
+static void desktop_store_remove_selected(void) {
+    if (store_selected_index >= nexus_store_count()) return;
+    if (nexus_store_uninstall_shortcut(store_selected_index)) {
+        store_installed[store_selected_index] = false;
+        store_status = "Nexus website shortcut removed.";
+    } else {
+        store_status = "No removable Nexus shortcut was found.";
+    }
+}
+
+static void desktop_store_open_selected(void) {
+    char target[NEXUS_STORE_URL_MAX];
+    if (!nexus_store_copy_url(store_selected_index,
+                              target, sizeof(target))) {
+        store_status = "This Store entry has no valid HTTPS destination.";
+        return;
+    }
+    size_t length = 0U;
+    while (target[length] != '\0' &&
+           length < sizeof(browser_address) - 1U) {
+        browser_address[length] = target[length];
+        ++length;
+    }
+    if (target[length] != '\0') {
+        store_status = "Website address exceeds the browser URL limit.";
+        return;
+    }
+    browser_address[length] = '\0';
+    browser_address_length = length;
+    browser_address_edited = false;
+    desktop_open_view(DESKTOP_BROWSER);
+    browser_navigate(true);
+}
+
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
     struct nexus_input_event normalized_event;
@@ -5425,6 +5479,37 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 }
             }
             if (changed) desktop_preferences_save();
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (clicked && active_view == DESKTOP_STORE) {
+            const struct desktop_window_rect bounds = desktop_window_bounds();
+            const int64_t relative_x =
+                pointer_x - (int64_t)(bounds.x + 32U);
+            const int64_t relative_y =
+                pointer_y - (int64_t)(bounds.y + 82U);
+            const uint64_t row_top = 56U;
+            const uint64_t row_height = 40U;
+            if (relative_x >= 0 && relative_x < 310 &&
+                relative_y >= (int64_t)row_top &&
+                relative_y < (int64_t)(row_top +
+                    nexus_store_count() * row_height)) {
+                const size_t selected =
+                    (size_t)((uint64_t)relative_y - row_top) /
+                    (size_t)row_height;
+                if (selected < nexus_store_count())
+                    store_selected_index = selected;
+            } else if (relative_x >= 330 && relative_y >= 250 &&
+                       relative_y < 278) {
+                if (relative_x < 438)
+                    desktop_store_install_selected();
+                else if (relative_x >= 448 && relative_x < 556)
+                    desktop_store_open_selected();
+            } else if (relative_x >= 330 && relative_x < 438 &&
+                       relative_y >= 284 && relative_y < 306) {
+                desktop_store_remove_selected();
+            }
             draw_shell();
             draw_pointer();
             return;
@@ -5935,6 +6020,38 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (active_view != DESKTOP_INSTALLER &&
         event->scancode >= 0x3BU && event->scancode <= 0x3FU) {
         desktop_open_app((size_t)(event->scancode - 0x3BU));
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (active_view != DESKTOP_INSTALLER && event->scancode == 0x41U) {
+        desktop_open_app(5U);
+        draw_shell();
+        draw_pointer();
+        return;
+    }
+    if (active_view == DESKTOP_STORE) {
+        if ((event->scancode & 0x80U) != 0U) return;
+        if (event->scancode == 0x01U) {
+            desktop_open_view(DESKTOP_HOME);
+        } else if (event->scancode == 0x48U) {
+            if (store_selected_index > 0U) --store_selected_index;
+        } else if (event->scancode == 0x50U) {
+            if (store_selected_index + 1U < nexus_store_count())
+                ++store_selected_index;
+        } else if (event->scancode == 0x17U) {
+            desktop_store_install_selected();
+        } else if (event->scancode == 0x16U) {
+            desktop_store_remove_selected();
+        } else if (event->scancode == 0x1CU ||
+                   event->scancode == 0x18U) {
+            desktop_store_open_selected();
+            draw_shell();
+            draw_pointer();
+            return;
+        } else {
+            return;
+        }
         draw_shell();
         draw_pointer();
         return;

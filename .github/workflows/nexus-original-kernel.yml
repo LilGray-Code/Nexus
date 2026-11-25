@@ -783,9 +783,14 @@ jobs:
             -machine pc -cpu qemu64 -m 512M \
             -drive file=/tmp/nexus-ui-target.img,if=ide,index=0,format=raw \
             -boot c -display none -serial file:installer-ui-installed-bios.log \
-            -monitor none -no-reboot -no-shutdown
+            -monitor none -no-reboot -no-shutdown \
+            >/tmp/nexus-ui-installed-bios-qemu.log 2>&1
           status=$?
           set -e
+          echo "Installed BIOS serial log:"
+          cat installer-ui-installed-bios.log || true
+          echo "Installed BIOS QEMU diagnostics:"
+          cat /tmp/nexus-ui-installed-bios-qemu.log || true
           if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
             echo "UI-installed BIOS target exited unexpectedly: $status"
             exit "$status"

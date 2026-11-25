@@ -1298,6 +1298,127 @@ failed:
     return false;
 }
 
+static void xhci_format_storage_identity(
+    uint8_t port, char name[NEXUS_BLOCKDEV_NAME_MAX],
+    char stable_id[NEXUS_BLOCKDEV_ID_MAX]) {
+    static const char hex[] = "0123456789ABCDEF";
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_NAME_MAX; ++i)
+        name[i] = '\0';
+    for (size_t i = 0U; i < NEXUS_BLOCKDEV_ID_MAX; ++i)
+        stable_id[i] = '\0';
+    name[0] = 'U'; name[1] = 'S'; name[2] = 'B';
+    name[3] = hex[(port >> 4) & 0x0FU];
+    name[4] = hex[port & 0x0FU];
+    const char prefix[] = "USB-MSC-PORT-";
+    size_t length = 0U;
+    while (prefix[length] != '\0' &&
+           length + 1U < NEXUS_BLOCKDEV_ID_MAX) {
+        stable_id[length] = prefix[length];
+        ++length;
+    }
+    if (length + 2U < NEXUS_BLOCKDEV_ID_MAX) {
+        stable_id[length++] = hex[(port >> 4) & 0x0FU];
+        stable_id[length++] = hex[port & 0x0FU];
+    }
+    stable_id[length] = '\0';
+}
+
+static bool xhci_enumerate_msc_port(struct xhci_controller *xhci,
+                                   uint8_t port_number, uint8_t speed) {
+    if (xhci == NULL || xhci->storage_active) return false;
+    struct xhci_hid_device *device = &xhci->storage;
+    *device = (struct xhci_hid_device){0};
+    if (!xhci_command_enable_slot(xhci, &device->slot_id)) return false;
+
+    const uint16_t default_packet = speed == 3U ? 64U :
+                                   speed == 4U ? 512U : 8U;
+    if (!xhci_setup_device_context(xhci, device, port_number, speed,
+                                   default_packet)) goto failed;
+
+    uint8_t descriptor[18] = {0U};
+    if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U, 8U, descriptor))
+        goto failed;
+    const uint16_t descriptor_packet = speed == 4U ? 512U :
+        (descriptor[7] == 0U ? default_packet : descriptor[7]);
+    if (descriptor_packet != default_packet &&
+        !xhci_update_ep0_packet(xhci, device, descriptor_packet)) goto failed;
+    if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U,
+                             sizeof(descriptor), descriptor)) goto failed;
+
+    uint8_t config_header[9] = {0U};
+    if (!xhci_get_descriptor(xhci, device, 2U, 0U, 0U,
+                             sizeof(config_header), config_header)) goto failed;
+    const uint16_t total_length = (uint16_t)(
+        config_header[2] | ((uint16_t)config_header[3] << 8));
+    if (total_length < 9U || total_length > 512U) goto failed;
+
+    volatile uint8_t *config_buffer = NULL;
+    uint64_t config_buffer_physical = 0U;
+    if (!xhci_alloc_page(&config_buffer_physical, &config_buffer)) goto failed;
+    for (size_t i = 0U; i < XHCI_PAGE_SIZE; ++i)
+        config_buffer[i] = 0U;
+    if (!xhci_control_transfer(
+            xhci, device, 0x80U, 0x06U, 0x0200U, 0U,
+            (void *)(uintptr_t)config_buffer, total_length)) {
+        (void)memory_free_page(config_buffer_physical);
+        goto failed;
+    }
+
+    uint8_t interface_number = 0U;
+    uint8_t configuration_value = 0U;
+    uint8_t bulk_in_address = 0U;
+    uint8_t bulk_out_address = 0U;
+    uint16_t bulk_in_packet = 0U;
+    uint16_t bulk_out_packet = 0U;
+    const bool mass_storage = xhci_find_mass_storage(
+        (const uint8_t *)(uintptr_t)config_buffer, total_length,
+        &interface_number, &configuration_value,
+        &bulk_in_address, &bulk_in_packet,
+        &bulk_out_address, &bulk_out_packet);
+    (void)memory_free_page(config_buffer_physical);
+    if (!mass_storage) goto failed;
+
+    if (!xhci_control_transfer(xhci, device, 0x00U, 0x09U,
+                               configuration_value, 0U, NULL, 0U))
+        goto failed;
+
+    device->kind = XHCI_HID_MASS_STORAGE;
+    device->interface_number = interface_number;
+    if (!xhci_configure_bulk_endpoints(
+            xhci, device, bulk_in_address, bulk_in_packet,
+            bulk_out_address, bulk_out_packet)) goto failed;
+
+    char device_name[NEXUS_BLOCKDEV_NAME_MAX];
+    char stable_id[NEXUS_BLOCKDEV_ID_MAX];
+    xhci_format_storage_identity(port_number, device_name, stable_id);
+    const struct nexus_usb_msc_transport transport = {
+        .context = device,
+        .bulk_in = xhci_msc_bulk_in,
+        .bulk_out = xhci_msc_bulk_out,
+        .reset = xhci_msc_reset
+    };
+    struct nexus_usb_msc_transport identified = transport;
+    for (size_t i = 0U; i < sizeof(identified.device_name); ++i)
+        identified.device_name[i] = device_name[i];
+    for (size_t i = 0U; i < sizeof(identified.stable_id); ++i)
+        identified.stable_id[i] = stable_id[i];
+
+    device->active = true;
+    if (!nexus_usb_msc_attach(&identified)) goto failed;
+    xhci->storage_active = true;
+
+    serial_write("NEXUS USB MASS STORAGE READY: ");
+    serial_write(device_name);
+    serial_write(" ");
+    serial_write(stable_id);
+    serial_write("\r\n");
+    return true;
+
+failed:
+    xhci_release_hid_device(xhci, device);
+    return false;
+}
+
 static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     struct xhci_controller *xhci = &controller;
     *xhci = (struct xhci_controller){0};

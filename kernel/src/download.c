@@ -90,22 +90,35 @@ static bool filename_from_url(const char *url, char *candidate,
     return true;
 }
 
+static bool content_type_is(const char *actual, const char *expected) {
+    if (actual == NULL || expected == NULL) return false;
+    size_t i = 0U;
+    while (expected[i] != '\\0') {
+        if (actual[i] == '\\0' || lower_ascii(actual[i]) != expected[i])
+            return false;
+        ++i;
+    }
+    return actual[i] == '\\0' || actual[i] == ';' ||
+           actual[i] == ' ' || actual[i] == '\\t';
+}
+
 static const char *default_extension(const char *content_type) {
     if (content_type == NULL) return ".BIN";
-    if (equal_ci(content_type, "application/pdf") ||
-        equal_ci(content_type, "application/x-pdf")) return ".PDF";
-    if (equal_ci(content_type, "application/zip") ||
-        equal_ci(content_type, "application/x-zip-compressed")) return ".ZIP";
-    if (equal_ci(content_type, "application/json")) return ".JSON";
-    if (equal_ci(content_type, "text/plain")) return ".TXT";
-    if (equal_ci(content_type, "text/html") ||
-        equal_ci(content_type, "application/xhtml+xml")) return ".HTML";
-    if (equal_ci(content_type, "image/png")) return ".PNG";
-    if (equal_ci(content_type, "image/jpeg")) return ".JPG";
-    if (equal_ci(content_type, "image/gif")) return ".GIF";
-    if (equal_ci(content_type, "image/webp")) return ".WEBP";
-    if (equal_ci(content_type, "application/x-msdownload") ||
-        equal_ci(content_type, "application/vnd.microsoft.portable-executable"))
+    if (content_type_is(content_type, "application/pdf") ||
+        content_type_is(content_type, "application/x-pdf")) return ".PDF";
+    if (content_type_is(content_type, "application/zip") ||
+        content_type_is(content_type, "application/x-zip-compressed")) return ".ZIP";
+    if (content_type_is(content_type, "application/json")) return ".JSON";
+    if (content_type_is(content_type, "text/plain")) return ".TXT";
+    if (content_type_is(content_type, "text/html") ||
+        content_type_is(content_type, "application/xhtml+xml")) return ".HTML";
+    if (content_type_is(content_type, "image/png")) return ".PNG";
+    if (content_type_is(content_type, "image/jpeg")) return ".JPG";
+    if (content_type_is(content_type, "image/gif")) return ".GIF";
+    if (content_type_is(content_type, "image/webp")) return ".WEBP";
+    if (content_type_is(content_type, "application/x-msdownload") ||
+        content_type_is(content_type,
+                        "application/vnd.microsoft.portable-executable"))
         return ".EXE";
     return ".BIN";
 }

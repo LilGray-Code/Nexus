@@ -28,6 +28,19 @@ static bool bytes_equal(const uint8_t *a, const char *b, size_t length) {
     return true;
 }
 
+/*
+ * Compare cryptographic digests without returning at the first differing byte.
+ * This avoids making the mismatch position observable through comparison time.
+ */
+static bool digest_equal(const uint8_t *left, const uint8_t *right,
+                         size_t length) {
+    if (left == NULL || right == NULL) return false;
+    uint8_t difference = 0U;
+    for (size_t i = 0U; i < length; ++i)
+        difference |= (uint8_t)(left[i] ^ right[i]);
+    return difference == 0U;
+}
+
 static bool copy_value(char *destination, size_t capacity,
                        const uint8_t *value, size_t length) {
     if (destination == NULL || value == NULL || capacity == 0U ||
@@ -289,9 +302,10 @@ bool nexus_package_verify(const void *package_bytes, size_t package_length,
     const uint8_t *bytes = (const uint8_t *)package_bytes;
     uint8_t digest[NEXUS_PACKAGE_DIGEST_BYTES];
     nexus_sha256(bytes + parsed.payload_offset, parsed.payload_size, digest);
-    for (size_t i = 0U; i < sizeof(digest); ++i) {
-        if (digest[i] != parsed.payload_sha256[i]) return false;
-    }
+    const bool digest_matches =
+        digest_equal(digest, parsed.payload_sha256, sizeof(digest));
+    for (size_t i = 0U; i < sizeof(digest); ++i) digest[i] = 0U;
+    if (!digest_matches) return false;
     if (!verify_signature(bytes, &parsed, verifier, verifier_context))
         return false;
     if (manifest != NULL) *manifest = parsed;
@@ -430,9 +444,10 @@ static bool installed_payload_matches(
     if (!okay) return false;
     uint8_t digest[NEXUS_PACKAGE_DIGEST_BYTES];
     nexus_sha256_final(&hash, digest);
-    for (size_t i = 0U; i < sizeof(digest); ++i)
-        if (digest[i] != manifest->payload_sha256[i]) return false;
-    return true;
+    const bool matches =
+        digest_equal(digest, manifest->payload_sha256, sizeof(digest));
+    for (size_t i = 0U; i < sizeof(digest); ++i) digest[i] = 0U;
+    return matches;
 }
 
 bool nexus_package_is_installed(const char *id,

@@ -145,6 +145,17 @@ static bool valid_version(const char *version) {
     return true;
 }
 
+static bool strings_equal(const char *left, const char *right) {
+    if (left == NULL || right == NULL) return false;
+    size_t i = 0U;
+    while (i < NEXUS_VFS_NAME_MAX) {
+        if (left[i] != right[i]) return false;
+        if (left[i] == '\0') return true;
+        ++i;
+    }
+    return false;
+}
+
 static bool valid_key_id(const char *key_id) {
     if (key_id == NULL || key_id[0] == '\0') return false;
     size_t length = 0U;
@@ -284,6 +295,10 @@ static bool make_paths(const struct nexus_package_manifest *manifest,
                        char executable[32], char receipt[32]) {
     if (manifest == NULL || !valid_id(manifest->id) ||
         !valid_version(manifest->version)) return false;
+    for (size_t i = 0U; i < 32U; ++i) {
+        executable[i] = '\0';
+        receipt[i] = '\0';
+    }
     size_t out = 0U;
     const char prefix[] = "APPS/";
     for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
@@ -419,10 +434,7 @@ bool nexus_package_is_installed(const char *id,
                                 struct nexus_package_install_result *result) {
     if (!valid_id(id) || verifier == NULL || !vfs_nxfs_mounted()) return false;
     struct nexus_package_manifest manifest;
-    char executable[32], receipt[32];
-    struct nexus_package_manifest path_manifest = {0};
-    for (size_t i = 0U; id[i] != '\0'; ++i)
-        path_manifest.id[i] = id[i];
+    char executable[32] = {0}, receipt[32] = {0};
     const char prefix[] = "APPS/";
     size_t out = 0U;
     for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
@@ -436,8 +448,7 @@ bool nexus_package_is_installed(const char *id,
     uint8_t header[NEXUS_PACKAGE_HEADER_MAX];
     if (!read_receipt(receipt, header, &manifest, verifier,
                       verifier_context) ||
-        !bytes_equal((const uint8_t *)manifest.id, id,
-                     sizeof(manifest.id)) ||
+        !strings_equal(manifest.id, id) ||
         !make_paths(&manifest, executable, receipt) ||
         !installed_payload_matches(executable, &manifest)) return false;
 
@@ -505,8 +516,7 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
 
     /* Remove the old version only after the new signed receipt is durable. */
     if (receipt_exists && old_executable[0] != '\0' &&
-        !bytes_equal((const uint8_t *)old_executable, executable,
-                     sizeof(executable))) {
+        !strings_equal(old_executable, executable)) {
         (void)vfs_remove_root_path(old_executable);
     }
 

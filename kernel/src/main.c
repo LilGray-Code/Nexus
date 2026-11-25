@@ -19,6 +19,7 @@
 #include "memory.h"
 #include "pci.h"
 #include "gpu.h"
+#include "firmware.h"
 #include "virtio_net.h"
 #include "paging.h"
 #include "serial.h"
@@ -50,6 +51,15 @@ __attribute__((used, section(".limine_requests")))
 static volatile struct limine_rsdp_request rsdp_request = {
     .id = LIMINE_RSDP_REQUEST_ID, .revision = 0
 };
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_firmware_type_request firmware_type_request = {
+    .id = LIMINE_FIRMWARE_TYPE_REQUEST_ID, .revision = 0
+};
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_smbios_request smbios_request = {
+    .id = LIMINE_SMBIOS_REQUEST_ID, .revision = 0
+};
+
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_executable_file_request executable_file_request = {
     .id = LIMINE_EXECUTABLE_FILE_REQUEST_ID, .revision = 0
@@ -257,6 +267,28 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("NEXUS ACPI MADT READY\r\n");
+
+    const uint64_t firmware_type =
+        firmware_type_request.response != NULL
+            ? firmware_type_request.response->firmware_type : UINT64_MAX;
+    const void *smbios32 = smbios_request.response != NULL
+        ? smbios_request.response->entry_32 : NULL;
+    const void *smbios64 = smbios_request.response != NULL
+        ? smbios_request.response->entry_64 : NULL;
+    (void)nexus_firmware_init(firmware_type, smbios32, smbios64,
+                              rsdp_request.response->address);
+    const struct nexus_firmware_info *firmware = nexus_firmware_get_info();
+    serial_write("FIRMWARE: ");
+    serial_write(nexus_firmware_type_label());
+    if (firmware->smbios_present) {
+        serial_write(" SMBIOS ");
+        serial_write_hex(firmware->smbios_major);
+        serial_write(".");
+        serial_write_hex(firmware->smbios_minor);
+    } else {
+        serial_write(" SMBIOS UNAVAILABLE");
+    }
+    serial_write("\r\nNEXUS FIRMWARE INVENTORY READY\r\n");
 
     if (!pci_init()) {
         serial_write("ERROR: PCI configuration-space scan found no devices\r\n");

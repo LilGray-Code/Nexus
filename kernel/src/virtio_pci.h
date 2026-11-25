@@ -60,6 +60,7 @@ struct nexus_virtio_queue {
     volatile uint16_t *used_flags;
     volatile uint16_t *used_index_ptr;
     volatile struct nexus_virtq_used_element *used_ring;
+    volatile uint16_t *notify_address;
 };
 
 bool virtio_pci_open(const struct nexus_pci_device *pci,

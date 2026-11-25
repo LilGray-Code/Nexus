@@ -8,6 +8,8 @@ static uint64_t fake_ticks;
 static uint8_t queued_frame[NET_MAX_FRAME];
 static size_t queued_frame_length;
 static bool queued_frame_ready;
+static uint8_t last_sent_frame[NET_MAX_FRAME];
+static size_t last_sent_frame_length;
 static uint8_t remote_mac[6] = {0x02U,0xAAU,0xBBU,0xCCU,0xDDU,0xEEU};
 static const uint8_t remote_ip[4] = {192U,0U,2U,20U};
 static unsigned syn_transmissions;
@@ -132,8 +134,11 @@ static void queue_tcp_response(uint8_t flags, uint32_t sequence,
 }
 
 bool netdev_send_frame(const void *frame_data, size_t length) {
-    if (frame_data == NULL || length < NET_ETHERNET_HEADER) return false;
+    if (frame_data == NULL || length < NET_ETHERNET_HEADER ||
+        length > sizeof(last_sent_frame)) return false;
     const uint8_t *frame = (const uint8_t *)frame_data;
+    copy_bytes(last_sent_frame, frame, length);
+    last_sent_frame_length = length;
     if (read_be16(frame + 12U) != ETHERTYPE_IPV4 ||
         length < NET_ETHERNET_HEADER + NET_IPV4_HEADER) return true;
     const uint8_t *ip = frame + NET_ETHERNET_HEADER;
@@ -207,6 +212,7 @@ static void setup_network(void) {
     fake_ticks = 0U;
     queued_frame_length = 0U;
     queued_frame_ready = false;
+    last_sent_frame_length = 0U;
     syn_transmissions = 0U;
     data_transmissions = 0U;
     last_data_sequence = 0U;
@@ -490,6 +496,34 @@ static void test_dns_cache_ttl_and_link_reset(void) {
     assert(!dns_cache_lookup("capped.example", result));
 }
 
+static uint16_t last_sent_tcp_window(void) {
+    assert(last_sent_frame_length >= NET_ETHERNET_HEADER +
+           NET_IPV4_HEADER + NET_TCP_HEADER);
+    return read_be16(last_sent_frame + NET_ETHERNET_HEADER +
+                     NET_IPV4_HEADER + 14U);
+}
+
+static void test_tcp_advertised_window_tracks_buffer_and_updates(void) {
+    setup_network();
+    tcp_connection.active = true;
+    tcp_connection.connected = true;
+    tcp_connection.remote_port = 443U;
+    tcp_connection.local_port = 52002U;
+    copy_bytes(tcp_connection.remote_ipv4, remote_ip, sizeof(remote_ip));
+
+    tcp_connection.receive_length = 3000U;
+    tcp_connection.reorder_length = 500U;
+    assert(send_tcp_segment(TCP_FLAG_ACK, NULL, 0U));
+    assert(last_sent_tcp_window() == 596U);
+
+    uint8_t output[1000];
+    size_t received = net_tcp_receive(output, sizeof(output));
+    assert(received == sizeof(output));
+    assert(tcp_connection.receive_length == 2000U);
+    assert(tcp_connection.reorder_length == 500U);
+    assert(last_sent_tcp_window() == 1596U);
+}
+
 static void test_tcp_out_of_order_reassembly_and_ack(void) {
     setup_network();
     tcp_connection.active = true;
@@ -631,6 +665,7 @@ int main(void) {
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
     test_receive_wait_reports_timeout_data_and_eof();
+    test_tcp_advertised_window_tracks_buffer_and_updates();
     test_tcp_out_of_order_reassembly_and_ack();
     test_tcp_reassembles_multiple_queued_segments();
     test_dns_question_validation_and_cname_chains();

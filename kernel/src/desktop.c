@@ -89,6 +89,7 @@ static bool desktop_preferences_persistent;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
 static bool keyboard_left_control;
+static bool keyboard_left_control_down;
 static bool keyboard_right_control;
 static bool keyboard_alt;
 static bool keyboard_left_alt_down;
@@ -1847,18 +1848,18 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 372U,
                            "T: TOGGLE THEME     A: CYCLE ACCENT",
                            1U, 170U, 191U, 211U);
-        graphics_draw_text(text_x, text_y + 396U, "DISPLAY ADAPTER:",
+        graphics_draw_text(text_x, text_y + 390U, "DISPLAY ADAPTER:",
                            1U, 133U, 164U, 190U);
-        graphics_draw_text(text_x + 102U, text_y + 396U,
+        graphics_draw_text(text_x + 102U, text_y + 390U,
                            gpu_primary_name(), 1U,
                            233U, 243U, 252U);
-        graphics_draw_text(text_x, text_y + 420U,
+        graphics_draw_text(text_x, text_y + 414U,
                            gpu_render_path_name(), 1U,
                            108U, 216U, 229U);
-        graphics_draw_text(text_x, text_y + 444U,
+        graphics_draw_text(text_x, text_y + 438U,
                            gpu_hardware_acceleration_available()
                                ? "HARDWARE RENDERING ENABLED"
-                               : "GPU 2D/3D DRIVER NOT AVAILABLE - CPU FALLBACK",
+                               : "GPU 2D/3D DRIVER NOT AVAILABLE",
                            1U, 239U, 177U, 119U);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
@@ -2066,6 +2067,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     keyboard_left_shift = false;
     keyboard_right_shift = false;
     keyboard_left_control = false;
+    keyboard_left_control_down = false;
     keyboard_right_control = false;
     keyboard_alt = false;
     keyboard_left_alt_down = false;
@@ -4941,8 +4943,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (key_code == 0x1DU) {
         if (extended_key) keyboard_right_control = !key_released;
-        else keyboard_left_control = !key_released;
-        keyboard_left_control = keyboard_left_control || keyboard_right_control;
+        else keyboard_left_control_down = !key_released;
+        keyboard_left_control =
+            keyboard_left_control_down || keyboard_right_control;
         return;
     }
     if (key_code == 0x38U) {

@@ -14,16 +14,6 @@ static char lower_ascii(char value) {
     return value;
 }
 
-static bool equal_ci(const char *left, const char *right) {
-    if (left == NULL || right == NULL) return false;
-    size_t i = 0U;
-    while (left[i] != '\0' && right[i] != '\0') {
-        if (lower_ascii(left[i]) != lower_ascii(right[i])) return false;
-        ++i;
-    }
-    return left[i] == '\0' && right[i] == '\0';
-}
-
 static int hex_digit(char value) {
     if (value >= '0' && value <= '9') return value - '0';
     if (value >= 'a' && value <= 'f') return value - 'a' + 10;

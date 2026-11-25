@@ -392,32 +392,18 @@ jobs:
           key("ret")
 
           deadline = time.time() + 60
-          failure_markers = (
-              "NEXUS BING SEARCH TLS ROOTS MISSING",
-              "NEXUS BING SEARCH DNS RESOLUTION FAILED",
-              "NEXUS BING SEARCH TCP CONNECT FAILED",
-              "NEXUS BING SEARCH HTTPS CONNECT TIMEOUT",
-              "NEXUS BING SEARCH TLS CERTIFICATE VERIFY FAILED",
-              "NEXUS BING SEARCH TLS STACK FAILED",
-              "NEXUS BING SEARCH REQUEST SEND FAILED",
-              "NEXUS BING SEARCH RESPONSE FAILED",
-              "NEXUS BING SEARCH HTTP FRAMING INVALID",
-              "NEXUS BING SEARCH CHALLENGE",
-              "NEXUS BING SEARCH NO COMPATIBLE RESULT LINKS",
-          )
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
-              if "NEXUS BING SEARCH RESULTS READY count=" in log:
+              if "NEXUS WEB SEARCH RESULTS READY count=" in log:
                   print(log)
                   raise SystemExit(0)
-              for marker in failure_markers:
-                  if marker in log:
-                      print(log)
-                      raise SystemExit(f"Live web search failed: {marker}")
+              if "NEXUS WEB SEARCH FAILED" in log:
+                  print(log)
+                  raise SystemExit("Both live web-search providers failed")
               time.sleep(0.5)
 
           print(open(log_path, encoding="utf-8", errors="replace").read())
-          raise SystemExit("Timed out waiting for live Bing search results")
+          raise SystemExit("Timed out waiting for live web-search results")
           PY
           cat nexus-browser-search-serial.log
 

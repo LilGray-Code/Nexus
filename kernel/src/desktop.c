@@ -2896,6 +2896,18 @@ static void browser_set_status(const char *message) {
     browser_status[i] = '\0';
 }
 
+static bool browser_search_fallback(bool search_request,
+                                        bool *use_bing,
+                                        bool *fallback_attempted) {
+    if (!search_request || use_bing == NULL || fallback_attempted == NULL ||
+        !*use_bing || *fallback_attempted) return false;
+    *fallback_attempted = true;
+    *use_bing = false;
+    serial_write("NEXUS WEB SEARCH FALLBACK DUCKDUCKGO\r\n");
+    browser_set_status("Bing response unusable; trying DuckDuckGo HTML...");
+    return true;
+}
+
 static void browser_clear_page(void) {
     browser_line_count = 1U;
     browser_line_scroll = 0U;
@@ -3095,6 +3107,21 @@ static bool browser_build_search_target(char *host, size_t host_capacity,
     return true;
 }
 
+static bool browser_build_duckduckgo_search_target(
+    char *host, size_t host_capacity, size_t *host_length,
+    char *path, size_t path_capacity, size_t *path_length) {
+    static const char search_host[] = "html.duckduckgo.com";
+    if (host == NULL || host_length == NULL || path == NULL ||
+        path_length == NULL || sizeof(search_host) > host_capacity ||
+        path_capacity == 0U) return false;
+    for (size_t i = 0U; i < sizeof(search_host); ++i)
+        host[i] = search_host[i];
+    *host_length = sizeof(search_host) - 1U;
+    return nexus_browser_search_build_path(
+        browser_address, browser_address_length,
+        path, path_capacity, path_length);
+}
+
 static bool browser_is_http_redirect(uint16_t status_code) {
     return status_code == 301U || status_code == 302U ||
            status_code == 303U || status_code == 307U ||
@@ -3204,7 +3231,7 @@ static bool browser_https_receive_response(
     uint64_t last_data = start;
 
     while (*response_length < response_capacity &&
-           timer_ticks() - start < 1800U) {
+           timer_ticks() - start < 3000U) {
         const int result = nexus_https_read(
             connection, response + *response_length,
             response_capacity - *response_length);
@@ -3228,7 +3255,7 @@ static bool browser_https_receive_response(
         }
         net_poll();
         if (*response_length != 0U &&
-            timer_ticks() - last_data >= 200U) break;
+            timer_ticks() - last_data >= 800U) break;
         __asm__ volatile ("pause" ::: "memory");
     }
     if (*response_length == 0U && !*orderly_eof)
@@ -3240,6 +3267,8 @@ static void browser_navigate(bool record_history) {
     size_t redirect_count = 0U;
     bool history_saved = false;
     bool search_request = browser_address_is_search_query();
+    bool search_use_bing = true;
+    bool search_fallback_attempted = false;
     browser_search_page = false;
     browser_search_result_count = 0U;
     browser_search_selected = 0U;
@@ -3256,11 +3285,17 @@ browser_retry:
     size_t host_length = 0U;
     size_t path_length = 0U;
     if (search_request) {
-        if (!browser_build_search_target(host, sizeof(host), &host_length,
-                                         path, sizeof(path), &path_length) ||
-            !nexus_browser_search_build_bing_path(
-                browser_address, browser_address_length,
-                path, sizeof(path), &path_length)) {
+        const bool target_ready = search_use_bing
+            ? (browser_build_search_target(
+                   host, sizeof(host), &host_length,
+                   path, sizeof(path), &path_length) &&
+               nexus_browser_search_build_bing_path(
+                   browser_address, browser_address_length,
+                   path, sizeof(path), &path_length))
+            : browser_build_duckduckgo_search_target(
+                   host, sizeof(host), &host_length,
+                   path, sizeof(path), &path_length);
+        if (!target_ready) {
             browser_set_status("Search query is empty, invalid or too long");
             return;
         }
@@ -3364,6 +3399,10 @@ browser_retry:
                     serial_write("\r\n");
                 }
             }
+            if (browser_search_fallback(
+                    search_request, &search_use_bing,
+                    &search_fallback_attempted)) goto browser_retry;
+            if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
             browser_set_status(
                 "HTTPS failed: check CA trust bundle, RTC clock and network");
             return;
@@ -3393,13 +3432,24 @@ browser_retry:
                             " HTTP/1.1\r\nHost: ") &&
         browser_append_text(request, sizeof(request), &request_length, host) &&
         (search_request
-            ? browser_append_text(request, sizeof(request), &request_length,
-                "\r\nUser-Agent: Mozilla/5.0 (X11; Nexus OS x86_64; rv:128.0) "
-                "Gecko/20100101 NexusBrowser/1.0\r\n"
-                "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
-                "Accept-Language: en-US,en;q=0.8\r\n"
-                "Accept-Encoding: identity\r\n"
-                "Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
+            ? (search_use_bing
+                ? browser_append_text(request, sizeof(request), &request_length,
+                    "\r\nUser-Agent: Mozilla/5.0 (X11; Nexus OS x86_64; rv:128.0) "
+                    "Gecko/20100101 NexusBrowser/1.0\r\n"
+                    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+                    "Accept-Language: en-US,en;q=0.8\r\n"
+                    "Accept-Encoding: identity\r\n"
+                    "Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
+                : browser_append_text(request, sizeof(request), &request_length,
+                    "\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\r\n"
+                    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+                    "Accept-Language: en-US,en;q=0.8\r\n"
+                    "Accept-Encoding: identity\r\n"
+                    "Referer: https://html.duckduckgo.com/\r\n"
+                    "Sec-Fetch-Dest: document\r\nSec-Fetch-Mode: navigate\r\n"
+                    "Sec-Fetch-Site: same-origin\r\nUpgrade-Insecure-Requests: 1\r\n"
+                    "Cache-Control: no-cache\r\nConnection: close\r\n\r\n"))
             : browser_append_text(request, sizeof(request), &request_length,
                 "\r\nUser-Agent: NexusBrowser/0.3\r\n"
                 "Accept: text/html,text/plain,*/*\r\n"
@@ -3414,11 +3464,13 @@ browser_retry:
             : net_tcp_send(request, (uint16_t)request_length);
     }
     if (!request_sent) {
-        if (search_request)
-            serial_write("NEXUS BING SEARCH REQUEST SEND FAILED\r\n");
-        browser_set_status("HTTP request could not be sent");
         if (https_open) nexus_https_close(&https);
         else net_tcp_close();
+        if (browser_search_fallback(
+                search_request, &search_use_bing,
+                &search_fallback_attempted)) goto browser_retry;
+        if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
+        browser_set_status("HTTP request could not be sent");
         return;
     }
 
@@ -3463,8 +3515,10 @@ browser_retry:
     }
 
     if (!receive_ok || response_length == 0U) {
-        if (search_request)
-            serial_write("NEXUS BING SEARCH RESPONSE FAILED\r\n");
+        if (browser_search_fallback(
+                search_request, &search_use_bing,
+                &search_fallback_attempted)) goto browser_retry;
+        if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
         browser_set_status(use_https
             ? "No complete TLS response received"
             : "No HTTP response received");
@@ -3472,12 +3526,15 @@ browser_retry:
     }
     if (!nexus_http_decode_response(response, response_length, body,
                                     NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
+        if (browser_search_fallback(
+                search_request, &search_use_bing,
+                &search_fallback_attempted)) goto browser_retry;
         if (search_request) {
             serial_write("NEXUS BING SEARCH HTTP FRAMING INVALID length=");
             serial_write_hex(response_length);
             serial_write("\r\nNEXUS BING RAW RESPONSE PREFIX:\r\n");
-            size_t debug_length = response_length < 4096U
-                ? response_length : 4096U;
+            size_t debug_length = response_length < 256U
+                ? response_length : 256U;
             char debug_line[65];
             for (size_t offset = 0U; offset < debug_length; offset += 64U) {
                 size_t amount = debug_length - offset;
@@ -3492,6 +3549,7 @@ browser_retry:
                 serial_write("\r\n");
             }
         }
+        if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
     }
@@ -3500,6 +3558,10 @@ browser_retry:
      */
     if (use_https && !parsed.has_content_length && !parsed.chunked &&
         !orderly_eof) {
+        if (browser_search_fallback(
+                search_request, &search_use_bing,
+                &search_fallback_attempted)) goto browser_retry;
+        if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
         browser_set_status("HTTPS response ended before authenticated EOF");
         return;
     }
@@ -3536,6 +3598,10 @@ browser_retry:
         goto browser_retry;
     }
     if (parsed.status_code < 200U || parsed.status_code >= 300U) {
+        if (browser_search_fallback(
+                search_request, &search_use_bing,
+                &search_fallback_attempted)) goto browser_retry;
+        if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
         char number[21];
         char message[80] = "HTTP status ";
         format_u64(parsed.status_code, number);
@@ -3555,18 +3621,33 @@ browser_retry:
          browser_content_type_is(parsed.content_type, "application/xhtml+xml"))) {
         size_t result_count = 0U;
         if (nexus_browser_search_is_challenge(body, parsed.body_length)) {
-            serial_write("NEXUS BING SEARCH CHALLENGE\r\n");
+            serial_write(search_use_bing
+                ? "NEXUS BING SEARCH CHALLENGE\r\n"
+                : "NEXUS DUCKDUCKGO SEARCH CHALLENGE\r\n");
+            if (browser_search_fallback(
+                    search_request, &search_use_bing,
+                    &search_fallback_attempted)) goto browser_retry;
+            if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
             browser_set_status(
                 "Search provider blocked this request (anti-bot challenge)");
             browser_render_plain_body(body, parsed.body_length);
             return;
         }
-        if (nexus_browser_search_parse_bing(
+        const bool results_ready = search_use_bing
+            ? nexus_browser_search_parse_bing(
                 body, parsed.body_length, browser_search_results,
-                NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count)) {
+                NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count)
+            : nexus_browser_search_parse(
+                body, parsed.body_length, browser_search_results,
+                NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count);
+        if (results_ready) {
             browser_search_result_count = result_count;
             browser_search_selected = 0U;
-            serial_write("NEXUS BING SEARCH RESULTS READY count=");
+            serial_write(search_use_bing
+                ? "NEXUS BING SEARCH RESULTS READY count="
+                : "NEXUS DUCKDUCKGO SEARCH RESULTS READY count=");
+            serial_write_hex((uint64_t)result_count);
+            serial_write("\r\nNEXUS WEB SEARCH RESULTS READY count=");
             serial_write_hex((uint64_t)result_count);
             serial_write("\r\n");
             browser_render_search_results();
@@ -3576,7 +3657,13 @@ browser_retry:
                 : "Search provider response was not encrypted");
             return;
         }
-        serial_write("NEXUS BING SEARCH NO COMPATIBLE RESULT LINKS\r\n");
+        serial_write(search_use_bing
+            ? "NEXUS BING SEARCH NO COMPATIBLE RESULT LINKS\r\n"
+            : "NEXUS DUCKDUCKGO SEARCH NO COMPATIBLE RESULT LINKS\r\n");
+        if (browser_search_fallback(
+                search_request, &search_use_bing,
+                &search_fallback_attempted)) goto browser_retry;
+        if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
         browser_set_status(
             "No compatible result links; showing the search page text");
     }
@@ -3591,6 +3678,10 @@ browser_retry:
         } else if (!browser_content_type_is(parsed.content_type, "text/html") &&
                    !browser_content_type_is(
                        parsed.content_type, "application/xhtml+xml")) {
+            if (browser_search_fallback(
+                    search_request, &search_use_bing,
+                    &search_fallback_attempted)) goto browser_retry;
+            if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
             browser_set_status("Unsupported content type (text and HTML only)");
             return;
         }

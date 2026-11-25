@@ -19,5 +19,7 @@ bool paging_user_range_writable(uint64_t destination, size_t length);
 bool paging_copy_to_user(uint64_t destination, const void *source, size_t length);
 bool paging_copy_to_address_space(uint64_t root_physical, uint64_t destination,
                                   const void *source, size_t length);
+bool paging_copy_from_address_space(uint64_t root_physical, void *destination,
+                                    uint64_t source, size_t length);
 
 #endif

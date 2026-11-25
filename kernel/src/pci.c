@@ -85,11 +85,15 @@ static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
          * chipset/device ID. Offset 0x2C is present in Type 0 and Type 1
          * PCI headers. This is a read-only inventory operation.
          */
-        const uint32_t subsystem_ids =
-            pci_config_read(bus, slot, function, 0x2CU);
-        if (subsystem_ids != UINT32_MAX) {
-            saved->subsystem_vendor_id = (uint16_t)subsystem_ids;
-            saved->subsystem_device_id = (uint16_t)(subsystem_ids >> 16);
+        if ((header_type & 0x7FU) == 0U ||
+            (header_type & 0x7FU) == 1U) {
+            const uint32_t subsystem_ids =
+                pci_config_read(bus, slot, function, 0x2CU);
+            if (subsystem_ids != UINT32_MAX) {
+                saved->subsystem_vendor_id = (uint16_t)subsystem_ids;
+                saved->subsystem_device_id =
+                    (uint16_t)(subsystem_ids >> 16);
+            }
         }
 
         const uint32_t command_status =

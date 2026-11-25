@@ -86,3 +86,12 @@ through `nexus_write_all()`, so valid short writes are retried. Invalid
 specifiers/widths return `-NEXUS_EINVAL`; output overflow returns
 `-NEXUS_EFBIG`. This is a small freestanding formatter, not full ISO C
 `printf`/`stdio` compatibility.
+
+
+## CPU capabilities
+
+The native ABI provides `nexus_query_cpu_capabilities()` so an application
+can select code paths based on features the running kernel has actually
+enabled. AVX and AVX2 are reported only when the kernel has configured and
+preserves XSAVE x87/SSE/YMM state; hardware CPUID support alone is not enough.
+AVX-512 is not exposed until its opmask/ZMM state is implemented and saved.

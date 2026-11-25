@@ -4,6 +4,19 @@
 int main(void) {
     if (nexus_abi_version() != NEXUS_SYSCALL_ABI_VERSION) return 10;
 
+    struct nexus_cpu_capabilities cpu = {0};
+    if (nexus_query_cpu_capabilities(&cpu) != 0) return 17;
+    if (cpu.structure_size != sizeof(cpu) ||
+        cpu.abi_version != NEXUS_SYSCALL_ABI_VERSION ||
+        cpu.vendor[0] == '\0' || cpu.brand[0] == '\0' ||
+        cpu.physical_cores == 0U ||
+        cpu.logical_processors == 0U ||
+        (cpu.feature_flags & NEXUS_CPU_FEATURE_SSE2) == 0U)
+        return 18;
+    if ((cpu.feature_flags & NEXUS_CPU_FEATURE_AVX2) != 0U &&
+        (cpu.feature_flags & NEXUS_CPU_FEATURE_AVX) == 0U)
+        return 19;
+
     static const char filename[] = "README.TXT";
     static const char expected_prefix[] = "Nexus OS read-only FAT32";
     char contents[600];

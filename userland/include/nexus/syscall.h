@@ -19,7 +19,29 @@
 #define NEXUS_SYS_CLOSE      5ULL
 #define NEXUS_SYS_FILE_WRITE 6ULL
 #define NEXUS_SYS_ABI_VERSION 7ULL
+#define NEXUS_SYS_CPU_INFO 15ULL
 #define NEXUS_SYSCALL_ABI_VERSION 1ULL
+
+/* CPU capabilities exposed to apps; AVX flags mean OS XSAVE/YMM state is live. */
+#define NEXUS_CPU_FEATURE_SSE2   (1ULL << 0)
+#define NEXUS_CPU_FEATURE_SSE42  (1ULL << 1)
+#define NEXUS_CPU_FEATURE_AES    (1ULL << 2)
+#define NEXUS_CPU_FEATURE_AVX    (1ULL << 3)
+#define NEXUS_CPU_FEATURE_AVX2   (1ULL << 4)
+#define NEXUS_CPU_FEATURE_FMA    (1ULL << 5)
+#define NEXUS_CPU_FEATURE_BMI1   (1ULL << 6)
+#define NEXUS_CPU_FEATURE_BMI2   (1ULL << 7)
+#define NEXUS_CPU_FEATURE_SHA    (1ULL << 8)
+
+struct nexus_cpu_capabilities {
+    uint32_t structure_size;
+    uint32_t abi_version;
+    uint64_t feature_flags;
+    uint32_t physical_cores;
+    uint32_t logical_processors;
+    char vendor[13];
+    char brand[49];
+};
 
 #define NEXUS_ENOENT         2LL
 #define NEXUS_EIO            5LL
@@ -80,6 +102,12 @@ static inline int64_t nexus_read(int descriptor, void *buffer, size_t length) {
 
 static inline int64_t nexus_close(int descriptor) {
     return nexus_syscall3(NEXUS_SYS_CLOSE, (uint64_t)descriptor, 0U, 0U);
+}
+
+static inline int64_t nexus_query_cpu_capabilities(
+    struct nexus_cpu_capabilities *capabilities) {
+    return nexus_syscall3(NEXUS_SYS_CPU_INFO,
+        (uint64_t)(uintptr_t)capabilities, 0U, 0U);
 }
 
 static inline int64_t nexus_file_write(const char *path,

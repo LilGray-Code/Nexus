@@ -13,6 +13,12 @@ int main(void) {
     assert(info->brand[0] != '\0');
     assert(info->logical_processors_per_package >= 1U);
     assert(info->physical_cores_per_package >= 1U);
+    if (info->physical_address_bits != 0U)
+        assert(info->physical_address_bits >= 32U &&
+               info->physical_address_bits <= 64U);
+    if (info->virtual_address_bits != 0U)
+        assert(info->virtual_address_bits >= 32U &&
+               info->virtual_address_bits <= 64U);
     assert(nexus_cpu_has_feature(NEXUS_CPU_FEATURE_LONG_MODE));
     assert(nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE2));
     if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX2))

@@ -20,6 +20,7 @@
 
 #include "graphics.h"
 #include "gpu.h"
+#include "virtio_gpu.h"
 #include "input.h"
 #include "serial.h"
 #include "memory.h"
@@ -43,6 +44,9 @@ enum desktop_view {
 static enum desktop_view active_view = DESKTOP_HOME;
 static uint64_t screen_width;
 static uint64_t screen_height;
+static struct nexus_graphics_surface desktop_firmware_surface;
+static struct nexus_graphics_surface desktop_render_surface;
+static bool desktop_virtio_gpu_active;
 static bool desktop_ready;
 static bool installer_session_mode;
 static bool start_menu_open;
@@ -2025,7 +2029,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         return false;
     }
 
-    const struct nexus_graphics_surface surface = {
+    struct nexus_graphics_surface surface = {
         .address = framebuffer->address,
         .width = framebuffer->width,
         .height = framebuffer->height,
@@ -2038,13 +2042,29 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         .blue_mask_size = framebuffer->blue_mask_size,
         .blue_mask_shift = framebuffer->blue_mask_shift
     };
-    gpu_set_firmware_framebuffer_active(false);
+    desktop_firmware_surface = surface;
+    desktop_virtio_gpu_active =
+        virtio_gpu_start(surface.width, surface.height,
+                         &desktop_firmware_surface,
+                         &desktop_render_surface);
+    if (desktop_virtio_gpu_active) {
+        surface = desktop_render_surface;
+        gpu_set_virtio_display_active(true);
+        gpu_set_firmware_framebuffer_active(false);
+    } else {
+        surface = desktop_firmware_surface;
+        gpu_set_virtio_display_active(false);
+        gpu_set_firmware_framebuffer_active(false);
+    }
     if (!graphics_init(&surface)) {
-        serial_write("DESKTOP: framebuffer validation failed; keeping serial console\r\n");
+        if (desktop_virtio_gpu_active) virtio_gpu_stop();
+        desktop_virtio_gpu_active = false;
+        gpu_set_virtio_display_active(false);
+        serial_write("DESKTOP: graphics surface validation failed; keeping serial console\r\n");
         return false;
     }
-
-    gpu_set_firmware_framebuffer_active(true);
+    if (!desktop_virtio_gpu_active)
+        gpu_set_firmware_framebuffer_active(true);
     screen_width = graphics_width();
     screen_height = graphics_height();
     active_view = installer_session_mode ? DESKTOP_INSTALLER : DESKTOP_HOME;
@@ -2117,6 +2137,30 @@ static void draw_pointer(void) {
     graphics_fill_rect(x, y, 2U, 15U, 245, 250, 255);
     graphics_fill_rect(x + 1U, y + 1U, 2U, 11U, 245, 250, 255);
     graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
+
+    if (desktop_virtio_gpu_active && !virtio_gpu_present()) {
+        const volatile uint8_t *source =
+            (const volatile uint8_t *)desktop_render_surface.address;
+        volatile uint8_t *destination =
+            (volatile uint8_t *)desktop_firmware_surface.address;
+        const uint64_t row_bytes = desktop_firmware_surface.width * 4U;
+        const uint64_t copy_bytes = row_bytes < desktop_firmware_surface.pitch
+            ? row_bytes : desktop_firmware_surface.pitch;
+        for (uint64_t row = 0U; row < desktop_firmware_surface.height; ++row) {
+            const volatile uint8_t *src =
+                source + row * desktop_render_surface.pitch;
+            volatile uint8_t *dst =
+                destination + row * desktop_firmware_surface.pitch;
+            for (uint64_t column = 0U; column < copy_bytes; ++column)
+                dst[column] = src[column];
+        }
+        virtio_gpu_stop();
+        desktop_virtio_gpu_active = false;
+        gpu_set_virtio_display_active(false);
+        gpu_set_firmware_framebuffer_active(true);
+        (void)graphics_init(&desktop_firmware_surface);
+        serial_write("DESKTOP: VirtIO GPU failed; copied frame to firmware framebuffer fallback\r\n");
+    }
 }
 
 static void refresh_files_listing(void) {

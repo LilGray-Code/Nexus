@@ -3,7 +3,7 @@ LD ?= ld
 OUT := ../build
 DEPS := include
 
-CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
+CFLAGS := -std=gnu11 -Os -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -fno-asynchronous-unwind-tables \
 	-fno-unwind-tables -fno-common -m64 -march=x86-64 \

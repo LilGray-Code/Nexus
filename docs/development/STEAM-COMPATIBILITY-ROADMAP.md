@@ -7,7 +7,7 @@
 
 The current branch has a working foundation for small Nexus-native applications, but it is not yet a general-purpose desktop ABI.
 
-- Ring-3 execution for a bounded, foreground static ELF64 application, with x87/SSE2 state management.
+- Ring-3 execution for bounded foreground static ELF64 ET_EXEC applications and a constrained ET_DYN static-PIE subset with symbol-free `R_X86_64_RELATIVE` relocations, with x87/SSE2 state management.
 - Native ABI version 1 for basic file calls, console output, display information, timer sleep, keyboard/mouse polling, framebuffer presentation, gamepad polling, and optional AC'97 PCM playback.
 - Firmware-framebuffer display and VirtIO-GPU 2D scanout/presentation. Rendering is still CPU-side; this is not a Vulkan/OpenGL/Direct3D implementation.
 - PS/2 and xHCI boot-keyboard/mouse input. xHCI now has a bounded generic HID report-descriptor parser and an event path for up to four common USB gamepads. The parser supports one input report ID, up to eight axes, 32 buttons, and one hat field; composite controllers, arbitrary HID layouts, USB hubs, and Bluetooth pairing are not promised.
@@ -21,7 +21,7 @@ See [Native App SDK](NATIVE-APP-SDK.md) and [Software Ecosystem](SOFTWARE-ECOSYS
 
 Steam is not just a browser or a downloadable executable. The Linux Steam client and its games expect a broad Linux userspace and kernel interface. Proton adds Wine and graphics translation layers; it does not remove the need for the host OS to provide the system-call, memory, threading, file, device, and graphics contracts that those components use.
 
-The current Nexus native ABI is intentionally much smaller. It does not provide Linux syscall compatibility, POSIX process semantics, a dynamic linker, shared libraries, mmap, clone, futex, epoll, Linux ioctl/device interfaces, or the usual /proc, /sys, and /dev contracts. The kernel's scheduler currently supports a small set of cooperative kernel threads; the native process runner executes one foreground app synchronously. A minimal AC'97 48 kHz stereo PCM playback path is now present, but there is no audio capture, multi-stream mixer, userspace audio server, or general HDA driver. There is still no hardware-accelerated 3D API.
+The current Nexus native ABI is intentionally much smaller. It does not provide Linux syscall compatibility, POSIX process semantics, a dynamic linker, shared libraries, mmap, clone, futex, epoll, Linux ioctl/device interfaces, or the usual /proc, /sys, and /dev contracts. The scheduler has a validated timer-IRQ preemption path for isolated kernel-thread self-tests, but preemption remains opt-in and shared kernel services are not yet safe for unrestricted preemptive concurrency; the native process runner still executes one foreground app synchronously. A minimal AC'97 48 kHz stereo PCM playback path is now present, but there is no audio capture, multi-stream mixer, userspace audio server, or general HDA driver. There is still no hardware-accelerated 3D API.
 
 The storage limits are also far below game requirements: current NXFS v2 files are at most 1 MiB each, packages accept one static ELF payload up to 1 MiB, and the volume has 64 entries. Most game installations are far larger and contain many files.
 
@@ -41,7 +41,7 @@ Therefore **the Steam client and commercial Steam games are not supported at thi
 
 ### 2. Build a real ELF and userspace runtime
 
-- Support PIE/ET_DYN, PT_DYNAMIC, relocation processing, TLS, and a trusted dynamic loader.
+- Extend the initial constrained static-PIE support to a complete dynamic linker: symbol resolution, dependency loading, general relocation types, TLS, RELRO, and loader hardening.
 - Implement a versioned shared-library ABI and libnexus/POSIX-compatible C runtime, with robust file descriptors, pipes, signals, clocks, polling, and sockets.
 - Expand process memory and file mapping interfaces, environment/argument handling, and executable permissions.
 - Keep the current Nexus-native ABI stable while adding a separate Linux compatibility ABI. Do not silently pretend a native syscall table is a Linux syscall table.

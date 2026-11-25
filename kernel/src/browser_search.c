@@ -452,3 +452,8 @@ bool nexus_browser_search_parse(
     }
     return *result_count != 0U;
 }
+
+size_t nexus_browser_search_result_for_line(size_t document_line) {
+    if (document_line < 2U) return SIZE_MAX;
+    return (document_line - 2U) / 4U;
+}

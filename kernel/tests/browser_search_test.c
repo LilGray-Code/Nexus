@@ -103,11 +103,22 @@ static void test_provider_challenge_detection(void) {
         ordinary, sizeof(ordinary) - 1U));
 }
 
+static void test_rendered_line_to_result_mapping(void) {
+    assert(nexus_browser_search_result_for_line(0U)==SIZE_MAX);
+    assert(nexus_browser_search_result_for_line(1U)==SIZE_MAX);
+    for(size_t line=2U;line<6U;++line)
+        assert(nexus_browser_search_result_for_line(line)==0U);
+    for(size_t line=6U;line<10U;++line)
+        assert(nexus_browser_search_result_for_line(line)==1U);
+    assert(nexus_browser_search_result_for_line(10U)==2U);
+}
+
 int main(void) {
     test_query_encoding();
     test_result_parse_and_redirect_decode();
     test_reject_unsafe_links_and_deduplicate();
     test_bounds_and_missing_results();
     test_provider_challenge_detection();
+    test_rendered_line_to_result_mapping();
     return 0;
 }

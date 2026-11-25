@@ -3367,7 +3367,7 @@ browser_retry:
         }
     }
 
-    char request[1024];
+    char request[1536];
     size_t request_length = 0U;
     const bool request_ok =
         browser_append_text(request, sizeof(request), &request_length,
@@ -4477,6 +4477,38 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             draw_shell();
             draw_pointer();
             return;
+        }
+        if (clicked && active_view == DESKTOP_BROWSER &&
+            browser_search_page && !browser_address_edited &&
+            browser_search_result_count != 0U) {
+            const struct desktop_window_rect bounds = desktop_window_bounds();
+            const uint64_t text_top = bounds.y + 48U + 108U;
+            if ((uint64_t)pointer_y >= text_top &&
+                (uint64_t)pointer_y < text_top +
+                    NEXUS_BROWSER_VISIBLE_LINES * 24U) {
+                const size_t visible_row =
+                    (size_t)(((uint64_t)pointer_y - text_top) / 24U);
+                const size_t document_line = browser_line_scroll + visible_row;
+                const size_t selected =
+                    nexus_browser_search_result_for_line(document_line);
+                if (selected < browser_search_result_count) {
+                    browser_search_selected = selected;
+                    const char *target = browser_search_results[selected].url;
+                    size_t length = 0U;
+                    while (length < sizeof(browser_address) - 1U &&
+                           target[length] != '\0') {
+                        browser_address[length] = target[length];
+                        ++length;
+                    }
+                    browser_address[length] = '\0';
+                    browser_address_length = length;
+                    browser_address_edited = true;
+                    browser_navigate(true);
+                    draw_shell();
+                    draw_pointer();
+                    return;
+                }
+            }
         }
         if (clicked && active_view == DESKTOP_INSTALLER) {
             const struct desktop_window_rect bounds = desktop_window_bounds();

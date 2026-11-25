@@ -36,4 +36,9 @@ bool nexus_browser_search_parse(
     struct nexus_browser_search_result *results,
     size_t result_capacity, size_t *result_count);
 
+/* Maps rendered search-document lines to a result index.
+ * The first two lines are the heading; each result occupies four lines.
+ */
+size_t nexus_browser_search_result_for_line(size_t document_line);
+
 #endif

@@ -20,6 +20,7 @@
 
 #include "graphics.h"
 #include "gpu.h"
+#include "firmware.h"
 #include "virtio_gpu.h"
 #include "input.h"
 #include "serial.h"
@@ -1993,12 +1994,42 @@ static void draw_shell(void) {
                                "STORAGE: NO FILESYSTEM MOUNTED",
                                1, 239, 177, 119);
         }
-        graphics_draw_text(text_x, text_y + 282U,
+        const struct nexus_firmware_info *firmware =
+            nexus_firmware_get_info();
+        graphics_draw_text(text_x, text_y + 258U, "FIRMWARE:",
+                           1U, 233U, 243U, 252U);
+        graphics_draw_text(text_x + 82U, text_y + 258U,
+                           nexus_firmware_type_label(),
+                           1U, 119U, 229U, 211U);
+        if (firmware->smbios_present) {
+            char smbios_version[8] = "SMBIOS ";
+            smbios_version[7] = '\0';
+            char major[4];
+            char minor[4];
+            format_u64(firmware->smbios_major, major);
+            format_u64(firmware->smbios_minor, minor);
+            size_t used = 7U;
+            for (size_t i = 0U; major[i] != '\0' && used < 7U; ++i)
+                smbios_version[used++] = major[i];
+            smbios_version[used++] = '.';
+            for (size_t i = 0U; minor[i] != '\0' && used < sizeof(smbios_version) - 1U; ++i)
+                smbios_version[used++] = minor[i];
+            smbios_version[used] = '\0';
+            graphics_draw_text(text_x, text_y + 282U, smbios_version,
+                               1U, 170U, 225U, 190U);
+        } else {
+            graphics_draw_text(text_x, text_y + 282U,
+                               firmware->acpi_present
+                                   ? "ACPI PRESENT - SMBIOS UNAVAILABLE"
+                                   : "FIRMWARE TABLES UNAVAILABLE",
+                               1U, 239U, 177U, 119U);
+        }
+        graphics_draw_text(text_x, text_y + 306U,
                            "DISK WRITES ARE DISABLED IN THIS BUILD",
-                           1, 239, 177, 119);
+                           1U, 239U, 177U, 119U);
         graphics_draw_text(text_x, text_y + 330U,
                            "ESC RETURNS HOME - STATUS REFRESHES ON INPUT",
-                           1, 170, 191, 211);
+                           1U, 170U, 191U, 211U);
     }
 
     if (!installer_session_mode && active_view != DESKTOP_HOME &&

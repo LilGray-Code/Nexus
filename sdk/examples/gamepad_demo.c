@@ -88,7 +88,7 @@ void _start(void) {
         struct nexus_app_gamepad_event next;
         while (nexus_app_gamepad_poll(&next) > 0) {
             gamepad = next;
-            connected = true;
+            connected = (next.flags & NEXUS_APP_GAMEPAD_DISCONNECTED) == 0U;
         }
         draw_state(&gamepad, connected);
         if (nexus_app_blit(origin_x, origin_y, FRAME_WIDTH, FRAME_HEIGHT,

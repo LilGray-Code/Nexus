@@ -24,6 +24,7 @@ struct nexus_virtio_pci {
     const struct nexus_pci_device *pci;
     volatile uint8_t *common;
     volatile uint8_t *device_config;
+    uint32_t device_config_length;
     uint64_t notify_bar_physical;
     uint32_t notify_cap_offset;
     uint32_t notify_cap_length;

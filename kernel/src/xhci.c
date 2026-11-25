@@ -984,6 +984,21 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
     return false;
 }
 
+static void xhci_notify_gamepad_disconnected(
+    const struct xhci_hid_device *device) {
+    if (device == NULL || device->kind != XHCI_HID_GAMEPAD) return;
+    const struct nexus_usb_gamepad_event event = {
+        .device_id = device->slot_id,
+        .vendor_id = device->vendor_id,
+        .product_id = device->product_id,
+        .flags = NEXUS_USB_GAMEPAD_EVENT_DISCONNECTED,
+        .buttons = 0U,
+        .axis_count = 0U,
+        .hat = 0xFFU
+    };
+    input_usb_gamepad_event(&event);
+}
+
 static bool xhci_gamepads_full(const struct xhci_controller *xhci) {
     if (xhci == NULL) return true;
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
@@ -1201,6 +1216,7 @@ static void xhci_detach_port(struct xhci_controller *xhci,
             serial_write("USB: HID gamepad disconnected from xHCI port ");
             serial_write_hex(port_number);
             serial_write("\\r\\n");
+            xhci_notify_gamepad_disconnected(&xhci->gamepads[i]);
             xhci_release_hid_device(xhci, &xhci->gamepads[i]);
         }
     }
@@ -1338,6 +1354,8 @@ void xhci_poll(void) {
                 xhci->keyboard_active = false;
             else if (device->kind == XHCI_HID_MOUSE)
                 xhci->mouse_active = false;
+            else
+                xhci_notify_gamepad_disconnected(device);
             continue;
         }
         if (!xhci_schedule_interrupt_read(xhci, device)) {
@@ -1351,6 +1369,8 @@ void xhci_poll(void) {
                 xhci->keyboard_active = false;
             else if (device->kind == XHCI_HID_MOUSE)
                 xhci->mouse_active = false;
+            else
+                xhci_notify_gamepad_disconnected(device);
         }
     }
 }

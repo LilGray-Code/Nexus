@@ -112,6 +112,30 @@ static void scheduler_worker_b(void *argument) {
     }
 }
 
+static volatile uint32_t scheduler_preempt_a_started;
+static volatile uint32_t scheduler_preempt_b_started;
+static volatile uint32_t scheduler_preempt_a_observed_b;
+static volatile uint32_t scheduler_preempt_b_observed_a;
+
+static void scheduler_preempt_worker_a(void *argument) {
+    (void)argument;
+    scheduler_preempt_a_started = 1U;
+    const uint64_t deadline = timer_ticks() + 6U;
+    while (scheduler_preempt_b_started == 0U &&
+           timer_ticks() < deadline) {
+        __asm__ volatile ("pause");
+    }
+    scheduler_preempt_a_observed_b =
+        scheduler_preempt_b_started != 0U ? 1U : 0U;
+}
+
+static void scheduler_preempt_worker_b(void *argument) {
+    (void)argument;
+    scheduler_preempt_b_observed_a =
+        scheduler_preempt_a_started != 0U ? 1U : 0U;
+    scheduler_preempt_b_started = 1U;
+}
+
 static void scheduler_recycle_worker(void *argument) {
     (void)argument;
     ++scheduler_recycle_count;
@@ -472,7 +496,7 @@ void kmain(void) {
     }
 
     if (!scheduler_ok) {
-        serial_write("ERROR: preemptive scheduler round-robin test failed\r\n");
+        serial_write("ERROR: cooperative scheduler round-robin test failed\r\n");
         halt_forever();
     }
 
@@ -499,6 +523,31 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("K2: cooperative scheduling and thread-slot recycling passed\r\n");
+
+    /*
+     * Verify timer-driven switching between CPU-bound kernel threads without
+     * explicit yields. Preemption remains off outside this isolated test until
+     * allocator, VFS, driver and user-process state are all safe to preempt.
+     */
+    scheduler_preempt_a_started = 0U;
+    scheduler_preempt_b_started = 0U;
+    scheduler_preempt_a_observed_b = 0U;
+    scheduler_preempt_b_observed_a = 0U;
+    if (!scheduler_create_thread(scheduler_preempt_worker_a, NULL) ||
+        !scheduler_create_thread(scheduler_preempt_worker_b, NULL)) {
+        serial_write("ERROR: unable to create timer-preemption test threads\\r\\n");
+        halt_forever();
+    }
+    scheduler_set_preemption_enabled(true);
+    scheduler_start();
+    scheduler_wait();
+    scheduler_set_preemption_enabled(false);
+    if (scheduler_preempt_a_observed_b == 0U ||
+        scheduler_preempt_b_observed_a == 0U) {
+        serial_write("ERROR: timer IRQ did not preempt CPU-bound kernel threads\\r\\n");
+        halt_forever();
+    }
+    serial_write("K2: timer IRQ preemption between kernel threads passed\\r\\n");
 
     const char *boot_command_line = NULL;
     if (executable_cmdline_request.response != NULL)

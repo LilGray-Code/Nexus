@@ -19,6 +19,7 @@
 #include "memory.h"
 #include "pci.h"
 #include "gpu.h"
+#include "virtio_net.h"
 #include "paging.h"
 #include "serial.h"
 #include "storage.h"
@@ -300,6 +301,9 @@ void kmain(void) {
             serial_write("WARNING: E1000 ARP probe transmit did not complete\r\n");
         }
     }
+    if (virtio_net_init()) {
+        serial_write("NEXUS VIRTIO-NET TX/RX READY\r\n");
+    }
     if (netdev_ready()) {
         serial_write("NETWORK LINK: ");
         serial_write(netdev_link_up() ? "UP\r\n" : "DOWN OR UNKNOWN\r\n");
@@ -328,7 +332,7 @@ void kmain(void) {
 #endif
 
     timer_init(100);
-    if (e1000_ready() && !net_init()) {
+    if (netdev_ready() && !net_init()) {
         serial_write("WARNING: Ethernet network layer did not initialize\r\n");
     }
     serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\r\n");

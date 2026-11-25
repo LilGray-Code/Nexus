@@ -340,6 +340,24 @@ bool paging_user_address_space_selftest(void) {
     }
     if ((test_root[1] & (PAGE_PRESENT | PAGE_USER)) !=
         (PAGE_PRESENT | PAGE_USER)) valid = false;
+
+    /* Address-space writes work even while the kernel CR3 remains active. */
+    const uint64_t write_probe[2] = {
+        0x4E45585553564D31ULL, 0x50494552454C4F43ULL
+    };
+    if (!paging_copy_to_address_space(test_root_physical, 0x00400000ULL,
+            write_probe, sizeof(write_probe))) {
+        valid = false;
+    } else {
+        volatile const uint64_t *written =
+            (volatile const uint64_t *)memory_phys_to_virt(user_page);
+        if (written == NULL || written[0] != write_probe[0] ||
+            written[1] != write_probe[1]) valid = false;
+    }
+    if (paging_copy_to_address_space(test_root_physical, 0x00400FF8ULL,
+            write_probe, sizeof(write_probe))) valid = false;
+    if (paging_copy_to_address_space(test_root_physical, 0x00800000ULL,
+            write_probe, sizeof(write_probe))) valid = false;
     if (paging_map_user_page(test_root_physical, 0x00800000ULL,
                              user_page, true, false)) valid = false;
     if (paging_map_user_page(test_root_physical, 0x00C00000ULL,

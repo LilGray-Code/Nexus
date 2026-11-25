@@ -155,6 +155,7 @@ static char terminal_input[64];
 static size_t terminal_input_length;
 static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
 static size_t installer_selected_device;
+static bool installer_drive_dropdown_open;
 static struct nexus_partition_plan installer_plan;
 static bool installer_plan_valid;
 static char terminal_output[160];
@@ -506,6 +507,30 @@ static void installer_log_selected_target(void) {
     serial_write("\r\n");
 }
 
+
+static const char *installer_candidate_status(
+    const struct nexus_block_device *device) {
+    if (device == NULL) return "MISSING";
+    if (!blockdev_boot_media_detection_complete()) return "WAIT";
+    if (blockdev_is_boot_media(device)) return "BOOT MEDIA";
+    if (blockdev_is_mounted(device)) return "MOUNTED";
+    if (!blockdev_identity_is_unique(device)) return "ID ERROR";
+    if (!blockdev_install_write_supported(device)) return "READ ONLY";
+    return "READY";
+}
+
+static const char *installer_transport_short_label(
+    const struct nexus_block_device *device) {
+    if (device == NULL) return "UNKNOWN";
+    switch (device->transport) {
+        case NEXUS_BLOCKDEV_TRANSPORT_NVME: return "NVME";
+        case NEXUS_BLOCKDEV_TRANSPORT_AHCI: return "SATA";
+        case NEXUS_BLOCKDEV_TRANSPORT_USB: return "USB";
+        case NEXUS_BLOCKDEV_TRANSPORT_OPTICAL: return "OPTICAL";
+        case NEXUS_BLOCKDEV_TRANSPORT_NETWORK: return "NETWORK";
+        default: return "DISK";
+    }
+}
 
 static const char *installer_target_status(
     const struct nexus_block_device *device) {
@@ -1116,22 +1141,24 @@ static void draw_shell(void) {
             } else {
                 const struct nexus_block_device *device =
                     blockdev_at(installer_selected_device);
-                char drive_index[21], drive_total[21];
-                format_u64(installer_selected_device + 1U, drive_index);
-                format_u64(device_count, drive_total);
-                graphics_draw_text(text_x, text_y + 54U,
-                                   "SELECTED DRIVE:", 1U, 233U, 243U, 252U);
-                graphics_draw_text(text_x + 140U, text_y + 54U,
-                                   device != NULL ? device->name : "UNKNOWN",
+                graphics_fill_rect(text_x, text_y + 48U, 520U, 28U,
+                                    16U, 31U, 49U);
+                graphics_draw_rect(text_x, text_y + 48U, 520U, 28U,
+                                   installer_drive_dropdown_open
+                                       ? 119U : 67U,
+                                   installer_drive_dropdown_open
+                                       ? 229U : 105U,
+                                   installer_drive_dropdown_open
+                                       ? 211U : 139U);
+                graphics_draw_text(text_x + 10U, text_y + 58U,
+                                   device != NULL ? device->name : "NO DRIVE",
                                    1U, 119U, 229U, 211U);
-                graphics_draw_text(text_x + 260U, text_y + 54U,
-                                   "DRIVE", 1U, 170U, 191U, 211U);
-                graphics_draw_text(text_x + 300U, text_y + 54U,
-                                   drive_index, 1U, 119U, 229U, 211U);
-                graphics_draw_text(text_x + 312U, text_y + 54U,
-                                   "OF", 1U, 170U, 191U, 211U);
-                graphics_draw_text(text_x + 332U, text_y + 54U,
-                                   drive_total, 1U, 119U, 229U, 211U);
+                graphics_draw_text(text_x + 142U, text_y + 58U,
+                                   device != NULL ? device->model : "No supported device",
+                                   1U, 203U, 217U, 230U);
+                graphics_draw_text(text_x + 494U, text_y + 58U,
+                                   installer_drive_dropdown_open ? "^" : "v",
+                                   1U, 119U, 229U, 211U);
                 if (device != NULL) {
                     graphics_draw_text(text_x, text_y + 76U,
                                        device->model, 1U, 170U, 225U, 190U);
@@ -1213,18 +1240,11 @@ static void draw_shell(void) {
                                        installer_target_status(device), 1U,
                                        170U, 225U, 190U);
                 }
-                installer_draw_button(text_x, text_y + 310U, 104U, 24U,
-                                      "PREVIOUS", installer_selected_device > 0U,
-                                      false);
-                installer_draw_button(text_x + 112U, text_y + 310U, 104U, 24U,
-                                      "NEXT DRIVE",
-                                      installer_selected_device + 1U < device_count,
-                                      false);
                 installer_draw_button(text_x + 228U, text_y + 310U, 220U, 24U,
                                       "CONTINUE", false, false);
             }
             graphics_draw_text(text_x, text_y + 348U,
-                               "ARROWS OR DRIVE BUTTONS TO SELECT  |  ESC TO EXIT",
+                               "CLICK THE TARGET FIELD TO VIEW ALL DRIVES  |  UP/DOWN SELECT",
                                1U, 170U, 191U, 211U);
             graphics_draw_text(text_x, text_y + 370U,
                                "Your existing disks are not changed during this preview.",
@@ -1296,6 +1316,75 @@ static void draw_shell(void) {
                        installer_ui_state == INSTALLER_UI_FAILED) {
                 installer_draw_button(text_x, text_y + 264U, 210U, 26U,
                                       "RETURN TO DRIVE SELECTION", false, false);
+            }
+        }
+        if (installer_ui_state == INSTALLER_UI_SELECT &&
+            installer_drive_dropdown_open) {
+            const size_t count = blockdev_count();
+            const uint64_t popup_y = text_y + 82U;
+            const uint64_t row_height = 28U;
+            const size_t visible_count =
+                count < NEXUS_BLOCKDEV_MAX_DEVICES
+                    ? count : NEXUS_BLOCKDEV_MAX_DEVICES;
+            if (visible_count != 0U) {
+                graphics_fill_rect(text_x, popup_y, 520U,
+                                   (uint64_t)visible_count * row_height + 2U,
+                                   10U, 21U, 35U);
+                graphics_draw_rect(text_x, popup_y, 520U,
+                                   (uint64_t)visible_count * row_height + 2U,
+                                   78U, 111U, 140U);
+            }
+            for (size_t i = 0U; i < visible_count; ++i) {
+                const struct nexus_block_device *candidate = blockdev_at(i);
+                if (candidate == NULL) continue;
+                const uint64_t row_y = popup_y + 1U +
+                                       (uint64_t)i * row_height;
+                const bool selected = i == installer_selected_device;
+                graphics_fill_rect(text_x + 1U, row_y, 518U, 27U,
+                    selected ? 34U : (i & 1U ? 21U : 16U),
+                    selected ? 83U : (i & 1U ? 39U : 31U),
+                    selected ? 101U : (i & 1U ? 56U : 49U));
+                char short_model[24];
+                size_t model_length = 0U;
+                while (candidate->model[model_length] != '\\0' &&
+                       model_length < 20U) {
+                    short_model[model_length] = candidate->model[model_length];
+                    ++model_length;
+                }
+                if (candidate->model[model_length] != '\\0') {
+                    short_model[model_length++] = '.';
+                    short_model[model_length++] = '.';
+                    short_model[model_length++] = '.';
+                }
+                short_model[model_length] = '\\0';
+                const uint64_t blocks_per_gib = candidate->block_size == 0U
+                    ? 0U : (1024ULL * 1024ULL * 1024ULL) /
+                           candidate->block_size;
+                char capacity[21];
+                format_u64(blocks_per_gib == 0U ? 0U :
+                           candidate->block_count / blocks_per_gib, capacity);
+                graphics_draw_text(text_x + 10U, row_y + 10U,
+                                   candidate->name, 1U,
+                                   selected ? 239U : 233U,
+                                   selected ? 249U : 243U,
+                                   selected ? 255U : 252U);
+                graphics_draw_text(text_x + 136U, row_y + 10U,
+                                   short_model, 1U, 188U, 207U, 223U);
+                graphics_draw_text(text_x + 328U, row_y + 10U,
+                                   capacity, 1U, 188U, 218U, 194U);
+                graphics_draw_text(text_x + 372U, row_y + 10U,
+                                   "GiB", 1U, 155U, 177U, 196U);
+                graphics_draw_text(text_x + 408U, row_y + 10U,
+                                   installer_transport_short_label(candidate),
+                                   1U, 170U, 191U, 211U);
+                const char *candidate_status =
+                    installer_candidate_status(candidate);
+                const bool eligible = candidate_status[0] == 'R';
+                graphics_draw_text(text_x + 462U, row_y + 10U,
+                                   candidate_status, 1U,
+                                   eligible ? 108U : 239U,
+                                   eligible ? 216U : 177U,
+                                   eligible ? 229U : 119U);
             }
         }
     } else if (active_view == DESKTOP_FILES) {
@@ -1870,6 +1959,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     browser_address[0] = '\0';
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
+    installer_drive_dropdown_open = false;
     installer_refresh_plan();
     mouse_left_was_down = false;
     start_menu_open = false;
@@ -3790,22 +3880,29 @@ static const char *installer_transport_label(
     }
 }
 
+static void installer_select_device(size_t index) {
+    if (index >= blockdev_count() || index == installer_selected_device)
+        return;
+    installer_selected_device = index;
+    installer_refresh_plan();
+    installer_log_selected_target();
+}
+
 static void installer_select_delta(bool next) {
     const size_t count = blockdev_count();
     if (count == 0U) return;
     if (next) {
         if (installer_selected_device + 1U < count)
-            ++installer_selected_device;
+            installer_select_device(installer_selected_device + 1U);
     } else if (installer_selected_device > 0U) {
-        --installer_selected_device;
+        installer_select_device(installer_selected_device - 1U);
     }
-    installer_refresh_plan();
-    installer_log_selected_target();
 }
 
 static bool installer_begin_confirmation(void) {
     const struct nexus_block_device *device =
         blockdev_at(installer_selected_device);
+    installer_drive_dropdown_open = false;
     if (device != NULL && installer_plan_valid &&
         blockdev_boot_media_detection_complete() &&
         !blockdev_is_boot_media(device) &&
@@ -4212,7 +4309,22 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const int64_t relative_y = pointer_y - (int64_t)(py + 48U);
             if (relative_x >= 0 && relative_y >= 0) {
                 if (installer_ui_state == INSTALLER_UI_SELECT) {
-                    if (relative_y >= 158 && relative_y < 182) {
+                    if (installer_drive_dropdown_open) {
+                        const size_t count = blockdev_count();
+                        const uint64_t popup_bottom =
+                            82U + (uint64_t)(count < NEXUS_BLOCKDEV_MAX_DEVICES
+                                ? count : NEXUS_BLOCKDEV_MAX_DEVICES) * 28U;
+                        if (relative_x < 520 && relative_y >= 82 &&
+                            (uint64_t)relative_y < popup_bottom) {
+                            const size_t selected =
+                                (size_t)((uint64_t)relative_y - 82U) / 28U;
+                            installer_select_device(selected);
+                        }
+                        installer_drive_dropdown_open = false;
+                    } else if (relative_y >= 48 && relative_y < 76 &&
+                               relative_x < 520) {
+                        installer_drive_dropdown_open = true;
+                    } else if (relative_y >= 158 && relative_y < 182) {
                         if (relative_x < 104) {
                             installer_firmware = NEXUS_FIRMWARE_UEFI;
                             installer_refresh_plan();
@@ -4223,14 +4335,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             installer_firmware = NEXUS_FIRMWARE_DUAL;
                             installer_refresh_plan();
                         }
-                    } else if (relative_y >= 310 && relative_y < 334) {
-                        if (relative_x < 104) {
-                            installer_select_delta(false);
-                        } else if (relative_x >= 112 && relative_x < 216) {
-                            installer_select_delta(true);
-                        } else if (relative_x >= 228 && relative_x < 448) {
-                            (void)installer_begin_confirmation();
-                        }
+                    } else if (relative_y >= 310 && relative_y < 334 &&
+                               relative_x >= 228 && relative_x < 448) {
+                        (void)installer_begin_confirmation();
                     }
                 } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
                            installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
@@ -4567,7 +4674,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if ((event->scancode & 0x80U) != 0U ||
             installer_ui_state == INSTALLER_UI_RUNNING) return;
         if (event->scancode == 0x01U) {
-            if (installer_ui_state == INSTALLER_UI_SELECT) {
+            if (installer_ui_state == INSTALLER_UI_SELECT &&
+                installer_drive_dropdown_open) {
+                installer_drive_dropdown_open = false;
+            } else if (installer_ui_state == INSTALLER_UI_SELECT) {
                 desktop_open_view(DESKTOP_HOME);
             } else {
                 installer_ui_state = INSTALLER_UI_SELECT;
@@ -4590,7 +4700,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (event->scancode == 0x50U && blockdev_count() > 0U) {
                 installer_select_delta(true);
             } else if (event->scancode == 0x1CU) {
-                (void)installer_begin_confirmation();
+                if (installer_drive_dropdown_open)
+                    installer_drive_dropdown_open = false;
+                else
+                    (void)installer_begin_confirmation();
             } else {
                 return;
             }
@@ -4887,6 +5000,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         refresh_files_listing();
     }
     if (next_view == DESKTOP_INSTALLER) {
+        installer_drive_dropdown_open = false;
         installer_refresh_plan();
         const struct nexus_block_device *target =
             blockdev_at(installer_selected_device);

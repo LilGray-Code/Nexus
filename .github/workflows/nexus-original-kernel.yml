@@ -233,8 +233,9 @@ jobs:
       - name: Boot test - UEFI (OVMF)
         shell: bash
         run: |
-          # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
+          # Generic x86-64 profile with AHCI, NVMe, USB HID and USB mass storage.
           truncate -s 256M nvme-test.img ahci-test.img
+          truncate -s 128M usb-mass-storage-test.img
           python3 build/create-gpt-test-image.py nvme-test.img build/userland/HELLO.ELF
           python3 build/create-gpt-test-image.py ahci-test.img build/userland/HELLO.ELF
           set +e
@@ -248,6 +249,8 @@ jobs:
             -device qemu-xhci,id=xhci \
             -device usb-kbd,bus=xhci.0 \
             -device usb-mouse,bus=xhci.0 \
+            -drive file=usb-mass-storage-test.img,if=none,id=usbtarget,format=raw \
+            -device usb-storage,bus=xhci.0,drive=usbtarget \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
             -boot d -display none -serial file:uefi-serial.log \
             -monitor none -no-reboot -no-shutdown
@@ -279,6 +282,8 @@ jobs:
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" uefi-serial.log
           grep -q "NEXUS USB HID KEYBOARD READY" uefi-serial.log
           grep -q "NEXUS USB HID MOUSE READY" uefi-serial.log
+          grep -q "NEXUS USB MASS STORAGE READY: USB" uefi-serial.log
+          grep -q "NEXUS USB MASS STORAGE BLOCK DEVICE READY" uefi-serial.log
           grep -q "INPUT: USB HID boot keyboard available" uefi-serial.log
           grep -q "INPUT: USB HID boot mouse available" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log

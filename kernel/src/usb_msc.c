@@ -122,14 +122,16 @@ bool nexus_usb_msc_find_interface(
             const uint8_t attributes = configuration[offset + 3U] & 0x03U;
             const uint16_t raw_packet = read_le16(configuration + offset + 4U);
             const uint16_t max_packet = raw_packet & 0x07FFU;
-            if (attributes == 2U && (raw_packet & 0xF800U) == 0U &&
+            const bool valid_endpoint_address =
+                (address & 0x70U) == 0U && (address & 0x0FU) != 0U;
+            if (valid_endpoint_address && attributes == 2U &&
+                (raw_packet & 0xF800U) == 0U &&
                 max_packet >= 8U && max_packet <= 1024U) {
                 if ((address & 0x80U) != 0U &&
                     candidate.bulk_in_endpoint == 0U) {
                     candidate.bulk_in_endpoint = address;
                     candidate.bulk_in_max_packet = max_packet;
                 } else if ((address & 0x80U) == 0U &&
-                           (address & 0x0FU) != 0U &&
                            candidate.bulk_out_endpoint == 0U) {
                     candidate.bulk_out_endpoint = address;
                     candidate.bulk_out_max_packet = max_packet;

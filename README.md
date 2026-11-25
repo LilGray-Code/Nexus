@@ -59,7 +59,7 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   sorting by name, file type, or size with the `S` key. Regular files support
   persistent rename (`R`), copy (`C`), and move (`M`). The selected file can
   also be launched with the Files toolbar's Run ELF action or `Ctrl+Enter`.
-  This uses the native Nexus ELF64 loader, has a 1 MiB image limit and a
+  This uses the native Nexus ELF64 loader for static ET_EXEC or constrained static PIE, has a 1 MiB image limit and a
   15-character process-name limit, executes synchronously, and displays PID,
   exit status, and a bounded capture of the program's `write(1, ...)` output
   in Files while continuing to mirror output to serial. It is not a Windows
@@ -115,18 +115,18 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   browser compatibility layer.
 
 The first-party native application SDK is in `kernel/include/nexus/app.h`,
-with a freestanding sample and build target under `sdk/`. Its additive v1
-syscall ABI exposes keyboard/mouse event polling, display information,
-monotonic timer ticks, interruptible timer sleep, root-file I/O, and bounded
-XRGB8888 framebuffer blits. Blits are copied through a bounded kernel staging
+with freestanding samples and build targets under `sdk/`. Its additive v1
+syscall ABI exposes keyboard/mouse event polling, separate gamepad polling,
+display information, monotonic timer ticks, interruptible timer sleep,
+root-file I/O, bounded XRGB8888 framebuffer blits, and optional AC'97 48 kHz
+S16 stereo PCM playback in bounded chunks. Blits are copied through a bounded kernel staging
 buffer and presented as partial updates through the existing VirtIO 2D
 scanout when available. The foreground app gets an isolated x87/SSE2 state
 context for floating-point/vector math; AVX remains disabled until XSAVE
 context management exists. This enables simple native 2D apps and game
-prototypes to draw without bypassing user-memory checks. It is still
-CPU-side rasterization, not a 3D API or GPU renderer. The current process launcher is foreground and
-synchronous, and the ABI does not yet provide dynamic linking, shared
-libraries, audio, controllers, or a window manager. See
+prototypes to draw without bypassing user-memory checks. Common USB HID gamepads can be polled through xHCI, and a first single-buffer AC'97 playback path is available; neither is a full SDL/audio stack. The renderer remains CPU-side rasterization, not a 3D API or GPU renderer. The current process launcher is foreground and
+synchronous, and the ABI does not yet provide shared-library dynamic linking,
+multiple concurrent user processes, audio capture/mixing, or a full window manager. The ELF loader accepts ET_EXEC and a constrained static-PIE ET_DYN subset with only symbol-free R_X86_64_RELATIVE relocations; it is not a general-purpose dynamic linker. See
 [`docs/development/NATIVE-APP-SDK.md`](docs/development/NATIVE-APP-SDK.md)
 for the SDK and compatibility limits.
 

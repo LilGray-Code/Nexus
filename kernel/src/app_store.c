@@ -15,42 +15,42 @@ static const struct nexus_store_application applications[NEXUS_STORE_MAX_APPS] =
         "Browse the Steam catalog and community website.",
         "https://store.steampowered.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "Native Steam client and Windows games need a future compatibility runtime."
+        "NEEDS WIN32 / PROTON RUNTIME"
     },
     {
         "DISCORD", "Discord", "Discord", "COMMUNICATION",
         "Open the official Discord web application.",
         "https://discord.com/app",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "Full voice, notifications and rich web-app support need a modern browser runtime."
+        "NEEDS FULL JS BROWSER"
     },
     {
         "SPOTIFY", "Spotify", "Spotify", "MUSIC",
         "Open Spotify's official web player.",
         "https://open.spotify.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "Protected audio and media integration are not implemented in this kernel yet."
+        "NEEDS DRM AUDIO SUPPORT"
     },
     {
         "GITHUB", "GitHub", "GitHub", "DEVELOPMENT",
         "Browse repositories, releases and developer documentation.",
         "https://github.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "Native desktop tooling requires a native package and process environment."
+        "NATIVE CLIENT NOT AVAILABLE"
     },
     {
         "VSCODE", "VS Code for Web", "Microsoft", "DEVELOPMENT",
         "Open the official browser-based code editor.",
         "https://vscode.dev/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "The browser editor may require JavaScript and APIs not yet supported by Nexus."
+        "NEEDS JS / WASM SUPPORT"
     },
     {
         "ITCH", "itch.io", "itch corp", "GAMES",
         "Discover independent games and creators.",
         "https://itch.io/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "Downloaded games require a supported executable/runtime before they can launch."
+        "NEEDS GAME RUNTIME"
     }
 };
 

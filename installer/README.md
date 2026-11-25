@@ -1,9 +1,11 @@
 # Nexus Installer
 
-**Status: QEMU-validated installable engineering prototype.** The Nexus-owned
-graphical installer runs in the live Nexus desktop. The dual-mode BIOS/UEFI
-build has passed the repository's disposable-disk QEMU install and boot
-workflows. Physical-PC installation and recovery remain unverified.
+**Status: QEMU-validated installable engineering prototype.** The
+distributable BIOS/UEFI ISO boots directly into the dedicated Nexus installer;
+the installed drive boots the separate Nexus desktop. The repository's
+disposable-disk QEMU install, installed-startup, and recovery workflows are
+being used to validate this path. Physical-PC installation and recovery remain
+unverified.
 
 ## Product boundary
 

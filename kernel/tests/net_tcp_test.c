@@ -25,6 +25,30 @@ static unsigned dns_reply_on_request;
 
 static void queue_dns_test_udp_reply(uint16_t transaction_id);
 
+static void inject_tcp_test_segment(uint32_t sequence,
+                                    uint32_t acknowledgement,
+                                    uint8_t flags,
+                                    const uint8_t *payload,
+                                    size_t payload_length) {
+    uint8_t segment[NET_TCP_HEADER + NET_TCP_REORDER_PAYLOAD_MAX] = {0};
+    assert(payload_length <= NET_TCP_REORDER_PAYLOAD_MAX);
+    write_be16(segment, tcp_connection.remote_port);
+    write_be16(segment + 2U, tcp_connection.local_port);
+    write_be32(segment + 4U, sequence);
+    write_be32(segment + 8U, acknowledgement);
+    segment[12] = 0x50U;
+    segment[13] = flags;
+    write_be16(segment + 14U, (uint16_t)NET_TCP_RX_CAPACITY);
+    if (payload_length != 0U) {
+        assert(payload != NULL);
+        copy_bytes(segment + NET_TCP_HEADER, payload, payload_length);
+    }
+    const size_t length = NET_TCP_HEADER + payload_length;
+    write_be16(segment + 16U,
+               tcp_checksum_value(remote_ip, network.ipv4, segment, length));
+    receive_tcp(segment, length, remote_ip, network.ipv4);
+}
+
 uint64_t timer_ticks(void) {
     return ++fake_ticks;
 }
@@ -466,6 +490,83 @@ static void test_dns_cache_ttl_and_link_reset(void) {
     assert(!dns_cache_lookup("capped.example", result));
 }
 
+static void test_tcp_out_of_order_reassembly_and_ack(void) {
+    setup_network();
+    tcp_connection.active = true;
+    tcp_connection.connected = true;
+    tcp_connection.remote_port = 443U;
+    tcp_connection.local_port = 52000U;
+    tcp_connection.remote_sequence = 0x1000U;
+    tcp_connection.local_sequence = 0x2000U;
+    tcp_connection.ack_waiting = true;
+    tcp_connection.ack_expected = 0x2010U;
+
+    static const uint8_t later[] = {'W','O','R','L','D'};
+    static const uint8_t earlier[] = {'H','E','L','L','O'};
+
+    /* The later segment also carries FIN and acknowledges our pending send. */
+    inject_tcp_test_segment(0x1005U, 0x2010U,
+                            TCP_FLAG_ACK | TCP_FLAG_PSH | TCP_FLAG_FIN,
+                            later, sizeof(later));
+    assert(tcp_connection.ack_received && !tcp_connection.ack_waiting);
+    assert(tcp_connection.local_sequence == 0x2010U);
+    assert(tcp_connection.receive_length == 0U);
+    assert(tcp_connection.reorder_length == sizeof(later) + 1U);
+
+    /* Filling the gap must expose both segments to TLS in their proper order. */
+    inject_tcp_test_segment(0x1000U, 0x2010U,
+                            TCP_FLAG_ACK | TCP_FLAG_PSH,
+                            earlier, sizeof(earlier));
+    assert(tcp_connection.receive_length == 10U);
+    assert(tcp_connection.remote_sequence == 0x100BU);
+    assert(tcp_connection.peer_closed);
+    assert(tcp_connection.reorder_length == 0U);
+    assert(!tcp_connection.reorder[0].valid &&
+           !tcp_connection.reorder[1].valid &&
+           !tcp_connection.reorder[2].valid &&
+           !tcp_connection.reorder[3].valid);
+    static const uint8_t expected[] = "HELLOWORLD";
+    for (size_t i = 0U; i < sizeof(expected) - 1U; ++i)
+        assert(tcp_connection.receive_buffer[i] == expected[i]);
+
+    /* A duplicate retransmission must not append bytes a second time. */
+    inject_tcp_test_segment(0x1000U, 0x2010U,
+                            TCP_FLAG_ACK | TCP_FLAG_PSH,
+                            earlier, sizeof(earlier));
+    assert(tcp_connection.receive_length == 10U);
+    assert(tcp_connection.remote_sequence == 0x100BU);
+}
+
+static void test_tcp_reassembles_multiple_queued_segments(void) {
+    setup_network();
+    tcp_connection.active = true;
+    tcp_connection.connected = true;
+    tcp_connection.remote_port = 443U;
+    tcp_connection.local_port = 52001U;
+    tcp_connection.remote_sequence = 0x3000U;
+    tcp_connection.local_sequence = 0x4000U;
+
+    static const uint8_t first[] = {'A','A','A'};
+    static const uint8_t second[] = {'B','B','B'};
+    static const uint8_t third[] = {'C','C','C'};
+
+    inject_tcp_test_segment(0x3006U, 0x4000U,
+                            TCP_FLAG_ACK | TCP_FLAG_PSH, third, sizeof(third));
+    inject_tcp_test_segment(0x3003U, 0x4000U,
+                            TCP_FLAG_ACK | TCP_FLAG_PSH, second, sizeof(second));
+    assert(tcp_connection.receive_length == 0U);
+    assert(tcp_connection.reorder_length == 6U);
+
+    inject_tcp_test_segment(0x3000U, 0x4000U,
+                            TCP_FLAG_ACK | TCP_FLAG_PSH, first, sizeof(first));
+    assert(tcp_connection.receive_length == 9U);
+    assert(tcp_connection.remote_sequence == 0x3009U);
+    static const uint8_t expected[] = "AAABBBCCC";
+    for (size_t i = 0U; i < sizeof(expected) - 1U; ++i)
+        assert(tcp_connection.receive_buffer[i] == expected[i]);
+    assert(tcp_connection.reorder_length == 0U);
+}
+
 static void test_receive_wait_reports_timeout_data_and_eof(void) {
     setup_network();
     assert(net_tcp_connect(remote_ip, 443U, 300U));
@@ -528,6 +629,8 @@ int main(void) {
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
     test_receive_wait_reports_timeout_data_and_eof();
+    test_tcp_out_of_order_reassembly_and_ack();
+    test_tcp_reassembles_multiple_queued_segments();
     test_dns_question_validation_and_cname_chains();
     test_dns_cache_ttl_and_link_reset();
     test_dns_retransmission_and_cache_hit();

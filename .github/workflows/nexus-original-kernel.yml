@@ -280,8 +280,8 @@ jobs:
           timeout -k 2s 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -netdev user,id=n0 -device e1000,netdev=n0 \
-            -netdev user,id=virt0 -device virtio-net-pci,netdev=virt0 \
-            -device virtio-gpu-pci \
+            -netdev user,id=virt0 -device virtio-net-pci,netdev=virt0,disable-legacy=on \
+            -device virtio-gpu-pci,disable-legacy=on \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
             -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
@@ -370,7 +370,7 @@ jobs:
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-browser-vars.fd
           qemu-system-x86_64 \
             -machine q35 -cpu qemu64,+rdrand -m 512M \
-            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0,disable-legacy=on \
             -device virtio-gpu-pci \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-browser-vars.fd \

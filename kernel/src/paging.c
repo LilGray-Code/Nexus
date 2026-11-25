@@ -93,7 +93,8 @@ bool paging_nx_enabled(void) {
  * address layout untouched. A full VM area allocator will replace this
  * bounded bootstrap window before general hot-plug support is enabled.
  */
-#define MMIO_MAPPING_CACHE_SIZE 512U
+#define MMIO_MAPPING_CACHE_SIZE 511U
+#define MMIO_MAPPING_TEMP_SLOT 511U
 
 struct mmio_mapping {
     uint64_t physical_page;
@@ -219,6 +220,32 @@ bool paging_map_mmio_page(uint64_t physical_address,
         .virtual_address = mapped_address
     };
     ++mmio_mapping_count;
+    *virtual_address = (volatile uint32_t *)mapped_address;
+    return true;
+}
+
+bool paging_map_mmio_page_temporary(
+    uint64_t physical_address, volatile uint32_t **virtual_address) {
+    if (virtual_address == NULL) return false;
+    *virtual_address = NULL;
+    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U ||
+        !mmio_window_init() || mmio_leaf_table == NULL) return false;
+
+    const uint64_t physical_page = physical_address & PAGE_ADDRESS_MASK;
+    const uintptr_t mapped_address = (uintptr_t)(
+        mmio_window_base + ((uint64_t)MMIO_MAPPING_TEMP_SLOT << 12));
+
+    /*
+     * The scratch PTE is deliberately replaced on each call. PCI ECAM reads
+     * visit thousands of possible BDFs, including empty slots, so retaining
+     * a permanent alias for every config page would exhaust the bootstrap
+     * mapping table before device discovery completes.
+     */
+    mmio_leaf_table[MMIO_MAPPING_TEMP_SLOT] =
+        physical_page | PAGE_PRESENT | PAGE_WRITABLE |
+        PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE;
+    __asm__ volatile ("invlpg (%0)"
+                      : : "r"(mapped_address) : "memory");
     *virtual_address = (volatile uint32_t *)mapped_address;
     return true;
 }

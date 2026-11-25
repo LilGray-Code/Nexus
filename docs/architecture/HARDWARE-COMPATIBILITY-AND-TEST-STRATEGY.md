@@ -112,10 +112,12 @@ optionally parses bounded MCFG allocations, rejecting bad checksums, unaligned
 ECAM bases, invalid bus ranges, and overlapping ranges within one segment.
 PCI enumeration uses the MCFG-defined ECAM window for both segment zero and
 nonzero segments, reads extended configuration space, and retains CF8/CFC as
-a fallback for segment-zero buses not covered by MCFG. MMIO pages are mapped
-through a bounded, reusable uncached kernel window; device and driver-binding
-identity includes the PCI segment so matching BDFs in different segments do
-not alias during removal. Host tests cover MCFG parsing and segment isolation,
+a fallback for segment-zero buses not covered by MCFG. PCI config accesses use
+a transient uncached scratch mapping so probing empty bus/device/function
+slots does not permanently consume MMIO aliases. Device-register mappings
+use a separate bounded cache of stable uncached pages. Device and
+driver-binding identity includes the PCI segment so matching BDFs in
+different segments do not alias during removal. Host tests cover MCFG parsing and segment isolation,
 and BIOS/UEFI QEMU runs exercise the live PCI discovery path.
 
 Nexus does not rewrite or flash the motherboard's UEFI/BIOS; vendor firmware

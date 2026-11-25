@@ -7,6 +7,13 @@
 
 bool paging_map_mmio_page(uint64_t physical_address,
                           volatile uint32_t **virtual_address);
+/*
+ * Map one transient MMIO page into a single scratch slot. The returned
+ * pointer is valid only until the next temporary mapping call; callers must
+ * complete all accesses before mapping another physical page.
+ */
+bool paging_map_mmio_page_temporary(
+    uint64_t physical_address, volatile uint32_t **virtual_address);
 bool paging_enable_nx(void);
 bool paging_nx_enabled(void);
 bool paging_create_user_address_space(uint64_t *root_physical);

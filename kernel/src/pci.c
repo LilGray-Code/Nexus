@@ -36,7 +36,9 @@ static inline void outw(uint16_t port, uint16_t value) {
 /*
  * Use PCIe Enhanced Configuration Access Mechanism (ECAM) whenever ACPI
  * publishes an MCFG window. Each function's 4 KiB config page is mapped
- * through the kernel's uncached MMIO window. Legacy CF8/CFC is retained only
+ * through one uncached scratch MMIO slot because enumeration also probes
+ * thousands of empty BDFs. The scratch pointer is consumed immediately.
+ * Legacy CF8/CFC is retained only
  * for segment zero buses that firmware did not describe in MCFG.
  */
 static uint32_t pci_config_read(uint16_t segment, uint8_t bus,
@@ -55,7 +57,8 @@ static uint32_t pci_config_read(uint16_t segment, uint8_t bus,
             ((uint64_t)slot << 15) + ((uint64_t)function << 12) +
             (uint64_t)(offset & 0x0FFCU);
         volatile uint32_t *page = NULL;
-        if (!paging_map_mmio_page(physical, &page)) return UINT32_MAX;
+        if (!paging_map_mmio_page_temporary(physical, &page))
+            return UINT32_MAX;
         return page[(physical & 0xFFFU) / sizeof(uint32_t)];
     }
 
@@ -84,7 +87,8 @@ static bool pci_config_write16(uint16_t segment, uint8_t bus,
             ((uint64_t)slot << 15) + ((uint64_t)function << 12) +
             (uint64_t)(offset & 0x0FFCU);
         volatile uint32_t *page = NULL;
-        if (!paging_map_mmio_page(physical, &page)) return false;
+        if (!paging_map_mmio_page_temporary(physical, &page))
+            return false;
         volatile uint16_t *register_value =
             (volatile uint16_t *)((uintptr_t)page + (physical & 0xFFFU));
         *register_value = value;

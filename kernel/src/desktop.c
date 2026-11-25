@@ -89,7 +89,10 @@ static bool desktop_preferences_persistent;
 static bool keyboard_left_shift;
 static bool keyboard_right_shift;
 static bool keyboard_left_control;
+static bool keyboard_right_control;
 static bool keyboard_alt;
+static bool keyboard_left_alt_down;
+static bool keyboard_right_alt_down;
 static bool keyboard_windows;
 static bool keyboard_windows_used;
 static bool keyboard_caps_lock;
@@ -2063,7 +2066,10 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     keyboard_left_shift = false;
     keyboard_right_shift = false;
     keyboard_left_control = false;
+    keyboard_right_control = false;
     keyboard_alt = false;
+    keyboard_left_alt_down = false;
+    keyboard_right_alt_down = false;
     keyboard_windows = false;
     keyboard_windows_used = false;
     keyboard_caps_lock_down = false;
@@ -4428,6 +4434,16 @@ static void installer_apply_typed_erase(void) {
 
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
+    struct nexus_input_event normalized_event;
+    bool extended_key = false;
+    if (event->type == NEXUS_INPUT_KEYBOARD) {
+        extended_key = (event->scancode & 0x0100U) != 0U;
+        if (extended_key) {
+            normalized_event = *event;
+            normalized_event.scancode &= 0x00FFU;
+            event = &normalized_event;
+        }
+    }
     if (event->type == NEXUS_INPUT_MOUSE) {
         pointer_x += event->mouse_dx;
         pointer_y += event->mouse_dy;
@@ -4892,6 +4908,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 }
             }
         }
+        if (event->mouse_wheel != 0) {
+            const struct nexus_input_event wheel_key = {
+                .type = NEXUS_INPUT_KEYBOARD,
+                .scancode = event->mouse_wheel > 0 ? 0x49U : 0x51U,
+                .mouse_buttons = 0U,
+                .mouse_dx = 0,
+                .mouse_dy = 0,
+                .mouse_wheel = 0
+            };
+            desktop_handle_input(&wheel_key);
+            return;
+        }
         draw_shell();
         draw_pointer();
         return;
@@ -4912,11 +4940,15 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (key_code == 0x1DU) {
-        keyboard_left_control = !key_released;
+        if (extended_key) keyboard_right_control = !key_released;
+        else keyboard_left_control = !key_released;
+        keyboard_left_control = keyboard_left_control || keyboard_right_control;
         return;
     }
     if (key_code == 0x38U) {
-        keyboard_alt = !key_released;
+        if (extended_key) keyboard_right_alt_down = !key_released;
+        else keyboard_left_alt_down = !key_released;
+        keyboard_alt = keyboard_left_alt_down || keyboard_right_alt_down;
         return;
     }
     if (key_code == 0x5BU || key_code == 0x5CU) {

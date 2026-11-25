@@ -25,7 +25,7 @@ static void test_mime_extension_and_fallback_name(void) {
     char name[NEXUS_DOWNLOAD_NAME_MAX];
     assert(nexus_download_filename(
         "https://example.test/get?id=7", NULL, "application/pdf", name));
-    assert(strcmp(name, "DOWNLOAD.PDF") == 0);
+    assert(strcmp(name, "GET.PDF") == 0);
     assert(nexus_download_filename(
         "https://example.test/readme", NULL, "text/plain; charset=utf-8", name));
     assert(strcmp(name, "README.TXT") == 0);

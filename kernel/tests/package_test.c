@@ -116,7 +116,7 @@ void vfs_close(struct nexus_vfs_file *file) {
 bool nexus_elf64_parse(const void *bytes, size_t length,
                        struct nexus_elf64_image *image) {
     if (bytes == NULL || length != 4U ||
-        memcmp(bytes, "ELF!", 4U) != 0 || image == NULL) return false;
+        memcmp(bytes, "ELF", 3U) != 0 || image == NULL) return false;
     *image = (struct nexus_elf64_image){0};
     image->entry_point = 0x400000U;
     image->segment_count = 1U;

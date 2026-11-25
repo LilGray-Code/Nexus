@@ -1,12 +1,14 @@
 # Nexus OS Networking, HTTPS, Browser, and Wi-Fi Engineering Specification
 
-**Status:** Active implementation. Nexus now has a fail-closed RDRAND byte source, a WPA2 SNonce initializer using that source, and bounded TCP SYN/data retransmission. TLS, verified HTTPS, a physical Wi-Fi driver, and a modern browser engine are still not implemented.
+**Status:** Active implementation. Nexus has a freestanding TCP/HTTP stack, a pinned Mbed TLS 4.1.2 TLS 1.3 adapter, certificate and hostname verification, a bounded crypto allocator, and an HTTPS-first browser with web-search form submission and selectable text results. The release build now embeds a checksum-verified Mozilla-derived CA root bundle. Physical Wi-Fi drivers and a modern HTML/CSS/JavaScript browser engine remain incomplete.
 
 ## Verified current boundary
 
-The original-kernel roadmap describes early networking only. It explicitly records that no wireless chipset driver or firmware is registered, live Wi-Fi scanning and association are unavailable, and the browser lacks TLS, CSS layout, JavaScript, cookies, tabs, and a modern rendering engine. The existing HTTP fetch path is not secure web support.
+The browser's secure search provider uses HTTPS form submission and parses bounded HTML result links. The release build downloads the Mozilla-derived CA PEM from curl's CA Extract service, verifies the published SHA-256 digest, and embeds the immutable file in the TLS-enabled kernel. A valid NEXUS.CRT file on the writable Nexus Data volume may override the built-in store. The trust source, licensing, and policy limits are documented in docs/security/CA-TRUST-STORE.md.
 
-Do not label Nexus HTTPS-capable, Wi-Fi-capable, or Chrome-compatible until the acceptance tests below pass on the distributable image and supported physical hardware.
+The current browser remains text-oriented: it does not implement CSS layout, JavaScript, cookies, tabs, or a modern DOM engine. The Wi-Fi state manager and 802.11 parser do not make arbitrary wireless chipsets usable; no general physical Wi-Fi driver matrix is yet established.
+
+Do not describe Nexus as Windows/Chrome-equivalent or claim all Wi-Fi hardware works. HTTPS support must still pass the release build, emulator, and physical hardware acceptance tests.
 
 ## Layered architecture
 

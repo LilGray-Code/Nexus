@@ -41,6 +41,7 @@ PY
 # Build the pinned Mbed TLS 1.3 client as freestanding kernel objects.
 # Cryptographic RNG, RTC time, and allocator callbacks are provided by Nexus.
 sh toolchain/fetch-mbedtls.sh
+sh toolchain/fetch-ca-bundle.sh
 cmake -S build/deps/mbedtls-4.1.2 -B build/deps/mbedtls-kernel-build \
   -DENABLE_TESTING=OFF -DENABLE_PROGRAMS=OFF \
   -DMBEDTLS_CONFIG_SET="MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG;MBEDTLS_PLATFORM_TIME_ALT;MBEDTLS_PLATFORM_GMTIME_R_ALT;MBEDTLS_PLATFORM_MS_TIME_ALT;MBEDTLS_PLATFORM_MEMORY;MBEDTLS_SSL_PROTO_TLS1_3" \

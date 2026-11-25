@@ -32,6 +32,9 @@ bool wifi_pci_discover(void) {
             .function = device->function,
             .vendor_id = device->vendor_id,
             .device_id = device->device_id,
+            .subsystem_vendor_id = device->subsystem_vendor_id,
+            .subsystem_device_id = device->subsystem_device_id,
+            .revision_id = device->revision_id,
             .vendor_name = wireless_vendor_name(device->vendor_id)
         };
     }

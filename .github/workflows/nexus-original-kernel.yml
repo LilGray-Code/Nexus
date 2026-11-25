@@ -572,7 +572,7 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-# The ISO starts directly in the dedicated install environment.
+          # The ISO starts directly in the dedicated install environment.
           time.sleep(0.4)
           import re
           deadline = time.time() + 10
@@ -713,7 +713,7 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-# The ISO starts directly in the dedicated install environment.
+          # The ISO starts directly in the dedicated install environment.
           # intended SATA target second. Open the drive dropdown with Tab,
           time.sleep(0.4)
           key("tab")

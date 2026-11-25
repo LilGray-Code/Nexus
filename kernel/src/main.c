@@ -406,8 +406,8 @@ void kmain(void) {
     const bool installer_boot = nexus_boot_mode_is_installer(boot_command_line);
     desktop_set_installer_mode(installer_boot);
     serial_write(installer_boot
-        ? "NEXUS BOOT MODE: DEDICATED INSTALLER\\r\\n"
-        : "NEXUS BOOT MODE: DESKTOP\\r\\n");
+        ? "NEXUS BOOT MODE: DEDICATED INSTALLER\r\n"
+        : "NEXUS BOOT MODE: DESKTOP\r\n");
 
     if (framebuffer_request.response != NULL &&
         framebuffer_request.response->framebuffer_count > 0) {

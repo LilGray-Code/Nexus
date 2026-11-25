@@ -259,16 +259,37 @@ void graphics_blend_circle(uint64_t center_x, uint64_t center_y,
                              red, green, blue, alpha, true);
 }
 
-static uint32_t rounded_row_inset(uint32_t radius, uint32_t distance) {
-    if (radius == 0U || distance >= radius) return 0U;
-    const uint32_t radius_squared = radius * radius;
-    const uint32_t distance_squared = distance * distance;
-    uint32_t inset = radius;
-    while (inset != 0U &&
-           inset * inset + distance_squared > radius_squared) {
-        --inset;
+/*
+ * Estimate 4x4 sub-pixel coverage for one pixel in a rounded rectangle's
+ * corner. This keeps the high-contrast curved outline smooth without
+ * allocating a backbuffer or requiring a graphics device driver.
+ */
+static uint8_t rounded_corner_coverage(uint32_t radius,
+                                       uint64_t pixel_x,
+                                       uint64_t pixel_y,
+                                       uint64_t width,
+                                       uint64_t height,
+                                       bool right, bool bottom) {
+    const uint64_t radius_q = (uint64_t)radius * 4U;
+    const uint64_t center_x_q =
+        (right ? width - radius : radius) * 4U;
+    const uint64_t center_y_q =
+        (bottom ? height - radius : radius) * 4U;
+    uint8_t covered = 0U;
+
+    for (uint32_t sy = 1U; sy <= 3U; sy += 2U) {
+        const uint64_t sample_y_q = pixel_y * 4U + sy;
+        const uint64_t dy = sample_y_q > center_y_q
+            ? sample_y_q - center_y_q : center_y_q - sample_y_q;
+        for (uint32_t sx = 1U; sx <= 3U; sx += 2U) {
+            const uint64_t sample_x_q = pixel_x * 4U + sx;
+            const uint64_t dx = sample_x_q > center_x_q
+                ? sample_x_q - center_x_q : center_x_q - sample_x_q;
+            if (dx * dx + dy * dy <= radius_q * radius_q)
+                ++covered;
+        }
     }
-    return radius - inset;
+    return covered;
 }
 
 static void graphics_rounded_rect_internal(
@@ -284,6 +305,7 @@ static void graphics_rounded_rect_internal(
     if (radius > 256U) radius = 256U;
     if ((uint64_t)radius * 2U > width) radius = (uint32_t)(width / 2U);
     if ((uint64_t)radius * 2U > height) radius = (uint32_t)(height / 2U);
+    if (alpha == 0U) return;
     if (radius == 0U) {
         if (blend) graphics_blend_rect(x, y, width, height,
                                        red, green, blue, alpha);
@@ -291,22 +313,63 @@ static void graphics_rounded_rect_internal(
         return;
     }
 
+    const uint64_t center_width = width - (uint64_t)radius * 2U;
+    const uint8_t source_alpha = blend ? alpha : 255U;
     for (uint64_t row = 0U; row < height; ++row) {
-        uint32_t distance = 0U;
-        if (row < radius) distance = radius - (uint32_t)row - 1U;
-        else if (row >= height - radius)
-            distance = (uint32_t)(row - (height - radius));
-        const uint32_t inset = rounded_row_inset(radius, distance);
-        const uint64_t span = width > (uint64_t)inset * 2U
-            ? width - (uint64_t)inset * 2U : 0U;
-        if (span == 0U) continue;
-        if (blend) graphics_blend_rect(x + inset, y + row, span, 1U,
-                                       red, green, blue, alpha);
-        else graphics_fill_rect(x + inset, y + row, span, 1U,
-                                red, green, blue);
+        const bool top_corner = row < radius;
+        const bool bottom_corner = row >= height - radius;
+        const bool corner_row = top_corner || bottom_corner;
+
+        if (center_width != 0U) {
+            const uint64_t center_x = x + radius;
+            if (blend)
+                graphics_blend_rect(center_x, y + row, center_width, 1U,
+                                    red, green, blue, alpha);
+            else
+                graphics_fill_rect(center_x, y + row, center_width, 1U,
+                                   red, green, blue);
+        }
+        if (!corner_row) {
+            if (blend)
+                graphics_blend_rect(x, y + row, radius, 1U,
+                                    red, green, blue, alpha);
+            else
+                graphics_fill_rect(x, y + row, radius, 1U,
+                                   red, green, blue);
+            if (blend)
+                graphics_blend_rect(x + width - radius, y + row,
+                                    radius, 1U, red, green, blue, alpha);
+            else
+                graphics_fill_rect(x + width - radius, y + row,
+                                   radius, 1U, red, green, blue);
+            continue;
+        }
+
+        const uint64_t corner_y = top_corner ? row : row - (height - radius);
+        for (uint64_t column = 0U; column < radius; ++column) {
+            uint8_t coverage = rounded_corner_coverage(
+                radius, column, corner_y, width, height, false,
+                bottom_corner);
+            if (coverage != 0U) {
+                const uint8_t covered_alpha = (uint8_t)(
+                    ((uint16_t)source_alpha * coverage + 2U) / 4U);
+                graphics_blend_rect(x + column, y + row, 1U, 1U,
+                                    red, green, blue, covered_alpha);
+            }
+
+            const uint64_t right_column = width - radius + column;
+            coverage = rounded_corner_coverage(
+                radius, right_column, corner_y, width, height, true,
+                bottom_corner);
+            if (coverage != 0U) {
+                const uint8_t covered_alpha = (uint8_t)(
+                    ((uint16_t)source_alpha * coverage + 2U) / 4U);
+                graphics_blend_rect(x + right_column, y + row, 1U, 1U,
+                                    red, green, blue, covered_alpha);
+            }
+        }
     }
 }
-
 void graphics_round_rect(uint64_t x, uint64_t y, uint64_t width,
                          uint64_t height, uint32_t radius,
                          uint8_t red, uint8_t green, uint8_t blue) {

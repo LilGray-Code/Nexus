@@ -2532,11 +2532,15 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         .blue_mask_size = framebuffer->blue_mask_size,
         .blue_mask_shift = framebuffer->blue_mask_shift
     };
+    serial_write("DESKTOP: initializing framebuffer and display backend\\r\\n");
     desktop_firmware_surface = surface;
     desktop_virtio_gpu_active =
         virtio_gpu_start(surface.width, surface.height,
                          &desktop_firmware_surface,
                          &desktop_render_surface);
+    serial_write(desktop_virtio_gpu_active
+        ? "DESKTOP: VirtIO GPU 2D backend initialized\\r\\n"
+        : "DESKTOP: using firmware framebuffer backend\\r\\n");
     if (desktop_virtio_gpu_active) {
         surface = desktop_render_surface;
         gpu_set_virtio_display_active(true);
@@ -2553,6 +2557,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         serial_write("DESKTOP: graphics surface validation failed; keeping serial console\r\n");
         return false;
     }
+    serial_write("DESKTOP: graphics surface validated\\r\\n");
     if (!desktop_virtio_gpu_active)
         gpu_set_firmware_framebuffer_active(true);
     screen_width = graphics_width();
@@ -2573,7 +2578,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     installer_input[0] = '\0';
     installer_confirmed_id[0] = '\0';
     installer_set_status("Select a supported target disk");
+    serial_write("DESKTOP: refreshing installer storage plan\\r\\n");
     installer_refresh_plan();
+    serial_write("DESKTOP: installer storage plan ready\\r\\n");
     if (installer_session_mode) installer_log_selected_target();
     mouse_left_was_down = false;
     start_menu_open = false;
@@ -2609,8 +2616,11 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 #else
     serial_write("NEXUS INSTALLER WRITE GATE LOCKED\r\n");
 #endif
+    serial_write("DESKTOP: drawing first full-screen frame\\r\\n");
     draw_shell();
+    serial_write("DESKTOP: first frame complete\\r\\n");
     draw_pointer();
+    serial_write("DESKTOP: pointer rendered\\r\\n");
     if (installer_session_mode) {
         serial_write("INSTALLER: dedicated full-screen environment rendered\r\n");
         serial_write("NEXUS INSTALLER SESSION READY\r\n");

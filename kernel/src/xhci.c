@@ -828,7 +828,7 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
                 *kind == XHCI_HID_KEYBOARD ? 8U :
                 *kind == XHCI_HID_MOUSE ? 3U : 8U;
             if ((address & 0x80U) != 0U && attributes == 3U &&
-                packet >= minimum_packet && packet <= 64U) {
+                packet >= minimum_packet && packet <= 1024U) {
                 *endpoint_address = address;
                 *max_packet = packet;
                 *interval = configuration[offset + 6U];

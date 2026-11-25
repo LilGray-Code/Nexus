@@ -59,7 +59,7 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   sorting by name, file type, or size with the `S` key. Regular files support
   persistent rename (`R`), copy (`C`), and move (`M`). The selected file can
   also be launched with the Files toolbar's Run ELF action or `Ctrl+Enter`.
-  This uses the native Nexus ELF64 loader, has a 128 KiB image limit and a
+  This uses the native Nexus ELF64 loader, has a 1 MiB image limit and a
   15-character process-name limit, executes synchronously, and displays PID,
   exit status, and a bounded capture of the program's `write(1, ...)` output
   in Files while continuing to mirror output to serial. It is not a Windows
@@ -113,6 +113,20 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   it has no CSS layout, JavaScript engine, DOM, cookies, tabbed browsing,
   image/video/audio rendering, downloads, compression support, or full
   browser compatibility layer.
+
+The first-party native application SDK is in `kernel/include/nexus/app.h`,
+with a freestanding sample and build target under `sdk/`. Its additive v1
+syscall ABI exposes keyboard/mouse event polling, display information,
+monotonic timer ticks, interruptible timer sleep, root-file I/O, and bounded
+XRGB8888 framebuffer blits. Blits are copied through a bounded kernel staging
+buffer and presented as partial updates through the existing VirtIO 2D
+scanout when available. This enables simple native 2D apps and games to draw
+without bypassing user-memory checks. It is still CPU-side rasterization, not
+a 3D API or GPU renderer. The current process launcher is foreground and
+synchronous, and the ABI does not yet provide dynamic linking, shared
+libraries, audio, controllers, or a window manager. See
+[`docs/development/NATIVE-APP-SDK.md`](docs/development/NATIVE-APP-SDK.md)
+for the SDK and compatibility limits.
 
 The desktop applications and current system services are integrated into the
 kernel. The ELF64 loader has a bounded ring-3 execution test, but this does

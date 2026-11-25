@@ -34,6 +34,17 @@ struct mock_disk {
     unsigned flushes;
 };
 
+static bool bytes_contain_text(const uint8_t *bytes, size_t length,
+                                const char *text) {
+    const size_t text_length = strlen(text);
+    if (bytes == NULL || text == NULL || text_length == 0U ||
+        text_length > length) return false;
+    for (size_t i = 0U; i <= length - text_length; ++i) {
+        if (memcmp(bytes + i, text, text_length) == 0) return true;
+    }
+    return false;
+}
+
 static bool mock_range(struct mock_disk *disk, uint64_t lba,
                        uint32_t count, uint8_t **base) {
     if (disk == NULL || count == 0U || lba > DISK_BLOCKS ||
@@ -278,6 +289,12 @@ int main(int argc,char **argv) {
     assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks));
     assert(target.flushes == 29U);
+    /* The target disk must boot straight into the installed desktop, never
+     * back into the temporary USB/ISO installer environment. */
+    assert(bytes_contain_text(target.format_area, sizeof(target.format_area),
+                              "cmdline: nexus.mode=desktop"));
+    assert(!bytes_contain_text(target.format_area, sizeof(target.format_area),
+                               "cmdline: nexus.mode=installer"));
 
     /* Install BIOS stage-1 into LBA 0 and stage-2 into the authenticated
      * GPT BIOS Boot partition, using the same kernel-owned write gate. */

@@ -25,6 +25,7 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
 #define NEXUS_USB_GAMEPAD_MAX_AXES 8U
 #define NEXUS_USB_GAMEPAD_MAX_BUTTONS 32U
 #define NEXUS_USB_GAMEPAD_MAX_REPORT_BYTES 64U
+#define NEXUS_USB_GAMEPAD_EVENT_DISCONNECTED 0x0001U
 
 struct nexus_usb_gamepad_axis {
     uint16_t bit_offset;
@@ -52,7 +53,7 @@ struct nexus_usb_gamepad_event {
     uint16_t device_id;
     uint16_t vendor_id;
     uint16_t product_id;
-    uint16_t reserved;
+    uint16_t flags;
     uint32_t buttons;
     uint8_t axis_count;
     uint8_t hat;

@@ -1,0 +1,53 @@
+name: Nexus Native App ABI
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/graphics.c"
+      - "kernel/src/graphics.h"
+      - "kernel/src/usermode.c"
+      - "kernel/src/usermode.h"
+      - "kernel/src/interrupts.c"
+      - "kernel/src/syscall.h"
+      - "kernel/include/nexus/**"
+      - "kernel/tests/graphics_blit_test.c"
+      - "kernel/tests/app_abi_layout_test.c"
+      - "sdk/**"
+      - ".github/workflows/nexus-native-app-abi.yml"
+  pull_request:
+    paths:
+      - "kernel/src/graphics.c"
+      - "kernel/src/graphics.h"
+      - "kernel/src/usermode.c"
+      - "kernel/src/usermode.h"
+      - "kernel/src/interrupts.c"
+      - "kernel/src/syscall.h"
+      - "kernel/include/nexus/**"
+      - "kernel/tests/graphics_blit_test.c"
+      - "kernel/tests/app_abi_layout_test.c"
+      - "sdk/**"
+  workflow_dispatch:
+
+jobs:
+  native-app-abi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test framebuffer blit and damage tracking
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/graphics.c kernel/tests/graphics_blit_test.c \
+            -o /tmp/nexus-graphics-blit-test
+          /tmp/nexus-graphics-blit-test
+      - name: Check public ABI structure layouts
+        run: |
+          cc -std=gnu11 -Wall -Wextra -Werror -Ikernel/include \
+            -fsyntax-only kernel/tests/app_abi_layout_test.c
+      - name: Compile native SDK example
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffreestanding \
+            -fno-stack-protector -fno-pic -fno-pie -mno-red-zone \
+            -Ikernel/include -c sdk/examples/kinetic_demo.c \
+            -o /tmp/nexus-kinetic-demo.o

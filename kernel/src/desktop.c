@@ -3327,6 +3327,8 @@ browser_retry:
         size_t ca_length = 0U;
         browser_set_status("Loading built-in Mozilla trust store...");
         if (!browser_load_ca_bundle(&ca_length)) {
+            if (search_request)
+                serial_write("NEXUS BING SEARCH TLS ROOTS MISSING\r\n");
             browser_set_status(
                 "No built-in CA store; add a valid NEXUS.CRT to Nexus Data");
             browser_clear_ca_bundle();
@@ -3338,6 +3340,8 @@ browser_retry:
         browser_clear_ca_bundle();
         if (connect_result != 0 || !nexus_https_is_verified(&https)) {
             nexus_https_close(&https);
+            if (search_request)
+                serial_write("NEXUS BING SEARCH HTTPS CONNECT FAILED\r\n");
             browser_set_status(
                 "HTTPS failed: check CA trust bundle, RTC clock and network");
             return;
@@ -3388,6 +3392,8 @@ browser_retry:
             : net_tcp_send(request, (uint16_t)request_length);
     }
     if (!request_sent) {
+        if (search_request)
+            serial_write("NEXUS BING SEARCH REQUEST SEND FAILED\r\n");
         browser_set_status("HTTP request could not be sent");
         if (https_open) nexus_https_close(&https);
         else net_tcp_close();
@@ -3428,6 +3434,8 @@ browser_retry:
     }
 
     if (!receive_ok || response_length == 0U) {
+        if (search_request)
+            serial_write("NEXUS BING SEARCH RESPONSE FAILED\r\n");
         browser_set_status(use_https
             ? "No complete TLS response received"
             : "No HTTP response received");
@@ -3435,6 +3443,8 @@ browser_retry:
     }
     if (!nexus_http_decode_response(response, response_length, body,
                                     NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
+        if (search_request)
+            serial_write("NEXUS BING SEARCH HTTP FRAMING INVALID\r\n");
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
     }
@@ -3498,6 +3508,7 @@ browser_retry:
          browser_content_type_is(parsed.content_type, "application/xhtml+xml"))) {
         size_t result_count = 0U;
         if (nexus_browser_search_is_challenge(body, parsed.body_length)) {
+            serial_write("NEXUS BING SEARCH CHALLENGE\r\n");
             browser_set_status(
                 "Search provider blocked this request (anti-bot challenge)");
             browser_render_plain_body(body, parsed.body_length);
@@ -3508,6 +3519,9 @@ browser_retry:
                 NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count)) {
             browser_search_result_count = result_count;
             browser_search_selected = 0U;
+            serial_write("NEXUS BING SEARCH RESULTS READY count=");
+            serial_write_hex((uint64_t)result_count);
+            serial_write("\r\n");
             browser_render_search_results();
             browser_address_edited = false;
             browser_set_status(use_https
@@ -3515,6 +3529,7 @@ browser_retry:
                 : "Search provider response was not encrypted");
             return;
         }
+        serial_write("NEXUS BING SEARCH NO COMPATIBLE RESULT LINKS\r\n");
         browser_set_status(
             "No compatible result links; showing the search page text");
     }

@@ -318,6 +318,105 @@ jobs:
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 
+      - name: Test live HTTPS web search in the Nexus desktop
+        shell: bash
+        run: |
+          rm -f /tmp/nexus-browser-qmp.sock nexus-browser-search-serial.log
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-browser-vars.fd
+          qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -netdev user,id=n0 -device e1000,netdev=n0 \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-browser-vars.fd \
+            -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
+            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=ahci-test.img,if=ide,index=0,format=raw \
+            -device qemu-xhci,id=xhci \
+            -device usb-kbd,bus=xhci.0 \
+            -device usb-mouse,bus=xhci.0 \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
+            -boot d -display none -serial file:nexus-browser-search-serial.log \
+            -qmp unix:/tmp/nexus-browser-qmp.sock,server,nowait \
+            -monitor none -no-reboot -no-shutdown \
+            >/tmp/nexus-browser-search-qemu.log 2>&1 &
+          QEMU_PID=$!
+          trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import json, os, socket, time
+
+          log_path = "nexus-browser-search-serial.log"
+          deadline = time.time() + 90
+          while time.time() < deadline:
+              if os.path.exists(log_path):
+                  log = open(log_path, encoding="utf-8", errors="replace").read()
+                  if ("NEXUS K0 BOOT COMPLETE" in log and
+                      "NEXUS DHCP READY" in log and
+                      "NEXUS USB HID KEYBOARD READY" in log):
+                      break
+              time.sleep(0.5)
+          else:
+              print(open(log_path, encoding="utf-8", errors="replace").read()
+                    if os.path.exists(log_path) else "No serial output")
+              raise SystemExit("Nexus desktop/network did not become ready")
+
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.settimeout(15)
+          sock.connect("/tmp/nexus-browser-qmp.sock")
+          stream = sock.makefile("rwb", buffering=0)
+          json.loads(stream.readline())
+
+          def command(payload):
+              stream.write(json.dumps(payload).encode() + b"\r\n")
+              while True:
+                  line = stream.readline()
+                  if not line:
+                      raise RuntimeError("QMP disconnected")
+                  response = json.loads(line)
+                  if "return" in response or "error" in response:
+                      if "error" in response:
+                          raise RuntimeError(response["error"])
+                      return response["return"]
+
+          command({"execute": "qmp_capabilities"})
+
+          def key(name):
+              command({"execute": "human-monitor-command",
+                       "arguments": {"command-line": f"sendkey {name} 90"}})
+              time.sleep(0.20)
+
+          # F2 opens the browser. The query is typed into its address field.
+          key("f2")
+          time.sleep(0.4)
+          for character in "nexus":
+              key(character)
+          key("ret")
+
+          deadline = time.time() + 60
+          failure_markers = (
+              "NEXUS BING SEARCH TLS ROOTS MISSING",
+              "NEXUS BING SEARCH HTTPS CONNECT FAILED",
+              "NEXUS BING SEARCH REQUEST SEND FAILED",
+              "NEXUS BING SEARCH RESPONSE FAILED",
+              "NEXUS BING SEARCH HTTP FRAMING INVALID",
+              "NEXUS BING SEARCH CHALLENGE",
+              "NEXUS BING SEARCH NO COMPATIBLE RESULT LINKS",
+          )
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              if "NEXUS BING SEARCH RESULTS READY count=" in log:
+                  print(log)
+                  raise SystemExit(0)
+              for marker in failure_markers:
+                  if marker in log:
+                      print(log)
+                      raise SystemExit(f"Live web search failed: {marker}")
+              time.sleep(0.5)
+
+          print(open(log_path, encoding="utf-8", errors="replace").read())
+          raise SystemExit("Timed out waiting for live Bing search results")
+          PY
+          cat nexus-browser-search-serial.log
+
       - name: Resolve exception IP from UEFI log
         if: always()
         shell: bash

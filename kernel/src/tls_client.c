@@ -10,6 +10,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * TLS 1.3 servers may send post-handshake NewSessionTicket messages before
+ * or between application records. Nexus does not currently cache tickets
+ * for session resumption, so consume the notification and continue normal
+ * I/O. Bound the number handled in one call to avoid a peer monopolizing the
+ * caller with an unending stream of control messages.
+ */
+#define NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT 8U
+
 static void secure_zero(void *memory, size_t length) {
     volatile unsigned char *bytes = (volatile unsigned char *)memory;
     for (size_t i = 0U; i < length; ++i) bytes[i] = 0U;
@@ -205,7 +214,16 @@ int nexus_tls_client_write(struct nexus_tls_client *client,
         (length != 0U && buffer == NULL) || length > (size_t)INT_MAX) {
         return NEXUS_TLS_ERR_NOT_CONNECTED;
     }
-    return mbedtls_ssl_write(&client->ssl, buffer, length);
+    for (unsigned int attempt = 0U;
+         attempt < NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT; ++attempt) {
+        const int result = mbedtls_ssl_write(&client->ssl, buffer, length);
+        if (result != MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
+            return result;
+        /* The ticket is parsed and safely retained by Mbed TLS. Nexus does
+         * not implement session resumption yet, so continue the write.
+         */
+    }
+    return MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET;
 }
 
 int nexus_tls_client_read(struct nexus_tls_client *client,
@@ -214,5 +232,15 @@ int nexus_tls_client_read(struct nexus_tls_client *client,
         capacity == 0U || capacity > (size_t)INT_MAX) {
         return NEXUS_TLS_ERR_NOT_CONNECTED;
     }
-    return mbedtls_ssl_read(&client->ssl, buffer, capacity);
+    for (unsigned int attempt = 0U;
+         attempt < NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT; ++attempt) {
+        const int result = mbedtls_ssl_read(&client->ssl, buffer, capacity);
+        if (result != MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
+            return result;
+        /* This is a valid TLS 1.3 post-handshake control message, not
+         * application data or a transport failure. Continue to the next
+         * record; a later call will deliver HTTP bytes or WANT_READ.
+         */
+    }
+    return MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET;
 }

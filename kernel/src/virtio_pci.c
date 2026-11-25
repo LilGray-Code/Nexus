@@ -374,23 +374,25 @@ bool virtio_pci_queue_pop_used(struct nexus_virtio_queue *queue,
 bool virtio_pci_queue_notify(struct nexus_virtio_queue *queue) {
     if (queue == NULL || queue->device == NULL || !queue->device->opened)
         return false;
-    volatile uint8_t *common = queue->device->common;
-    write_le16(common + VIRTIO_QUEUE_SELECT, queue->index);
-    const uint16_t notify_offset = read_le16(common + VIRTIO_QUEUE_NOTIFY_OFF);
-    const uint64_t notify_relative =
-        (uint64_t)notify_offset * queue->device->notify_multiplier;
-    if (notify_relative > UINT32_MAX ||
-        notify_relative + 2U > queue->device->notify_cap_length ||
-        queue->device->notify_cap_offset >
-            UINT64_MAX - notify_relative) return false;
-    const uint64_t physical = queue->device->notify_bar_physical +
-        queue->device->notify_cap_offset + notify_relative;
-    volatile uint32_t *page = NULL;
-    if (!paging_map_mmio_page(physical & ~0xFFFULL, &page) || page == NULL)
-        return false;
-    volatile uint16_t *doorbell = (volatile uint16_t *)
-        ((volatile uint8_t *)page + (physical & 0xFFFU));
-    *doorbell = queue->index;
+    if (queue->notify_address == NULL) {
+        volatile uint8_t *common = queue->device->common;
+        write_le16(common + VIRTIO_QUEUE_SELECT, queue->index);
+        const uint16_t notify_offset = read_le16(common + VIRTIO_QUEUE_NOTIFY_OFF);
+        const uint64_t notify_relative =
+            (uint64_t)notify_offset * queue->device->notify_multiplier;
+        if (notify_relative > UINT32_MAX ||
+            notify_relative + 2U > queue->device->notify_cap_length ||
+            queue->device->notify_cap_offset >
+                UINT64_MAX - notify_relative) return false;
+        const uint64_t physical = queue->device->notify_bar_physical +
+            queue->device->notify_cap_offset + notify_relative;
+        volatile uint32_t *page = NULL;
+        if (!paging_map_mmio_page(physical & ~0xFFFULL, &page) || page == NULL)
+            return false;
+        queue->notify_address = (volatile uint16_t *)
+            ((volatile uint8_t *)page + (physical & 0xFFFU));
+    }
+    *queue->notify_address = queue->index;
     __asm__ volatile ("sfence" ::: "memory");
     return true;
 }

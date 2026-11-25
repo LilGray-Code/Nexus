@@ -132,6 +132,11 @@ static inline int64_t nexus_app_ticks(void) {
     return nexus_app_syscall3(NEXUS_APP_SYS_CLOCK_TICKS, 0U, 0U, 0U);
 }
 
+/* Wait for timer ticks; current kernel timer runs at 100 Hz. */
+static inline int64_t nexus_app_sleep_ticks(uint64_t ticks) {
+    return nexus_app_syscall3(NEXUS_APP_SYS_SLEEP_TICKS, ticks, 0U, 0U);
+}
+
 /* pixels are packed 0x00RRGGBB; source stride is measured in uint32_t pixels. */
 static inline int64_t nexus_app_blit(uint32_t x, uint32_t y,
                                      uint32_t width, uint32_t height,

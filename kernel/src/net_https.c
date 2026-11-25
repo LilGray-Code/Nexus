@@ -3,6 +3,7 @@
 #include "net.h"
 #include "timer.h"
 #include "tls_client.h"
+#include "serial.h"
 
 static struct nexus_tls_client https_tls_client;
 
@@ -57,6 +58,14 @@ static int https_tcp_receive(void *context, unsigned char *buffer,
     }
 }
 
+static void https_log_connect_failure(const char *stage, int result) {
+    serial_write("HTTPS: ");
+    serial_write(stage);
+    serial_write(" failed result=");
+    serial_write_hex((uint64_t)(int64_t)result);
+    serial_write("\r\n");
+}
+
 static uint64_t remaining_ticks(uint64_t start, uint64_t budget) {
     const uint64_t now = timer_ticks();
     if (now < start) return 0U;
@@ -89,15 +98,19 @@ int nexus_https_connect(struct nexus_https_connection *connection,
     uint8_t remote_ipv4[4];
     if (!net_dns_resolve(hostname, remote_ipv4,
                          remaining_ticks(start, timeout_ticks))) {
-        return remaining_ticks(start, timeout_ticks) == 0U
+        const int failure = remaining_ticks(start, timeout_ticks) == 0U
             ? NEXUS_HTTPS_ERR_TIMEOUT : NEXUS_HTTPS_ERR_DNS;
+        https_log_connect_failure("DNS", failure);
+        return failure;
     }
 
     uint64_t remaining = remaining_ticks(start, timeout_ticks);
     if (remaining == 0U) return NEXUS_HTTPS_ERR_TIMEOUT;
     if (!net_tcp_connect(remote_ipv4, NEXUS_HTTPS_PORT, remaining)) {
-        return remaining_ticks(start, timeout_ticks) == 0U
+        const int failure = remaining_ticks(start, timeout_ticks) == 0U
             ? NEXUS_HTTPS_ERR_TIMEOUT : NEXUS_HTTPS_ERR_CONNECT;
+        https_log_connect_failure("TCP", failure);
+        return failure;
     }
     connection->tcp_open = true;
 
@@ -109,6 +122,7 @@ int nexus_https_connect(struct nexus_https_connection *connection,
     int result = nexus_tls_client_init(
         &https_tls_client, hostname, ca_pem, ca_pem_length, &io);
     if (result != 0) {
+        https_log_connect_failure("TLS initialization", result);
         nexus_https_close(connection);
         return result;
     }
@@ -120,10 +134,13 @@ int nexus_https_connect(struct nexus_https_connection *connection,
         if (result == 0) break;
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            https_log_connect_failure("TLS handshake", result);
             nexus_https_close(connection);
             return result;
         }
         if (remaining_ticks(start, timeout_ticks) == 0U) {
+            https_log_connect_failure("TLS handshake timeout",
+                                      NEXUS_HTTPS_ERR_TIMEOUT);
             nexus_https_close(connection);
             return NEXUS_HTTPS_ERR_TIMEOUT;
         }
@@ -132,6 +149,8 @@ int nexus_https_connect(struct nexus_https_connection *connection,
     }
 
     if (!nexus_tls_client_is_verified(&https_tls_client)) {
+        https_log_connect_failure("TLS certificate verification",
+                                  NEXUS_HTTPS_ERR_TLS);
         nexus_https_close(connection);
         return NEXUS_HTTPS_ERR_TLS;
     }

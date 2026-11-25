@@ -3340,8 +3340,11 @@ browser_retry:
         browser_clear_ca_bundle();
         if (connect_result != 0 || !nexus_https_is_verified(&https)) {
             nexus_https_close(&https);
-            if (search_request)
-                serial_write("NEXUS BING SEARCH HTTPS CONNECT FAILED\r\n");
+            if (search_request) {
+                serial_write("NEXUS BING SEARCH HTTPS CONNECT FAILED code=");
+                serial_write_hex((uint64_t)(int64_t)connect_result);
+                serial_write("\r\n");
+            }
             browser_set_status(
                 "HTTPS failed: check CA trust bundle, RTC clock and network");
             return;

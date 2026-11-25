@@ -620,6 +620,50 @@ static bool translate_user_address(uint64_t root_physical,
  * in the lower canonical user half and every traversed page must have the
  * U/S bit set at every level. The caller must separately impose an ABI limit.
  */
+bool paging_copy_to_address_space(uint64_t root_physical,
+                                  uint64_t destination,
+                                  const void *source, size_t length) {
+    if (length == 0U) return true;
+    if (source == NULL || !memory_page_is_allocated(root_physical))
+        return false;
+
+    const uint64_t byte_count = (uint64_t)length;
+    if ((size_t)byte_count != length ||
+        destination > UINT64_MAX - byte_count) return false;
+
+    uint64_t cr4;
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
+    const unsigned int user_address_bits = levels == 5U ? 56U : 47U;
+    const uint64_t user_limit = 1ULL << user_address_bits;
+    const uint64_t end = destination + byte_count;
+    if (destination >= user_limit || end > user_limit) return false;
+
+    const uint8_t *input = (const uint8_t *)source;
+    uint64_t current = destination;
+    uint64_t remaining = byte_count;
+    while (remaining != 0U) {
+        uint64_t physical;
+        uint64_t mapping_size;
+        if (!translate_user_address(root_physical, levels, current,
+                                    &physical, &mapping_size, true))
+            return false;
+
+        const uint64_t mapping_offset = current & (mapping_size - 1ULL);
+        uint64_t chunk = mapping_size - mapping_offset;
+        if (chunk > remaining) chunk = remaining;
+        volatile uint8_t *output =
+            (volatile uint8_t *)memory_phys_to_virt(physical);
+        if (output == NULL) return false;
+        for (uint64_t i = 0U; i < chunk; ++i) output[i] = input[i];
+
+        input += (size_t)chunk;
+        current += chunk;
+        remaining -= chunk;
+    }
+    return true;
+}
+
 bool paging_copy_from_user(void *destination, uint64_t source, size_t length) {
     if (length == 0U) return true;
     if (destination == NULL) return false;

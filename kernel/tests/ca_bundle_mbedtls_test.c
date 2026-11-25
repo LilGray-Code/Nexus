@@ -1,10 +1,17 @@
 #include "ca_bundle.h"
 #include "tls_heap.h"
+#include "timer.h"
+
 
 #include "mbedtls/x509_crt.h"
 
 #include <assert.h>
 #include <stddef.h>
+
+/* Time is irrelevant to PEM parsing, but the compiled Mbed TLS platform
+ * adapter still references the kernel's monotonic tick source.
+ */
+uint64_t timer_ticks(void) { return 0U; }
 
 int main(void) {
     size_t pem_length = 0U;

@@ -2,7 +2,6 @@
 
 #include "mbedtls_heap.h"
 #include "mbedtls_time.h"
-#include "serial.h"
 #include "sha256.h"
 
 #include "psa/crypto.h"
@@ -20,8 +19,23 @@
  */
 #define NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT 8U
 
+/*
+ * Optional diagnostics: the freestanding kernel supplies these serial
+ * routines, while host-only TLS unit tests intentionally do not link them.
+ */
+extern void tls_trace_text(const char *text) __attribute__((weak));
+extern void tls_trace_hex(uint64_t value) __attribute__((weak));
+
 static unsigned int tls_receive_trace_events;
 static unsigned int tls_app_read_trace_events;
+
+static void tls_trace_text(const char *text) {
+    if (serial_write != NULL) tls_trace_text(text);
+}
+
+static void tls_trace_hex(uint64_t value) {
+    if (serial_write_hex != NULL) tls_trace_hex(value);
+}
 
 static void secure_zero(void *memory, size_t length) {
     volatile unsigned char *bytes = (volatile unsigned char *)memory;
@@ -55,17 +69,17 @@ static int tls_receive_bridge(void *context, unsigned char *buffer,
         client->io.receive(client->io.context, buffer, capacity);
     if (result > 0 && tls_receive_trace_events < 96U) {
         ++tls_receive_trace_events;
-        serial_write("NEXUS TLS TRANSPORT RECEIVE bytes=");
-        serial_write_hex((uint64_t)result);
-        serial_write(" requested=");
-        serial_write_hex((uint64_t)capacity);
-        serial_write("\r\n");
+        tls_trace_text("NEXUS TLS TRANSPORT RECEIVE bytes=");
+        tls_trace_hex((uint64_t)result);
+        tls_trace_text(" requested=");
+        tls_trace_hex((uint64_t)capacity);
+        tls_trace_text("\r\n");
     } else if (result < 0 && result != MBEDTLS_ERR_SSL_WANT_READ &&
                tls_receive_trace_events < 96U) {
         ++tls_receive_trace_events;
-        serial_write("NEXUS TLS TRANSPORT RECEIVE error=");
-        serial_write_hex((uint64_t)(int64_t)result);
-        serial_write("\r\n");
+        tls_trace_text("NEXUS TLS TRANSPORT RECEIVE error=");
+        tls_trace_hex((uint64_t)(int64_t)result);
+        tls_trace_text("\r\n");
     }
     if (result < 0) return result;
     if ((size_t)result > capacity) return NEXUS_TLS_ERR_TRANSPORT;
@@ -255,11 +269,11 @@ int nexus_tls_client_read(struct nexus_tls_client *client,
         const int result = mbedtls_ssl_read(&client->ssl, buffer, capacity);
         if (tls_app_read_trace_events < 128U) {
             ++tls_app_read_trace_events;
-            serial_write("NEXUS TLS APPLICATION READ result=");
-            serial_write_hex((uint64_t)(int64_t)result);
-            serial_write(" capacity=");
-            serial_write_hex((uint64_t)capacity);
-            serial_write("\r\n");
+            tls_trace_text("NEXUS TLS APPLICATION READ result=");
+            tls_trace_hex((uint64_t)(int64_t)result);
+            tls_trace_text(" capacity=");
+            tls_trace_hex((uint64_t)capacity);
+            tls_trace_text("\r\n");
         }
         if (result != MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
             return result;

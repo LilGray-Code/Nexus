@@ -27,6 +27,15 @@ struct nexus_usb_msc_sense {
     uint8_t additional_code_qualifier;
 };
 
+struct nexus_usb_msc_interface {
+    uint8_t configuration_value;
+    uint8_t interface_number;
+    uint8_t bulk_in_endpoint;
+    uint8_t bulk_out_endpoint;
+    uint16_t bulk_in_max_packet;
+    uint16_t bulk_out_max_packet;
+};
+
 struct nexus_usb_msc_device {
     struct nexus_usb_msc_transport transport;
     void *transport_context;
@@ -44,6 +53,14 @@ struct nexus_usb_msc_device {
     uint8_t last_csw_status;
     bool initialized;
 };
+
+/* Finds the SCSI-transparent Bulk-Only Transport interface in a standard
+ * USB configuration descriptor. The selected alternate setting must be zero
+ * and must expose one bulk-IN and one bulk-OUT endpoint.
+ */
+bool nexus_usb_msc_find_interface(
+    const uint8_t *configuration, size_t length,
+    struct nexus_usb_msc_interface *interface_info);
 
 /* Initializes a directly attached BOT mass-storage LUN. It validates INQUIRY,
  * TEST UNIT READY, and READ CAPACITY (10/16) before reporting it usable.

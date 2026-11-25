@@ -10,7 +10,8 @@ struct mock_usb {
     uint32_t csw_residue;
     bool bad_csw_tag;
     bool short_data;
-    uint8_t fail_opcode;
+    bool large_capacity;
+    bool fail_recovery;
     unsigned recoveries;
     unsigned commands;
     uint8_t last_opcode;
@@ -99,7 +100,7 @@ static bool mock_bulk_in(void *context, uint8_t endpoint,
         for(size_t i=0U;i<16U;++i) bytes[16U+i]=(uint8_t)product[i];
         for(size_t i=0U;i<4U;++i) bytes[32U+i]=(uint8_t)revision[i];
     } else if (mock->last_opcode == 0x25U) {
-        put_be32(bytes, UINT32_MAX);
+        put_be32(bytes, mock->large_capacity ? UINT32_MAX : 4095U);
         put_be32(bytes+4U, 512U);
     } else if (mock->last_opcode == 0x9EU) {
         put_be64(bytes, 0x0000000100000000ULL);
@@ -122,7 +123,7 @@ static bool mock_recover(void *context, uint8_t interface_number,
     assert(input_endpoint==0x81U);
     assert(output_endpoint==0x02U);
     ++mock->recoveries;
-    return true;
+    return !mock->fail_recovery;
 }
 
 static const struct nexus_usb_msc_transport ops = {
@@ -224,12 +225,75 @@ static void test_transport_failure_poisoning(void) {
     assert(nexus_usb_msc_ready(&device));
 }
 
+static void test_configuration_descriptor_parser(void) {
+    uint8_t descriptor[] = {
+        9U,2U,48U,0U,2U,1U,0U,0x80U,50U,
+        9U,4U,0U,0U,1U,3U,1U,1U,0U,
+        7U,5U,0x81U,3U,8U,0U,10U,
+        9U,4U,3U,0U,2U,8U,6U,0x50U,0U,
+        7U,5U,0x02U,2U,0x00U,0x02U,0U,
+        7U,5U,0x81U,2U,0x00U,0x02U,0U
+    };
+    struct nexus_usb_msc_interface found;
+    assert(nexus_usb_msc_find_interface(
+        descriptor,sizeof(descriptor),&found));
+    assert(found.configuration_value==1U);
+    assert(found.interface_number==3U);
+    assert(found.bulk_in_endpoint==0x81U);
+    assert(found.bulk_out_endpoint==0x02U);
+    assert(found.bulk_in_max_packet==512U);
+    assert(found.bulk_out_max_packet==512U);
+
+    descriptor[31] = 0x51U; /* UAS protocol, not Bulk-Only Transport. */
+    assert(!nexus_usb_msc_find_interface(
+        descriptor,sizeof(descriptor),&found));
+    descriptor[31] = 0x50U;
+    descriptor[39] = 3U; /* Interrupt endpoint is not bulk. */
+    assert(!nexus_usb_msc_find_interface(
+        descriptor,sizeof(descriptor),&found));
+    descriptor[39] = 2U;
+    assert(!nexus_usb_msc_find_interface(
+        descriptor,sizeof(descriptor)-1U,&found));
+    descriptor[9] = 8U; /* Truncated interface descriptor. */
+    assert(!nexus_usb_msc_find_interface(
+        descriptor,sizeof(descriptor),&found));
+}
+
+static void test_capacity_10_and_32bit_commands(void) {
+    struct mock_usb mock={0};
+    struct nexus_usb_msc_device device;
+    mock.large_capacity=false;
+    assert(nexus_usb_msc_init(&device,&ops,&mock,4U,0x81U,0x02U,0U));
+    assert(device.block_count==4096U);
+    uint8_t sector[512];
+    assert(nexus_usb_msc_read_blocks(&device,0x12345678U,1U,sector));
+    assert(mock.last_opcode==0x28U);
+    assert(be32(mock.last_cdb+2U)==0x12345678U);
+    assert(nexus_usb_msc_write_blocks(&device,0x12345678U,1U,sector));
+    assert(mock.last_opcode==0x2AU);
+}
+
+static void test_failed_recovery_disables_device(void) {
+    struct mock_usb mock={0};
+    struct nexus_usb_msc_device device;
+    mock.large_capacity=true;
+    init_device(&mock,&device);
+    mock.bad_csw_tag=true;
+    mock.fail_recovery=true;
+    uint8_t sector[512];
+    assert(!nexus_usb_msc_read_blocks(&device,0U,1U,sector));
+    assert(!nexus_usb_msc_ready(&device));
+}
+
 int main(void) {
+    test_configuration_descriptor_parser();
+    test_capacity_10_and_32bit_commands();
     test_initialize_and_read_capacity_16();
     test_read_write_16_and_flush();
     test_sense_and_command_failure();
     test_bad_csw_and_short_data_recover();
     test_bounds_and_endpoint_validation();
     test_transport_failure_poisoning();
+    test_failed_recovery_disables_device();
     return 0;
 }

@@ -70,6 +70,90 @@ static void write_be64(uint8_t *bytes, uint64_t value) {
         bytes[i] = (uint8_t)(value >> (56U - (uint32_t)i * 8U));
 }
 
+static uint16_t read_le16(const uint8_t *bytes) {
+    return (uint16_t)((uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8));
+}
+
+bool nexus_usb_msc_find_interface(
+    const uint8_t *configuration, size_t length,
+    struct nexus_usb_msc_interface *interface_info) {
+    if (configuration == NULL || interface_info == NULL || length < 9U ||
+        configuration[0] < 9U || configuration[1] != 2U)
+        return false;
+
+    const uint16_t total_length = read_le16(configuration + 2U);
+    const uint8_t configuration_value = configuration[5];
+    if (configuration_value == 0U || total_length < configuration[0] ||
+        total_length > length) return false;
+
+    struct nexus_usb_msc_interface candidate = {0};
+    uint8_t declared_endpoints = 0U;
+    uint8_t observed_endpoints = 0U;
+    bool active = false;
+
+    for (size_t offset = configuration[0]; offset < total_length;) {
+        if (total_length - offset < 2U) return false;
+        const uint8_t descriptor_length = configuration[offset];
+        const uint8_t descriptor_type = configuration[offset + 1U];
+        if (descriptor_length < 2U ||
+            descriptor_length > total_length - offset) return false;
+
+        if (descriptor_type == 4U) {
+            if (descriptor_length < 9U) return false;
+            if (active && observed_endpoints < declared_endpoints)
+                return false;
+            active = configuration[offset + 3U] == 0U &&
+                     configuration[offset + 5U] == 0x08U &&
+                     configuration[offset + 6U] == 0x06U &&
+                     configuration[offset + 7U] == 0x50U;
+            candidate = (struct nexus_usb_msc_interface){0};
+            declared_endpoints = configuration[offset + 4U];
+            observed_endpoints = 0U;
+            if (active) {
+                candidate.configuration_value = configuration_value;
+                candidate.interface_number = configuration[offset + 2U];
+            }
+        } else if (descriptor_type == 5U && active) {
+            if (descriptor_length < 7U) return false;
+            ++observed_endpoints;
+            const uint8_t address = configuration[offset + 2U];
+            const uint8_t attributes = configuration[offset + 3U] & 0x03U;
+            const uint16_t raw_packet = read_le16(configuration + offset + 4U);
+            const uint16_t max_packet = raw_packet & 0x07FFU;
+            if (attributes == 2U && (raw_packet & 0xF800U) == 0U &&
+                max_packet >= 8U && max_packet <= 1024U) {
+                if ((address & 0x80U) != 0U &&
+                    candidate.bulk_in_endpoint == 0U) {
+                    candidate.bulk_in_endpoint = address;
+                    candidate.bulk_in_max_packet = max_packet;
+                } else if ((address & 0x80U) == 0U &&
+                           (address & 0x0FU) != 0U &&
+                           candidate.bulk_out_endpoint == 0U) {
+                    candidate.bulk_out_endpoint = address;
+                    candidate.bulk_out_max_packet = max_packet;
+                }
+            }
+        }
+        offset += descriptor_length;
+
+        if (active && offset < total_length &&
+            configuration[offset + 1U] == 4U) {
+            if (observed_endpoints < declared_endpoints) return false;
+            if (candidate.bulk_in_endpoint != 0U &&
+                candidate.bulk_out_endpoint != 0U) {
+                *interface_info = candidate;
+                return true;
+            }
+        }
+    }
+
+    if (active && observed_endpoints < declared_endpoints) return false;
+    if (candidate.bulk_in_endpoint == 0U ||
+        candidate.bulk_out_endpoint == 0U) return false;
+    *interface_info = candidate;
+    return true;
+}
+
 static bool valid_endpoint(uint8_t endpoint, bool input) {
     return (endpoint & 0x70U) == 0U &&
            (endpoint & 0x0FU) != 0U &&

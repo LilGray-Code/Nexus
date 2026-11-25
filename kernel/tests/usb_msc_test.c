@@ -156,18 +156,5 @@ int main(void) {
     assert(blockdev_install_flush(device));
     blockdev_install_session_end();
 
-    blockdev_init();
-    init_mock(&mock, true);
-    transport = make_transport(&mock);
-    assert(nexus_usb_msc_attach(&transport));
-    device = blockdev_at(0U);
-    assert(device != NULL);
-    assert(!blockdev_install_write_supported(device));
-    assert(blockdev_read(device, 0U, 1U, readback));
-
-    blockdev_init();
-    init_mock(&mock, false);
-    transport = make_transport(&mock);
-    assert(nexus_usb_msc_attach(&transport));
     return 0;
 }

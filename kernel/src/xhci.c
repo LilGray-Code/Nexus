@@ -325,7 +325,10 @@ static bool xhci_command(struct xhci_controller *xhci, uint64_t parameter,
             __asm__ volatile ("pause");
             continue;
         }
-        if (xhci_event_type(&event) != XHCI_TRB_COMMAND_EVENT) continue;
+        if (xhci_event_type(&event) != XHCI_TRB_COMMAND_EVENT) {
+            (void)xhci_dispatch_hid_transfer_event(xhci, &event);
+            continue;
+        }
         if (completion != NULL) *completion = event;
         if (xhci_event_code(&event) != XHCI_CC_SUCCESS) {
             const uint16_t last_index = xhci->command_ring.enqueue == 0U
@@ -390,10 +393,15 @@ static bool xhci_wait_transfer(struct xhci_controller *xhci,
             __asm__ volatile ("pause");
             continue;
         }
-        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
+        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) {
+            continue;
+        }
         const uint8_t event_slot = (uint8_t)(event.control >> 24);
         const uint8_t event_ep = (uint8_t)((event.control >> 16) & 0x1FU);
-        if (event_slot != slot_id || event_ep != endpoint_id) continue;
+        if (event_slot != slot_id || event_ep != endpoint_id) {
+            (void)xhci_dispatch_hid_transfer_event(xhci, &event);
+            continue;
+        }
         if (completion != NULL) *completion = event;
         const uint8_t code = xhci_event_code(&event);
         if (code != XHCI_CC_SUCCESS && code != XHCI_CC_SHORT_PACKET) {

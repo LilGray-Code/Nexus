@@ -3220,15 +3220,17 @@ static bool browser_https_send_all(struct nexus_https_connection *connection,
 static bool browser_https_receive_response(
     struct nexus_https_connection *connection,
     uint8_t *response, size_t response_capacity, size_t *response_length,
+    uint8_t *body, size_t body_capacity,
+    struct nexus_http_response *parsed,
     bool *orderly_eof, int *failure_result) {
     if (connection == NULL || response == NULL || response_capacity == 0U ||
-        response_length == NULL || orderly_eof == NULL ||
-        failure_result == NULL) return false;
+        response_length == NULL || body == NULL || body_capacity == 0U ||
+        parsed == NULL || orderly_eof == NULL || failure_result == NULL)
+        return false;
     *failure_result = 0;
     *response_length = 0U;
     *orderly_eof = false;
     const uint64_t start = timer_ticks();
-    uint64_t last_data = start;
 
     while (*response_length < response_capacity &&
            timer_ticks() - start < 3000U) {
@@ -3241,7 +3243,17 @@ static bool browser_https_receive_response(
                 return false;
             }
             *response_length += (size_t)result;
-            last_data = timer_ticks();
+
+            /*
+             * Do not treat an idle encrypted stream as a complete HTTP page.
+             * Keep reading until the HTTP decoder confirms a self-delimited
+             * body (Content-Length/chunked), an authenticated TLS EOF arrives,
+             * or the overall deadline/capacity is reached.
+             */
+            if (nexus_http_decode_response(response, *response_length,
+                                           body, body_capacity, parsed) &&
+                (parsed->has_content_length || parsed->chunked))
+                break;
             continue;
         }
         if (result == 0) {
@@ -3254,12 +3266,13 @@ static bool browser_https_receive_response(
             return false;
         }
         net_poll();
-        if (*response_length != 0U &&
-            timer_ticks() - last_data >= 800U) break;
         __asm__ volatile ("pause" ::: "memory");
     }
     if (*response_length == 0U && !*orderly_eof)
         *failure_result = -2; /* Response deadline expired with no TLS data. */
+    else if (*response_length != 0U && !*orderly_eof &&
+             timer_ticks() - start >= 3000U)
+        *failure_result = -3; /* Partial response reached its overall deadline. */
     return *response_length != 0U;
 }
 
@@ -3487,7 +3500,8 @@ browser_retry:
     if (use_https) {
         receive_ok = browser_https_receive_response(
             &https, response, NEXUS_BROWSER_RESPONSE_CAPACITY,
-            &response_length, &orderly_eof, &receive_error);
+            &response_length, body, NEXUS_BROWSER_RESPONSE_CAPACITY,
+            &parsed, &orderly_eof, &receive_error);
         if (search_request && !receive_ok) {
             serial_write("NEXUS BING SEARCH TLS READ FAILED code=");
             serial_write_hex((uint64_t)(int64_t)receive_error);

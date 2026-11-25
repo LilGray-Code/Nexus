@@ -35,6 +35,7 @@
 #include "process.h"
 #include "xhci.h"
 #include "vfs.h"
+#include "service_manager.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
@@ -183,6 +184,75 @@ static bool boot_media_provenance_init(void) {
     return false;
 }
 
+
+static const struct limine_framebuffer *service_framebuffer;
+static bool service_pci_start(void *c) { (void)c; return pci_init(); }
+static bool service_graphics_start(void *c) { (void)c; (void)gpu_init(); return true; }
+static bool service_network_devices_start(void *c) {
+    (void)c; netdev_init();
+    if (e1000_init()) {
+        if (e1000_send_arp_probe()) serial_write("NEXUS E1000 TX READY\r\n");
+        else serial_write("WARNING: E1000 ARP probe transmit did not complete\r\n");
+    }
+    if (rtl8139_init()) serial_write("NEXUS RTL8139 TX/RX READY\r\n");
+    if (virtio_net_init()) serial_write("NEXUS VIRTIO-NET TX/RX READY\r\n");
+    if (!netdev_ready()) return false;
+    serial_write("NETWORK LINK: ");
+    serial_write(netdev_link_up() ? "UP\r\n" : "DOWN OR UNKNOWN\r\n");
+    return true;
+}
+static bool service_storage_start(void *c) { (void)c; return storage_probe(); }
+static bool service_timer_start(void *c) { (void)c; timer_init(100U); return true; }
+static bool service_network_start(void *c) { (void)c; return netdev_ready() && net_init(); }
+static bool service_input_start(void *c) {
+    (void)c; const bool ps2 = input_init(); (void)xhci_init();
+    const bool keyboard = xhci_keyboard_ready(), mouse = xhci_mouse_ready();
+    if (!ps2 && !keyboard) serial_write("INPUT: no PS/2 or USB HID keyboard detected; keyboard input unavailable\r\n");
+    if (keyboard) serial_write("INPUT: USB HID boot keyboard available\r\n");
+    if (mouse) serial_write("INPUT: USB HID boot mouse available\r\n");
+    return true;
+}
+static bool service_audio_start(void *c) {
+    (void)c; if (ac97_init()) return true;
+    serial_write("AUDIO: no supported AC97 device initialized\r\n"); return false;
+}
+static bool service_desktop_start(void *c) {
+    (void)c;
+    if (service_framebuffer == NULL) {
+        serial_write("DESKTOP: no framebuffer supplied by bootloader\r\n");
+        return false;
+    }
+    return desktop_show(service_framebuffer);
+}
+static bool service_process_start(void *c) { (void)c; process_init(); return true; }
+static bool register_boot_services(void) {
+    static const char *const graphics_dep[] = {"platform.pci"};
+    static const char *const netdev_dep[] = {"platform.pci"};
+    static const char *const storage_dep[] = {"platform.pci"};
+    static const char *const net_dep[] = {"network.devices", "platform.timer"};
+    static const char *const input_dep[] = {"platform.pci", "platform.timer"};
+    static const char *const audio_dep[] = {"platform.pci", "platform.timer"};
+    static const char *const desktop_dep[] = {"graphics", "input"};
+    static const char *const process_dep[] = {"platform.timer"};
+    const struct nexus_service_descriptor defs[] = {
+        {"platform.pci", NULL, 0U, service_pci_start, NULL, NULL},
+        {"graphics", graphics_dep, 1U, service_graphics_start, NULL, NULL},
+        {"network.devices", netdev_dep, 1U, service_network_devices_start, NULL, NULL},
+        {"storage", storage_dep, 1U, service_storage_start, NULL, NULL},
+        {"platform.timer", NULL, 0U, service_timer_start, NULL, NULL},
+        {"network.stack", net_dep, 2U, service_network_start, NULL, NULL},
+        {"input", input_dep, 2U, service_input_start, NULL, NULL},
+        {"audio", audio_dep, 2U, service_audio_start, NULL, NULL},
+        {"desktop", desktop_dep, 2U, service_desktop_start, NULL, NULL},
+        {"process.runtime", process_dep, 1U, service_process_start, NULL, NULL}
+    };
+    nexus_service_manager_init();
+    for (size_t i = 0U; i < sizeof(defs) / sizeof(defs[0]); ++i)
+        if (!nexus_service_manager_register(&defs[i])) return false;
+    return true;
+}
+
+
 void kmain(void) {
     __asm__ volatile ("cli" : : : "memory");
     serial_init();
@@ -190,6 +260,7 @@ void kmain(void) {
     serial_write("\r\nNEXUS OS KERNEL STARTED\r\n");
     serial_write("Architecture: x86_64\r\n");
     serial_write("Boot protocol: Limine\r\n");
+    if (!register_boot_services()) { serial_write("ERROR: service registry failed\r\n"); halt_forever(); }
     if (nexus_cpu_init()) {
         if (nexus_fpu_init()) {
             serial_write("CPU: isolated x87/SSE2 state enabled for foreground apps; AVX remains disabled\r\n");
@@ -349,12 +420,12 @@ void kmain(void) {
     }
     serial_write("\r\nNEXUS FIRMWARE INVENTORY READY\r\n");
 
-    if (!pci_init()) {
-        serial_write("ERROR: PCI configuration-space scan found no devices\r\n");
-        halt_forever();
+    if (!nexus_service_manager_start("platform.pci")) {
+        serial_write("ERROR: PCI configuration-space scan found no devices\r\n"); halt_forever();
     }
     serial_write("NEXUS PCI DISCOVERY READY\r\n");
-    (void)gpu_init();
+    if (!nexus_service_manager_start("graphics"))
+        serial_write("WARNING: graphics discovery service failed\r\n");
     if (wifi_pci_discover()) {
         serial_write("WIFI: PCI wireless-class candidates discovered: ");
         serial_write_hex(wifi_pci_candidate_count());
@@ -410,25 +481,8 @@ void kmain(void) {
     serial_write_hex(pci_device_count());
     serial_write("\r\n");
 
-    netdev_init();
-    if (e1000_init()) {
-        if (e1000_send_arp_probe()) {
-            serial_write("NEXUS E1000 TX READY\r\n");
-        } else {
-            serial_write("WARNING: E1000 ARP probe transmit did not complete\r\n");
-        }
-    }
-    if (rtl8139_init()) {
-        serial_write("NEXUS RTL8139 TX/RX READY\r\n");
-    }
-    if (virtio_net_init()) {
-        serial_write("NEXUS VIRTIO-NET TX/RX READY\r\n");
-    }
-    if (netdev_ready()) {
-        serial_write("NETWORK LINK: ");
-        serial_write(netdev_link_up() ? "UP\r\n" : "DOWN OR UNKNOWN\r\n");
-    }
-
+    if (!nexus_service_manager_start("network.devices"))
+        serial_write("WARNING: no supported Ethernet driver initialized\r\n");
 
     if (!ioapic_probe()) {
         serial_write("ERROR: I/O APIC read-only probe failed\r\n");
@@ -436,10 +490,8 @@ void kmain(void) {
     }
     serial_write("NEXUS IOAPIC PROBE READY\r\n");
 
-    if (!storage_probe()) {
-        serial_write("WARNING: no mass-storage PCI controller discovered\r\n");
-    }
-    serial_write("NEXUS STORAGE DISCOVERY READY\r\n");
+    if (!nexus_service_manager_start("storage"))
+        serial_write("WARNING: no supported mass-storage driver initialized\r\n");
     const bool boot_media_identity_ready = boot_media_provenance_init();
     if (!boot_media_identity_ready) {
         serial_write("INSTALLER: destructive writes locked until boot source is identified\r\n");
@@ -451,10 +503,11 @@ void kmain(void) {
     }
 #endif
 
-    timer_init(100);
-    if (netdev_ready() && !net_init()) {
-        serial_write("WARNING: Ethernet network layer did not initialize\r\n");
+    if (!nexus_service_manager_start("platform.timer")) {
+        serial_write("ERROR: platform timer service failed to start\r\n"); halt_forever();
     }
+    if (!nexus_service_manager_start("network.stack"))
+        serial_write("WARNING: network stack unavailable; continuing offline\r\n");
     serial_write("IOAPIC: direct timer routing held pending interrupt-frame validation; using PIC/PIT virtual-wire mode\r\n");
 
     serial_write("K2: PIT configured for 100 Hz\r\n");
@@ -560,28 +613,22 @@ void kmain(void) {
         ? "NEXUS BOOT MODE: DEDICATED INSTALLER\r\n"
         : "NEXUS BOOT MODE: DESKTOP\r\n");
 
+    service_framebuffer = NULL;
     if (framebuffer_request.response != NULL &&
-        framebuffer_request.response->framebuffer_count > 0) {
-        (void)desktop_show(framebuffer_request.response->framebuffers[0]);
-    } else {
-        serial_write("DESKTOP: no framebuffer supplied by bootloader\r\n");
-    }
+        framebuffer_request.response->framebuffer_count > 0)
+        service_framebuffer = framebuffer_request.response->framebuffers[0];
+    if (!nexus_service_manager_start("input"))
+        serial_write("WARNING: input service did not initialize\r\n");
+    if (!nexus_service_manager_start("audio"))
+        serial_write("AUDIO: service unavailable; continuing without audio\r\n");
+    if (!nexus_service_manager_start("desktop"))
+        serial_write("WARNING: desktop service did not initialize\r\n");
     serial_write("NEXUS K2 COOPERATIVE THREAD SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
-    const bool ps2_input_ready = input_init();
-    (void)ac97_init();
-    (void)xhci_init();
-    const bool usb_keyboard_ready = xhci_keyboard_ready();
-    const bool usb_mouse_ready = xhci_mouse_ready();
-    if (!ps2_input_ready && !usb_keyboard_ready) {
-        serial_write("INPUT: no PS/2 or USB HID keyboard detected; keyboard input unavailable\r\n");
+    if (!nexus_service_manager_start("process.runtime")) {
+        serial_write("ERROR: native process runtime service failed\r\n"); halt_forever();
     }
-    if (usb_keyboard_ready)
-        serial_write("INPUT: USB HID boot keyboard available\r\n");
-    if (usb_mouse_ready)
-        serial_write("INPUT: USB HID boot mouse available\r\n");
-    process_init();
     if (!usermode_run_selftest()) {
         serial_write("ERROR: CPL3 user-mode self-test failed\r\n");
         halt_forever();

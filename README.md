@@ -142,6 +142,15 @@ Spotify entries remain web shortcuts. See
 [`docs/development/SOFTWARE-ECOSYSTEM.md`](docs/development/SOFTWARE-ECOSYSTEM.md)
 for the format and trust requirements. The [Steam/game compatibility roadmap](docs/development/STEAM-COMPATIBILITY-ROADMAP.md) lists the Linux ABI, process model, audio, 3D, filesystem, and runtime work that still blocks Steam titles.
 
+The boot architecture now includes a bus-neutral driver registry with
+priority-based matching, probe fall-through, and per-device bind records.
+AHCI and NVMe initialization are dispatched through registered PCI drivers;
+other existing controllers are being migrated incrementally. A dependency-aware
+service supervisor now orders PCI discovery, graphics, network devices and
+stack, storage, timer, input, audio, desktop, and process-runtime startup. These
+callbacks still execute inside the kernel: this is a lifecycle/control layer,
+not yet isolated ring-3 service processes or dynamically loadable driver modules.
+
 The desktop applications and current system services are integrated into the
 kernel. The ELF64 loader has a bounded ring-3 execution test, but this does
 **not** mean that Nexus currently has a full separate userland, a mature

@@ -1,0 +1,41 @@
+name: Nexus Platform Foundation Tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/driver_manager.*"
+      - "kernel/src/service_manager.*"
+      - "kernel/tests/driver_manager_test.c"
+      - "kernel/tests/service_manager_test.c"
+      - ".github/workflows/nexus-platform-foundations.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    name: Driver registry and service supervisor host tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Test modular driver registry
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/driver_manager.c \
+            kernel/tests/driver_manager_test.c \
+            -o /tmp/nexus-driver-manager-test
+          /tmp/nexus-driver-manager-test
+      - name: Test dependency-aware service supervisor
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/service_manager.c \
+            kernel/tests/service_manager_test.c \
+            -o /tmp/nexus-service-manager-test
+          /tmp/nexus-service-manager-test

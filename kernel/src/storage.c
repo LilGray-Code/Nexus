@@ -1,4 +1,5 @@
 #include "storage.h"
+#include "driver_manager.h"
 
 #include "pci.h"
 #include "nvme.h"
@@ -135,9 +136,59 @@ static const char *storage_kind(uint8_t subclass, uint8_t programming_interface)
     }
 }
 
+
+static bool storage_ahci_driver_probe(
+    const struct nexus_driver_device *device, void *context) {
+    (void)context;
+    if (device == NULL || device->native_device == NULL) return false;
+    const struct nexus_pci_device *pci =
+        (const struct nexus_pci_device *)device->native_device;
+    if (!ahci_init_controller(pci)) return false;
+    (void)ahci_register_probe(pci); /* Additional register inventory is read-only. */
+    return true;
+}
+static bool storage_nvme_driver_probe(
+    const struct nexus_driver_device *device, void *context) {
+    (void)context;
+    if (device == NULL || device->native_device == NULL) return false;
+    return nvme_identify_probe(
+        (const struct nexus_pci_device *)device->native_device);
+}
+static bool storage_register_drivers(void) {
+    const struct nexus_driver_descriptor ahci = {
+        .name = "ahci", .version = 1U, .priority = 100,
+        .match = {
+            .bus = NEXUS_DRIVER_BUS_PCI,
+            .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
+            .device_id = NEXUS_DRIVER_WILDCARD_U16,
+            .class_code = 0x01U, .subclass = 0x06U,
+            .programming_interface = 0x01U
+        },
+        .probe = storage_ahci_driver_probe, .remove = NULL, .context = NULL
+    };
+    const struct nexus_driver_descriptor nvme = {
+        .name = "nvme", .version = 1U, .priority = 100,
+        .match = {
+            .bus = NEXUS_DRIVER_BUS_PCI,
+            .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
+            .device_id = NEXUS_DRIVER_WILDCARD_U16,
+            .class_code = 0x01U, .subclass = 0x08U,
+            .programming_interface = 0x02U
+        },
+        .probe = storage_nvme_driver_probe, .remove = NULL, .context = NULL
+    };
+    return nexus_driver_manager_register(&ahci) &&
+           nexus_driver_manager_register(&nvme);
+}
+
 bool storage_probe(void) {
-    controller_count = 0;
-    serial_write("STORAGE: classifying controllers and running read-only identify probes\r\n");
+    controller_count = 0U;
+    nexus_driver_manager_init();
+    if (!storage_register_drivers()) {
+        serial_write("STORAGE: unable to register built-in PCI drivers\r\n");
+        return false;
+    }
+    serial_write("STORAGE: classifying controllers and dispatching modular probes\r\n");
 
     const size_t count = pci_device_count();
     for (size_t i = 0; i < count; ++i) {
@@ -176,19 +227,27 @@ bool storage_probe(void) {
             serial_write("\r\n");
         }
 
-        if (device->subclass == 0x06 &&
-            device->programming_interface == 0x01) {
-            (void)ahci_init_controller(device);
-            (void)ahci_register_probe(device);
-        } else if (device->subclass == 0x08 &&
-                   device->programming_interface == 0x02) {
-            (void)nvme_identify_probe(device);
+        if ((device->subclass == 0x06 &&
+             device->programming_interface == 0x01) ||
+            (device->subclass == 0x08 &&
+             device->programming_interface == 0x02)) {
+            if (!nexus_driver_manager_probe_pci_device(device)) {
+                serial_write("STORAGE: no matching driver bound at ");
+                serial_write_hex(device->bus);
+                serial_write(":");
+                serial_write_hex(device->slot);
+                serial_write(".");
+                serial_write_hex(device->function);
+                serial_write("\r\n");
+            }
         }
 
     }
 
     serial_write("STORAGE: controllers discovered: ");
     serial_write_hex(controller_count);
+    serial_write(" driver probe records=");
+    serial_write_hex(nexus_driver_manager_binding_count());
     serial_write("\r\n");
 
     return controller_count != 0;

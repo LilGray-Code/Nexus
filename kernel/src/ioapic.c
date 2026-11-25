@@ -29,10 +29,16 @@ bool ioapic_probe(void) {
         const struct nexus_acpi_ioapic *record = &topology->ioapics[i];
         volatile uint32_t *registers = NULL;
 
-        if (record->physical_address == 0 ||
-            !paging_map_mmio_page(record->physical_address, &registers) ||
+        if (record->physical_address == 0U) {
+            serial_write("IOAPIC: MADT supplied a zero physical address\r\n");
+            return false;
+        }
+        serial_write("IOAPIC: mapping controller MMIO at ");
+        serial_write_hex(record->physical_address);
+        serial_write("\r\n");
+        if (!paging_map_mmio_page(record->physical_address, &registers) ||
             registers == NULL) {
-            serial_write("IOAPIC: unable to map controller MMIO page\r\n");
+            serial_write("IOAPIC: paging_map_mmio_page rejected controller address\r\n");
             return false;
         }
 

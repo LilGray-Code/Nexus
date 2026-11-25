@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS 2048U
+
 struct glyph {
     char character;
     uint8_t rows[7];
@@ -283,7 +285,7 @@ void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
 
 
 
-#define NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS 2048U
+
 
 /* Integer square root with a fixed, small search interval. Circle rasterization
  * is row-based, so the cost is bounded by 4097 scanlines rather than radius^2.

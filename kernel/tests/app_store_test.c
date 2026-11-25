@@ -16,15 +16,15 @@ static uint8_t mock_data[MOCK_CAPACITY];
 static size_t mock_size;
 static bool mock_present;
 static bool mock_remove_allowed = true;
-static bool mock_native_available[4];
+static bool mock_native_available[5];
 static size_t mock_native_launches;
 static char mock_native_last_launch[32];
 static struct nexus_boot_pack_entry mock_native_entry;
 
 const struct nexus_boot_pack_entry *nexus_boot_pack_find(
     const char *name) {
-    static const char *const names[4] = {
-        "KINETIC.ELF", "GAMEPAD.ELF", "AUDIO.ELF", "PIE.ELF"
+    static const char *const names[5] = {
+        "KINETIC.ELF", "GAMEPAD.ELF", "AUDIO.ELF", "PIE.ELF", "ARCADE.ELF"
     };
     if (name == NULL) return NULL;
     for (size_t i = 0U; i < 4U; ++i) {
@@ -127,7 +127,7 @@ static void reset_mock(void) {
     mock_remove_allowed = true;
     mock_native_launches = 0U;
     mock_native_last_launch[0] = '\0';
-    for (size_t i = 0U; i < 4U; ++i) mock_native_available[i] = false;
+    for (size_t i = 0U; i < 5U; ++i) mock_native_available[i] = false;
     for (size_t i = 0U; i < sizeof(mock_data); ++i) mock_data[i] = 0U;
 }
 
@@ -144,9 +144,9 @@ static void test_catalog_has_web_and_native_entries(void) {
         assert(app->url != NULL && app->url[0] == 'h');
     }
     const char *native_expected[] = {
-        "KINETIC.ELF", "GAMEPAD.ELF", "AUDIO.ELF", "PIE.ELF"
+        "KINETIC.ELF", "GAMEPAD.ELF", "AUDIO.ELF", "PIE.ELF", "ARCADE.ELF"
     };
-    for (size_t i = 0U; i < 4U; ++i) {
+    for (size_t i = 0U; i < 5U; ++i) {
         const size_t index = 6U + i;
         const struct nexus_store_application *app =
             nexus_store_application_at(index);
@@ -216,12 +216,27 @@ static void test_bundled_native_launch_and_read_only_lifecycle(void) {
     assert(!nexus_store_launch_native(kinetic_index, &exit_status));
 }
 
+static void test_bundled_arcade_game_launch(void) {
+    reset_mock();
+    const size_t index = NEXUS_STORE_NATIVE_ARCADE_INDEX;
+    assert(index == 10U);
+    assert(!nexus_store_is_installed(index));
+    mock_native_available[4] = true;
+    assert(nexus_store_is_installed(index));
+    uint64_t exit_status = UINT64_MAX;
+    assert(nexus_store_launch_native(index, &exit_status));
+    assert(exit_status == 0U);
+    assert(mock_native_launches == 1U);
+    assert(strcmp(mock_native_last_launch, "ARCADE.ELF") == 0);
+}
+
 int main(void) {
     test_catalog_has_web_and_native_entries();
     test_install_open_and_remove_shortcut();
     test_collision_does_not_overwrite_user_data();
     test_bad_indices_and_failed_remove();
     test_bundled_native_launch_and_read_only_lifecycle();
+    test_bundled_arcade_game_launch();
     puts("NEXUS APP STORE NATIVE + WEB TESTS PASSED");
     return 0;
 }

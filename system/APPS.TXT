@@ -15,3 +15,5 @@ PIE.ELF
 
 To build your own native app, use kernel/include/nexus/app.h and run:
   make -C sdk CC=gcc
+\nARCADE.ELF
+  Play Nexus Breakout with keyboard arrows or a supported USB HID gamepad.

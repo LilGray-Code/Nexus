@@ -618,7 +618,7 @@ jobs:
           grep -q "BOOT MEDIA: optical source is not a registered disk" bios-serial.log
           grep -q "NEXUS GDT TSS READY" bios-serial.log
           grep -q "INSTALLER: verified kernel, UEFI loader, BIOS stage-2, and system-pack payloads available" bios-serial.log
-          grep -q "NEXUS ELF64 VALIDATION READY" bios-serial.log
+          grep -q "NEXUS ELF64 STATIC-PIE VALIDATION READY" bios-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" bios-serial.log
           grep -q "NEXUS RAMFS READY" bios-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" bios-serial.log
@@ -1577,7 +1577,7 @@ jobs:
           grep -q "BOOT MEDIA: optical source is not a registered disk" release-serial.log
           grep -q "NEXUS NVME BLOCK DEVICE READY" release-serial.log
           grep -q "NEXUS INSTALLER WRITE GATE ENABLED" release-serial.log
-          grep -q "NEXUS ELF64 VALIDATION READY" release-serial.log
+          grep -q "NEXUS ELF64 STATIC-PIE VALIDATION READY" release-serial.log
           grep -q "NEXUS RAMFS READY" release-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" release-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" release-serial.log

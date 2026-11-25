@@ -60,7 +60,8 @@ python3 build/make-system-pack.py \
   --file KINETIC.ELF=sdk/build/kinetic_demo.elf \
   --file GAMEPAD.ELF=sdk/build/gamepad_demo.elf \
   --file AUDIO.ELF=sdk/build/audio_demo.elf \
-  --file PIE.ELF=sdk/build/pie_demo.elf
+  --file PIE.ELF=sdk/build/pie_demo.elf \
+  --file ARCADE.ELF=sdk/build/breakout_game.elf
 
 ISO_ROOT="$ROOT/build/iso-root"
 rm -rf "$ISO_ROOT"

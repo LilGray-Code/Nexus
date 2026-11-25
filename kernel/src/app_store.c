@@ -81,6 +81,13 @@ static const struct nexus_store_application applications[NEXUS_STORE_MAX_APPS] =
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - STATIC PIE",
         "PIE.ELF"
+    },
+    {
+        "ARCADE", "Nexus Breakout", "Nexus Project", "GAMES",
+        "A native keyboard and USB gamepad Breakout game. Press Escape to return.",
+        NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
+        "BUNDLED NEXUS ELF - KEYBOARD / USB HID GAMEPAD",
+        "ARCADE.ELF"
     }
 };
 

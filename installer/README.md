@@ -90,20 +90,23 @@ is mounted, RAM-only file saves are volatile and do not survive a reboot.
 
 ## Keyboard, mouse, and display compatibility
 
-The early input stack supports legacy PS/2 keyboards/mice and directly attached
-USB HID boot-protocol keyboards and mice through xHCI. Some 2.4 GHz wireless
-keyboard/mouse receivers work when they expose the same standard USB boot-HID
-interfaces. Receiver-specific features, USB hubs, non-boot HID reports, and
-native Bluetooth discovery/pairing are not implemented; Bluetooth keyboards
-and mice are therefore not universally supported. Use a directly attached
-USB device or a tested USB receiver for installation.
+The input stack supports legacy PS/2 keyboards/mice and directly attached
+wired USB HID boot-protocol keyboards and mice through xHCI. Some 2.4 GHz
+wireless keyboard/mouse devices also work through their USB receiver when it
+presents a standard boot-HID keyboard or mouse interface. Connect the USB
+device or receiver before booting the installer. Receiver-specific features,
+USB hubs, non-boot HID reports, and native Bluetooth discovery and pairing are
+not implemented, so Bluetooth devices and many proprietary wireless receivers
+are not guaranteed to work.
 
-The ISO and installed Limine entry request a 1920x1080, 32-bit framebuffer.
-Limine automatically selects another available mode if that exact resolution
-is unavailable. The text renderer now supports fractional-coverage
-antialiasing for smoother UI titles. Rendering is still CPU software
-composited into the framebuffer; this does not add Intel, AMD, or NVIDIA GPU
-drivers, hardware-accelerated composition, OpenGL, Vulkan, or DirectX.
+The ISO and installed Limine configuration request a 1920x1080, 32-bit
+framebuffer. Limine automatically selects another available mode when that
+resolution is unavailable. The software renderer includes fractional
+coverage for smoother text and 4x sub-pixel coverage at rounded panel/window
+corners, reducing stair-step edges. Rendering is still CPU software
+composited into the framebuffer. No Intel, AMD, or NVIDIA GPU driver or
+hardware-accelerated composition backend is present yet; OpenGL, Vulkan, and
+DirectX are not supported.
 
 ## Recovery and test coverage
 

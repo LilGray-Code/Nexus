@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "pci_caps.h"
 
 #define NEXUS_PCI_MAX_STORED_DEVICES 128U
 #define NEXUS_PCI_BAR_COUNT 6U
@@ -25,6 +26,13 @@ struct nexus_pci_device {
     uint16_t status;
     uint8_t interrupt_line;
     uint8_t interrupt_pin;
+    bool standard_capabilities_valid;
+    bool extended_capabilities_valid;
+    bool extended_config_available;
+    uint16_t standard_capability_count;
+    uint16_t extended_capability_count;
+    uint32_t standard_capability_flags;
+    uint32_t extended_capability_flags;
     uint32_t bars[NEXUS_PCI_BAR_COUNT];
 };
 

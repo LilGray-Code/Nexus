@@ -178,6 +178,13 @@ jobs:
             kernel/tests/acpi_mcfg_test.c -o /tmp/nexus-acpi-mcfg-test
           /tmp/nexus-acpi-mcfg-test
 
+      - name: Test PCI standard and extended capability list parsing
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/pci_caps.c \
+            kernel/tests/pci_caps_test.c -o /tmp/nexus-pci-caps-test
+          /tmp/nexus-pci-caps-test
+
       - name: Test Limine BIOS boot-sector and stage-2 installation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

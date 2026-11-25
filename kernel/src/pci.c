@@ -2,6 +2,7 @@
 
 #include "acpi.h"
 #include "paging.h"
+#include "pci_caps.h"
 #include "serial.h"
 
 #include <stddef.h>
@@ -106,6 +107,18 @@ static bool pci_config_write16(uint16_t segment, uint8_t bus,
     return true;
 }
 
+struct pci_capability_read_context {
+    uint16_t segment;
+    uint8_t bus, slot, function;
+};
+static bool pci_capability_read(void *opaque, uint16_t offset,
+                                uint32_t *value) {
+    if (opaque == NULL || value == NULL) return false;
+    const struct pci_capability_read_context *c = opaque;
+    *value = pci_config_read(c->segment, c->bus, c->slot, c->function, offset);
+    return *value != UINT32_MAX;
+}
+
 static void record_device(uint16_t segment, uint8_t bus, uint8_t slot,
                           uint8_t function, uint32_t identity,
                           uint32_t class_revision, uint32_t header_dword) {
@@ -137,6 +150,23 @@ static void record_device(uint16_t segment, uint8_t bus, uint8_t slot,
         saved->revision_id = (uint8_t)class_revision;
         saved->vendor_id = vendor;
         saved->device_id = device;
+
+        struct pci_capability_read_context cap_context = {
+            .segment = segment, .bus = bus, .slot = slot, .function = function
+        };
+        struct nexus_pci_capability_summary cap_summary;
+        const bool extended_available =
+            acpi_find_mcfg_region(segment, bus) != NULL;
+        (void)nexus_pci_scan_capabilities(pci_capability_read, &cap_context,
+                                          header_type, extended_available,
+                                          &cap_summary);
+        saved->standard_capabilities_valid = cap_summary.standard_valid;
+        saved->extended_capabilities_valid = cap_summary.extended_valid;
+        saved->extended_config_available = cap_summary.extended_supported;
+        saved->standard_capability_count = cap_summary.standard_count;
+        saved->extended_capability_count = cap_summary.extended_count;
+        saved->standard_capability_flags = cap_summary.standard_flags;
+        saved->extended_capability_flags = cap_summary.extended_flags;
 
         /* Subsystem IDs distinguish OEM board variants that share one
          * chipset/device ID. Offset 0x2C is present in Type 0 and Type 1
@@ -323,6 +353,15 @@ bool pci_init(void) {
         serial_write_hex(device->class_code);
         serial_write("/");
         serial_write_hex(device->subclass);
+        serial_write(" PCI caps std/ext ");
+        serial_write_hex(device->standard_capability_count);
+        serial_write("/");
+        serial_write_hex(device->extended_capability_count);
+        if (!device->standard_capabilities_valid)
+            serial_write(" STD-LIST-INVALID");
+        if (device->extended_config_available &&
+            !device->extended_capabilities_valid)
+            serial_write(" EXT-LIST-INVALID");
         serial_write("\r\n");
     }
 

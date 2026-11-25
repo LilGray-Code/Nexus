@@ -384,6 +384,7 @@ jobs:
           grep -q "NEXUS SMP ONLINE CPU COUNT=0x0000000000000004" uefi-serial.log
           grep -q "NEXUS SMP PARALLEL WORK TEST READY" uefi-serial.log
           grep -q "NEXUS SMP NATIVE APP CAPABILITY READY" uefi-serial.log
+          grep -q "NEXUS SMP ONLINE CPU COUNT=0x0000000000000004" uefi-serial.log
           grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
           grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log

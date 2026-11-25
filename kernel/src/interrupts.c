@@ -147,6 +147,19 @@ void exception_dispatch(const struct interrupt_frame *frame) {
     __asm__ volatile ("mov %%ss, %0" : "=r"(current_ss));
 
     serial_write("\r\nNEXUS CPU EXCEPTION\r\n");
+    if (frame->vector == 14U) {
+        uint64_t fault_address = 0U;
+        __asm__ volatile ("mov %%cr2, %0" : "=r"(fault_address));
+        serial_write("Page fault address: ");
+        serial_write_hex(fault_address);
+        serial_write(" access flags: ");
+        serial_write_hex(frame->error_code);
+        serial_write("\r\n");
+    }
+    serial_write("Saved user stack pointer: ");
+    serial_write_hex(frame->user_stack_pointer);
+    serial_write("\r\n");
+
     serial_write("Vector: ");
     serial_write_hex(frame->vector);
     serial_write("\r\nError code: ");

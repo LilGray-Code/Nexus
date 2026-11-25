@@ -14,9 +14,9 @@ utilities, or another distribution's package manager.
 The installed runtime currently consists of the Nexus kernel and its integrated
 desktop/system features, plus a separate NXFS user Data volume. The System
 partition receives `KERNEL.ELF`, `SYSTEM.MAN`, and `README.TXT`. The
-desktop, terminal, file browser, settings, and early HTTP text viewer are
-currently kernel-integrated; this is not yet a separate full userland or a
-production desktop application environment.
+desktop, terminal, file browser, settings, and early HTTPS-capable text
+browser are currently kernel-integrated; this is not yet a separate full
+userland or a production desktop application environment.
 
 ## Current installer flow
 
@@ -109,8 +109,14 @@ manager, not a complete hierarchical desktop file manager.
 - No production-grade updates, rollback workflow, or filesystem repair
   environment beyond the implemented installer transaction recovery path.
 - No claim of arbitrary GPU, audio, Wi-Fi, Bluetooth, or motherboard support.
-- The browser provides only early plain-HTTP text retrieval; TLS/HTTPS is not
-  implemented.
+- The browser is a bounded text-oriented client, not a full HTML5/CSS/JavaScript
+  engine. Its online path uses verified TLS 1.3, a built-in CA trust bundle,
+  HTTP response framing, redirect handling, and server-rendered Bing search
+  results with a DuckDuckGo HTML fallback. Provider anti-bot challenges and
+  modern page features can still prevent some sites from working.
+- DNS currently supports IPv4 A queries, verified question matching, bounded
+  CNAME-chain resolution, and a small positive cache with a maximum five-minute
+  TTL. This is not a complete recursive resolver or full IPv6 DNS implementation.
 
 Treat the ISO as an engineering prototype. Prefer QEMU or another disposable
 test machine until physical testing has been completed.

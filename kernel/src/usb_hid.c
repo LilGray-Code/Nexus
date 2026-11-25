@@ -355,19 +355,6 @@ bool usb_hid_gamepad_parse_descriptor(
 
         if (item_type != 0U) continue; /* Reserved type. */
 
-        if (global.report_id != 0U) {
-            if (saw_report_without_id ||
-                (saw_report_id && selected_report_id != global.report_id))
-                return false;
-            saw_report_id = true;
-            selected_report_id = global.report_id;
-            if (bit_offset == 0U) bit_offset = 8U;
-        } else if (saw_report_id) {
-            return false;
-        } else {
-            saw_report_without_id = true;
-        }
-
         if (item_tag == 10U) { /* Collection */
             if (collection_depth >= 8U) return false;
             uint32_t usage = 0U;
@@ -385,6 +372,19 @@ bool usb_hid_gamepad_parse_descriptor(
             --collection_depth;
             if (collection_depth == 0U) in_gamepad = false;
         } else if (item_tag == 8U) { /* Input */
+            if (global.report_id != 0U) {
+                if (saw_report_without_id ||
+                    (saw_report_id &&
+                     selected_report_id != global.report_id))
+                    return false;
+                saw_report_id = true;
+                selected_report_id = global.report_id;
+                if (bit_offset == 0U) bit_offset = 8U;
+            } else if (saw_report_id) {
+                return false;
+            } else {
+                saw_report_without_id = true;
+            }
             if (!hid_gamepad_add_input(&parsed, &global, &local,
                     value, &bit_offset, in_gamepad)) return false;
         }

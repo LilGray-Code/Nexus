@@ -3487,9 +3487,9 @@ browser_retry:
                     debug_line[i] = value >= 0x20U && value <= 0x7EU
                         ? (char)value : '.';
                 }
-                debug_line[amount] = '\\0';
+                debug_line[amount] = '\0';
                 serial_write(debug_line);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
             }
         }
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");

@@ -4,7 +4,9 @@
 
 ## Verified current boundary
 
-The browser's secure search provider uses HTTPS form submission and parses bounded HTML result links. The release build downloads the Mozilla-derived CA PEM from curl's CA Extract service, verifies the published SHA-256 digest, and embeds the immutable file in the TLS-enabled kernel. A valid NEXUS.CRT file on the writable Nexus Data volume may override the built-in store. The trust source, licensing, and policy limits are documented in docs/security/CA-TRUST-STORE.md.
+The browser's secure search providers use HTTPS and parse bounded, server-rendered HTML result links. Bing is tried first and DuckDuckGo HTML is attempted once when the first provider returns an unusable response. The release build downloads the Mozilla-derived CA PEM from curl's CA Extract service, verifies the published SHA-256 digest, and embeds the immutable file in the TLS-enabled kernel. A valid NEXUS.CRT file on the writable Nexus Data volume may override the built-in store. The trust source, licensing, and policy limits are documented in docs/security/CA-TRUST-STORE.md.
+
+The IPv4 DNS client validates the active transaction's question and answer framing, follows a bounded CNAME chain, rejects malformed compression pointers, and keeps a small positive A-record cache. Cached entries honor the shortest TTL in the CNAME/A chain, cap storage at five minutes, and are cleared when the selected link or adapter changes. This is not a full recursive resolver, negative cache, or IPv6 resolver.
 
 The current browser remains text-oriented: it does not implement CSS layout, JavaScript, cookies, tabs, or a modern DOM engine. The Wi-Fi state manager and 802.11 parser do not make arbitrary wireless chipsets usable; no general physical Wi-Fi driver matrix is yet established.
 

@@ -11,7 +11,7 @@
 #define RTL8139_VENDOR 0x10ECU
 #define RTL8139_DEVICE 0x8139U
 #define RTL8139_RX_RING_BYTES 8192U
-#define RTL8139_RX_WRAP_BYTES 1536U
+#define RTL8139_RX_WRAP_BYTES 2048U
 #define RTL8139_RX_ALLOCATION_BYTES \
     (RTL8139_RX_RING_BYTES + 16U + RTL8139_RX_WRAP_BYTES)
 #define RTL8139_DMA_LIMIT 0x100000000ULL
@@ -170,8 +170,14 @@ static bool rtl8139_send(void *context, const void *frame, size_t length) {
         const uint32_t status = io_in32(status_port);
         if ((status & RTL8139_TX_OWN) != 0U) {
             dma_complete = true;
-            transmit_ok = (status & RTL8139_TX_OK) != 0U;
-            break;
+            if ((status & RTL8139_TX_OK) != 0U) {
+                transmit_ok = true;
+                break;
+            }
+            /* OWN means DMA has filled the transmit FIFO; TOK can arrive
+             * later after the MAC finishes sending the frame on the wire.
+             */
+            if ((status & 0x60004000U) != 0U) break;
         }
         __asm__ volatile ("pause" ::: "memory");
     }

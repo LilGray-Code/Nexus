@@ -623,6 +623,119 @@ load_failed:
     return false;
 }
 
+static bool elf64_static_pie_selftest(void) {
+    union {
+        uint64_t alignment;
+        uint8_t bytes[0x2100];
+    } fixture;
+    for (size_t i = 0U; i < sizeof(fixture.bytes); ++i)
+        fixture.bytes[i] = 0U;
+
+    struct elf64_header *header =
+        (struct elf64_header *)(void *)fixture.bytes;
+    header->ident[0] = 0x7FU;
+    header->ident[1] = 'E';
+    header->ident[2] = 'L';
+    header->ident[3] = 'F';
+    header->ident[4] = 2U;
+    header->ident[5] = 1U;
+    header->ident[6] = 1U;
+    header->type = ELF64_ET_DYN;
+    header->machine = ELF64_EM_X86_64;
+    header->version = 1U;
+    header->entry = 8U;
+    header->program_header_offset = ELF64_HEADER_SIZE;
+    header->header_size = ELF64_HEADER_SIZE;
+    header->program_header_entry_size = ELF64_PROGRAM_HEADER_SIZE;
+    header->program_header_count = 3U;
+
+    struct elf64_program_header *program =
+        (struct elf64_program_header *)(void *)(
+            fixture.bytes + ELF64_HEADER_SIZE);
+    program[0].type = ELF64_PT_LOAD;
+    program[0].flags = ELF64_PF_R | ELF64_PF_X;
+    program[0].offset = 0x1000U;
+    program[0].virtual_address = 0U;
+    program[0].file_size = 16U;
+    program[0].memory_size = 16U;
+    program[0].alignment = ELF64_PAGE_SIZE;
+
+    program[1].type = ELF64_PT_LOAD;
+    program[1].flags = ELF64_PF_R | ELF64_PF_W;
+    program[1].offset = 0x2000U;
+    program[1].virtual_address = 0x1000U;
+    program[1].file_size = 0x58U;
+    program[1].memory_size = 0x100U;
+    program[1].alignment = ELF64_PAGE_SIZE;
+
+    program[2].type = ELF64_PT_DYNAMIC;
+    program[2].offset = 0x2000U;
+    program[2].virtual_address = 0x1000U;
+    program[2].file_size = 4U * sizeof(struct elf64_dynamic_entry);
+    program[2].memory_size = program[2].file_size;
+    program[2].alignment = 8U;
+
+    struct elf64_dynamic_entry *dynamic =
+        (struct elf64_dynamic_entry *)(void *)(fixture.bytes + 0x2000U);
+    dynamic[0].tag = ELF64_DT_RELA;
+    dynamic[0].value = 0x1040U;
+    dynamic[1].tag = ELF64_DT_RELASZ;
+    dynamic[1].value = sizeof(struct elf64_rela_entry);
+    dynamic[2].tag = ELF64_DT_RELAENT;
+    dynamic[2].value = sizeof(struct elf64_rela_entry);
+    dynamic[3].tag = ELF64_DT_NULL;
+    dynamic[3].value = 0U;
+
+    struct elf64_rela_entry *rela =
+        (struct elf64_rela_entry *)(void *)(fixture.bytes + 0x2040U);
+    rela->offset = 0x1080U;
+    rela->info = ELF64_R_X86_64_RELATIVE;
+    rela->addend = 0x1010;
+
+    struct nexus_elf64_image image;
+    if (!nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image) ||
+        !image.position_independent ||
+        image.load_bias != ELF64_PIE_BASE ||
+        image.entry_point != ELF64_PIE_BASE + 8U ||
+        image.segment_count != 2U ||
+        image.relocation_count != 1U ||
+        image.relocation_file_offset != 0x2040U ||
+        image.segments[0].virtual_address != ELF64_PIE_BASE ||
+        image.segments[1].virtual_address != ELF64_PIE_BASE + 0x1000U)
+        return false;
+
+    /* Symbol-based relocations are not supported by this static PIE ABI. */
+    rela->info = (1ULL << 32) | ELF64_R_X86_64_RELATIVE;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image))
+        return false;
+    rela->info = ELF64_R_X86_64_RELATIVE;
+
+    /* Relocation destinations must be writable mapped memory. */
+    rela->offset = 8U;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image))
+        return false;
+    rela->offset = 0x1080U;
+
+    /* Relocated pointer values must remain inside this image's mapped range. */
+    rela->addend = -(int64_t)ELF64_PIE_BASE;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image))
+        return false;
+    rela->addend = 0x1010;
+
+    /* External dependencies are rejected, not silently left unresolved. */
+    dynamic[0].tag = ELF64_DT_NEEDED;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image))
+        return false;
+    dynamic[0].tag = ELF64_DT_RELA;
+
+    /* A PIE needing an interpreter is outside the supported execution ABI. */
+    program[2].type = ELF64_PT_INTERP;
+    if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image))
+        return false;
+
+    return true;
+}
+
 bool nexus_elf64_selftest(void) {
     union {
         uint64_t alignment;
@@ -751,5 +864,5 @@ bool nexus_elf64_selftest(void) {
         return false;
     }
 
-    return true;
+    return elf64_static_pie_selftest();
 }

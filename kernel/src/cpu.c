@@ -101,6 +101,7 @@ bool nexus_cpu_init(void) {
         cpu_info.logical_processors_per_package = 1U;
 
     set_feature(NEXUS_CPU_FEATURE_FPU, (edx & (1U << 0)) != 0U);
+    set_feature(NEXUS_CPU_FEATURE_FXSR, (edx & (1U << 24)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_TSC, (edx & (1U << 4)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_APIC, (edx & (1U << 9)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_SSE, (edx & (1U << 25)) != 0U);

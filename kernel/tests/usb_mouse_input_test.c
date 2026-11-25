@@ -31,9 +31,26 @@ static void test_mouse_buttons_and_stationary_report(void) {
     assert(event.mouse_dy == 0);
 }
 
+static void test_usb_keyboard_report_preserves_right_control(void) {
+    const uint8_t down[8] = {0x10U, 0U, 0U, 0U, 0U, 0U, 0U, 0U};
+    const uint8_t up[8] = {0U};
+    struct nexus_input_event event = {0};
+
+    usb_hid_keyboard_reset();
+    input_usb_keyboard_report(down);
+    assert(input_pop_event(&event));
+    assert(event.type == NEXUS_INPUT_KEYBOARD);
+    assert(event.scancode == 0x11DU);
+
+    input_usb_keyboard_report(up);
+    assert(input_pop_event(&event));
+    assert(event.scancode == 0x19DU);
+}
+
 int main(void) {
     test_usb_mouse_report_reaches_desktop_queue();
     test_mouse_buttons_and_stationary_report();
+    test_usb_keyboard_report_preserves_right_control();
     puts("NEXUS USB MOUSE INPUT QUEUE TESTS PASSED");
     return 0;
 }

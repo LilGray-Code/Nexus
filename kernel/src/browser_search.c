@@ -52,18 +52,13 @@ static bool append_byte(char *output, size_t capacity, size_t *length,
     return true;
 }
 
-bool nexus_browser_search_build_path(
-    const char *query, size_t query_length,
-    char *path, size_t path_capacity, size_t *path_length) {
-    static const char prefix[] = "/html/?q=";
+static bool encode_query(const char *query, size_t query_length,
+                          char *output, size_t capacity,
+                          size_t *output_length) {
     static const char hex[] = "0123456789ABCDEF";
-    if (query == NULL || query_length == 0U || path == NULL ||
-        path_length == NULL || path_capacity == 0U) return false;
-
+    if (query == NULL || query_length == 0U || output == NULL ||
+        output_length == NULL || capacity == 0U) return false;
     size_t used = 0U;
-    for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i) {
-        if (!append_byte(path, path_capacity, &used, prefix[i])) return false;
-    }
     for (size_t i = 0U; i < query_length; ++i) {
         const uint8_t ch = (uint8_t)query[i];
         if (ch < 0x20U || ch >= 0x7FU) return false;
@@ -72,20 +67,68 @@ bool nexus_browser_search_build_path(
             (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' ||
             ch == '.' || ch == '~';
         if (unreserved) {
-            if (!append_byte(path, path_capacity, &used, (char)ch))
+            if (!append_byte(output, capacity, &used, (char)ch))
                 return false;
         } else {
-            if (!append_byte(path, path_capacity, &used, '%') ||
-                !append_byte(path, path_capacity, &used,
+            if (!append_byte(output, capacity, &used, '%') ||
+                !append_byte(output, capacity, &used,
                              hex[(ch >> 4) & 0x0FU]) ||
-                !append_byte(path, path_capacity, &used,
+                !append_byte(output, capacity, &used,
                              hex[ch & 0x0FU])) return false;
         }
     }
-    if (used >= path_capacity) return false;
-    path[used] = '\0';
-    *path_length = used;
+    if (used >= capacity) return false;
+    output[used] = '\0';
+    *output_length = used;
     return true;
+}
+
+bool nexus_browser_search_build_path(
+    const char *query, size_t query_length,
+    char *path, size_t path_capacity, size_t *path_length) {
+    static const char prefix[] = "/html/?q=";
+    if (path == NULL || path_length == NULL || path_capacity == 0U)
+        return false;
+    size_t prefix_length = sizeof(prefix) - 1U;
+    if (prefix_length >= path_capacity) return false;
+    for (size_t i = 0U; i < prefix_length; ++i) path[i] = prefix[i];
+    size_t encoded_length = 0U;
+    if (!encode_query(query, query_length, path + prefix_length,
+                      path_capacity - prefix_length, &encoded_length))
+        return false;
+    *path_length = prefix_length + encoded_length;
+    return true;
+}
+
+bool nexus_browser_search_build_form_body(
+    const char *query, size_t query_length,
+    char *body, size_t body_capacity, size_t *body_length) {
+    static const char prefix[] = "q=";
+    static const char suffix[] = "&b=&kl=us-en";
+    if (body == NULL || body_length == NULL || body_capacity == 0U)
+        return false;
+    const size_t prefix_length = sizeof(prefix) - 1U;
+    const size_t suffix_length = sizeof(suffix) - 1U;
+    if (prefix_length + suffix_length >= body_capacity) return false;
+    for (size_t i = 0U; i < prefix_length; ++i) body[i] = prefix[i];
+    size_t encoded_length = 0U;
+    if (!encode_query(query, query_length, body + prefix_length,
+                      body_capacity - prefix_length - suffix_length,
+                      &encoded_length)) return false;
+    size_t used = prefix_length + encoded_length;
+    for (size_t i = 0U; i < suffix_length; ++i)
+        body[used++] = suffix[i];
+    body[used] = '\0';
+    *body_length = used;
+    return true;
+}
+
+bool nexus_browser_search_is_challenge(
+    const uint8_t *html, size_t html_length) {
+    if (html == NULL || html_length == 0U) return false;
+    return find_ci(html, html_length, 0U, "anomaly-modal") != SIZE_MAX ||
+           find_ci(html, html_length, 0U, "detected unusual traffic") != SIZE_MAX ||
+           find_ci(html, html_length, 0U, "automated requests") != SIZE_MAX;
 }
 
 static bool find_tag_end(const uint8_t *html, size_t length, size_t start,

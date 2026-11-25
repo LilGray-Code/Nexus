@@ -21,6 +21,16 @@ bool nexus_browser_search_build_path(
     const char *query, size_t query_length,
     char *path, size_t path_capacity, size_t *path_length);
 
+/* Builds the no-JavaScript HTML search form body, including region defaults. */
+bool nexus_browser_search_build_form_body(
+    const char *query, size_t query_length,
+    char *body, size_t body_capacity, size_t *body_length);
+
+/* Detects a provider anti-bot/interstitial response instead of treating it
+ * as an empty search-result page. */
+bool nexus_browser_search_is_challenge(
+    const uint8_t *html, size_t html_length);
+
 bool nexus_browser_search_parse(
     const uint8_t *html, size_t html_length,
     struct nexus_browser_search_result *results,

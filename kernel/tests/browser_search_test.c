@@ -14,6 +14,13 @@ static void test_query_encoding(void) {
     assert(strcmp(path,
         "/html/?q=Nexus%20OS%20%26%20Wi-Fi%3F") == 0);
     assert(length == strlen(path));
+    char form_body[NEXUS_BROWSER_SEARCH_PATH_MAX];
+    size_t form_length = 0U;
+    assert(nexus_browser_search_build_form_body(
+        query, sizeof(query) - 1U, form_body, sizeof(form_body), &form_length));
+    assert(strcmp(form_body,
+        "q=Nexus%20OS%20%26%20Wi-Fi%3F&b=&kl=us-en") == 0);
+    assert(form_length == strlen(form_body));
     assert(!nexus_browser_search_build_path(
         "", 0U, path, sizeof(path), &length));
     assert(!nexus_browser_search_build_path(
@@ -85,10 +92,22 @@ static void test_bounds_and_missing_results(void) {
         NEXUS_BROWSER_SEARCH_MAX_RESULTS, &count));
 }
 
+static void test_provider_challenge_detection(void) {
+    static const uint8_t challenge[] =
+        "<html><div id=\"anomaly-modal\">Unusual traffic detected</div></html>";
+    static const uint8_t ordinary[] =
+        "<html><div class=\"results\">No results</div></html>";
+    assert(nexus_browser_search_is_challenge(
+        challenge, sizeof(challenge) - 1U));
+    assert(!nexus_browser_search_is_challenge(
+        ordinary, sizeof(ordinary) - 1U));
+}
+
 int main(void) {
     test_query_encoding();
     test_result_parse_and_redirect_decode();
     test_reject_unsafe_links_and_deduplicate();
     test_bounds_and_missing_results();
+    test_provider_challenge_detection();
     return 0;
 }

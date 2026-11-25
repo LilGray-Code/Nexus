@@ -96,6 +96,7 @@ static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
 static const char *installer_transport_label(
     const struct nexus_block_device *device);
+static void installer_set_status(const char *message);
 static void installer_draw_button(uint64_t x, uint64_t y,
                                   uint64_t width, uint64_t height,
                                   const char *label, bool selected,

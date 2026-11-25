@@ -300,9 +300,22 @@ bool nexus_elf64_load(const void *file, size_t file_size,
         goto load_failed;
     }
 
+    /*
+     * A freestanding x86-64 entry point has function-entry alignment:
+     * RSP % 16 == 8. Leave a zero sentinel return slot at the top of the
+     * stack page so compiled _start functions see the standard alignment.
+     * Nexus has no argc/argv/auxv startup block yet.
+     */
+    volatile uint8_t *stack_memory =
+        (volatile uint8_t *)memory_phys_to_virt(stack_physical);
+    if (stack_memory == NULL) goto load_failed;
+    volatile uint64_t *return_slot = (volatile uint64_t *)(void *)(
+        stack_memory + ELF64_PAGE_SIZE - sizeof(uint64_t));
+    *return_slot = 0U;
+
     *root_physical = new_root;
     *entry_point = image.entry_point;
-    *stack_pointer = ELF64_STACK_TOP;
+    *stack_pointer = ELF64_STACK_TOP - sizeof(uint64_t);
     return true;
 
 load_failed:

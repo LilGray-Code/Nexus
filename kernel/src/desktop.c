@@ -1848,15 +1848,15 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 372U,
                            "T: TOGGLE THEME     A: CYCLE ACCENT",
                            1U, 170U, 191U, 211U);
-        graphics_draw_text(text_x, text_y + 390U, "DISPLAY ADAPTER:",
+        graphics_draw_text(text_x, text_y + 378U, "DISPLAY ADAPTER:",
                            1U, 133U, 164U, 190U);
-        graphics_draw_text(text_x + 102U, text_y + 390U,
+        graphics_draw_text(text_x + 102U, text_y + 378U,
                            gpu_primary_name(), 1U,
                            233U, 243U, 252U);
-        graphics_draw_text(text_x, text_y + 414U,
+        graphics_draw_text(text_x, text_y + 396U,
                            gpu_render_path_name(), 1U,
                            108U, 216U, 229U);
-        graphics_draw_text(text_x, text_y + 438U,
+        graphics_draw_text(text_x, text_y + 414U,
                            gpu_hardware_acceleration_available()
                                ? "HARDWARE RENDERING ENABLED"
                                : "GPU 2D/3D DRIVER NOT AVAILABLE",

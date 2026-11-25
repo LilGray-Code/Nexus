@@ -263,7 +263,7 @@ bool nexus_smp_init(struct limine_mp_response *response) {
         struct limine_mp_info *info = response->cpus[i];
         const uint32_t slot = next_slot++;
         lapic_ids[slot] = info->lapic_id;
-        info->extra_argument = slot;
+        __atomic_store_n(&info->extra_argument, slot, __ATOMIC_RELEASE);
     }
     expected_cpu_count = next_slot;
     __atomic_thread_fence(__ATOMIC_RELEASE);

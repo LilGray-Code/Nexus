@@ -16,7 +16,8 @@
 #include "html_text.h"
 #include "browser_history.h"
 #include "download.h"
-#include "nxfs.h"
+#include "app_store.h"
+#include "nxfs.h
 
 #include "graphics.h"
 #include "gpu.h"
@@ -43,11 +44,15 @@ enum desktop_view {
     DESKTOP_BROWSER,
     DESKTOP_SETTINGS,
     DESKTOP_TERMINAL,
-    DESKTOP_INSTALLER
+    DESKTOP_INSTALLER,
+    DESKTOP_STORE
 };
 
 static enum desktop_view active_view = DESKTOP_HOME;
 static bool settings_hardware_page;
+static size_t store_selected_index;
+static bool store_installed[NEXUS_STORE_MAX_APPS];
+static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
 static uint64_t screen_height;
 static struct nexus_graphics_surface desktop_firmware_surface;
@@ -240,7 +245,7 @@ struct desktop_window_rect {
     uint64_t height;
 };
 
-#define DESKTOP_APP_COUNT 5U
+#define DESKTOP_APP_COUNT 6U
 struct desktop_app_window_state {
     bool valid;
     bool maximized;
@@ -337,6 +342,7 @@ static size_t desktop_app_index_for_view(enum desktop_view view) {
         case DESKTOP_SETTINGS: return 2U;
         case DESKTOP_TERMINAL: return 3U;
         case DESKTOP_INSTALLER: return 4U;
+        case DESKTOP_STORE: return 5U;
         default: return DESKTOP_APP_COUNT;
     }
 }
@@ -857,7 +863,9 @@ static enum desktop_view desktop_view_for_app(size_t app_index) {
         case 1U: return DESKTOP_BROWSER;
         case 2U: return DESKTOP_SETTINGS;
         case 3U: return DESKTOP_TERMINAL;
-        default: return DESKTOP_INSTALLER;
+        case 4U: return DESKTOP_INSTALLER;
+        case 5U: return DESKTOP_STORE;
+        default: return DESKTOP_HOME;
     }
 }
 
@@ -879,29 +887,30 @@ static bool desktop_search_contains(const char *text, const char *query) {
 }
 
 static bool desktop_start_menu_app_matches(size_t app) {
-    static const char *const search_terms[5] = {
+    static const char *const search_terms[6] = {
         "FILES EXPLORER DOCUMENTS DATA FOLDERS",
         "WEB BROWSER INTERNET NETWORK",
         "SETTINGS PERSONALIZATION SYSTEM DISPLAY",
         "TERMINAL CONSOLE COMMAND",
-        "INSTALL INSTALLER DISK DRIVE SETUP"
+        "INSTALL INSTALLER DISK DRIVE SETUP",
+        "STORE APP STORE SOFTWARE STEAM DISCORD SPOTIFY MARKETPLACE"
     };
-    return app < 5U &&
+    return app < 6U &&
         desktop_search_contains(search_terms[app], start_menu_query);
 }
 
 static size_t desktop_start_menu_visible_app(size_t row) {
-    for (size_t app = 0U; app < 5U; ++app) {
+    for (size_t app = 0U; app < 6U; ++app) {
         if (!desktop_start_menu_app_matches(app)) continue;
         if (row == 0U) return app;
         --row;
     }
-    return 5U;
+    return 6U;
 }
 
 static size_t desktop_start_menu_visible_count(void) {
     size_t count = 0U;
-    for (size_t app = 0U; app < 5U; ++app)
+    for (size_t app = 0U; app < 6U; ++app)
         if (desktop_start_menu_app_matches(app)) ++count;
     return count;
 }
@@ -942,6 +951,9 @@ static void desktop_transition_view(enum desktop_view view,
         scan_files_once();
         desktop_preferences_load();
         refresh_files_listing();
+    } else if (view == DESKTOP_STORE) {
+        store_selected_index = store_selected_index < nexus_store_count()
+            ? store_selected_index : 0U;
     } else if (view == DESKTOP_SETTINGS) {
         scan_files_once();
         desktop_preferences_load();
@@ -963,7 +975,7 @@ static void desktop_close_view(void) {
 }
 
 static void desktop_open_app(size_t app_index) {
-    if (app_index >= 5U) return;
+    if (app_index >= 6U) return;
     desktop_open_view(desktop_view_for_app(app_index));
 }
 
@@ -997,16 +1009,16 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
                        desktop_theme_is_light() ? 49U : 247U,
                        desktop_theme_is_light() ? 69U : 255U);
 
-    static const char *const labels[5] = {
-        "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL"
+    static const char *const labels[6] = {
+        "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL", "STORE"
     };
-    static const uint8_t accents[5][3] = {
+    static const uint8_t accents[6][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {239U, 177U, 119U}
+        {217U, 164U, 83U}, {239U, 177U, 119U}, {117U, 136U, 244U}
     };
     const uint64_t tab_width = 72U;
     const uint64_t tab_step = 78U;
-    for (size_t i = 0U; i < 5U; ++i) {
+    for (size_t i = 0U; i < 6U; ++i) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
@@ -1055,7 +1067,7 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 static void desktop_draw_start_menu(uint64_t bottom_bar) {
     if (!start_menu_open) return;
     const uint64_t menu_width = screen_width > 340U ? 304U : screen_width - 24U;
-    const uint64_t menu_height = 258U;
+    const uint64_t menu_height = 294U;
     const uint64_t menu_x = 12U;
     uint64_t menu_y = screen_height - bottom_bar - menu_height + 4U;
     const uint64_t top_limit = clamp_min(screen_height / 16U, 34U) + 8U;
@@ -1106,19 +1118,20 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         desktop_theme_is_light() ? 65U : 245U,
         desktop_theme_is_light() ? 84U : 252U);
 
-    static const char *const names[5] = {
+    static const char *const names[6] = {
         "FILES - MANAGE YOUR DATA",
         "WEB - NETWORK TEXT BROWSER",
         "SETTINGS - SYSTEM OVERVIEW",
         "TERMINAL - COMMAND LINE",
-        "INSTALL - DISK INSTALL WIZARD"
+        "INSTALL - DISK INSTALL WIZARD",
+        "STORE - GET APPS AND SERVICES"
     };
-    static const uint8_t accents[5][3] = {
+    static const uint8_t accents[6][3] = {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
-        {217U, 164U, 83U}, {239U, 177U, 119U}
+        {217U, 164U, 83U}, {239U, 177U, 119U}, {117U, 136U, 244U}
     };
     size_t visible_row = 0U;
-    for (size_t app = 0U; app < 5U; ++app) {
+    for (size_t app = 0U; app < 6U; ++app) {
         if (!desktop_start_menu_app_matches(app)) continue;
         const uint64_t row_y = menu_y + 80U +
                                (uint64_t)visible_row * 33U;
@@ -1444,7 +1457,7 @@ static void draw_shell(void) {
             }
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,
-                           "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL   F5 INSTALL",
+                           "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL   F5 INSTALL   F7 STORE",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
@@ -5135,7 +5148,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             if (start_menu_open) {
                 const uint64_t menu_width =
                     screen_width > 340U ? 304U : screen_width - 24U;
-                const uint64_t menu_height = 258U;
+                const uint64_t menu_height = 294U;
                 const uint64_t top_limit =
                     clamp_min(screen_height / 16U, 34U) + 8U;
                 uint64_t menu_y = taskbar_top > menu_height
@@ -5152,11 +5165,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     (uint64_t)pointer_y < menu_y + menu_height) {
                     const uint64_t rows_y = menu_y + 80U;
                     if ((uint64_t)pointer_y >= rows_y &&
-                        (uint64_t)pointer_y < rows_y + 5U * 33U) {
+                        (uint64_t)pointer_y < rows_y + 6U * 33U) {
                         const size_t row = (size_t)((uint64_t)pointer_y -
                             rows_y) / 33U;
                         const size_t app = desktop_start_menu_visible_app(row);
-                        if (app < 5U) {
+                        if (app < 6U) {
                             desktop_open_app(app);
                             shell_click_handled = true;
                         }
@@ -5175,7 +5188,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     desktop_start_menu_toggle();
                     shell_click_handled = true;
                 } else {
-                    for (size_t app = 0U; app < 5U; ++app) {
+                    for (size_t app = 0U; app < 6U; ++app) {
                         const uint64_t tab_x = 110U + (uint64_t)app * 78U;
                         if ((uint64_t)pointer_x >= tab_x &&
                             (uint64_t)pointer_x < tab_x + 72U) {

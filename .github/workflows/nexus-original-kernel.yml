@@ -173,7 +173,7 @@ jobs:
       - name: Build dual-mode ISO
         run: |
           chmod +x build/build-iso.sh
-          EXTRA_CFLAGS="-DNEXUS_STORAGE_SELFTEST" ./build/build-iso.sh
+          EXTRA_CFLAGS="-DNEXUS_STORAGE_SELFTEST -DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" ./build/build-iso.sh
 
       - name: Install boot payloads to a disposable disk and boot installed UEFI target via USB mass storage
         shell: bash
@@ -325,6 +325,8 @@ jobs:
           grep -q "AHCI: ports implemented:" uefi-serial.log
           grep -q "NEXUS K2 COOPERATIVE THREAD SCHEDULER READY" uefi-serial.log
           grep -q "NEXUS DESKTOP FRAMEBUFFER READY" uefi-serial.log
+          grep -q "NEXUS INSTALLER WRITE GATE ENABLED" uefi-serial.log
+          grep -q "NEXUS BOOT MODE: DESKTOP" uefi-serial.log
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" uefi-serial.log
 

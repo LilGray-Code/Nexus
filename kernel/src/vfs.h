@@ -47,6 +47,12 @@ bool vfs_write_file(const char *name, const void *data, size_t length);
 /* Root-scoped config/data I/O ignores the current directory but never writes FAT32. */
 bool vfs_write_root_file(const char *name, const void *data, size_t length);
 bool vfs_remove_root_file(const char *name);
+/* Root-scoped nested-path APIs are NXFS-only and never fall back to RAM/FAT. */
+bool vfs_create_root_directory(const char *name);
+bool vfs_write_root_path(const char *path, const void *data, size_t length);
+bool vfs_remove_root_path(const char *path);
+bool vfs_open_root_readonly_path(const char *path,
+                                 struct nexus_vfs_file *file);
 /* Root-scoped config/data I/O ignores the current directory but never writes FAT32. */
 bool vfs_open_root_readonly(const char *name, struct nexus_vfs_file *file);
 bool vfs_root_mounted(void);

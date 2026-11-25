@@ -16,7 +16,7 @@
 #define EDGE_BLOCKS 64U
 #define FORMAT_BASE 2048U
 #define FORMAT_BLOCKS 32768U /* 16 MiB of the planned 512 MiB ESP */
-#define NXFS_TEST_AREA_BLOCKS 16384U
+#define NXFS_TEST_AREA_BLOCKS 32768U
 #define BIOS_TEST_AREA_BLOCKS 4096U
 
 struct mock_disk {

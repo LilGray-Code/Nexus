@@ -1049,14 +1049,23 @@ static void draw_shell(void) {
         for (uint32_t i = 0U; i < 5U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
-            graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
-                desktop_theme_is_light() ? 228U : 24U,
-                desktop_theme_is_light() ? 236U : 41U,
-                desktop_theme_is_light() ? 246U : 65U);
-            graphics_draw_rect(tile_x, tile_y, tile_width, 74U,
-                desktop_theme_is_light() ? 175U : 58U,
-                desktop_theme_is_light() ? 192U : 91U,
-                desktop_theme_is_light() ? 210U : 121U);
+            graphics_blend_round_rect(tile_x, tile_y, tile_width, 74U, 9U,
+                desktop_theme_is_light() ? 230U : 24U,
+                desktop_theme_is_light() ? 239U : 41U,
+                desktop_theme_is_light() ? 248U : 65U, 232U);
+            graphics_gradient_rect(tile_x + 1U, tile_y + 1U,
+                tile_width > 2U ? tile_width - 2U : tile_width,
+                72U, false,
+                desktop_theme_is_light() ? 244U : 37U,
+                desktop_theme_is_light() ? 248U : 61U,
+                desktop_theme_is_light() ? 253U : 89U,
+                desktop_theme_is_light() ? 224U : 20U,
+                desktop_theme_is_light() ? 234U : 38U,
+                desktop_theme_is_light() ? 246U : 60U);
+            graphics_round_rect(tile_x, tile_y, tile_width, 74U, 9U,
+                desktop_theme_is_light() ? 175U : 61U,
+                desktop_theme_is_light() ? 192U : 97U,
+                desktop_theme_is_light() ? 210U : 128U);
             graphics_fill_rect(tile_x, tile_y, 4U, 74U,
                                accent[i][0], accent[i][1], accent[i][2]);
             graphics_fill_rect(tile_x + 13U, tile_y + 12U, 25U, 25U,
@@ -1113,14 +1122,23 @@ static void draw_shell(void) {
         for (size_t i = 0U; i < 3U; ++i) {
             const uint64_t card_x = panel_x + 28U +
                                     (uint64_t)i * (card_width + card_gap);
-            graphics_fill_rect(card_x, card_y, card_width, card_h,
-                desktop_theme_is_light() ? 232U : 22U,
-                desktop_theme_is_light() ? 239U : 38U,
-                desktop_theme_is_light() ? 247U : 60U);
-            graphics_draw_rect(card_x, card_y, card_width, card_h,
-                desktop_theme_is_light() ? 177U : 50U,
-                desktop_theme_is_light() ? 193U : 79U,
-                desktop_theme_is_light() ? 211U : 107U);
+            graphics_blend_round_rect(card_x, card_y, card_width, card_h,
+                8U, desktop_theme_is_light() ? 235U : 23U,
+                desktop_theme_is_light() ? 241U : 40U,
+                desktop_theme_is_light() ? 249U : 64U, 225U);
+            graphics_gradient_rect(card_x + 1U, card_y + 1U,
+                card_width > 2U ? card_width - 2U : card_width,
+                card_h > 2U ? card_h - 2U : card_h, false,
+                desktop_theme_is_light() ? 246U : 38U,
+                desktop_theme_is_light() ? 250U : 59U,
+                desktop_theme_is_light() ? 254U : 83U,
+                desktop_theme_is_light() ? 228U : 19U,
+                desktop_theme_is_light() ? 238U : 34U,
+                desktop_theme_is_light() ? 247U : 54U);
+            graphics_round_rect(card_x, card_y, card_width, card_h, 8U,
+                desktop_theme_is_light() ? 177U : 58U,
+                desktop_theme_is_light() ? 193U : 89U,
+                desktop_theme_is_light() ? 211U : 118U);
             graphics_fill_rect(card_x, card_y, 3U, card_h,
                                card_accent[i][0], card_accent[i][1],
                                card_accent[i][2]);

@@ -313,8 +313,9 @@ static void extract_result_snippet(const uint8_t *html, size_t length,
     const size_t snippet_marker = find_ci(
         html, length, start, "result__snippet");
     if (snippet_marker == SIZE_MAX) return;
-    const size_t tag_start = find_ci(html, length, snippet_marker, "<");
-    if (tag_start == SIZE_MAX) return;
+    size_t tag_start = snippet_marker;
+    while (tag_start != 0U && html[tag_start] != '<') --tag_start;
+    if (html[tag_start] != '<') return;
     size_t tag_end = 0U;
     if (!find_tag_end(html, length, tag_start + 1U, &tag_end)) return;
     const size_t content_start = tag_end + 1U;

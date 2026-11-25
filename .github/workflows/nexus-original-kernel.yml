@@ -185,6 +185,13 @@ jobs:
             kernel/tests/pci_caps_test.c -o /tmp/nexus-pci-caps-test
           /tmp/nexus-pci-caps-test
 
+      - name: Test VirtIO split-queue layout and PCI notification addressing
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/tests/virtio_queue_helpers_test.c \
+            -o /tmp/nexus-virtio-queue-helpers-test
+          /tmp/nexus-virtio-queue-helpers-test
+
       - name: Test Limine BIOS boot-sector and stage-2 installation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
@@ -459,6 +466,7 @@ jobs:
           qemu-system-x86_64 \
             -machine q35 -cpu qemu64,+rdrand -m 512M \
             -netdev user,id=n0 -device virtio-net-pci,netdev=n0,disable-legacy=on \
+            -netdev user,id=e1 -device e1000,netdev=e1 \
             -device virtio-gpu-pci \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-browser-vars.fd \
@@ -484,7 +492,7 @@ jobs:
                   log = open(log_path, encoding="utf-8", errors="replace").read()
                   if ("NEXUS K0 BOOT COMPLETE" in log and
                       "NEXUS DHCP READY" in log and
-                      "NEXUS USB HID KEYBOARD READY" in log):
+                      "NEXUS KEYBOARD INPUT READY" in log):
                       break
               time.sleep(0.5)
           else:

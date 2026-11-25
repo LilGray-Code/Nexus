@@ -1,5 +1,7 @@
 #include "virtio_pci.h"
 
+#include "virtio_queue_helpers.h"
+
 #include "memory.h"
 #include "paging.h"
 #include "pci.h"
@@ -203,7 +205,9 @@ bool virtio_pci_open(const struct nexus_pci_device *pci,
         if (cap_next < 0x40U || cap_next > 0xFCU) return false;
         cap_pointer = cap_next;
     }
-    if (device->notify_multiplier == 0U) return false;
+    /* The VirtIO PCI specification permits a zero multiplier: every queue
+     * then shares the same notification address. Do not reject it.
+     */
 
     if (!pci_enable_memory_bus_master(pci)) return false;
 
@@ -261,8 +265,26 @@ bool virtio_pci_queue_init(struct nexus_virtio_pci *device,
         requested_size < 2U) return false;
     volatile uint8_t *common = device->common;
     write_le16(common + VIRTIO_QUEUE_SELECT, queue_index);
+
+    const uint16_t queue_count = read_le16(common + 18U);
+    if (queue_count == 0U || queue_index >= queue_count) {
+        serial_write("VIRTIO PCI: requested queue is outside device queue count index/count=");
+        serial_write_hex(queue_index);
+        serial_write("/");
+        serial_write_hex(queue_count);
+        serial_write("\r\n");
+        return false;
+    }
+
     const uint16_t maximum = read_le16(common + VIRTIO_QUEUE_SIZE);
-    if (maximum < 2U) return false;
+    if (maximum < 2U) {
+        serial_write("VIRTIO PCI: device reports unavailable queue index/max=");
+        serial_write_hex(queue_index);
+        serial_write("/");
+        serial_write_hex(maximum);
+        serial_write("\r\n");
+        return false;
+    }
     uint16_t size = requested_size < maximum ? requested_size : maximum;
     uint16_t power = 1U;
     while ((uint16_t)(power << 1U) != 0U &&
@@ -270,22 +292,39 @@ bool virtio_pci_queue_init(struct nexus_virtio_pci *device,
     size = power;
     if (size < 2U) return false;
     write_le16(common + VIRTIO_QUEUE_SIZE, size);
-
-    const uint64_t descriptor_bytes = (uint64_t)size * VIRTQ_DESC_BYTES;
-    const uint64_t available_offset = align_up(descriptor_bytes, 2U);
-    const uint64_t available_bytes = 6U + (uint64_t)size * 2U;
-    const uint64_t used_offset = align_up(available_offset + available_bytes, 4U);
-    const uint64_t used_bytes = 6U + (uint64_t)size * 8U;
-    const uint64_t total_bytes = used_offset + used_bytes;
-    const uint64_t pages = (total_bytes + NEXUS_PAGE_SIZE - 1U) /
-                           NEXUS_PAGE_SIZE;
-    uint64_t physical = 0U;
-    if (!memory_alloc_contiguous_pages(pages, VIRTIO_DMA_LIMIT, &physical))
+    if (read_le16(common + VIRTIO_QUEUE_SIZE) != size) {
+        serial_write("VIRTIO PCI: queue size was not accepted index/requested=");
+        serial_write_hex(queue_index);
+        serial_write("/");
+        serial_write_hex(size);
+        serial_write("\r\n");
         return false;
+    }
+
+    struct nexus_virtio_queue_layout layout;
+    if (!nexus_virtio_queue_layout_compute(size, &layout)) {
+        serial_write("VIRTIO PCI: invalid split queue layout size=");
+        serial_write_hex(size);
+        serial_write("\r\n");
+        return false;
+    }
+    const uint64_t pages = layout.page_count;
+    uint64_t physical = 0U;
+    if (!memory_alloc_contiguous_pages(pages, VIRTIO_DMA_LIMIT, &physical)) {
+        serial_write("VIRTIO PCI: DMA queue allocation failed index/pages=");
+        serial_write_hex(queue_index);
+        serial_write("/");
+        serial_write_hex(pages);
+        serial_write("\r\n");
+        return false;
+    }
     volatile uint8_t *memory =
         (volatile uint8_t *)memory_phys_to_virt(physical);
     if (memory == NULL) {
         (void)memory_free_contiguous_pages(physical, pages);
+        serial_write("VIRTIO PCI: DMA queue physical mapping failed index=");
+        serial_write_hex(queue_index);
+        serial_write("\r\n");
         return false;
     }
     for (uint64_t i = 0U; i < pages * NEXUS_PAGE_SIZE; ++i)
@@ -298,20 +337,42 @@ bool virtio_pci_queue_init(struct nexus_virtio_pci *device,
     queue->index = queue_index;
     queue->size = size;
     queue->descriptors = (volatile struct nexus_virtq_desc *)memory;
-    queue->available_flags = (volatile uint16_t *)(memory + available_offset);
+    queue->available_flags =
+        (volatile uint16_t *)(memory + layout.available_offset);
     queue->available_index = 0U;
     queue->available_index_ptr = queue->available_flags + 1U;
     queue->available_ring = queue->available_flags + 2U;
-    queue->used_flags = (volatile uint16_t *)(memory + used_offset);
+    queue->used_flags = (volatile uint16_t *)(memory + layout.used_offset);
     queue->used_index_ptr = queue->used_flags + 1U;
     queue->used_ring = (volatile struct nexus_virtq_used_element *)
-        (memory + used_offset + 4U);
+        (memory + layout.used_offset + 4U);
     queue->last_used_index = 0U;
 
     write_le64(common + VIRTIO_QUEUE_DESC, physical);
-    write_le64(common + VIRTIO_QUEUE_DRIVER, physical + available_offset);
-    write_le64(common + VIRTIO_QUEUE_DEVICE, physical + used_offset);
+    write_le64(common + VIRTIO_QUEUE_DRIVER,
+               physical + layout.available_offset);
+    write_le64(common + VIRTIO_QUEUE_DEVICE,
+               physical + layout.used_offset);
+    memory_barrier();
     write_le16(common + VIRTIO_QUEUE_ENABLE, 1U);
+    if (read_le16(common + VIRTIO_QUEUE_ENABLE) != 1U) {
+        (void)memory_free_contiguous_pages(physical, pages);
+        *queue = (struct nexus_virtio_queue){0};
+        serial_write("VIRTIO PCI: device did not enable queue index=");
+        serial_write_hex(queue_index);
+        serial_write("\r\n");
+        return false;
+    }
+
+    serial_write("VIRTIO PCI: queue enabled index/count/size/pages=");
+    serial_write_hex(queue_index);
+    serial_write("/");
+    serial_write_hex(queue_count);
+    serial_write("/");
+    serial_write_hex(size);
+    serial_write("/");
+    serial_write_hex(pages);
+    serial_write("\r\n");
     return true;
 }
 
@@ -374,19 +435,39 @@ bool virtio_pci_queue_notify(struct nexus_virtio_queue *queue) {
         volatile uint8_t *common = queue->device->common;
         write_le16(common + VIRTIO_QUEUE_SELECT, queue->index);
         const uint16_t notify_offset = read_le16(common + VIRTIO_QUEUE_NOTIFY_OFF);
-        const uint64_t notify_relative =
-            (uint64_t)notify_offset * queue->device->notify_multiplier;
-        if (notify_relative > UINT32_MAX ||
-            notify_relative + 2U > queue->device->notify_cap_length ||
-            queue->device->notify_cap_offset >
-                UINT64_MAX - notify_relative) return false;
-        const uint64_t physical = queue->device->notify_bar_physical +
-            queue->device->notify_cap_offset + notify_relative;
-        volatile uint32_t *page = NULL;
-        if (!paging_map_mmio_page(physical & ~0xFFFULL, &page) || page == NULL)
+        uint64_t physical = 0U;
+        if (!nexus_virtio_notify_address(
+                queue->device->notify_bar_physical,
+                queue->device->notify_cap_offset,
+                queue->device->notify_cap_length,
+                notify_offset,
+                queue->device->notify_multiplier,
+                &physical)) {
+            serial_write("VIRTIO PCI: invalid queue notification address index/off/multiplier=");
+            serial_write_hex(queue->index);
+            serial_write("/");
+            serial_write_hex(notify_offset);
+            serial_write("/");
+            serial_write_hex(queue->device->notify_multiplier);
+            serial_write("\r\n");
             return false;
+        }
+        volatile uint32_t *page = NULL;
+        if (!paging_map_mmio_page(physical & ~0xFFFULL, &page) || page == NULL) {
+            serial_write("VIRTIO PCI: unable to map queue notification MMIO page index=");
+            serial_write_hex(queue->index);
+            serial_write("\r\n");
+            return false;
+        }
         queue->notify_address = (volatile uint16_t *)
             ((volatile uint8_t *)page + (physical & 0xFFFU));
+        serial_write("VIRTIO PCI: queue notify index/off/address=");
+        serial_write_hex(queue->index);
+        serial_write("/");
+        serial_write_hex(notify_offset);
+        serial_write("/");
+        serial_write_hex(physical);
+        serial_write("\r\n");
     }
     *queue->notify_address = queue->index;
     __asm__ volatile ("sfence" ::: "memory");

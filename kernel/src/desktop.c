@@ -3476,8 +3476,8 @@ browser_retry:
             serial_write("NEXUS BING SEARCH HTTP FRAMING INVALID length=");
             serial_write_hex(response_length);
             serial_write("\r\nNEXUS BING RAW RESPONSE PREFIX:\r\n");
-            size_t debug_length = response_length < 512U
-                ? response_length : 512U;
+            size_t debug_length = response_length < 4096U
+                ? response_length : 4096U;
             char debug_line[65];
             for (size_t offset = 0U; offset < debug_length; offset += 64U) {
                 size_t amount = debug_length - offset;

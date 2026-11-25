@@ -624,7 +624,7 @@ static bool vfs_valid_root_path(const char *path) {
         }
         ++length;
     }
-    if (length == 0U || length >= NEXUS_VFS_NAME_MAX - 1U ||
+    if (length == 0U || length >= NEXUS_VFS_NAME_MAX ||
         path[length] != '\0' || component_length == 0U || previous_dot)
         return false;
     return true;

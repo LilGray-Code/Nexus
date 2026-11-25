@@ -218,12 +218,6 @@ void kmain(void) {
         serial_write("WARNING: CPU CPUID capability discovery unavailable\r\n");
     }
 
-    if (!nexus_elf64_selftest()) {
-        serial_write("ERROR: ELF64 parser self-test failed\r\n");
-        halt_forever();
-    }
-    serial_write("NEXUS ELF64 VALIDATION READY\r\n");
-
     if (!LIMINE_BASE_REVISION_SUPPORTED(base_revision)) {
         serial_write("ERROR: unsupported Limine base revision\r\n");
         halt_forever();
@@ -290,6 +284,14 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("NEXUS USER ADDRESS-SPACE ISOLATION READY\r\n");
+
+    /* ELF loading tests allocate and map real pages; run only after memory and
+       paging initialization, never before memory_init(). */
+    if (!nexus_elf64_selftest()) {
+        serial_write("ERROR: ELF64 ET_EXEC/static-PIE loader self-test failed\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS ELF64 STATIC-PIE VALIDATION READY\r\n");
 
     uint64_t first_page = 0;
     if (!memory_alloc_page(&first_page) ||

@@ -304,13 +304,13 @@ static void test_configuration_descriptor_parser(void) {
     assert(!nexus_usb_msc_find_interface(
         descriptor,sizeof(descriptor),&found));
     descriptor[37] = 2U;
-    descriptor[20] = 0x80U; /* Endpoint zero is reserved for control. */
+    descriptor[43] = 0x80U; /* Endpoint zero is reserved for control. */
     assert(!nexus_usb_msc_find_interface(
         descriptor,sizeof(descriptor),&found));
-    descriptor[20] = 0x91U; /* Reserved endpoint-address bits must be zero. */
+    descriptor[43] = 0x91U; /* Reserved endpoint-address bits must be zero. */
     assert(!nexus_usb_msc_find_interface(
         descriptor,sizeof(descriptor),&found));
-    descriptor[20] = 0x81U;
+    descriptor[43] = 0x81U;
     assert(!nexus_usb_msc_find_interface(
         descriptor,sizeof(descriptor)-1U,&found));
     descriptor[9] = 8U; /* Truncated interface descriptor. */

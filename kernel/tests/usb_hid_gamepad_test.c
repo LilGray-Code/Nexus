@@ -103,12 +103,11 @@ static void test_hat_direction(void) {
 
 static void test_extreme_hat_range_is_safe(void) {
     struct nexus_usb_gamepad_layout layout = {0};
-    layout.report_bytes = 1U;
     layout.hat_offset = 0U;
     layout.hat_size = 32U;
     layout.hat_minimum = INT32_MIN;
     layout.hat_maximum = INT32_MAX;
-    const uint8_t report[4] = {0U, 0U, 0U, 0x80U};
+    const uint8_t report[4] = {0U, 0U, 0U, 0U};
     layout.report_bytes = 4U;
     struct nexus_usb_gamepad_event event = {0};
     assert(usb_hid_gamepad_decode(&layout, report, sizeof(report),

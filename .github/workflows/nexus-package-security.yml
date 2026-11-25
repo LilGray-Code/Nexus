@@ -1,0 +1,38 @@
+name: Nexus Package Security Tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/package.c"
+      - "kernel/src/package.h"
+      - "kernel/src/sha256.c"
+      - "kernel/src/sha256.h"
+      - "kernel/tests/package_test.c"
+      - ".github/workflows/nexus-package-security.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-security:
+    name: Verify package integrity and install lifecycle
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Compile package tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/package.c kernel/src/sha256.c \
+            kernel/tests/package_test.c \
+            -o /tmp/nexus-package-security-test
+
+      - name: Run signed-package and tamper-detection tests
+        run: /tmp/nexus-package-security-test

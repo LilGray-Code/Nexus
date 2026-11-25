@@ -12,6 +12,9 @@ struct nexus_wifi_pci_candidate {
     uint8_t function;
     uint16_t vendor_id;
     uint16_t device_id;
+    uint16_t subsystem_vendor_id;
+    uint16_t subsystem_device_id;
+    uint8_t revision_id;
     const char *vendor_name;
 };
 

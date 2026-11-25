@@ -450,7 +450,7 @@ int main(int argc,char **argv) {
         (void)fprintf(stderr,"system payload deploy result=%u kernel_size=%u\\n",
             (unsigned)payload_result,kernel_payload_size);
     assert(payload_result==NEXUS_SYSTEM_PAYLOAD_OK);
-    assert(target.flushes==50U);
+    assert(target.flushes==54U);
     assert(gpt_scan_device(target_handle));
     const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
     assert(data_part!=NULL);
@@ -463,7 +463,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 54U);
+    assert(target.flushes == 58U);
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){
@@ -471,22 +471,36 @@ int main(int argc,char **argv) {
         if(entry!=NULL&&strcmp(entry->name,"KERNEL.BIN")==0)system_entry=entry;
     }
     assert(system_entry!=NULL&&system_entry->size==sizeof(system_payload));
-    const struct nexus_nxfs_entry *kernel_entry=NULL;
+    const struct nexus_nxfs_entry *kernel_parts[2]={NULL,NULL};
     const struct nexus_nxfs_entry *manifest_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){
         const struct nexus_nxfs_entry *entry=nxfs_entry_at(i);
         if(entry==NULL)continue;
-        if(strcmp(entry->name,"KERNEL.ELF")==0)kernel_entry=entry;
+        if(strcmp(entry->name,"KERNEL.000")==0)kernel_parts[0]=entry;
+        if(strcmp(entry->name,"KERNEL.001")==0)kernel_parts[1]=entry;
         if(strcmp(entry->name,"SYSTEM.MAN")==0)manifest_entry=entry;
     }
-    assert(kernel_entry!=NULL&&kernel_entry->size==kernel_payload_size);
+    const uint32_t kernel_chunk_count =
+        (kernel_payload_size + NEXUS_NXFS_MAX_FILE_BYTES - 1U) /
+        NEXUS_NXFS_MAX_FILE_BYTES;
+    assert(kernel_chunk_count>=1U&&kernel_chunk_count<=2U);
     assert(manifest_entry!=NULL&&manifest_entry->size>0U);
-    for(uint32_t offset=0U;offset<kernel_entry->size;offset+=sizeof(system_readback)){
-        const uint32_t amount=kernel_entry->size-offset<sizeof(system_readback)
-            ?kernel_entry->size-offset:(uint32_t)sizeof(system_readback);
-        assert(nxfs_read_file(kernel_entry,offset,amount,system_readback));
-        assert(memcmp(system_readback,kernel_payload+offset,amount)==0);
+    for(uint32_t part=0U;part<kernel_chunk_count;++part){
+        assert(kernel_parts[part]!=NULL);
+        const uint32_t part_offset=part*NEXUS_NXFS_MAX_FILE_BYTES;
+        const uint32_t remaining=kernel_payload_size-part_offset;
+        const uint32_t expected_size=remaining<NEXUS_NXFS_MAX_FILE_BYTES
+            ?remaining:NEXUS_NXFS_MAX_FILE_BYTES;
+        assert(kernel_parts[part]->size==expected_size);
+        for(uint32_t offset=0U;offset<expected_size;offset+=sizeof(system_readback)){
+            const uint32_t amount=expected_size-offset<sizeof(system_readback)
+                ?expected_size-offset:(uint32_t)sizeof(system_readback);
+            assert(nxfs_read_file(kernel_parts[part],offset,amount,system_readback));
+            assert(memcmp(system_readback,kernel_payload+part_offset+offset,
+                          amount)==0);
+        }
     }
+    assert((kernel_chunk_count==2U)==(kernel_parts[1]!=NULL));
     for(uint32_t offset=0U;offset<system_entry->size;offset+=sizeof(system_readback)){
         const uint32_t amount=system_entry->size-offset<sizeof(system_readback)
             ?system_entry->size-offset:(uint32_t)sizeof(system_readback);

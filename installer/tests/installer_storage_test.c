@@ -113,14 +113,18 @@ static struct nexus_block_device make_device(const char *name,
 }
 
 static bool load_payload_file(const char *path,uint8_t **data,uint32_t *size){
-    FILE *f=fopen(path,"rb");if(!f)return false;
-    if(fseek(f,0,SEEK_END)!=0){fclose(f);return false;}
-    long n=ftell(f);if(n<=0||(unsigned long)n>1024UL*1024UL){fclose(f);return false;}
-    if(fseek(f,0,SEEK_SET)!=0){fclose(f);return false;}
-    uint8_t *p=malloc((size_t)n);if(!p){fclose(f);return false;}
+    FILE *f=fopen(path,"rb");
+    if(!f){fprintf(stderr,"installer test: cannot open payload '%s'\\n",path);return false;}
+    if(fseek(f,0,SEEK_END)!=0){fprintf(stderr,"installer test: cannot seek payload '%s'\\n",path);fclose(f);return false;}
+    long n=ftell(f);
+    fprintf(stderr,"installer test: payload '%s' is %ld bytes (maximum 1048576)\\n",path,n);
+    if(n<=0||(unsigned long)n>1024UL*1024UL){fclose(f);return false;}
+    if(fseek(f,0,SEEK_SET)!=0){fprintf(stderr,"installer test: cannot rewind payload '%s'\\n",path);fclose(f);return false;}
+    uint8_t *p=malloc((size_t)n);
+    if(!p){fprintf(stderr,"installer test: cannot allocate %ld-byte payload\\n",n);fclose(f);return false;}
     bool ok=fread(p,1U,(size_t)n,f)==(size_t)n;
     if(fclose(f)!=0)ok=false;
-    if(!ok){free(p);return false;}
+    if(!ok){fprintf(stderr,"installer test: short read for payload '%s'\\n",path);free(p);return false;}
     *data=p;*size=(uint32_t)n;return true;
 }
 static bool dump_installed_disk(const char *path,const struct mock_disk *disk){

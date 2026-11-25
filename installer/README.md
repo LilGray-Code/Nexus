@@ -18,6 +18,27 @@ desktop, terminal, file browser, settings, and early HTTPS-capable text
 browser are currently kernel-integrated; this is not yet a separate full
 userland or a production desktop application environment.
 
+## ISO boot entries and installed startup
+
+The ISO provides two separate Limine entries:
+
+- **Nexus OS - Live Desktop** starts the desktop for evaluation and is the
+  default entry used by the automated desktop checks.
+- **Install Nexus OS** starts a dedicated, full-screen installer session.
+  It does not show the normal desktop, taskbar, or workspace.
+
+Choose **Install Nexus OS** from the boot menu to install. The installer
+requires a target disk selection, exact stable-device-ID confirmation, and a
+separate typed `ERASE` confirmation before any destructive write. It excludes
+the live boot medium and rejects ambiguous or mounted targets. After a
+successful install, the target disk has its own Limine configuration with a
+single **Nexus OS - Installed Desktop** entry and the
+`nexus.mode=desktop` boot argument. Shut down or restart, remove the installer
+USB, and boot from the installed disk to start the normal desktop.
+
+The installed disk configuration does not include the ISO's installer entry,
+so it cannot accidentally boot back into the USB installer environment.
+
 ## Current installer flow
 
 The live desktop opens the graphical installer using **F5**. It discovers

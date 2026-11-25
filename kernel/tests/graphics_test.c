@@ -91,8 +91,20 @@ int main(void) {
                               UINT32_MAX, 0U, 0U, 255U, 128U);
     assert(guarded[1U + 2U * WIDTH + 3U] != 0x0000FF00U);
 
+    /* Fractional glyph scaling blends edge pixels instead of producing
+     * hard one-pixel stair steps. The first A cell starts at x=1.5 pixels.
+     */
+    graphics_clear(0U, 0U, 0U);
+    graphics_draw_text_aa(5U, 0U, "A", 98304U, 255U, 0U, 0U);
+    const uint32_t antialiased_edge = guarded[1U + 1U];
+    assert(((antialiased_edge >> 16) & 0xFFU) >= 126U &&
+           ((antialiased_edge >> 16) & 0xFFU) <= 128U);
+    assert(guarded[1U + 2U] == 0x00FF0000U);
+
     /* Extreme text scale and origin must remain clipped to the surface. */
     graphics_draw_text(0U, 0U, "NEXUS", UINT32_MAX, 255U, 255U, 255U);
+    graphics_draw_text_aa(0U, 0U, "NEXUS", UINT32_MAX,
+                          255U, 255U, 255U);
     graphics_draw_text(UINT64_MAX - 2U, UINT64_MAX - 2U, "X",
                        UINT32_MAX, 255U, 255U, 255U);
 

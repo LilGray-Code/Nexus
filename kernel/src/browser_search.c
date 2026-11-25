@@ -4,6 +4,9 @@
 
 #include <stdint.h>
 
+static void extract_text(const uint8_t *html, size_t length,
+                         char *output, size_t output_capacity);
+
 static char lower_ascii(char value) {
     if (value >= 'A' && value <= 'Z')
         return (char)(value - 'A' + 'a');
@@ -690,8 +693,6 @@ bool nexus_browser_search_parse_bing(
         if (!normalize_result_url(href, href_length,
                                   candidate.url, sizeof(candidate.url)))
             continue;
-        extract_text(html + anchor_close - 1U,
-                     0U, candidate.title, sizeof(candidate.title));
         /* The anchor's actual text starts after its opening tag. */
         extract_text(html + anchor_end + 1U,
                      anchor_close - anchor_end - 1U,

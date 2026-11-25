@@ -5258,7 +5258,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t px = bounds.x;
             const uint64_t py = bounds.y;
             const uint64_t sx = px + 32U;
-            const uint64_t sy = py + 82U;
+            const uint64_t sy = py + 60U;
             const uint64_t tab_y = py + 60U;
             if ((uint64_t)pointer_y >= tab_y &&
                 (uint64_t)pointer_y < tab_y + 24U) {

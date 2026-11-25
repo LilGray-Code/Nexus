@@ -10,6 +10,7 @@
 #define CR0_NE (1ULL << 5)
 #define CR4_OSFXSR (1ULL << 9)
 #define CR4_OSXMMEXCPT (1ULL << 10)
+#define CR4_OSXSAVE (1ULL << 18)
 #define FPU_STATE_BYTES 512U
 
 static uint8_t saved_kernel_fpu_state[FPU_STATE_BYTES]
@@ -63,8 +64,10 @@ bool nexus_fpu_init(void) {
     uint64_t cr4;
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= CR4_OSFXSR | CR4_OSXMMEXCPT;
+    cr4 &= ~CR4_OSXSAVE;
     __asm__ volatile ("mov %0, %%cr4" : : "r"(cr4) : "memory");
 
+    nexus_cpu_disable_avx();
     reset_user_fpu_state();
     fpu_initialized = true;
     return true;

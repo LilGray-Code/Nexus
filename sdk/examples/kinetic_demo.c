@@ -1,7 +1,7 @@
 #include "nexus/app.h"
 
-#define FRAME_WIDTH 160U
-#define FRAME_HEIGHT 120U
+#define FRAME_WIDTH 128U
+#define FRAME_HEIGHT 96U
 
 static uint32_t frame[FRAME_WIDTH * FRAME_HEIGHT];
 
@@ -55,8 +55,16 @@ void _start(void) {
 
         x = (uint32_t)((int32_t)x + vx);
         y = (uint32_t)((int32_t)y + vy);
-        if (x <= 7U || x >= FRAME_WIDTH - 8U) vx = -vx;
-        if (y <= 7U || y >= FRAME_HEIGHT - 8U) vy = -vy;
+        if (x < 7U) { x = 7U; vx = -vx; }
+        else if (x > FRAME_WIDTH - 8U) {
+            x = FRAME_WIDTH - 8U;
+            vx = -vx;
+        }
+        if (y < 7U) { y = 7U; vy = -vy; }
+        else if (y > FRAME_HEIGHT - 8U) {
+            y = FRAME_HEIGHT - 8U;
+            vy = -vy;
+        }
 
         draw_frame(x, y);
         if (nexus_app_blit(origin_x, origin_y, FRAME_WIDTH, FRAME_HEIGHT,

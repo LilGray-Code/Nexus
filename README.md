@@ -120,9 +120,11 @@ syscall ABI exposes keyboard/mouse event polling, display information,
 monotonic timer ticks, interruptible timer sleep, root-file I/O, and bounded
 XRGB8888 framebuffer blits. Blits are copied through a bounded kernel staging
 buffer and presented as partial updates through the existing VirtIO 2D
-scanout when available. This enables simple native 2D apps and games to draw
-without bypassing user-memory checks. It is still CPU-side rasterization, not
-a 3D API or GPU renderer. The current process launcher is foreground and
+scanout when available. The foreground app gets an isolated x87/SSE2 state
+context for floating-point/vector math; AVX remains disabled until XSAVE
+context management exists. This enables simple native 2D apps and game
+prototypes to draw without bypassing user-memory checks. It is still
+CPU-side rasterization, not a 3D API or GPU renderer. The current process launcher is foreground and
 synchronous, and the ABI does not yet provide dynamic linking, shared
 libraries, audio, controllers, or a window manager. See
 [`docs/development/NATIVE-APP-SDK.md`](docs/development/NATIVE-APP-SDK.md)

@@ -639,7 +639,7 @@ load_failed:
 }
 
 static bool elf64_static_pie_selftest(void) {
-    union {
+    static union {
         uint64_t alignment;
         uint8_t bytes[0x2100];
     } fixture;
@@ -772,7 +772,7 @@ static bool elf64_static_pie_selftest(void) {
 }
 
 bool nexus_elf64_selftest(void) {
-    union {
+    static union {
         uint64_t alignment;
         uint8_t bytes[0x1100];
     } fixture;

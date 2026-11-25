@@ -100,6 +100,13 @@ jobs:
             echo "SDK app unexpectedly needs a dynamic loader or TLS"
             exit 1
           fi
+          readelf -h sdk/build/gamepad_demo.elf | grep -q 'Class:.*ELF64'
+          readelf -h sdk/build/gamepad_demo.elf | grep -q 'Type:.*EXEC'
+          readelf -h sdk/build/gamepad_demo.elf | grep -q 'Machine:.*X86-64'
+          if readelf -lW sdk/build/gamepad_demo.elf | grep -Eq 'INTERP|DYNAMIC|TLS'; then
+            echo "Gamepad SDK app unexpectedly needs a dynamic loader or TLS"
+            exit 1
+          fi
       - name: Test signed package parsing and transactional install
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \

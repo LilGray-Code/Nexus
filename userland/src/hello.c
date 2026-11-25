@@ -77,7 +77,7 @@ int main(void) {
     }
     if (cpu.online_processors > 1U &&
         (cpu.feature_flags & NEXUS_CPU_FEATURE_SMP) != 0U) {
-        if (nexus_puts("NEXUS SMP NATIVE APP CAPABILITY READY") != 38)
+        if (nexus_puts("NEXUS SMP NATIVE APP CAPABILITY READY") != 37)
             return 28;
     } else if (nexus_puts("NEXUS SMP SINGLE-CORE MODE") != 26) {
         return 29;

@@ -219,7 +219,10 @@ bool nexus_smp_init(struct limine_mp_response *response) {
 
     if (response == NULL || response->cpu_count == 0U ||
         response->cpus == NULL) {
+        const uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
+        x2apic_enabled = (apic_base & APIC_BASE_X2APIC) != 0U;
         (void)local_apic_init_current_cpu();
+        lapic_ids[0] = local_apic_id();
         smp_initialized = true;
         serial_write("SMP: Limine MP response unavailable; single-CPU fallback\r\n");
         return true;
@@ -239,6 +242,8 @@ bool nexus_smp_init(struct limine_mp_response *response) {
     const uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
     x2apic_enabled = (apic_base & APIC_BASE_X2APIC) != 0U;
     if (!local_apic_init_current_cpu()) {
+        lapic_ids[0] = response->bsp_lapic_id;
+        smp_initialized = true;
         serial_write("SMP: BSP local APIC setup failed; single-CPU fallback\r\n");
         return true;
     }
@@ -283,7 +288,9 @@ bool nexus_smp_parallel_for(uint32_t item_count,
     if (!smp_initialized || task == NULL) return false;
     if (item_count == 0U) return true;
     if (__atomic_load_n(&work_active, __ATOMIC_ACQUIRE) != 0U) return false;
-    if (current_cpu_slot() != 0U) return false;
+    const uint32_t online = nexus_smp_online_cpu_count();
+    /* Single-CPU fallback can run without an accessible local APIC. */
+    if (online > 1U && current_cpu_slot() != 0U) return false;
 
     work_task = task;
     work_context = context;
@@ -292,7 +299,6 @@ bool nexus_smp_parallel_for(uint32_t item_count,
     __atomic_store_n(&work_completed, 0U, __ATOMIC_RELAXED);
     __atomic_store_n(&work_active, 1U, __ATOMIC_RELEASE);
 
-    const uint32_t online = nexus_smp_online_cpu_count();
     uint32_t remote_count = 0U;
     for (uint32_t slot = 1U; slot < expected_cpu_count; ++slot) {
         if (__atomic_load_n(&cpu_online[slot], __ATOMIC_ACQUIRE) == 0U)

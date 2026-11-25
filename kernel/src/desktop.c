@@ -17,7 +17,7 @@
 #include "browser_history.h"
 #include "download.h"
 #include "app_store.h"
-#include "nxfs.h
+#include "nxfs.h"
 
 #include "graphics.h"
 #include "gpu.h"
@@ -115,6 +115,7 @@ static bool keyboard_windows_used;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
+static void desktop_store_refresh(void);
 static const char *installer_transport_label(
     const struct nexus_block_device *device);
 static void installer_set_status(const char *message);
@@ -2215,6 +2216,116 @@ static void draw_shell(void) {
                            gpu_render_path_name(), 1U,
                            108U, 216U, 229U);
         }
+    } else if (active_view == DESKTOP_STORE) {
+        graphics_draw_text_aa(text_x, text_y, "NEXUS APP STORE",
+                              163840U, 239U, 249U, 255U);
+        graphics_draw_text(text_x, text_y + 27U,
+            "OFFICIAL WEB SHORTCUTS TODAY - NATIVE CLIENT SUPPORT IS IN DEVELOPMENT",
+            1U, 170U, 191U, 211U);
+        const uint64_t list_x = text_x;
+        const uint64_t list_y = text_y + 56U;
+        const uint64_t detail_x = text_x + 330U;
+        const uint64_t detail_width = panel_width > 370U
+            ? panel_width - 370U : 210U;
+        const size_t count = nexus_store_count();
+        for (size_t i = 0U; i < count; ++i) {
+            const struct nexus_store_application *app =
+                nexus_store_application_at(i);
+            if (app == NULL) continue;
+            const uint64_t row_y = list_y + (uint64_t)i * 40U;
+            graphics_blend_round_rect(list_x, row_y, 310U, 34U, 7U,
+                i == store_selected_index
+                    ? desktop_accent_palette[desktop_accent_index][0]
+                    : (desktop_theme_is_light() ? 232U : 24U),
+                i == store_selected_index
+                    ? desktop_accent_palette[desktop_accent_index][1]
+                    : (desktop_theme_is_light() ? 239U : 41U),
+                i == store_selected_index
+                    ? desktop_accent_palette[desktop_accent_index][2]
+                    : (desktop_theme_is_light() ? 246U : 65U), 245U);
+            graphics_round_rect(list_x, row_y, 310U, 34U, 7U,
+                desktop_theme_is_light() ? 175U : 65U,
+                desktop_theme_is_light() ? 192U : 98U,
+                desktop_theme_is_light() ? 211U : 133U);
+            graphics_fill_rect(list_x + 8U, row_y + 7U, 4U, 20U,
+                i == 0U ? 45U : (i == 1U ? 117U : 82U),
+                i == 0U ? 177U : (i == 1U ? 136U : 198U),
+                i == 0U ? 202U : (i == 1U ? 244U : 155U));
+            graphics_draw_text(list_x + 20U, row_y + 8U, app->name, 1U,
+                desktop_theme_is_light() ? 40U : 239U,
+                desktop_theme_is_light() ? 56U : 247U,
+                desktop_theme_is_light() ? 78U : 255U);
+            graphics_draw_text(list_x + 20U, row_y + 22U, app->category, 1U,
+                desktop_theme_is_light() ? 91U : 151U,
+                desktop_theme_is_light() ? 108U : 180U,
+                desktop_theme_is_light() ? 131U : 201U);
+            graphics_draw_text(list_x + 228U, row_y + 13U,
+                store_installed[i] ? "ADDED" : "WEB LINK",
+                1U, store_installed[i] ? 108U : 170U,
+                store_installed[i] ? 216U : 191U,
+                store_installed[i] ? 229U : 211U);
+        }
+
+        graphics_blend_round_rect(detail_x, list_y, detail_width, 254U, 9U,
+            desktop_theme_is_light() ? 239U : 19U,
+            desktop_theme_is_light() ? 244U : 32U,
+            desktop_theme_is_light() ? 250U : 51U, 245U);
+        graphics_round_rect(detail_x, list_y, detail_width, 254U, 9U,
+            desktop_theme_is_light() ? 178U : 68U,
+            desktop_theme_is_light() ? 194U : 104U,
+            desktop_theme_is_light() ? 214U : 142U);
+        const struct nexus_store_application *selected =
+            nexus_store_application_at(store_selected_index);
+        if (selected != NULL) {
+            graphics_draw_text(detail_x + 14U, list_y + 18U,
+                selected->name, 2U, 239U, 249U, 255U);
+            graphics_draw_text(detail_x + 14U, list_y + 43U,
+                selected->publisher, 1U, 170U, 191U, 211U);
+            graphics_draw_text(detail_x + 14U, list_y + 69U,
+                selected->description, 1U, 233U, 243U, 252U);
+            graphics_draw_text(detail_x + 14U, list_y + 100U,
+                "DELIVERY: HTTPS WEBSITE SHORTCUT", 1U,
+                108U, 216U, 229U);
+            graphics_draw_text(detail_x + 14U, list_y + 123U,
+                "NATIVE WINDOWS CLIENT: NOT AVAILABLE", 1U,
+                239U, 177U, 119U);
+            graphics_draw_text(detail_x + 14U, list_y + 146U,
+                selected->native_status, 1U,
+                170U, 191U, 211U);
+            graphics_draw_text(detail_x + 14U, list_y + 182U,
+                store_installed[store_selected_index]
+                    ? "SHORTCUT INSTALLED"
+                    : "SHORTCUT NOT INSTALLED",
+                1U, store_installed[store_selected_index] ? 108U : 239U,
+                store_installed[store_selected_index] ? 216U : 177U,
+                store_installed[store_selected_index] ? 229U : 119U);
+        }
+        graphics_blend_round_rect(detail_x, list_y + 194U, 108U, 28U, 6U,
+            40U, 111U, 99U, 245U);
+        graphics_round_rect(detail_x, list_y + 194U, 108U, 28U, 6U,
+            82U, 198U, 155U);
+        graphics_draw_text(detail_x + 13U, list_y + 204U,
+            "ADD SHORTCUT", 1U, 245U, 250U, 255U);
+        graphics_blend_round_rect(detail_x + 118U, list_y + 194U,
+            108U, 28U, 6U, 43U, 63U, 91U, 245U);
+        graphics_round_rect(detail_x + 118U, list_y + 194U,
+            108U, 28U, 6U, 117U, 136U, 244U);
+        graphics_draw_text(detail_x + 133U, list_y + 204U,
+            "OPEN WEBSITE", 1U, 245U, 250U, 255U);
+        graphics_blend_round_rect(detail_x, list_y + 228U, 108U, 22U, 5U,
+            76U, 41U, 48U, 245U);
+        graphics_round_rect(detail_x, list_y + 228U, 108U, 22U, 5U,
+            177U, 67U, 80U);
+        graphics_draw_text(detail_x + 23U, list_y + 235U,
+            "REMOVE LINK", 1U, 255U, 239U, 241U);
+        graphics_draw_text(text_x, text_y + 310U, store_status, 1U,
+            170U, 225U, 190U);
+        graphics_draw_text(text_x, text_y + 334U,
+            "I ADD LINK   ENTER OPEN SITE   U REMOVE   ESC HOME",
+            1U, 151U, 178U, 201U);
+        graphics_draw_text(text_x, text_y + 356U,
+            "WEB APPS MAY REQUIRE JAVASCRIPT / MEDIA / DRM NOT YET IN NEXUS BROWSER",
+            1U, 239U, 177U, 119U);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
                            2, 239, 249, 255);
@@ -5611,9 +5722,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
 
     if (active_view != DESKTOP_INSTALLER && keyboard_alt &&
         event->scancode == 0x0FU) {
-        size_t current_app = 4U;
+        size_t current_app = 5U;
         bool current_found = false;
-        for (size_t app = 0U; app < 5U; ++app) {
+        for (size_t app = 0U; app < 6U; ++app) {
             if (desktop_view_for_app(app) == active_view) {
                 current_app = app;
                 current_found = true;
@@ -5622,10 +5733,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         size_t next_app;
         if (!current_found) {
-            next_app = keyboard_left_shift || keyboard_right_shift ? 4U : 0U;
+            next_app = keyboard_left_shift || keyboard_right_shift ? 5U : 0U;
         } else {
             next_app = keyboard_left_shift || keyboard_right_shift
-                ? (current_app + 4U) % 5U : (current_app + 1U) % 5U;
+                ? (current_app + 5U) % 6U : (current_app + 1U) % 6U;
         }
         desktop_open_app(next_app);
         draw_shell();

@@ -146,8 +146,11 @@ bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
     if (!initialized || pixels == NULL || width == 0U || height == 0U ||
         x >= active_surface.width || y >= active_surface.height ||
         stride_pixels < width ||
-        height - 1U > (uint64_t)(SIZE_MAX / stride_pixels) ||
-        (uint64_t)stride_pixels > (uint64_t)(SIZE_MAX / sizeof(uint32_t))) {
+        width > (uint64_t)(SIZE_MAX / sizeof(uint32_t)) ||
+        stride_pixels > SIZE_MAX / sizeof(uint32_t) ||
+        (height - 1U) >
+            (uint64_t)(((SIZE_MAX / sizeof(uint32_t)) -
+                        (size_t)width) / stride_pixels)) {
         return false;
     }
 

@@ -280,6 +280,8 @@ jobs:
           timeout -k 2s 12s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -netdev user,id=n0 -device e1000,netdev=n0 \
+            -netdev user,id=virt0 -device virtio-net-pci,netdev=virt0 \
+            -device virtio-gpu-pci \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
             -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
@@ -322,6 +324,8 @@ jobs:
           grep -q "INPUT: USB HID boot mouse available" uefi-serial.log
           grep -q "NEXUS PCI DISCOVERY READY" uefi-serial.log
           grep -q "NEXUS E1000 TX READY" uefi-serial.log
+          grep -q "NEXUS VIRTIO-NET TX/RX READY" uefi-serial.log
+          grep -q "VIRTIO GPU: 2D resource attached; CPU raster buffer now drives GPU scanout" uefi-serial.log
           grep -q "NEXUS DHCP READY" uefi-serial.log
           grep -q "PCI: functions discovered:" uefi-serial.log
           grep -q "NEXUS IOAPIC PROBE READY" uefi-serial.log
@@ -366,7 +370,8 @@ jobs:
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-browser-vars.fd
           qemu-system-x86_64 \
             -machine q35 -cpu qemu64,+rdrand -m 512M \
-            -netdev user,id=n0 -device e1000,netdev=n0 \
+            -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+            -device virtio-gpu-pci \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-browser-vars.fd \
             -drive file=/tmp/nexus-installed-uefi.img,if=none,id=nvm0,format=raw \

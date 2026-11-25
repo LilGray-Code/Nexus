@@ -511,6 +511,7 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
     if (receipt_exists) {
         char ignored_receipt[32];
         if (old_manifest.id[0] == '\0' ||
+            !strings_equal(old_manifest.id, manifest.id) ||
             !make_paths(&old_manifest, old_executable, ignored_receipt) ||
             !installed_payload_matches(old_executable, &old_manifest)) {
             last_package_error = NEXUS_PACKAGE_ERROR_RECEIPT;

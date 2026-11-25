@@ -268,6 +268,37 @@ static void copy_ascii_field(char *destination, size_t capacity,
     destination[output] = '\0';
 }
 
+static void read_optional_unit_serial(struct nexus_usb_msc_device *device) {
+    uint8_t cdb[6] = {0U};
+    uint8_t response[68];
+    cdb[0] = SCSI_INQUIRY;
+    cdb[1] = 0x01U; /* EVPD */
+    cdb[2] = 0x80U; /* Unit Serial Number page */
+    cdb[4] = 4U;
+    if (!execute_scsi(device, cdb, sizeof(cdb), SCSI_DATA_IN,
+                      NULL, response, 4U) ||
+        response[1] != 0x80U) return;
+
+    const uint16_t serial_length = (uint16_t)(
+        ((uint16_t)response[2] << 8) | response[3]);
+    if (serial_length == 0U || serial_length > 64U) return;
+
+    const uint8_t allocation_length = (uint8_t)(serial_length + 4U);
+    cdb[4] = allocation_length;
+    if (!execute_scsi(device, cdb, sizeof(cdb), SCSI_DATA_IN,
+                      NULL, response, allocation_length) ||
+        response[1] != 0x80U ||
+        (((uint16_t)response[2] << 8) | response[3]) != serial_length)
+        return;
+
+    for (size_t i = 0U; i < serial_length; ++i) {
+        const uint8_t value = response[4U + i];
+        if (value < 0x20U || value > 0x7EU) return;
+    }
+    copy_ascii_field(device->unit_serial, sizeof(device->unit_serial),
+                     response + 4U, serial_length);
+}
+
 bool nexus_usb_msc_init(struct nexus_usb_msc_device *device,
                         const struct nexus_usb_msc_transport *transport,
                         void *transport_context,
@@ -358,7 +389,9 @@ bool nexus_usb_msc_init(struct nexus_usb_msc_device *device,
     device->block_size = block_size;
     device->max_blocks_per_request =
         NEXUS_USB_MSC_MAX_TRANSFER_BYTES / block_size;
-    return device->max_blocks_per_request != 0U;
+    if (device->max_blocks_per_request == 0U) return false;
+    read_optional_unit_serial(device);
+    return true;
 }
 
 bool nexus_usb_msc_read_blocks(struct nexus_usb_msc_device *device,

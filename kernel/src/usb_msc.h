@@ -50,6 +50,7 @@ struct nexus_usb_msc_device {
     char vendor[9];
     char product[17];
     char revision[5];
+    char unit_serial[65];
     uint8_t last_csw_status;
     bool initialized;
 };

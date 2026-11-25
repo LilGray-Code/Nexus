@@ -90,7 +90,18 @@ static bool mock_bulk_in(void *context, uint8_t endpoint,
     assert(mock->cbw[12] == 0x80U);
     assert(capacity == expected);
     for (size_t i=0U;i<capacity;++i) bytes[i]=0U;
-    if (mock->last_opcode == 0x12U) {
+    if (mock->last_opcode == 0x12U &&
+        mock->last_cdb[1] == 0x01U && mock->last_cdb[2] == 0x80U) {
+        bytes[0]=0U;
+        bytes[1]=0x80U;
+        if (capacity >= 4U) {
+            bytes[2]=0U;
+            bytes[3]=14U;
+        }
+        const char serial[]="NX-USB-0000001";
+        for(size_t i=0U;i<14U && 4U+i<capacity;++i)
+            bytes[4U+i]=(uint8_t)serial[i];
+    } else if (mock->last_opcode == 0x12U) {
         bytes[0]=0U;
         bytes[4]=31U;
         const char vendor[]="NEXUS   ";
@@ -148,6 +159,8 @@ static void test_initialize_and_read_capacity_16(void) {
     assert(mock.last_opcode==0x9EU);
     assert(device.vendor[0]=='N' && device.product[0]=='U');
     assert(device.revision[0]=='2');
+    assert(device.unit_serial[0]=='N');
+    assert(device.unit_serial[13]=='1');
     assert(mock.recoveries==0U);
 }
 

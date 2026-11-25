@@ -4952,8 +4952,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         draw_pointer();
         return;
     }
-    if (keyboard_alt && event->scancode == 0x3EU &&
-        active_view != DESKTOP_HOME) {
+    if (!installer_session_mode && keyboard_alt &&
+        event->scancode == 0x3EU && active_view != DESKTOP_HOME) {
         desktop_close_view();
         draw_shell();
         draw_pointer();
@@ -5076,7 +5076,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 installer_drive_dropdown_open) {
                 installer_drive_dropdown_open = false;
             } else if (installer_ui_state == INSTALLER_UI_SELECT) {
-                desktop_open_view(DESKTOP_HOME);
+                if (!installer_session_mode)
+                    desktop_open_view(DESKTOP_HOME);
             } else {
                 installer_ui_state = INSTALLER_UI_SELECT;
                 installer_input_length = 0U;

@@ -22,6 +22,10 @@ int64_t usermode_sys_read(uint64_t descriptor, uint64_t user_buffer,
 int64_t usermode_sys_close(uint64_t descriptor);
 int64_t usermode_sys_file_write(uint64_t user_path, uint64_t user_buffer,
                                 uint64_t length);
+int64_t usermode_sys_input_poll(uint64_t user_event);
+int64_t usermode_sys_display_info(uint64_t user_info);
+int64_t usermode_sys_clock_ticks(void);
+int64_t usermode_sys_framebuffer_blit(uint64_t user_request);
 
 extern volatile uint64_t usermode_exit_status;
 extern volatile bool usermode_exit_seen;

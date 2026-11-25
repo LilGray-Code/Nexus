@@ -843,55 +843,74 @@ static void draw_shell(void) {
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
 
-    for (uint64_t y = 0; y < height; ++y) {
-        const uint8_t red = desktop_theme_is_light()
-            ? (uint8_t)(244U - (y * 12U / height))
-            : (uint8_t)(5U + (y * 8U / height));
-        const uint8_t green = desktop_theme_is_light()
-            ? (uint8_t)(247U - (y * 10U / height))
-            : (uint8_t)(11U + (y * 18U / height));
-        const uint8_t blue = desktop_theme_is_light()
-            ? (uint8_t)(252U - (y * 7U / height))
-            : (uint8_t)(25U + (y * 34U / height));
-        graphics_fill_rect(0U, y, width, 1U, red, green, blue);
-    }
-    /* Layered geometric wallpaper: deliberately native framebuffer artwork. */
-    graphics_fill_rect(width / 2U, 0U, width / 2U, height,
-        desktop_theme_is_light() ? 238U : 9U,
-        desktop_theme_is_light() ? 244U : 26U,
-        desktop_theme_is_light() ? 250U : 49U);
-    graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
-        desktop_theme_is_light() ? 234U : 10U,
-        desktop_theme_is_light() ? 241U : 31U,
-        desktop_theme_is_light() ? 249U : 58U);
-    graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
-        desktop_theme_is_light() ? 230U : 12U,
-        desktop_theme_is_light() ? 238U : 35U,
-        desktop_theme_is_light() ? 247U : 63U);
-    /* Subtle layered accent glows add depth while remaining software-rendered. */
-    uint64_t glow_radius = height / 4U;
-    if (glow_radius > 220U) glow_radius = 220U;
-    if (glow_radius < 32U) glow_radius = 32U;
+    /* Full-resolution software aurora wallpaper with layered color fields. */
+    graphics_gradient_rect(0U, 0U, width, height, false,
+        desktop_theme_is_light() ? 246U : 5U,
+        desktop_theme_is_light() ? 250U : 13U,
+        desktop_theme_is_light() ? 255U : 29U,
+        desktop_theme_is_light() ? 218U : 9U,
+        desktop_theme_is_light() ? 231U : 28U,
+        desktop_theme_is_light() ? 245U : 55U);
+    graphics_gradient_rect(0U, 0U, width, height, true,
+        desktop_theme_is_light() ? 248U : 8U,
+        desktop_theme_is_light() ? 249U : 16U,
+        desktop_theme_is_light() ? 255U : 36U,
+        desktop_theme_is_light() ? 229U : 12U,
+        desktop_theme_is_light() ? 239U : 30U,
+        desktop_theme_is_light() ? 250U : 59U);
+
+    uint64_t glow_radius = height / 3U;
+    if (glow_radius > 256U) glow_radius = 256U;
+    if (glow_radius < 24U) glow_radius = 24U;
     graphics_blend_circle(width * 4U / 5U, height / 3U,
         (uint32_t)glow_radius,
         desktop_accent_palette[desktop_accent_index][0],
         desktop_accent_palette[desktop_accent_index][1],
         desktop_accent_palette[desktop_accent_index][2],
-        desktop_theme_is_light() ? 22U : 38U);
-    graphics_blend_circle(width * 3U / 5U, height * 2U / 3U,
+        desktop_theme_is_light() ? 34U : 58U);
+    graphics_blend_circle(width / 3U, height * 4U / 5U,
+        (uint32_t)(glow_radius * 3U / 4U),
+        78U, 116U, 246U, desktop_theme_is_light() ? 25U : 43U);
+    graphics_blend_circle(width / 2U, height / 2U,
         (uint32_t)(glow_radius / 2U),
-        117U, 136U, 244U, desktop_theme_is_light() ? 16U : 28U);
-    for (uint64_t band = 0U; band < 5U; ++band) {
-        const uint64_t x = width / 2U + band * (width / 14U);
-        if (x < width)
-            graphics_fill_rect(x, top_bar, 1U, height - top_bar,
-                               14U, (uint8_t)(42U + band * 3U),
-                               (uint8_t)(70U + band * 4U));
+        44U, 198U, 203U, desktop_theme_is_light() ? 13U : 24U);
+
+    /* Long, low-contrast ribbons and orbit arcs produce a modern depth cue
+     * without bitmap assets, floating-point math, or unbounded raster work.
+     */
+    for (uint64_t band = 0U; band < 7U; ++band) {
+        const uint64_t offset = band * (width / 18U);
+        const uint64_t x0 = width / 3U + offset;
+        const uint64_t y0 = top_bar + 24U;
+        const uint64_t x1 = x0 > width - 1U - width / 5U
+            ? width - 1U : x0 + width / 5U;
+        const uint64_t y1 = height > 100U
+            ? height - 80U - band * (height / 90U) : height - 1U;
+        graphics_draw_line(x0 < width ? x0 : width - 1U, y0,
+                           x1, y1, 1U,
+                           desktop_theme_is_light() ? 211U : 40U,
+                           desktop_theme_is_light() ? 221U : 99U,
+                           desktop_theme_is_light() ? 237U : 145U);
     }
-    graphics_fill_rect(0U, 0U, width, top_bar,
-        desktop_theme_is_light() ? 239U : 10U,
-        desktop_theme_is_light() ? 243U : 17U,
-        desktop_theme_is_light() ? 249U : 33U);
+    graphics_draw_circle(width * 4U / 5U, height / 3U,
+                         (uint32_t)(glow_radius > 18U
+                             ? glow_radius - 18U : glow_radius),
+                         desktop_theme_is_light() ? 207U : 40U,
+                         desktop_theme_is_light() ? 219U : 106U,
+                         desktop_theme_is_light() ? 236U : 153U);
+    graphics_draw_circle(width * 4U / 5U, height / 3U,
+                         (uint32_t)(glow_radius / 2U),
+                         desktop_accent_palette[desktop_accent_index][0],
+                         desktop_accent_palette[desktop_accent_index][1],
+                         desktop_accent_palette[desktop_accent_index][2]);
+
+    graphics_gradient_rect(0U, 0U, width, top_bar, false,
+        desktop_theme_is_light() ? 248U : 10U,
+        desktop_theme_is_light() ? 250U : 18U,
+        desktop_theme_is_light() ? 255U : 36U,
+        desktop_theme_is_light() ? 230U : 16U,
+        desktop_theme_is_light() ? 238U : 29U,
+        desktop_theme_is_light() ? 249U : 48U);
     desktop_draw_accent(0U, top_bar - 2U, width, 2U);
     desktop_draw_accent(16U, 7U, 28U, top_bar - 14U);
     graphics_draw_text(25U, top_bar / 2U - 4U, "N", 1U, 7U, 23U, 39U);

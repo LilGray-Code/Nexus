@@ -1,6 +1,7 @@
 #include "fpu.h"
 #include "cpu.h"
 #include <stddef.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define CR0_MP (1ULL << 1)
@@ -75,6 +76,9 @@ static bool enable_avx_xstate(void) {
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
     cr4 |= CR4_OSXSAVE;
     __asm__ volatile ("mov %0, %%cr4" : : "r"(cr4) : "memory");
+    uint64_t verified_cr4;
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(verified_cr4));
+    if ((verified_cr4 & CR4_OSXSAVE) == 0U) return false;
     write_xcr0(XSAVE_AVX_MASK);
     if ((read_xcr0() & XSAVE_AVX_MASK) != XSAVE_AVX_MASK) {
         disable_avx_xstate();

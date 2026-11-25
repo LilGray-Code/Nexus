@@ -24,14 +24,6 @@ static void append_register_bytes(char *destination, size_t offset,
         destination[offset + i] = (char)(value >> (i * 8U));
 }
 
-static uint64_t read_xcr0(void) {
-    uint32_t low, high;
-    __asm__ volatile ("xgetbv"
-        : "=a"(low), "=d"(high)
-        : "c"(0U));
-    return ((uint64_t)high << 32) | low;
-}
-
 
 static void set_feature(uint64_t feature, bool present) {
     if (present) cpu_info.features |= feature;
@@ -117,16 +109,10 @@ bool nexus_cpu_init(void) {
     set_feature(NEXUS_CPU_FEATURE_HYPERVISOR, (ecx & (1U << 31)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_PCID, (ecx & (1U << 17)) != 0U);
 
-    uint64_t xcr0 = 0U;
-    const uint64_t xsave_state_features =
-        NEXUS_CPU_FEATURE_XSAVE | NEXUS_CPU_FEATURE_OSXSAVE;
-    /* Do not execute XGETBV in generic discovery: this code is also host-tested.
-     * The ring-0 FPU initializer enables OSXSAVE and validates XCR0 later.
+    /* Generic discovery is safe in host tests and before CR4.OSXSAVE.
+     * AVX/AVX2 become visible only after ring-0 FPU setup validates XCR0.
      */
-    const bool os_owns_extended_state = false;
-    if (os_owns_extended_state) xcr0 = read_xcr0();
-    const bool avx_state_enabled =
-        os_owns_extended_state && (xcr0 & 0x6U) == 0x6U;
+    const bool avx_state_enabled = false;
     set_feature(NEXUS_CPU_FEATURE_AVX,
         avx_state_enabled && (ecx & (1U << 28)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_FMA,
@@ -261,14 +247,13 @@ bool nexus_cpu_has_feature(uint64_t feature) {
 
 void nexus_cpu_enable_avx_features(void) {
     if (!cpu_info.cpuid_available || cpu_info.max_basic_leaf < 1U ||
-        !cr4_osxsave_enabled()) return;
+        !nexus_cpu_has_feature(NEXUS_CPU_FEATURE_XSAVE)) return;
 
     uint32_t ecx = 0U;
     cpuid(1U, 0U, NULL, NULL, &ecx, NULL);
     if ((ecx & (1U << 26)) == 0U ||
         (ecx & (1U << 28)) == 0U ||
-        (ecx & (1U << 27)) == 0U ||
-        (read_xcr0() & 0x7U) != 0x7U) return;
+        (ecx & (1U << 27)) == 0U) return;
 
     cpu_info.features |= NEXUS_CPU_FEATURE_OSXSAVE |
                          NEXUS_CPU_FEATURE_AVX;

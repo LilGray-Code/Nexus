@@ -136,6 +136,44 @@ bool graphics_take_damage(struct nexus_graphics_damage *damage) {
     return true;
 }
 
+uint64_t graphics_pitch(void) {
+    return initialized ? active_surface.pitch : 0U;
+}
+
+bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
+                            uint64_t height, const uint32_t *pixels,
+                            size_t stride_pixels) {
+    if (!initialized || pixels == NULL || width == 0U || height == 0U ||
+        x >= active_surface.width || y >= active_surface.height ||
+        stride_pixels < width ||
+        height - 1U > (uint64_t)(SIZE_MAX / stride_pixels) ||
+        (uint64_t)stride_pixels > (uint64_t)(SIZE_MAX / sizeof(uint32_t))) {
+        return false;
+    }
+
+    const uint64_t copy_width = width < active_surface.width - x
+        ? width : active_surface.width - x;
+    const uint64_t copy_height = height < active_surface.height - y
+        ? height : active_surface.height - y;
+    if (copy_width == 0U || copy_height == 0U ||
+        copy_width > SIZE_MAX / sizeof(uint32_t)) return false;
+
+    graphics_mark_damage(x, y, copy_width, copy_height);
+    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+    for (uint64_t row = 0U; row < copy_height; ++row) {
+        const uint32_t *source = pixels + (size_t)row * stride_pixels;
+        volatile uint32_t *destination = (volatile uint32_t *)(void *)(
+            base + (y + row) * active_surface.pitch + x * 4U);
+        for (uint64_t column = 0U; column < copy_width; ++column) {
+            const uint32_t pixel = source[column];
+            destination[column] = pack_rgb(
+                (uint8_t)(pixel >> 16), (uint8_t)(pixel >> 8),
+                (uint8_t)pixel);
+        }
+    }
+    return true;
+}
+
 void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,
                         uint8_t blue) {

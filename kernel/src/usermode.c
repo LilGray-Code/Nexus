@@ -515,3 +515,20 @@ int64_t usermode_sys_framebuffer_blit(uint64_t user_request) {
     }
     return 0;
 }
+
+int64_t usermode_sys_sleep_ticks(uint64_t ticks) {
+    /* At 100 Hz, 500 ticks caps one sleep request at five seconds. */
+    if (ticks > 500U) return -NEXUS_EINVAL;
+    if (ticks == 0U) return 0;
+
+    const uint64_t start = timer_ticks();
+    while (timer_ticks() - start < ticks) {
+        /*
+         * The interrupt gate enters with IF clear. STI;HLT allows timer,
+         * keyboard, and mouse IRQs to run; CLI restores the syscall handler's
+         * expected interrupt state immediately after wakeup.
+         */
+        __asm__ volatile ("sti; hlt; cli" : : : "memory");
+    }
+    return 0;
+}

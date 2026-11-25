@@ -69,3 +69,38 @@ profiles for other memory sizes and controller types remain planned.
 Additional QEMU profiles for alternate memory sizes, additional chipsets, and
 USB/network/graphics/audio controllers remain planned. Physical compatibility
 will be validated across multiple vendors and generations as drivers mature.
+
+
+## Hardware inventory and driver boundaries
+
+Nexus now has a runtime CPUID inventory that reports the processor vendor,
+brand string, family/model/stepping, package core/thread counts, and selected
+instruction capabilities. AVX-family features are reported only when the
+processor advertises them **and** the OS has enabled the required extended
+register state in XCR0. Merely detecting a CPU feature never enables that
+instruction for kernel code. SIMD execution remains gated until scheduler and
+user-process context switching preserve the corresponding register state.
+
+PCI display discovery retains a bounded list of display adapters and their
+vendor/device identifiers. The generic layer does not program unknown GPU BARs
+or issue commands to Intel, AMD, or NVIDIA hardware. The current VirtIO-GPU
+path provides host scanout using a CPU-rendered backing surface; it is not a
+general 2D/3D shader driver. The renderer tracks changed pixels and can submit
+bounded dirty rectangles to the VirtIO display transport.
+
+PCI wireless inventory records common PCI network-class wireless candidates.
+This is deliberately separate from a working Wi-Fi radio driver: scan,
+authentication, firmware loading, regulatory behavior, and packet I/O still
+require a chipset-specific implementation registered with the Wi-Fi manager.
+USB wireless devices need USB-class discovery and their own drivers.
+
+Firmware reporting currently inventories the boot firmware mode plus ACPI and
+SMBIOS entry-point availability/version. Nexus does not rewrite or flash the
+motherboard's UEFI/BIOS; vendor firmware updates remain a platform maintenance
+operation. Future platform work includes ACPI FADT/HPET/MCFG support, CPU
+topology across more vendors, power states, secure-boot policy reporting, and
+more real-device validation.
+
+These features improve discovery and the safe base-driver contracts. They do
+not imply that every display adapter, CPU feature, or Wi-Fi chipset is already
+fully operational.

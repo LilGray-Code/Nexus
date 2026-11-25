@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+struct nexus_graphics_damage {
+    uint64_t x, y, width, height;
+};
+
 struct nexus_graphics_surface {
     volatile void *address;
     uint64_t width;
@@ -21,6 +25,8 @@ struct nexus_graphics_surface {
 bool graphics_init(const struct nexus_graphics_surface *surface);
 uint64_t graphics_width(void);
 uint64_t graphics_height(void);
+/* Returns and clears the union of all modified pixels since the last call. */
+bool graphics_take_damage(struct nexus_graphics_damage *damage);
 void graphics_clear(uint8_t red, uint8_t green, uint8_t blue);
 void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,

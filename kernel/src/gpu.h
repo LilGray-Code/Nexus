@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define NEXUS_GPU_MAX_ADAPTERS 16U
+
 enum nexus_gpu_vendor {
     NEXUS_GPU_VENDOR_UNKNOWN = 0,
     NEXUS_GPU_VENDOR_INTEL,
@@ -30,6 +32,8 @@ struct nexus_gpu_info {
 
 /* Read-only PCI discovery. This never writes a GPU BAR or command register. */
 bool gpu_init(void);
+uint32_t gpu_adapter_count(void);
+const struct nexus_gpu_info *gpu_adapter_at(uint32_t index);
 const struct nexus_gpu_info *gpu_primary_info(void);
 const char *gpu_primary_name(void);
 const char *gpu_render_path_name(void);

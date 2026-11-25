@@ -4,6 +4,7 @@
 #include <limine.h>
 
 #include "acpi.h"
+#include "cpu.h"
 #include "blockdev.h"
 #include "boot_payload.h"
 #include "boot_mode.h"
@@ -20,6 +21,7 @@
 #include "memory.h"
 #include "pci.h"
 #include "gpu.h"
+#include "wifi_pci.h"
 #include "firmware.h"
 #include "virtio_net.h"
 #include "paging.h"
@@ -297,6 +299,32 @@ void kmain(void) {
     }
     serial_write("NEXUS PCI DISCOVERY READY\r\n");
     (void)gpu_init();
+    if (wifi_pci_discover()) {
+        serial_write("WIFI: PCI wireless-class candidates discovered: ");
+        serial_write_hex(wifi_pci_candidate_count());
+        serial_write("\r\n");
+        for (uint32_t wifi_index = 0U;
+             wifi_index < wifi_pci_candidate_count(); ++wifi_index) {
+            const struct nexus_wifi_pci_candidate *candidate =
+                wifi_pci_candidate_at(wifi_index);
+            if (candidate == NULL) continue;
+            serial_write("WIFI CANDIDATE: ");
+            serial_write(candidate->vendor_name);
+            serial_write(" id=");
+            serial_write_hex(candidate->vendor_id);
+            serial_write("/");
+            serial_write_hex(candidate->device_id);
+            serial_write(" bdf=");
+            serial_write_hex(candidate->bus);
+            serial_write(":");
+            serial_write_hex(candidate->slot);
+            serial_write(".");
+            serial_write_hex(candidate->function);
+            serial_write(" (inventory only; chipset driver required)\r\n");
+        }
+    } else {
+        serial_write("WIFI: no PCI wireless-class device found; USB/radio firmware support may vary\r\n");
+    }
     serial_write("PCI: retained network controllers (class 02):\r\n");
     for (uint32_t pci_index = 0U;
          pci_index < pci_stored_device_count(); ++pci_index) {

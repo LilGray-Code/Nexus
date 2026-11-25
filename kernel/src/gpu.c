@@ -3,7 +3,9 @@
 #include "pci.h"
 #include "serial.h"
 
-static struct nexus_gpu_info primary_gpu;
+static struct nexus_gpu_info adapters[NEXUS_GPU_MAX_ADAPTERS];
+static uint32_t adapter_count;
+static bool firmware_framebuffer_active;
 static bool virtio_display_active;
 
 static enum nexus_gpu_vendor identify_vendor(uint16_t vendor_id) {
@@ -31,74 +33,119 @@ static const char *vendor_name(enum nexus_gpu_vendor vendor) {
 }
 
 bool gpu_init(void) {
-    primary_gpu = (struct nexus_gpu_info){0};
+    adapter_count = 0U;
+    firmware_framebuffer_active = false;
     virtio_display_active = false;
+    for (uint32_t i = 0U; i < NEXUS_GPU_MAX_ADAPTERS; ++i)
+        adapters[i] = (struct nexus_gpu_info){0};
 
-    /* PCI class 03 is a display controller. Firmware remains responsible for
-     * the active scanout mode until a reviewed device driver is available.
+    /* Inventory every retained PCI display controller. Detection is not
+     * proof of a usable driver; no BAR, MMIO register, or command queue is
+     * touched by this generic discovery layer.
      */
     for (uint32_t i = 0U; i < pci_stored_device_count(); ++i) {
         const struct nexus_pci_device *device = pci_device_at(i);
-        if (device == NULL || device->class_code != 0x03U) continue;
+        if (device == NULL || device->class_code != 0x03U ||
+            adapter_count >= NEXUS_GPU_MAX_ADAPTERS) continue;
 
-        if (!primary_gpu.present || device->subclass == 0x00U) {
-            primary_gpu.present = true;
-            primary_gpu.vendor_id = device->vendor_id;
-            primary_gpu.device_id = device->device_id;
-            primary_gpu.bus = device->bus;
-            primary_gpu.slot = device->slot;
-            primary_gpu.function = device->function;
-            primary_gpu.vendor = identify_vendor(device->vendor_id);
-            primary_gpu.name = vendor_name(primary_gpu.vendor);
-        }
-        if (device->subclass == 0x00U) break;
+        struct nexus_gpu_info *info = &adapters[adapter_count++];
+        info->present = true;
+        info->vendor_id = device->vendor_id;
+        info->device_id = device->device_id;
+        info->bus = device->bus;
+        info->slot = device->slot;
+        info->function = device->function;
+        info->vendor = identify_vendor(device->vendor_id);
+        info->name = vendor_name(info->vendor);
+        info->hardware_2d_acceleration = false;
+        info->hardware_3d_acceleration = false;
+        info->firmware_framebuffer_active = false;
     }
 
-    if (primary_gpu.present) {
-        serial_write("GPU: display adapter detected: ");
-        serial_write(primary_gpu.name);
+    /* Prefer a conventional VGA-compatible display function when available;
+     * otherwise the first enumerated display adapter remains primary.
+     */
+    if (adapter_count > 1U) {
+        for (uint32_t i = 0U; i < adapter_count; ++i) {
+            const struct nexus_pci_device *device = NULL;
+            for (uint32_t j = 0U; j < pci_stored_device_count(); ++j) {
+                const struct nexus_pci_device *candidate = pci_device_at(j);
+                if (candidate != NULL &&
+                    candidate->bus == adapters[i].bus &&
+                    candidate->slot == adapters[i].slot &&
+                    candidate->function == adapters[i].function) {
+                    device = candidate;
+                    break;
+                }
+            }
+            if (device != NULL && device->subclass == 0x00U) {
+                if (i != 0U) {
+                    const struct nexus_gpu_info temporary = adapters[0];
+                    adapters[0] = adapters[i];
+                    adapters[i] = temporary;
+                }
+                break;
+            }
+        }
+    }
+
+    if (adapter_count != 0U) {
+        const struct nexus_gpu_info *primary = &adapters[0];
+        serial_write("GPU: primary display adapter detected: ");
+        serial_write(primary->name);
         serial_write(" vendor/device=");
-        serial_write_hex(primary_gpu.vendor_id);
+        serial_write_hex(primary->vendor_id);
         serial_write("/");
-        serial_write_hex(primary_gpu.device_id);
+        serial_write_hex(primary->device_id);
+        serial_write("\r\n");
+        serial_write("GPU: total display adapters retained=");
+        serial_write_hex(adapter_count);
         serial_write("\r\n");
     } else {
         serial_write("GPU: no PCI display controller recorded; keeping firmware framebuffer if supplied\r\n");
     }
 
-    /* Detection is not a driver. No 2D/3D command engine is enabled here. */
-    primary_gpu.hardware_2d_acceleration = false;
-    primary_gpu.hardware_3d_acceleration = false;
-    serial_write("GPU: firmware framebuffer scanout + Nexus CPU renderer; GPU command acceleration unavailable\r\n");
-    return primary_gpu.present;
+    serial_write("GPU: acceleration is reported only after a device command engine is initialized\r\n");
+    return adapter_count != 0U;
+}
+
+uint32_t gpu_adapter_count(void) {
+    return adapter_count;
+}
+
+const struct nexus_gpu_info *gpu_adapter_at(uint32_t index) {
+    return index < adapter_count ? &adapters[index] : NULL;
 }
 
 const struct nexus_gpu_info *gpu_primary_info(void) {
-    return &primary_gpu;
+    return adapter_count != 0U ? &adapters[0] : NULL;
 }
 
 const char *gpu_primary_name(void) {
-    return primary_gpu.present ? primary_gpu.name : "FIRMWARE DISPLAY";
+    return adapter_count != 0U ? adapters[0].name : "FIRMWARE DISPLAY";
 }
 
 const char *gpu_render_path_name(void) {
     if (virtio_display_active)
-        return "GPU: VIRTIO SCANOUT / CPU RASTER";
-    return primary_gpu.firmware_framebuffer_active
-        ? "GPU: FIRMWARE FRAMEBUFFER / CPU RASTER"
+        return "GPU: VIRTIO HOST SCANOUT / CPU RASTER";
+    return firmware_framebuffer_active
+        ? "GPU: FIRMWARE SCANOUT / CPU RASTER"
         : "GPU: CPU RASTER / FRAMEBUFFER PENDING";
 }
 
 bool gpu_hardware_acceleration_available(void) {
-    return primary_gpu.hardware_2d_acceleration ||
-           primary_gpu.hardware_3d_acceleration;
+    const struct nexus_gpu_info *primary = gpu_primary_info();
+    return primary != NULL &&
+           (primary->hardware_2d_acceleration ||
+            primary->hardware_3d_acceleration);
 }
 
 void gpu_set_firmware_framebuffer_active(bool active) {
-    primary_gpu.firmware_framebuffer_active = active;
+    firmware_framebuffer_active = active;
+    if (adapter_count != 0U)
+        adapters[0].firmware_framebuffer_active = active;
 }
 
 void gpu_set_virtio_display_active(bool active) {
     virtio_display_active = active;
 }
-

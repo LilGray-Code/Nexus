@@ -288,13 +288,22 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     return true;
 }
 
-bool virtio_gpu_present(void) {
-    if (!active) return false;
+bool virtio_gpu_present_region(uint64_t x, uint64_t y,
+                               uint64_t width, uint64_t height) {
+    if (!active || width == 0U || height == 0U ||
+        x >= width_pixels || y >= height_pixels) return false;
+    if (width > width_pixels - x) width = width_pixels - x;
+    if (height > height_pixels - y) height = height_pixels - y;
+    if (width == 0U || height == 0U ||
+        y > UINT64_MAX / pitch_bytes ||
+        x > (UINT64_MAX - y * pitch_bytes) / 4U) return false;
+
+    const uint64_t offset = y * pitch_bytes + x * 4U;
     const struct virtio_gpu_transfer transfer = {
         .header = make_header(VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D),
-        .rectangle = {0U, 0U, (uint32_t)width_pixels,
-                      (uint32_t)height_pixels},
-        .offset = 0U,
+        .rectangle = {(uint32_t)x, (uint32_t)y,
+                      (uint32_t)width, (uint32_t)height},
+        .offset = offset,
         .resource_id = VIRTIO_GPU_RESOURCE_ID,
         .padding = 0U
     };
@@ -302,12 +311,16 @@ bool virtio_gpu_present(void) {
 
     const struct virtio_gpu_flush flush = {
         .header = make_header(VIRTIO_GPU_CMD_RESOURCE_FLUSH),
-        .rectangle = {0U, 0U, (uint32_t)width_pixels,
-                      (uint32_t)height_pixels},
+        .rectangle = {(uint32_t)x, (uint32_t)y,
+                      (uint32_t)width, (uint32_t)height},
         .resource_id = VIRTIO_GPU_RESOURCE_ID,
         .padding = 0U
     };
     return submit_command(&flush, sizeof(flush));
+}
+
+bool virtio_gpu_present(void) {
+    return virtio_gpu_present_region(0U, 0U, width_pixels, height_pixels);
 }
 
 bool virtio_gpu_active(void) {

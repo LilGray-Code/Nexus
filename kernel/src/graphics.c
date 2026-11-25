@@ -35,6 +35,35 @@ static const struct glyph font[] = {
 
 static struct nexus_graphics_surface active_surface;
 static bool initialized;
+static struct nexus_graphics_damage pending_damage;
+static bool pending_damage_valid;
+
+static void graphics_mark_damage(uint64_t x, uint64_t y,
+                                 uint64_t width, uint64_t height) {
+    if (!initialized || x >= active_surface.width ||
+        y >= active_surface.height || width == 0U || height == 0U) return;
+    if (width > active_surface.width - x)
+        width = active_surface.width - x;
+    if (height > active_surface.height - y)
+        height = active_surface.height - y;
+
+    if (!pending_damage_valid) {
+        pending_damage = (struct nexus_graphics_damage){x, y, width, height};
+        pending_damage_valid = true;
+        return;
+    }
+    const uint64_t left = x < pending_damage.x ? x : pending_damage.x;
+    const uint64_t top = y < pending_damage.y ? y : pending_damage.y;
+    const uint64_t right_a = x + width;
+    const uint64_t right_b = pending_damage.x + pending_damage.width;
+    const uint64_t bottom_a = y + height;
+    const uint64_t bottom_b = pending_damage.y + pending_damage.height;
+    const uint64_t right = right_a > right_b ? right_a : right_b;
+    const uint64_t bottom = bottom_a > bottom_b ? bottom_a : bottom_b;
+    pending_damage = (struct nexus_graphics_damage){
+        left, top, right - left, bottom - top
+    };
+}
 
 static bool mask_valid(uint8_t size, uint8_t shift) {
     return size > 0U && size <= 8U && shift < 32U &&
@@ -85,6 +114,8 @@ bool graphics_init(const struct nexus_graphics_surface *surface) {
     }
 
     active_surface = *surface;
+    pending_damage_valid = false;
+    pending_damage = (struct nexus_graphics_damage){0};
     initialized = true;
     return true;
 }
@@ -95,6 +126,14 @@ uint64_t graphics_width(void) {
 
 uint64_t graphics_height(void) {
     return initialized ? active_surface.height : 0U;
+}
+
+bool graphics_take_damage(struct nexus_graphics_damage *damage) {
+    if (damage == NULL || !pending_damage_valid) return false;
+    *damage = pending_damage;
+    pending_damage = (struct nexus_graphics_damage){0};
+    pending_damage_valid = false;
+    return true;
 }
 
 void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
@@ -108,6 +147,7 @@ void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
     if (width > available_width) width = available_width;
     if (height > available_height) height = available_height;
 
+    graphics_mark_damage(x, y, width, height);
     const uint32_t color = pack_rgb(red, green, blue);
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
     /*
@@ -150,6 +190,7 @@ void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
     if (height > active_surface.height - y)
         height = active_surface.height - y;
 
+    graphics_mark_damage(x, y, width, height);
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
     for (uint64_t row = 0U; row < height; ++row) {
         volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
@@ -443,6 +484,8 @@ void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
         if ((uint64_t)index > UINT64_MAX / (6U * (uint64_t)scale)) break;
         const uint64_t advance = (uint64_t)index * 6U * (uint64_t)scale;
         if (advance >= max_advance) break;
+        graphics_mark_damage(x + advance, y, 5U * (uint64_t)scale,
+                             7U * (uint64_t)scale);
         const struct glyph *glyph = find_glyph(text[index]);
 
         for (uint32_t gy = 0U; gy < 7U; ++gy) {
@@ -516,6 +559,12 @@ void graphics_draw_text_aa(uint64_t x, uint64_t y, const char *text,
         const uint64_t advance_fp =
             ((uint64_t)index * 6U) * scale_16_16;
         if (advance_fp >= max_width_fp) break;
+        const uint64_t glyph_width =
+            ((5ULL * scale_16_16) + 0xFFFFU) >> 16;
+        const uint64_t glyph_height =
+            ((7ULL * scale_16_16) + 0xFFFFU) >> 16;
+        graphics_mark_damage(x + (advance_fp >> 16), y,
+                             glyph_width, glyph_height);
         const struct glyph *glyph = find_glyph(text[index]);
 
         for (uint32_t gy = 0U; gy < 7U; ++gy) {

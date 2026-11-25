@@ -20,6 +20,9 @@
 
 #include "graphics.h"
 #include "gpu.h"
+#include "cpu.h"
+#include "wifi.h"
+#include "wifi_pci.h"
 #include "firmware.h"
 #include "virtio_gpu.h"
 #include "input.h"
@@ -292,7 +295,7 @@ static struct desktop_window_rect desktop_window_bounds(void) {
     if (bounds.width > 920U) bounds.width = 920U;
     if (bounds.width > screen_width - 16U)
         bounds.width = screen_width - 16U;
-    bounds.height = usable_height < 512U ? usable_height : 512U;
+    bounds.height = usable_height < 544U ? usable_height : 544U;
 
     if (window_custom_size) {
         uint64_t minimum_width = screen_width >= 576U
@@ -1048,7 +1051,8 @@ static void draw_shell(void) {
 
     const uint64_t text_x = panel_x + 32U;
     const uint64_t text_y = panel_y +
-        (active_view == DESKTOP_INSTALLER ? 48U : 82U);
+        (active_view == DESKTOP_INSTALLER ? 48U :
+         (active_view == DESKTOP_SETTINGS ? 60U : 82U));
     if (active_view == DESKTOP_HOME) {
         graphics_draw_text_aa(text_x, text_y, "YOUR NEXUS WORKSPACE",
                                163840U, 241U, 248U, 255U);
@@ -1838,6 +1842,27 @@ static void draw_shell(void) {
                                "NETWORK: NO ADAPTER DETECTED",
                                1U, 239U, 177U, 119U);
         }
+        const char *wifi_status = "NO PCI RADIO DETECTED";
+        if (wifi_available()) {
+            switch (wifi_get_state()) {
+                case NEXUS_WIFI_READY: wifi_status = "RADIO READY"; break;
+                case NEXUS_WIFI_SCANNING: wifi_status = "SCANNING"; break;
+                case NEXUS_WIFI_CONNECTING: wifi_status = "CONNECTING"; break;
+                case NEXUS_WIFI_CONNECTED: wifi_status = "CONNECTED"; break;
+                case NEXUS_WIFI_FAILED: wifi_status = "RADIO ERROR"; break;
+                default: wifi_status = "RADIO UNAVAILABLE"; break;
+            }
+        } else if (wifi_pci_candidate_count() != 0U) {
+            wifi_status = "DEVICE FOUND - CHIPSET DRIVER NEEDED";
+        }
+        graphics_draw_text(text_x, text_y + 310U, "WI-FI:",
+                           1U, 133U, 164U, 190U);
+        graphics_draw_text(text_x + 52U, text_y + 310U,
+                           wifi_status, 1U,
+                           wifi_available() ? 108U : 239U,
+                           wifi_available() ? 216U : 177U,
+                           wifi_available() ? 229U : 119U);
+
         const char *storage_status = vfs_nxfs_mounted()
             ? (vfs_nxfs_writable() ? "PERSISTENT NXFS READY"
                                    : "NXFS READ ONLY")
@@ -1854,24 +1879,35 @@ static void draw_shell(void) {
             1U, desktop_preferences_persistent ? 119U : 239U,
             desktop_preferences_persistent ? 229U : 177U,
             desktop_preferences_persistent ? 190U : 119U);
-        graphics_draw_text(text_x, text_y + 372U,
-                           "T: TOGGLE THEME     A: CYCLE ACCENT",
-                           1U, 170U, 191U, 211U);
-        graphics_draw_text(text_x, text_y + 378U, "DISPLAY ADAPTER:",
+        const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
+        graphics_draw_text(text_x, text_y + 372U, "PROCESSOR:",
                            1U, 133U, 164U, 190U);
-        graphics_draw_text(text_x + 102U, text_y + 378U,
+        graphics_draw_text(text_x + 76U, text_y + 372U,
+                           cpu->brand[0] != '\0' ? cpu->brand
+                                                  : "CPU INVENTORY UNAVAILABLE",
+                           1U, 233U, 243U, 252U);
+        format_labeled_u64("CPU CORES: ",
+                           cpu->physical_cores_per_package, line);
+        graphics_draw_text(text_x, text_y + 390U, line,
+                           1U, 170U, 225U, 190U);
+        graphics_draw_text(text_x + 166U, text_y + 390U,
+                           nexus_cpu_feature_level_label(), 1U,
+                           108U, 216U, 229U);
+
+        char adapter_count_text[21];
+        format_u64(gpu_adapter_count(), adapter_count_text);
+        graphics_draw_text(text_x, text_y + 408U, "DISPLAY ADAPTER:",
+                           1U, 133U, 164U, 190U);
+        graphics_draw_text(text_x + 102U, text_y + 408U,
                            gpu_primary_name(), 1U,
                            233U, 243U, 252U);
-        graphics_draw_text(text_x, text_y + 396U,
+        graphics_draw_text(text_x + 330U, text_y + 408U,
+                           "COUNT:", 1U, 133U, 164U, 190U);
+        graphics_draw_text(text_x + 378U, text_y + 408U,
+                           adapter_count_text, 1U, 170U, 225U, 190U);
+        graphics_draw_text(text_x, text_y + 426U,
                            gpu_render_path_name(), 1U,
                            108U, 216U, 229U);
-        graphics_draw_text(text_x, text_y + 414U,
-                           virtio_gpu_active()
-                               ? "GPU SCANOUT ACTIVE - CPU RASTER"
-                               : (gpu_hardware_acceleration_available()
-                                   ? "HARDWARE RENDERING ENABLED"
-                                   : "GPU 2D/3D RENDER DRIVER NOT AVAILABLE"),
-                           1U, 239U, 177U, 119U);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
                            2, 239, 249, 255);
@@ -2172,7 +2208,11 @@ static void draw_pointer(void) {
     graphics_fill_rect(x + 1U, y + 1U, 2U, 11U, 245, 250, 255);
     graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
 
-    if (desktop_virtio_gpu_active && !virtio_gpu_present()) {
+    struct nexus_graphics_damage damage;
+    if (desktop_virtio_gpu_active &&
+        graphics_take_damage(&damage) &&
+        !virtio_gpu_present_region(damage.x, damage.y,
+                                   damage.width, damage.height)) {
         const volatile uint8_t *source =
             (const volatile uint8_t *)desktop_render_surface.address;
         volatile uint8_t *destination =

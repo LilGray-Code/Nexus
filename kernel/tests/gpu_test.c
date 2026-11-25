@@ -25,6 +25,9 @@ static void test_intel_adapter_and_cpu_fallback(void) {
     assert(gpu_init());
     const struct nexus_gpu_info *info = gpu_primary_info();
     assert(info->present);
+    assert(gpu_adapter_count() == 1U);
+    assert(gpu_adapter_at(0U) == info);
+    assert(gpu_adapter_at(1U) == NULL);
     assert(info->vendor == NEXUS_GPU_VENDOR_INTEL);
     assert(info->vendor_id == 0x8086U);
     assert(!gpu_hardware_acceleration_available());
@@ -39,15 +42,28 @@ static void test_nvidia_and_virtio_adapter_names(void) {
         .class_code = 0x03U, .subclass = 0x00U,
         .vendor_id = 0x10DEU, .device_id = 0x1CB3U
     };
-    device_count = 1U;
+    devices[1] = (struct nexus_pci_device){
+        .class_code = 0x03U, .subclass = 0x00U,
+        .bus = 0U, .slot = 4U,
+        .vendor_id = 0x1002U, .device_id = 0x67DFU
+    };
+    device_count = 2U;
     assert(gpu_init());
     assert(gpu_primary_info()->vendor == NEXUS_GPU_VENDOR_NVIDIA);
+    assert(gpu_adapter_count() == 2U);
+    assert(gpu_adapter_at(1U)->vendor == NEXUS_GPU_VENDOR_AMD);
 
     devices[0].vendor_id = 0x1AF4U;
     devices[0].device_id = 0x1050U;
     assert(gpu_init());
     assert(gpu_primary_info()->vendor == NEXUS_GPU_VENDOR_VIRTIO);
     assert(!gpu_hardware_acceleration_available());
+    device_count = 0U;
+    assert(!gpu_init());
+    assert(gpu_adapter_count() == 0U);
+    assert(gpu_primary_info() == NULL);
+    gpu_set_firmware_framebuffer_active(true);
+    assert(gpu_render_path_name()[0] == 'G');
 }
 
 int main(void) {

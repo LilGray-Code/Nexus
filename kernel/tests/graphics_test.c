@@ -28,11 +28,20 @@ int main(void) {
     assert(graphics_width() == WIDTH);
     assert(graphics_height() == HEIGHT);
 
+    struct nexus_graphics_damage damage;
+    assert(!graphics_take_damage(&damage));
     graphics_clear(0U, 0U, 0U);
+    assert(graphics_take_damage(&damage));
+    assert(damage.x == 0U && damage.y == 0U &&
+           damage.width == WIDTH && damage.height == HEIGHT);
     graphics_fill_rect(2U, 1U, 3U, 2U, 255U, 0U, 0U);
     assert(guarded[1U + 1U * WIDTH + 2U] == 0x00FF0000U);
     assert(guarded[1U + 2U * WIDTH + 4U] == 0x00FF0000U);
     assert(guarded[1U + 0U * WIDTH + 2U] == 0U);
+    assert(graphics_take_damage(&damage));
+    assert(damage.x == 2U && damage.y == 1U &&
+           damage.width == 3U && damage.height == 2U);
+    assert(!graphics_take_damage(&damage));
 
     /* Oversized rectangles must clip without wrapping their far edges. */
     graphics_draw_rect(1U, 1U, UINT64_MAX, UINT64_MAX,

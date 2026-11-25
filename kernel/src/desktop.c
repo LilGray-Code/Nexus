@@ -155,6 +155,7 @@ static char terminal_input[64];
 static size_t terminal_input_length;
 static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
 static size_t installer_selected_device;
+static bool installer_dropdown_open;
 static struct nexus_partition_plan installer_plan;
 static bool installer_plan_valid;
 static char terminal_output[160];
@@ -1870,6 +1871,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     browser_address[0] = '\0';
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
+    installer_dropdown_open = false;
     installer_refresh_plan();
     mouse_left_was_down = false;
     start_menu_open = false;
@@ -3790,17 +3792,25 @@ static const char *installer_transport_label(
     }
 }
 
+static void installer_select_device(size_t index) {
+    const size_t count = blockdev_count();
+    if (count == 0U || index >= count) return;
+    installer_selected_device = index;
+    installer_dropdown_open = false;
+    installer_refresh_plan();
+    installer_log_selected_target();
+}
+
 static void installer_select_delta(bool next) {
     const size_t count = blockdev_count();
     if (count == 0U) return;
+    size_t selected = installer_selected_device;
     if (next) {
-        if (installer_selected_device + 1U < count)
-            ++installer_selected_device;
-    } else if (installer_selected_device > 0U) {
-        --installer_selected_device;
+        if (selected + 1U < count) ++selected;
+    } else if (selected > 0U) {
+        --selected;
     }
-    installer_refresh_plan();
-    installer_log_selected_target();
+    installer_select_device(selected);
 }
 
 static bool installer_begin_confirmation(void) {
@@ -3812,6 +3822,7 @@ static bool installer_begin_confirmation(void) {
         !blockdev_is_mounted(device) &&
         blockdev_identity_is_unique(device) &&
         blockdev_install_write_supported(device)) {
+        installer_dropdown_open = false;
         installer_ui_state = INSTALLER_UI_CONFIRM_ID;
         installer_confirmed_id[0] = '\0';
         installer_input_length = 0U;

@@ -242,8 +242,7 @@ bool rtl8139_init(void) {
     state = (struct rtl8139_state){0};
     const struct nexus_pci_device *device = find_device();
     if (device == NULL) {
-        serial_write("RTL8139: no supported Realtek 10EC:8139 device found
-");
+        serial_write("RTL8139: no supported Realtek 10EC:8139 device found\\r\\n");
         return false;
     }
 
@@ -252,8 +251,7 @@ bool rtl8139_init(void) {
         !bar0.assigned || !bar0.io_space || bar0.base > 0xFFFFU ||
         bar0.base + 0x80U > 0x10000U ||
         !pci_enable_io_bus_master(device)) {
-        serial_write("RTL8139: I/O BAR or PCI bus-master setup failed
-");
+        serial_write("RTL8139: I/O BAR or PCI bus-master setup failed\\r\\n");
         return false;
     }
     state.io_base = (uint16_t)bar0.base;
@@ -272,16 +270,14 @@ bool rtl8139_init(void) {
         __asm__ volatile ("pause" ::: "memory");
     }
     if (!reset_complete) {
-        serial_write("RTL8139: software reset timed out
-");
+        serial_write("RTL8139: software reset timed out\\r\\n");
         return false;
     }
 
     for (size_t i = 0U; i < sizeof(state.mac); ++i)
         state.mac[i] = io_in8((uint16_t)(state.io_base + RTL8139_REG_MAC0 + i));
     if (!valid_mac(state.mac)) {
-        serial_write("RTL8139: adapter reported an invalid MAC address
-");
+        serial_write("RTL8139: adapter reported an invalid MAC address\\r\\n");
         return false;
     }
 
@@ -289,8 +285,7 @@ bool rtl8139_init(void) {
                      NEXUS_PAGE_SIZE;
     if (!memory_alloc_contiguous_pages(state.rx_pages, RTL8139_DMA_LIMIT,
                                        &state.rx_physical)) {
-        serial_write("RTL8139: low-memory RX ring allocation failed
-");
+        serial_write("RTL8139: low-memory RX ring allocation failed\\r\\n");
         return false;
     }
     state.rx_memory = (volatile uint8_t *)memory_phys_to_virt(state.rx_physical);
@@ -306,16 +301,14 @@ bool rtl8139_init(void) {
     for (size_t i = 0U; i < RTL8139_TX_DESCRIPTORS; ++i) {
         if (!memory_alloc_dma_page(RTL8139_DMA_LIMIT, &state.tx_physical[i])) {
             release_dma();
-            serial_write("RTL8139: low-memory TX buffer allocation failed
-");
+            serial_write("RTL8139: low-memory TX buffer allocation failed\\r\\n");
             return false;
         }
         state.tx_memory[i] =
             (volatile uint8_t *)memory_phys_to_virt(state.tx_physical[i]);
         if (state.tx_memory[i] == NULL) {
             release_dma();
-            serial_write("RTL8139: TX buffer mapping failed
-");
+            serial_write("RTL8139: TX buffer mapping failed\\r\\n");
             return false;
         }
         for (size_t j = 0U; j < RTL8139_TX_BUFFER_BYTES; ++j)
@@ -344,12 +337,10 @@ bool rtl8139_init(void) {
                          &network_ops, NULL)) {
         io_out8((uint16_t)(state.io_base + RTL8139_REG_COMMAND), 0U);
         release_dma();
-        serial_write("RTL8139: shared Ethernet stack rejected the adapter
-");
+        serial_write("RTL8139: shared Ethernet stack rejected the adapter\\r\\n");
         return false;
     }
-    serial_write("RTL8139: Realtek 10EC:8139 registered with 8 KiB polling RX ring
-");
+    serial_write("RTL8139: Realtek 10EC:8139 registered with 8 KiB polling RX ring\\r\\n");
     return true;
 }
 

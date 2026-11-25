@@ -117,8 +117,10 @@ bool nexus_cpu_init(void) {
     set_feature(NEXUS_CPU_FEATURE_HYPERVISOR, (ecx & (1U << 31)) != 0U);
 
     uint64_t xcr0 = 0U;
+    const uint64_t xsave_state_features =
+        NEXUS_CPU_FEATURE_XSAVE | NEXUS_CPU_FEATURE_OSXSAVE;
     const bool os_owns_extended_state =
-        (cpu_info.features & NEXUS_CPU_FEATURE_OSXSAVE) != 0U;
+        (cpu_info.features & xsave_state_features) == xsave_state_features;
     if (os_owns_extended_state) xcr0 = read_xcr0();
     const bool avx_state_enabled =
         os_owns_extended_state && (xcr0 & 0x6U) == 0x6U;

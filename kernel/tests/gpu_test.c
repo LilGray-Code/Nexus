@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 #include <stdio.h>
 
 static struct nexus_pci_device devices[2];
@@ -34,7 +35,8 @@ static void test_intel_adapter_and_cpu_fallback(void) {
     assert(!info->firmware_framebuffer_active);
     gpu_set_firmware_framebuffer_active(true);
     assert(info->firmware_framebuffer_active);
-    assert(gpu_render_path_name()[0] == 'G');
+    assert(strcmp(gpu_render_path_name(),
+                  "GPU: FIRMWARE SCANOUT / CPU RASTER") == 0);
 }
 
 static void test_nvidia_and_virtio_adapter_names(void) {

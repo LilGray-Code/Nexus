@@ -164,6 +164,29 @@ void kmain(void) {
     serial_write("\r\nNEXUS OS KERNEL STARTED\r\n");
     serial_write("Architecture: x86_64\r\n");
     serial_write("Boot protocol: Limine\r\n");
+    if (nexus_cpu_init()) {
+        const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
+        serial_write("CPU: ");
+        serial_write(cpu->brand);
+        serial_write(" [");
+        serial_write(cpu->vendor);
+        serial_write("] family/model/stepping=");
+        serial_write_hex(cpu->family);
+        serial_write("/");
+        serial_write_hex(cpu->model);
+        serial_write("/");
+        serial_write_hex(cpu->stepping);
+        serial_write(" cores/logical=");
+        serial_write_hex(cpu->physical_cores_per_package);
+        serial_write("/");
+        serial_write_hex(cpu->logical_processors_per_package);
+        serial_write(" features=");
+        serial_write(nexus_cpu_feature_level_label());
+        serial_write("\r\nNEXUS CPU CAPABILITY DISCOVERY READY\r\n");
+    } else {
+        serial_write("WARNING: CPU CPUID capability discovery unavailable\r\n");
+    }
+
     if (!nexus_elf64_selftest()) {
         serial_write("ERROR: ELF64 parser self-test failed\r\n");
         halt_forever();

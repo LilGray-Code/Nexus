@@ -1101,135 +1101,242 @@ static void draw_shell(void) {
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
-            graphics_draw_text(text_x, text_y, "INSTALL NEXUS - CHOOSE A DRIVE",
-                               2U, 239U, 249U, 255U);
-            graphics_draw_text(text_x, text_y + 28U,
-                               "Nothing is written until you confirm the target twice.",
-                               1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x, text_y, "INSTALL NEXUS",
+                               2U, 243U, 249U, 255U);
+            graphics_draw_text(text_x, text_y + 27U,
+                               "Choose where Nexus will be installed.",
+                               1U, 132U, 210U, 232U);
             const size_t device_count = blockdev_count();
             if (device_count == 0U) {
-                graphics_draw_text(text_x, text_y + 88U,
+                graphics_blend_round_rect(text_x, text_y + 66U, 456U, 90U,
+                                          10U, 35U, 43U, 61U, 220U);
+                graphics_draw_text(text_x + 16U, text_y + 88U,
                                    "NO SUPPORTED STORAGE DEVICES DETECTED",
-                                   1U, 239U, 177U, 119U);
-                graphics_draw_text(text_x, text_y + 118U,
-                                   "Connect an internal SSD or supported USB drive.",
-                                   1U, 170U, 191U, 211U);
+                                   1U, 255U, 188U, 132U);
+                graphics_draw_text(text_x + 16U, text_y + 116U,
+                                   "Connect an internal SSD or USB storage drive.",
+                                   1U, 174U, 194U, 213U);
             } else {
                 const struct nexus_block_device *device =
                     blockdev_at(installer_selected_device);
-                char drive_index[21], drive_total[21];
-                format_u64(installer_selected_device + 1U, drive_index);
-                format_u64(device_count, drive_total);
-                graphics_draw_text(text_x, text_y + 54U,
-                                   "SELECTED DRIVE:", 1U, 233U, 243U, 252U);
-                graphics_draw_text(text_x + 140U, text_y + 54U,
-                                   device != NULL ? device->name : "UNKNOWN",
-                                   1U, 119U, 229U, 211U);
-                graphics_draw_text(text_x + 260U, text_y + 54U,
-                                   "DRIVE", 1U, 170U, 191U, 211U);
-                graphics_draw_text(text_x + 300U, text_y + 54U,
-                                   drive_index, 1U, 119U, 229U, 211U);
-                graphics_draw_text(text_x + 312U, text_y + 54U,
-                                   "OF", 1U, 170U, 191U, 211U);
-                graphics_draw_text(text_x + 332U, text_y + 54U,
-                                   drive_total, 1U, 119U, 229U, 211U);
+                graphics_draw_text(text_x, text_y + 47U,
+                                   "DESTINATION DRIVE", 1U,
+                                   166U, 188U, 209U);
+
+                /* Dropdown control: click to show every detected disk. */
+                graphics_blend_round_rect(text_x, text_y + 62U, 456U, 34U,
+                                          8U, 24U, 40U, 61U, 238U);
+                graphics_gradient_rect(text_x + 1U, text_y + 63U,
+                                        454U, 32U, false,
+                                        38U, 62U, 88U,
+                                        24U, 41U, 65U);
+                graphics_round_rect(text_x, text_y + 62U, 456U, 34U, 8U,
+                                    93U, 130U, 160U);
                 if (device != NULL) {
-                    graphics_draw_text(text_x, text_y + 76U,
-                                       device->model, 1U, 170U, 225U, 190U);
-                    graphics_draw_text(text_x, text_y + 94U,
-                                       device->stable_id, 1U, 170U, 191U, 211U);
-                    graphics_draw_text(text_x + 340U, text_y + 76U,
-                                       installer_transport_label(device),
-                                       1U, 119U, 229U, 211U);
+                    graphics_draw_text(text_x + 14U, text_y + 76U,
+                                       device->name, 1U,
+                                       243U, 249U, 255U);
+                    graphics_draw_text(text_x + 116U, text_y + 76U,
+                                       device->model, 1U,
+                                       177U, 200U, 218U);
+                    graphics_draw_text(text_x + 370U, text_y + 76U,
+                                       "CHANGE", 1U,
+                                       111U, 221U, 236U);
+                } else {
+                    graphics_draw_text(text_x + 14U, text_y + 76U,
+                                       "SELECT A STORAGE DEVICE", 1U,
+                                       243U, 249U, 255U);
+                }
+                graphics_draw_line(text_x + 432U, text_y + 74U,
+                                   text_x + 438U, text_y + 80U, 2U,
+                                   143U, 216U, 231U);
+                graphics_draw_line(text_x + 438U, text_y + 80U,
+                                   text_x + 444U, text_y + 74U, 2U,
+                                   143U, 216U, 231U);
+
+                if (device != NULL) {
+                    graphics_blend_round_rect(text_x, text_y + 106U,
+                                              456U, 88U, 9U,
+                                              20U, 34U, 52U, 224U);
+                    graphics_round_rect(text_x, text_y + 106U,
+                                         456U, 88U, 9U,
+                                         63U, 91U, 116U);
+                    graphics_draw_text(text_x + 14U, text_y + 119U,
+                                       device->model, 1U,
+                                       237U, 245U, 251U);
+                    graphics_draw_text(text_x + 14U, text_y + 137U,
+                                       device->stable_id, 1U,
+                                       166U, 188U, 209U);
                     const uint64_t blocks_per_gib =
                         (1024ULL * 1024ULL * 1024ULL) / device->block_size;
                     char capacity[21], sector[21];
                     format_u64(blocks_per_gib == 0U ? 0U :
                                device->block_count / blocks_per_gib, capacity);
                     format_u64(device->block_size, sector);
-                    graphics_draw_text(text_x, text_y + 116U,
-                                       "CAPACITY:", 1U, 233U, 243U, 252U);
-                    graphics_draw_text(text_x + 92U, text_y + 116U,
-                                       capacity, 1U, 170U, 225U, 190U);
-                    graphics_draw_text(text_x + 124U, text_y + 116U,
-                                       "GiB", 1U, 170U, 191U, 211U);
-                    graphics_draw_text(text_x + 190U, text_y + 116U,
-                                       "SECTOR:", 1U, 233U, 243U, 252U);
-                    graphics_draw_text(text_x + 272U, text_y + 116U,
-                                       sector, 1U, 170U, 225U, 190U);
-                    graphics_draw_text(text_x + 380U, text_y + 116U,
-                                       blockdev_identity_is_unique(device)
-                                           ? "IDENTITY VERIFIED"
-                                           : "IDENTITY NOT SAFE",
-                                       1U, blockdev_identity_is_unique(device)
-                                           ? 108U : 239U,
-                                       blockdev_identity_is_unique(device)
-                                           ? 216U : 177U,
-                                       blockdev_identity_is_unique(device)
-                                           ? 229U : 119U);
-                    graphics_draw_text(text_x, text_y + 144U,
-                                       "INSTALL FOR:", 1U, 233U, 243U, 252U);
-                    installer_draw_button(text_x, text_y + 158U, 104U, 24U,
-                        "UEFI", installer_firmware == NEXUS_FIRMWARE_UEFI, false);
-                    installer_draw_button(text_x + 112U, text_y + 158U, 104U, 24U,
-                        "BIOS", installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS, false);
-                    installer_draw_button(text_x + 224U, text_y + 158U, 112U, 24U,
-                        "BOTH", installer_firmware == NEXUS_FIRMWARE_DUAL, false);
-                    if (installer_plan_valid) {
-                        graphics_draw_text(text_x, text_y + 190U,
-                                           "INSTALL LAYOUT - PREVIEW ONLY",
-                                           1U, 119U, 229U, 211U);
-                        for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
-                            const struct nexus_planned_partition *part =
-                                &installer_plan.partitions[i];
-                            const char *label =
-                                part->kind == NEXUS_PARTITION_ESP ? "EFI SYSTEM" :
-                                (part->kind == NEXUS_PARTITION_BIOS_BOOT
-                                    ? "BIOS BOOT" :
-                                (part->kind == NEXUS_PARTITION_SYSTEM
-                                    ? "NEXUS SYSTEM" :
-                                (part->kind == NEXUS_PARTITION_RECOVERY
-                                    ? "RECOVERY" : "USER DATA")));
-                            const uint64_t sectors_per_mib =
-                                (1024ULL * 1024ULL) / device->block_size;
-                            const uint64_t size_mib =
-                                (part->last_lba - part->first_lba + 1U) /
-                                sectors_per_mib;
-                            char size_text[21];
-                            format_u64(size_mib, size_text);
-                            const uint64_t row_y = text_y + 210U + i * 16U;
-                            graphics_draw_text(text_x, row_y, label,
-                                               1U, 233U, 243U, 252U);
-                            graphics_draw_text(text_x + 190U, row_y,
-                                               size_text, 1U, 170U, 225U, 190U);
-                            graphics_draw_text(text_x + 230U, row_y,
-                                               "MiB", 1U, 170U, 191U, 211U);
-                        }
-                    } else {
-                        graphics_draw_text(text_x, text_y + 210U,
-                                           "THIS DRIVE CANNOT USE THAT LAYOUT",
-                                           1U, 239U, 177U, 119U);
-                    }
-                    graphics_draw_text(text_x, text_y + 292U,
+                    graphics_draw_text(text_x + 14U, text_y + 157U,
+                                       "SIZE", 1U, 153U, 180U, 203U);
+                    graphics_draw_text(text_x + 54U, text_y + 157U,
+                                       capacity, 1U, 243U, 249U, 255U);
+                    graphics_draw_text(text_x + 80U, text_y + 157U,
+                                       "GiB", 1U, 153U, 180U, 203U);
+                    graphics_draw_text(text_x + 120U, text_y + 157U,
+                                       "SECTOR", 1U, 153U, 180U, 203U);
+                    graphics_draw_text(text_x + 184U, text_y + 157U,
+                                       sector, 1U, 243U, 249U, 255U);
+                    graphics_draw_text(text_x + 286U, text_y + 157U,
+                                       installer_transport_label(device), 1U,
+                                       120U, 219U, 231U);
+                    const bool target_safe =
+                        blockdev_boot_media_detection_complete() &&
+                        !blockdev_is_boot_media(device) &&
+                        !blockdev_is_mounted(device) &&
+                        blockdev_identity_is_unique(device) &&
+                        blockdev_install_write_supported(device);
+                    graphics_fill_circle(text_x + 15U, text_y + 181U, 3U,
+                        target_safe ? 91U : 244U,
+                        target_safe ? 220U : 162U,
+                        target_safe ? 171U : 112U);
+                    graphics_draw_text(text_x + 26U, text_y + 177U,
                                        installer_target_status(device), 1U,
-                                       170U, 225U, 190U);
+                                       target_safe ? 112U : 255U,
+                                       target_safe ? 224U : 177U,
+                                       target_safe ? 184U : 130U);
                 }
-                installer_draw_button(text_x, text_y + 310U, 104U, 24U,
-                                      "PREVIOUS", installer_selected_device > 0U,
-                                      false);
-                installer_draw_button(text_x + 112U, text_y + 310U, 104U, 24U,
-                                      "NEXT DRIVE",
-                                      installer_selected_device + 1U < device_count,
-                                      false);
-                installer_draw_button(text_x + 228U, text_y + 310U, 220U, 24U,
-                                      "CONTINUE", false, false);
+
+                graphics_draw_text(text_x, text_y + 205U, "FIRMWARE",
+                                   1U, 166U, 188U, 209U);
+                installer_draw_button(text_x, text_y + 218U, 104U, 24U,
+                    "UEFI", installer_firmware == NEXUS_FIRMWARE_UEFI, false);
+                installer_draw_button(text_x + 112U, text_y + 218U, 104U, 24U,
+                    "LEGACY BIOS",
+                    installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS, false);
+                installer_draw_button(text_x + 224U, text_y + 218U, 112U, 24U,
+                    "BOTH", installer_firmware == NEXUS_FIRMWARE_DUAL, false);
+
+                if (installer_plan_valid) {
+                    graphics_draw_text(text_x, text_y + 250U,
+                                       "PARTITION LAYOUT PREVIEW",
+                                       1U, 120U, 219U, 231U);
+                    for (size_t i = 0U; i < installer_plan.partition_count; ++i) {
+                        const struct nexus_planned_partition *part =
+                            &installer_plan.partitions[i];
+                        const char *label =
+                            part->kind == NEXUS_PARTITION_ESP ? "EFI SYSTEM" :
+                            (part->kind == NEXUS_PARTITION_BIOS_BOOT
+                                ? "BIOS BOOT" :
+                            (part->kind == NEXUS_PARTITION_SYSTEM
+                                ? "NEXUS SYSTEM" :
+                            (part->kind == NEXUS_PARTITION_RECOVERY
+                                ? "RECOVERY" : "USER DATA")));
+                        const uint64_t sectors_per_mib =
+                            (1024ULL * 1024ULL) / device->block_size;
+                        const uint64_t size_mib =
+                            (part->last_lba - part->first_lba + 1U) /
+                            sectors_per_mib;
+                        char size_text[21];
+                        format_u64(size_mib, size_text);
+                        const uint64_t row_y = text_y + 270U + i * 15U;
+                        const uint8_t bar_color = part->kind ==
+                            NEXUS_PARTITION_ESP ? 95U :
+                            (part->kind == NEXUS_PARTITION_SYSTEM ? 80U : 116U);
+                        graphics_fill_rect(text_x, row_y + 2U, 3U, 8U,
+                                           bar_color, 188U, 212U);
+                        graphics_draw_text(text_x + 12U, row_y, label,
+                                           1U, 219U, 231U, 241U);
+                        graphics_draw_text(text_x + 190U, row_y,
+                                           size_text, 1U, 166U, 206U, 218U);
+                        graphics_draw_text(text_x + 228U, row_y,
+                                           "MiB", 1U, 140U, 163U, 185U);
+                    }
+                } else {
+                    graphics_draw_text(text_x, text_y + 270U,
+                                       "SELECTED DRIVE CANNOT USE THIS LAYOUT",
+                                       1U, 255U, 177U, 119U);
+                }
+
+                if (!installer_dropdown_open) {
+                    const bool live_source = device != NULL &&
+                        blockdev_is_boot_media(device);
+                    if (live_source) {
+                        graphics_draw_text(text_x, text_y + 349U,
+                            "THE USB/DRIVE YOU BOOTED FROM IS PROTECTED.",
+                            1U, 255U, 177U, 119U);
+                    } else {
+                        graphics_draw_text(text_x, text_y + 349U,
+                            "THE INSTALLER SOURCE IS PROTECTED FROM ERASE.",
+                            1U, 166U, 188U, 209U);
+                    }
+                }
+
+                /* Continue is deliberately disabled for every unsafe target. */
+                installer_draw_button(text_x + 252U, text_y + 365U,
+                                      204U, 26U, "CONTINUE",
+                                      false, false);
+                installer_draw_button(text_x, text_y + 365U,
+                                      104U, 26U, "RESCAN",
+                                      false, false);
+
+                if (installer_dropdown_open) {
+                    const uint64_t list_y = text_y + 100U;
+                    const uint64_t row_height = 32U;
+                    const uint64_t list_height =
+                        (uint64_t)device_count * row_height + 8U;
+                    graphics_blend_round_rect(text_x - 2U, list_y - 3U,
+                        460U, list_height, 10U, 12U, 23U, 38U, 250U);
+                    graphics_round_rect(text_x - 2U, list_y - 3U,
+                        460U, list_height, 10U, 95U, 133U, 162U);
+                    graphics_draw_text(text_x + 10U, list_y + 1U,
+                                       "DETECTED STORAGE DEVICES",
+                                       1U, 169U, 216U, 232U);
+                    for (size_t i = 0U; i < device_count; ++i) {
+                        const struct nexus_block_device *candidate =
+                            blockdev_at(i);
+                        if (candidate == NULL) continue;
+                        const uint64_t row_y = list_y + 18U + i * row_height;
+                        const bool selected = i == installer_selected_device;
+                        const bool eligible =
+                            blockdev_boot_media_detection_complete() &&
+                            !blockdev_is_boot_media(candidate) &&
+                            !blockdev_is_mounted(candidate) &&
+                            blockdev_identity_is_unique(candidate) &&
+                            blockdev_install_write_supported(candidate);
+                        graphics_blend_round_rect(text_x + 5U, row_y,
+                            446U, 29U, 6U,
+                            selected ? 52U : 25U,
+                            selected ? 94U : 45U,
+                            selected ? 119U : 67U,
+                            selected ? 242U : 218U);
+                        if (selected) {
+                            graphics_fill_rect(text_x + 10U, row_y + 7U,
+                                3U, 15U,
+                                desktop_accent_palette[desktop_accent_index][0],
+                                desktop_accent_palette[desktop_accent_index][1],
+                                desktop_accent_palette[desktop_accent_index][2]);
+                        }
+                        graphics_draw_text(text_x + 20U, row_y + 5U,
+                                           candidate->name, 1U,
+                                           241U, 247U, 253U);
+                        graphics_draw_text(text_x + 112U, row_y + 5U,
+                                           candidate->model, 1U,
+                                           182U, 204U, 221U);
+                        graphics_draw_text(text_x + 20U, row_y + 18U,
+                                           installer_transport_label(candidate),
+                                           1U, 147U, 185U, 205U);
+                        graphics_draw_text(text_x + 185U, row_y + 18U,
+                                           installer_target_status(candidate),
+                                           1U, eligible ? 111U : 255U,
+                                           eligible ? 220U : 174U,
+                                           eligible ? 170U : 128U);
+                    }
+                    graphics_draw_text(text_x + 12U,
+                        list_y + list_height - 2U,
+                        "SELECT A DRIVE  -  THE BOOT DEVICE STAYS LOCKED",
+                        1U, 166U, 188U, 209U);
+                }
             }
-            graphics_draw_text(text_x, text_y + 348U,
-                               "ARROWS OR DRIVE BUTTONS TO SELECT  |  ESC TO EXIT",
-                               1U, 170U, 191U, 211U);
-            graphics_draw_text(text_x, text_y + 370U,
-                               "Your existing disks are not changed during this preview.",
-                               1U, 170U, 191U, 211U);
+            graphics_draw_text(text_x, text_y + 402U,
+                               "Select a disk, review its size, then confirm its ID and erase phrase.",
+                               1U, 145U, 174U, 196U);
         } else {
             const struct nexus_block_device *device =
                 blockdev_at(installer_selected_device);

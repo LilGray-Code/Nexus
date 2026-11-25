@@ -496,6 +496,7 @@ static void test_tcp_out_of_order_reassembly_and_ack(void) {
     tcp_connection.connected = true;
     tcp_connection.remote_port = 443U;
     tcp_connection.local_port = 52000U;
+    copy_bytes(tcp_connection.remote_ipv4, remote_ip, sizeof(remote_ip));
     tcp_connection.remote_sequence = 0x1000U;
     tcp_connection.local_sequence = 0x2000U;
     tcp_connection.ack_waiting = true;
@@ -543,6 +544,7 @@ static void test_tcp_reassembles_multiple_queued_segments(void) {
     tcp_connection.connected = true;
     tcp_connection.remote_port = 443U;
     tcp_connection.local_port = 52001U;
+    copy_bytes(tcp_connection.remote_ipv4, remote_ip, sizeof(remote_ip));
     tcp_connection.remote_sequence = 0x3000U;
     tcp_connection.local_sequence = 0x4000U;
 

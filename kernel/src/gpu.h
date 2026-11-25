@@ -35,5 +35,6 @@ const char *gpu_primary_name(void);
 const char *gpu_render_path_name(void);
 bool gpu_hardware_acceleration_available(void);
 void gpu_set_firmware_framebuffer_active(bool active);
+void gpu_set_virtio_display_active(bool active);
 
 #endif

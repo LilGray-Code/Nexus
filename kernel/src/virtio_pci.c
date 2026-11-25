@@ -166,9 +166,12 @@ bool virtio_pci_open(const struct nexus_pci_device *pci,
     /* Device config may be optional for a given class, but its capability
      * must be mapped so drivers can validate and read its fixed header.
      */
+    const uint32_t device_map_length =
+        device_length > 8U ? 8U : device_length;
     if (!map_bar_region(pci, device_bar, device_offset,
-                        device_length > 6U ? 6U : device_length,
+                        device_map_length,
                         &device->device_config, NULL)) return false;
+    device->device_config_length = device_length;
 
     struct nexus_pci_bar notify_info;
     if (!pci_decode_bar(pci, notify_bar, &notify_info) ||

@@ -20,6 +20,10 @@ static bool inject_bad_ack_once;
 static bool bad_ack_injected;
 static uint8_t last_data_payload[NET_TCP_MAX_PAYLOAD];
 static size_t last_data_payload_length;
+static unsigned dns_request_count;
+static unsigned dns_reply_on_request;
+
+static void queue_dns_test_udp_reply(uint16_t transaction_id);
 
 uint64_t timer_ticks(void) {
     return ++fake_ticks;
@@ -109,9 +113,25 @@ bool netdev_send_frame(const void *frame_data, size_t length) {
     if (read_be16(frame + 12U) != ETHERTYPE_IPV4 ||
         length < NET_ETHERNET_HEADER + NET_IPV4_HEADER) return true;
     const uint8_t *ip = frame + NET_ETHERNET_HEADER;
-    if (ip[9] != IP_PROTOCOL_TCP || length < 54U) return true;
     const size_t ip_header = (size_t)(ip[0] & 0x0FU) * 4U;
     if (ip_header < NET_IPV4_HEADER ||
+        length < NET_ETHERNET_HEADER + ip_header) return true;
+    if (ip[9] == IP_PROTOCOL_UDP) {
+        if (length < NET_ETHERNET_HEADER + ip_header + NET_UDP_HEADER)
+            return true;
+        const uint8_t *udp = ip + ip_header;
+        if (read_be16(udp) == NET_DNS_CLIENT_PORT &&
+            read_be16(udp + 2U) == NET_DNS_SERVER_PORT) {
+            ++dns_request_count;
+            /* Simulate a dropped first request and answer a later retry. */
+            if (dns_reply_on_request != 0U &&
+                dns_request_count >= dns_reply_on_request) {
+                queue_dns_test_udp_reply(read_be16(udp + NET_UDP_HEADER));
+            }
+        }
+        return true;
+    }
+    if (ip[9] != IP_PROTOCOL_TCP ||
         length < NET_ETHERNET_HEADER + ip_header + NET_TCP_HEADER) return true;
     const uint8_t *tcp = ip + ip_header;
     const uint8_t flags = tcp[13];
@@ -172,6 +192,8 @@ static void setup_network(void) {
     inject_bad_ack_once = true;
     bad_ack_injected = false;
     last_data_payload_length = 0U;
+    dns_request_count = 0U;
+    dns_reply_on_request = 0U;
 
     network = (struct net_state){0};
     network.ready = true;
@@ -219,6 +241,60 @@ static size_t dns_test_append_name(uint8_t *packet, size_t offset,
     }
     packet[offset++] = 0U;
     return offset;
+}
+
+static void queue_dns_test_udp_reply(uint16_t transaction_id) {
+    uint8_t dns[NET_DNS_PACKET_SIZE] = {0};
+    write_be16(dns, transaction_id);
+    write_be16(dns + 2U, 0x8180U);
+    write_be16(dns + 4U, 1U);
+    write_be16(dns + 6U, 1U);
+    size_t dns_length = dns_test_append_name(
+        dns, 12U, dns_query_name);
+    write_be16(dns + dns_length, 1U); dns_length += 2U;
+    write_be16(dns + dns_length, 1U); dns_length += 2U;
+
+    dns[dns_length++] = 0xC0U;
+    dns[dns_length++] = 0x0CU;
+    write_be16(dns + dns_length, 1U); dns_length += 2U;
+    write_be16(dns + dns_length, 1U); dns_length += 2U;
+    write_be32(dns + dns_length, 60U); dns_length += 4U;
+    write_be16(dns + dns_length, 4U); dns_length += 2U;
+    dns[dns_length++] = 203U;
+    dns[dns_length++] = 0U;
+    dns[dns_length++] = 113U;
+    dns[dns_length++] = 42U;
+
+    assert(!queued_frame_ready);
+    const size_t udp_length = NET_UDP_HEADER + dns_length;
+    const size_t ip_length = NET_IPV4_HEADER + udp_length;
+    queued_frame_length = NET_ETHERNET_HEADER + ip_length;
+    assert(queued_frame_length <= sizeof(queued_frame));
+    uint8_t *frame = queued_frame;
+    copy_bytes(frame, network.mac, 6U);
+    copy_bytes(frame + 6U, remote_mac, 6U);
+    write_be16(frame + 12U, ETHERTYPE_IPV4);
+
+    uint8_t *ip = frame + NET_ETHERNET_HEADER;
+    ip[0] = 0x45U;
+    ip[1] = 0U;
+    write_be16(ip + 2U, (uint16_t)ip_length);
+    write_be16(ip + 4U, 1U);
+    write_be16(ip + 6U, 0U);
+    ip[8] = 64U;
+    ip[9] = IP_PROTOCOL_UDP;
+    write_be16(ip + 10U, 0U);
+    copy_bytes(ip + 12U, remote_ip, 4U);
+    copy_bytes(ip + 16U, network.ipv4, 4U);
+    write_be16(ip + 10U, checksum(ip, NET_IPV4_HEADER));
+
+    uint8_t *udp = ip + NET_IPV4_HEADER;
+    write_be16(udp, NET_DNS_SERVER_PORT);
+    write_be16(udp + 2U, NET_DNS_CLIENT_PORT);
+    write_be16(udp + 4U, (uint16_t)udp_length);
+    write_be16(udp + 6U, 0U);
+    copy_bytes(udp + NET_UDP_HEADER, dns, dns_length);
+    queued_frame_ready = true;
 }
 
 static size_t dns_test_build_cname_reply(uint8_t *packet,
@@ -327,6 +403,30 @@ static void test_dns_question_validation_and_cname_chains(void) {
     assert(dns_query_done && !dns_query_success);
 }
 
+static void test_dns_retransmission_and_cache_hit(void) {
+    setup_network();
+    copy_bytes(dns_ipv4, remote_ip, sizeof(remote_ip));
+    dns_reply_on_request = 2U; /* Ignore the first datagram; answer the retry. */
+
+    uint8_t result[4] = {0U, 0U, 0U, 0U};
+    assert(net_dns_resolve("www.example.com", result, 1000U));
+    assert(dns_request_count == 2U);
+    assert(result[0] == 203U && result[1] == 0U &&
+           result[2] == 113U && result[3] == 42U);
+
+    uint8_t cached[4] = {0U, 0U, 0U, 0U};
+    assert(net_dns_resolve("WWW.EXAMPLE.COM.", cached, 1000U));
+    assert(equal_bytes(cached, result, sizeof(result)));
+    assert(dns_request_count == 2U); /* Case/trailing-dot cache hit. */
+
+    setup_network();
+    copy_bytes(dns_ipv4, remote_ip, sizeof(remote_ip));
+    /* No server reply: initial send plus exactly two bounded retries. */
+    assert(!net_dns_resolve("no-answer.example", result, 350U));
+    assert(dns_request_count == 3U);
+    assert(!dns_query_active);
+}
+
 static void test_dns_cache_ttl_and_link_reset(void) {
     setup_network();
     const uint8_t address[4] = {203U, 0U, 113U, 42U};
@@ -430,5 +530,6 @@ int main(void) {
     test_receive_wait_reports_timeout_data_and_eof();
     test_dns_question_validation_and_cname_chains();
     test_dns_cache_ttl_and_link_reset();
+    test_dns_retransmission_and_cache_hit();
     return 0;
 }

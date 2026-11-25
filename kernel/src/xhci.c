@@ -98,6 +98,7 @@ struct xhci_hid_device {
     enum xhci_hid_kind kind;
     uint8_t slot_id;
     uint8_t endpoint_id;
+    uint8_t port_number;
     uint16_t max_packet;
     uint64_t device_context_physical;
     uint64_t input_context_physical;
@@ -374,7 +375,12 @@ static bool xhci_wait_transfer(struct xhci_controller *xhci,
             __asm__ volatile ("pause");
             continue;
         }
-        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
+        const uint8_t event_type = xhci_event_type(&event);
+        if (event_type == XHCI_TRB_PORT_EVENT) {
+            xhci_handle_port_status_change(xhci, &event);
+            continue;
+        }
+        if (event_type != XHCI_TRB_TRANSFER_EVENT) continue;
         const uint8_t event_slot = (uint8_t)(event.control >> 24);
         const uint8_t event_ep = (uint8_t)((event.control >> 16) & 0x1FU);
         if (event_slot != slot_id || event_ep != endpoint_id) continue;
@@ -976,6 +982,7 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
                                            max_packet, interval, speed))
         goto failed;
     device->kind = kind;
+    device->port_number = port_number;
     device->active = true;
     if (!xhci_schedule_interrupt_read(xhci, device)) goto failed;
     serial_write(kind == XHCI_HID_KEYBOARD
@@ -1066,6 +1073,82 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     return true;
 }
 
+
+static bool xhci_device_on_port(const struct xhci_controller *xhci,
+                                uint8_t port_number) {
+    return (xhci->keyboard_active && xhci->keyboard.active &&
+            xhci->keyboard.port_number == port_number) ||
+           (xhci->mouse_active && xhci->mouse.active &&
+            xhci->mouse.port_number == port_number);
+}
+
+static void xhci_detach_port(struct xhci_controller *xhci,
+                             uint8_t port_number) {
+    if (xhci->keyboard_active && xhci->keyboard.active &&
+        xhci->keyboard.port_number == port_number) {
+        /* Synthesize releases so unplugging while a key is held cannot stick. */
+        const uint8_t released_report[8] = {0U};
+        input_usb_keyboard_report(released_report);
+        usb_hid_keyboard_reset();
+        xhci_release_hid_device(xhci, &xhci->keyboard);
+        xhci->keyboard_active = false;
+        serial_write("USB: HID keyboard disconnected from xHCI port ");
+        serial_write_hex(port_number);
+        serial_write("\r\n");
+    }
+    if (xhci->mouse_active && xhci->mouse.active &&
+        xhci->mouse.port_number == port_number) {
+        const uint8_t released_report[3] = {0U};
+        input_usb_mouse_report(released_report);
+        xhci_release_hid_device(xhci, &xhci->mouse);
+        xhci->mouse_active = false;
+        serial_write("USB: HID mouse disconnected from xHCI port ");
+        serial_write_hex(port_number);
+        serial_write("\r\n");
+    }
+}
+
+static void xhci_handle_port_status_change(struct xhci_controller *xhci,
+                                           const struct xhci_trb *event) {
+    if (xhci == NULL || event == NULL) return;
+    /* xHCI Port Status Change Event: Port ID occupies parameter[31:24]. */
+    const uint8_t port_number = (uint8_t)(event->parameter >> 24);
+    if (port_number == 0U || port_number > xhci->max_ports) return;
+
+    const uint64_t port_offset = (uint64_t)xhci->cap_length + 0x400U +
+        ((uint64_t)(port_number - 1U) * 0x10U);
+    uint32_t port_status = 0U;
+    if (!xhci_read32(xhci, port_offset, &port_status)) return;
+
+    if ((port_status & XHCI_PORT_CCS) == 0U) {
+        xhci_detach_port(xhci, port_number);
+        return;
+    }
+    if (xhci_device_on_port(xhci, port_number)) return;
+
+    /* A new keyboard or receiver may be plugged in after the desktop boots. */
+    uint8_t speed = 0U;
+    if (!xhci_port_reset(xhci, port_number, &speed)) return;
+
+    struct xhci_hid_device device = {0};
+    if (!xhci_enumerate_hid_port(xhci, port_number, speed, &device))
+        return;
+
+    if (device.kind == XHCI_HID_KEYBOARD && !xhci->keyboard_active) {
+        usb_hid_keyboard_reset();
+        xhci->keyboard = device;
+        xhci->keyboard_active = true;
+        serial_write("NEXUS USB HID KEYBOARD HOTPLUG READY\r\n");
+    } else if (device.kind == XHCI_HID_MOUSE && !xhci->mouse_active) {
+        xhci->mouse = device;
+        xhci->mouse_active = true;
+        serial_write("NEXUS USB HID MOUSE HOTPLUG READY\r\n");
+    } else {
+        /* Keep one keyboard and one mouse; do not leak an unused xHCI slot. */
+        xhci_release_hid_device(xhci, &device);
+    }
+}
+
 bool xhci_init(void) {
     usb_hid_keyboard_reset();
     for (uint32_t i = 0U; i < pci_device_count(); ++i) {
@@ -1091,8 +1174,7 @@ bool xhci_mouse_ready(void) {
 
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
-    if (!xhci->initialized ||
-        (!xhci->keyboard_active && !xhci->mouse_active)) return;
+    if (!xhci->initialized) return;
 
     struct xhci_trb event;
     while (xhci_event_next(xhci, &event)) {

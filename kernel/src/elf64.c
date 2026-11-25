@@ -12,8 +12,12 @@
 #define ELF64_USER_TOP 0x0000800000000000ULL
 #define ELF64_STACK_PAGE 0x00000000007FF000ULL
 #define ELF64_STACK_TOP 0x0000000000800000ULL
+#define ELF64_PIE_BASE 0x0000000040000000ULL
+#define ELF64_MAX_DYNAMIC_BYTES 4096U
+#define ELF64_RELA_ENTRY_SIZE 24U
 
 #define ELF64_ET_EXEC 2U
+#define ELF64_ET_DYN 3U
 #define ELF64_EM_X86_64 62U
 #define ELF64_PT_LOAD 1U
 #define ELF64_PT_DYNAMIC 2U
@@ -22,6 +26,34 @@
 #define ELF64_PF_X 0x1U
 #define ELF64_PF_W 0x2U
 #define ELF64_PF_R 0x4U
+#define ELF64_DT_NULL 0
+#define ELF64_DT_NEEDED 1
+#define ELF64_DT_HASH 4
+#define ELF64_DT_STRTAB 5
+#define ELF64_DT_SYMTAB 6
+#define ELF64_DT_RELA 7
+#define ELF64_DT_RELASZ 8
+#define ELF64_DT_RELAENT 9
+#define ELF64_DT_STRSZ 10
+#define ELF64_DT_SYMENT 11
+#define ELF64_DT_DEBUG 21
+#define ELF64_DT_FLAGS 30
+#define ELF64_DT_GNU_HASH 0x6FFFFEF5LL
+#define ELF64_DT_RELACOUNT 0x6FFFFFF9LL
+#define ELF64_DT_FLAGS_1 0x6FFFFFFBLL
+#define ELF64_DT_REL 17
+#define ELF64_DT_RELSZ 18
+#define ELF64_DT_RELENT 19
+#define ELF64_DT_PLTRELSZ 2
+#define ELF64_DT_PLTREL 20
+#define ELF64_DT_JMPREL 23
+#define ELF64_DT_TEXTREL 22
+#define ELF64_DT_INIT 12
+#define ELF64_DT_FINI 13
+#define ELF64_DT_INIT_ARRAY 25
+#define ELF64_DT_FINI_ARRAY 26
+#define ELF64_DT_PREINIT_ARRAY 32
+#define ELF64_R_X86_64_RELATIVE 8U
 
 struct elf64_header {
     uint8_t ident[16];
@@ -51,10 +83,25 @@ struct elf64_program_header {
     uint64_t alignment;
 } __attribute__((packed));
 
+struct elf64_dynamic_entry {
+    int64_t tag;
+    uint64_t value;
+} __attribute__((packed));
+
+struct elf64_rela_entry {
+    uint64_t offset;
+    uint64_t info;
+    int64_t addend;
+} __attribute__((packed));
+
 _Static_assert(sizeof(struct elf64_header) == ELF64_HEADER_SIZE,
                "ELF64 header layout must be 64 bytes");
 _Static_assert(sizeof(struct elf64_program_header) == ELF64_PROGRAM_HEADER_SIZE,
                "ELF64 program header layout must be 56 bytes");
+_Static_assert(sizeof(struct elf64_dynamic_entry) == 16U,
+               "ELF64 dynamic entry layout must be 16 bytes");
+_Static_assert(sizeof(struct elf64_rela_entry) == ELF64_RELA_ENTRY_SIZE,
+               "ELF64 RELA entry layout must be 24 bytes");
 
 static bool is_power_of_two(uint64_t value) {
     return value != 0U && (value & (value - 1U)) == 0U;
@@ -74,49 +121,279 @@ static bool page_range(uint64_t address, uint64_t size,
     return *start < *end;
 }
 
+static bool elf64_file_offset_for_virtual(
+    const struct nexus_elf64_image *image, uint64_t virtual_address,
+    uint64_t length, uint64_t *file_offset) {
+    if (image == NULL || file_offset == NULL || length == 0U) return false;
+    for (uint16_t i = 0U; i < image->segment_count; ++i) {
+        const struct nexus_elf64_segment *segment = &image->segments[i];
+        if (virtual_address < segment->virtual_address) continue;
+        const uint64_t offset = virtual_address - segment->virtual_address;
+        if (offset > segment->file_size ||
+            length > segment->file_size - offset ||
+            segment->file_offset > UINT64_MAX - offset) continue;
+        *file_offset = segment->file_offset + offset;
+        return true;
+    }
+    return false;
+}
+
+static bool elf64_virtual_range_mapped(
+    const struct nexus_elf64_image *image, uint64_t address,
+    uint64_t length, bool require_writable, bool allow_one_past) {
+    if (image == NULL || length > UINT64_MAX - address) return false;
+    for (uint16_t i = 0U; i < image->segment_count; ++i) {
+        const struct nexus_elf64_segment *segment = &image->segments[i];
+        if (require_writable &&
+            (segment->flags & NEXUS_ELF64_SEGMENT_WRITE) == 0U)
+            continue;
+        if (address < segment->virtual_address) continue;
+        const uint64_t offset = address - segment->virtual_address;
+        if (offset <= segment->memory_size &&
+            length <= segment->memory_size - offset &&
+            (length != 0U || allow_one_past || offset < segment->memory_size))
+            return true;
+    }
+    return false;
+}
+
+static bool elf64_add_signed(uint64_t base, int64_t addend,
+                             uint64_t *result) {
+    if (result == NULL) return false;
+    if (addend >= 0) {
+        const uint64_t positive = (uint64_t)addend;
+        if (base > UINT64_MAX - positive) return false;
+        *result = base + positive;
+        return true;
+    }
+    const uint64_t magnitude = (uint64_t)(-(addend + 1)) + 1U;
+    if (base < magnitude) return false;
+    *result = base - magnitude;
+    return true;
+}
+
+static bool elf64_supported_dynamic_tag(int64_t tag) {
+    switch (tag) {
+        case ELF64_DT_NULL:
+        case ELF64_DT_HASH:
+        case ELF64_DT_STRTAB:
+        case ELF64_DT_SYMTAB:
+        case ELF64_DT_RELA:
+        case ELF64_DT_RELASZ:
+        case ELF64_DT_RELAENT:
+        case ELF64_DT_STRSZ:
+        case ELF64_DT_SYMENT:
+        case ELF64_DT_DEBUG:
+        case ELF64_DT_FLAGS:
+        case ELF64_DT_GNU_HASH:
+        case ELF64_DT_RELACOUNT:
+        case ELF64_DT_FLAGS_1:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool elf64_validate_relative_relocations(
+    const uint8_t *bytes, size_t file_size,
+    struct nexus_elf64_image *image) {
+    if (bytes == NULL || image == NULL ||
+        image->relocation_count > NEXUS_ELF64_MAX_RELATIVE_RELOCATIONS)
+        return false;
+    for (uint32_t i = 0U; i < image->relocation_count; ++i) {
+        const uint64_t offset = image->relocation_file_offset +
+            (uint64_t)i * ELF64_RELA_ENTRY_SIZE;
+        if (offset > (uint64_t)file_size ||
+            ELF64_RELA_ENTRY_SIZE > (uint64_t)file_size - offset)
+            return false;
+        const struct elf64_rela_entry *rela =
+            (const struct elf64_rela_entry *)(const void *)(bytes + offset);
+        const uint32_t relocation_type = (uint32_t)rela->info;
+        const uint32_t symbol_index = (uint32_t)(rela->info >> 32);
+        if (relocation_type != ELF64_R_X86_64_RELATIVE ||
+            symbol_index != 0U || (rela->offset & 7U) != 0U ||
+            rela->offset > UINT64_MAX - image->load_bias)
+            return false;
+
+        const uint64_t target = image->load_bias + rela->offset;
+        if (!elf64_virtual_range_mapped(image, target, sizeof(uint64_t),
+                                        true, false))
+            return false;
+
+        uint64_t value = 0U;
+        if (!elf64_add_signed(image->load_bias, rela->addend, &value) ||
+            !elf64_virtual_range_mapped(image, value, 0U, false, true))
+            return false;
+    }
+    return true;
+}
+
+static bool elf64_parse_dynamic(
+    const uint8_t *bytes, size_t file_size,
+    const struct elf64_program_header *dynamic,
+    struct nexus_elf64_image *image) {
+    if (bytes == NULL || dynamic == NULL || image == NULL ||
+        dynamic->file_size < sizeof(struct elf64_dynamic_entry) ||
+        dynamic->file_size > ELF64_MAX_DYNAMIC_BYTES ||
+        (dynamic->file_size % sizeof(struct elf64_dynamic_entry)) != 0U ||
+        dynamic->file_size > dynamic->memory_size ||
+        dynamic->offset > (uint64_t)file_size ||
+        dynamic->file_size > (uint64_t)file_size - dynamic->offset ||
+        dynamic->virtual_address > UINT64_MAX - image->load_bias)
+        return false;
+
+    const uint64_t dynamic_virtual = dynamic->virtual_address +
+                                     image->load_bias;
+    uint64_t dynamic_file_offset = 0U;
+    if (!elf64_file_offset_for_virtual(image, dynamic_virtual,
+            dynamic->file_size, &dynamic_file_offset) ||
+        dynamic_file_offset != dynamic->offset)
+        return false;
+
+    bool saw_null = false;
+    bool have_rela = false;
+    bool have_relasz = false;
+    bool have_relaent = false;
+    uint64_t rela_virtual = 0U;
+    uint64_t rela_size = 0U;
+    uint64_t rela_entry_size = 0U;
+    uint64_t rela_count_hint = 0U;
+
+    const uint64_t count = dynamic->file_size /
+                           sizeof(struct elf64_dynamic_entry);
+    for (uint64_t i = 0U; i < count; ++i) {
+        const struct elf64_dynamic_entry *entry =
+            (const struct elf64_dynamic_entry *)(const void *)(
+                bytes + dynamic->offset +
+                i * sizeof(struct elf64_dynamic_entry));
+        if (!elf64_supported_dynamic_tag(entry->tag)) return false;
+        if (entry->tag == ELF64_DT_NULL) {
+            saw_null = true;
+            break;
+        }
+        switch (entry->tag) {
+            case ELF64_DT_NEEDED:
+            case ELF64_DT_REL:
+            case ELF64_DT_RELSZ:
+            case ELF64_DT_RELENT:
+            case ELF64_DT_PLTRELSZ:
+            case ELF64_DT_PLTREL:
+            case ELF64_DT_JMPREL:
+            case ELF64_DT_TEXTREL:
+            case ELF64_DT_INIT:
+            case ELF64_DT_FINI:
+            case ELF64_DT_INIT_ARRAY:
+            case ELF64_DT_FINI_ARRAY:
+            case ELF64_DT_PREINIT_ARRAY:
+                return false;
+            case ELF64_DT_RELA:
+                if (have_rela) return false;
+                have_rela = true;
+                rela_virtual = entry->value;
+                break;
+            case ELF64_DT_RELASZ:
+                if (have_relasz) return false;
+                have_relasz = true;
+                rela_size = entry->value;
+                break;
+            case ELF64_DT_RELAENT:
+                if (have_relaent) return false;
+                have_relaent = true;
+                rela_entry_size = entry->value;
+                break;
+            case ELF64_DT_RELACOUNT:
+                rela_count_hint = entry->value;
+                break;
+            case ELF64_DT_FLAGS:
+                /* DF_TEXTREL is not accepted. */
+                if ((entry->value & 0x4ULL) != 0U) return false;
+                break;
+            default:
+                break;
+        }
+    }
+
+    if (!saw_null) return false;
+    if (!have_rela && !have_relasz && !have_relaent) return true;
+    if (!have_rela || !have_relasz || !have_relaent ||
+        rela_entry_size != ELF64_RELA_ENTRY_SIZE ||
+        rela_size % ELF64_RELA_ENTRY_SIZE != 0U)
+        return false;
+    const uint64_t relocation_count =
+        rela_size / ELF64_RELA_ENTRY_SIZE;
+    if (relocation_count > NEXUS_ELF64_MAX_RELATIVE_RELOCATIONS ||
+        rela_count_hint > relocation_count ||
+        (rela_size == 0U && rela_virtual != 0U) ||
+        (rela_size != 0U && rela_virtual > UINT64_MAX - image->load_bias))
+        return false;
+    if (relocation_count == 0U) return true;
+
+    const uint64_t relocated_rela_virtual =
+        image->load_bias + rela_virtual;
+    uint64_t relocation_file_offset = 0U;
+    if (!elf64_file_offset_for_virtual(image, relocated_rela_virtual,
+            rela_size, &relocation_file_offset) ||
+        relocation_file_offset > (uint64_t)file_size ||
+        rela_size > (uint64_t)file_size - relocation_file_offset)
+        return false;
+
+    image->relocation_file_offset = relocation_file_offset;
+    image->relocation_count = (uint32_t)relocation_count;
+    return elf64_validate_relative_relocations(bytes, file_size, image);
+}
+
 bool nexus_elf64_parse(const void *file, size_t file_size,
                        struct nexus_elf64_image *image) {
-    if (file == NULL || image == NULL || file_size < ELF64_HEADER_SIZE) {
+    if (file == NULL || image == NULL || file_size < ELF64_HEADER_SIZE)
         return false;
-    }
 
     const uint8_t *bytes = (const uint8_t *)file;
     const struct elf64_header *header =
         (const struct elf64_header *)(const void *)bytes;
+    const bool is_pie = header->type == ELF64_ET_DYN;
     if (header->ident[0] != 0x7FU || header->ident[1] != 'E' ||
         header->ident[2] != 'L' || header->ident[3] != 'F' ||
         header->ident[4] != 2U || header->ident[5] != 1U ||
-        header->ident[6] != 1U || header->type != ELF64_ET_EXEC ||
+        header->ident[6] != 1U ||
+        (header->type != ELF64_ET_EXEC && !is_pie) ||
         header->machine != ELF64_EM_X86_64 || header->version != 1U ||
         header->header_size != ELF64_HEADER_SIZE ||
         header->program_header_entry_size != ELF64_PROGRAM_HEADER_SIZE ||
         header->program_header_count == 0U ||
-        header->program_header_count > ELF64_MAX_PROGRAM_HEADERS) {
+        header->program_header_count > ELF64_MAX_PROGRAM_HEADERS)
         return false;
-    }
 
     const uint64_t phoff = header->program_header_offset;
     const uint64_t phnum = header->program_header_count;
     if ((phoff & 7U) != 0U || phoff > (uint64_t)file_size ||
         phnum > ((uint64_t)file_size - phoff) /
-                ELF64_PROGRAM_HEADER_SIZE) {
+                ELF64_PROGRAM_HEADER_SIZE)
         return false;
-    }
 
     struct nexus_elf64_image parsed = {0};
-    parsed.entry_point = header->entry;
+    parsed.position_independent = is_pie;
+    parsed.load_bias = is_pie ? ELF64_PIE_BASE : 0U;
+    if (header->entry > UINT64_MAX - parsed.load_bias) return false;
+    parsed.entry_point = header->entry + parsed.load_bias;
+
+    struct elf64_program_header dynamic_program = {0};
+    bool have_dynamic = false;
     bool entry_is_executable = false;
     uint64_t total_memory_size = 0U;
 
-    for (uint64_t i = 0; i < phnum; ++i) {
+    for (uint64_t i = 0U; i < phnum; ++i) {
         const uint64_t offset = phoff + i * ELF64_PROGRAM_HEADER_SIZE;
         const struct elf64_program_header *program =
             (const struct elf64_program_header *)(const void *)(bytes + offset);
-        /* Dynamic linking and TLS are not supported by the static ABI. */
-        if (program->type == ELF64_PT_DYNAMIC ||
-            program->type == ELF64_PT_INTERP ||
-            program->type == ELF64_PT_TLS) {
+
+        if (program->type == ELF64_PT_INTERP ||
+            program->type == ELF64_PT_TLS)
             return false;
+        if (program->type == ELF64_PT_DYNAMIC) {
+            if (!is_pie || have_dynamic) return false;
+            dynamic_program = *program;
+            have_dynamic = true;
+            continue;
         }
         if (program->type != ELF64_PT_LOAD) continue;
 
@@ -126,62 +403,66 @@ bool nexus_elf64_parse(const void *file, size_t file_size,
             program->file_size > program->memory_size ||
             program->offset > (uint64_t)file_size ||
             program->file_size > (uint64_t)file_size - program->offset ||
-            program->virtual_address < ELF64_USER_MIN ||
-            program->memory_size > ELF64_USER_TOP ||
             program->virtual_address >
+                UINT64_MAX - parsed.load_bias ||
+            program->memory_size > ELF64_USER_TOP ||
+            program->virtual_address + parsed.load_bias < ELF64_USER_MIN ||
+            program->virtual_address + parsed.load_bias >
                 ELF64_USER_TOP - program->memory_size ||
             (program->flags & ~(ELF64_PF_R | ELF64_PF_W | ELF64_PF_X)) != 0U ||
             (program->flags & (ELF64_PF_W | ELF64_PF_X)) ==
-                (ELF64_PF_W | ELF64_PF_X)) {
+                (ELF64_PF_W | ELF64_PF_X))
             return false;
-        }
 
         if (program->alignment > 1U) {
             if (!is_power_of_two(program->alignment) ||
                 (program->virtual_address & (program->alignment - 1U)) !=
-                (program->offset & (program->alignment - 1U))) {
+                (program->offset & (program->alignment - 1U)) ||
+                (parsed.load_bias & (program->alignment - 1U)) != 0U)
                 return false;
-            }
         }
 
-        uint64_t new_start;
-        uint64_t new_end;
-        if (!page_range(program->virtual_address, program->memory_size,
-                        &new_start, &new_end)) {
+        const uint64_t relocated_address =
+            program->virtual_address + parsed.load_bias;
+        uint64_t new_start, new_end;
+        if (!page_range(relocated_address, program->memory_size,
+                        &new_start, &new_end))
             return false;
-        }
 
-        for (uint16_t j = 0; j < parsed.segment_count; ++j) {
-            uint64_t old_start;
-            uint64_t old_end;
+        for (uint16_t j = 0U; j < parsed.segment_count; ++j) {
+            uint64_t old_start, old_end;
             const struct nexus_elf64_segment *old = &parsed.segments[j];
             if (!page_range(old->virtual_address, old->memory_size,
                             &old_start, &old_end) ||
-                (new_start < old_end && old_start < new_end)) {
+                (new_start < old_end && old_start < new_end))
                 return false;
-            }
         }
 
         total_memory_size += program->memory_size;
         struct nexus_elf64_segment *segment =
             &parsed.segments[parsed.segment_count++];
         segment->file_offset = program->offset;
-        segment->virtual_address = program->virtual_address;
+        segment->virtual_address = relocated_address;
         segment->file_size = program->file_size;
         segment->memory_size = program->memory_size;
         segment->alignment = program->alignment;
         segment->flags = program->flags;
 
         const uint64_t segment_end =
-            program->virtual_address + program->memory_size;
+            relocated_address + program->memory_size;
         if ((program->flags & ELF64_PF_X) != 0U &&
-            parsed.entry_point >= program->virtual_address &&
-            parsed.entry_point < segment_end) {
+            parsed.entry_point >= relocated_address &&
+            parsed.entry_point < segment_end)
             entry_is_executable = true;
-        }
     }
 
-    if (parsed.segment_count == 0U || !entry_is_executable) return false;
+    if (parsed.segment_count == 0U || !entry_is_executable ||
+        (is_pie != have_dynamic))
+        return false;
+    if (is_pie &&
+        !elf64_parse_dynamic(bytes, file_size, &dynamic_program, &parsed))
+        return false;
+
     *image = parsed;
     return true;
 }

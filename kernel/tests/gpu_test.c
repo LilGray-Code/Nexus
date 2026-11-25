@@ -75,8 +75,35 @@ static void test_nvidia_and_virtio_adapter_names(void) {
     assert(gpu_render_path_name()[0] == 'G');
 }
 
+static void test_same_bdf_on_different_pci_segments(void) {
+    devices[0] = (struct nexus_pci_device){
+        .segment_group = 0U, .class_code = 0x03U, .subclass = 0x80U,
+        .bus = 0U, .slot = 2U, .function = 0U,
+        .vendor_id = 0x10DEU, .device_id = 0x2000U
+    };
+    devices[1] = (struct nexus_pci_device){
+        .segment_group = 1U, .class_code = 0x03U, .subclass = 0x00U,
+        .bus = 0U, .slot = 2U, .function = 0U,
+        .vendor_id = 0x8086U, .device_id = 0x3000U,
+        .standard_capability_flags = NEXUS_PCI_CAP_PCIE | NEXUS_PCI_CAP_MSIX,
+        .extended_capabilities_valid = true,
+        .extended_capability_flags = NEXUS_PCIE_EXT_AER
+    };
+    device_count = 2U;
+    assert(gpu_init());
+    assert(gpu_adapter_count() == 2U);
+    assert(gpu_primary_info()->segment_group == 1U);
+    assert(gpu_primary_info()->vendor == NEXUS_GPU_VENDOR_INTEL);
+    assert(gpu_primary_info()->pcie_capabilities_valid);
+    assert((gpu_primary_info()->standard_capability_flags &
+            NEXUS_PCI_CAP_MSIX) != 0U);
+    assert((gpu_primary_info()->extended_capability_flags &
+            NEXUS_PCIE_EXT_AER) != 0U);
+}
+
 int main(void) {
     test_intel_adapter_and_cpu_fallback();
+    test_same_bdf_on_different_pci_segments();
     test_nvidia_and_virtio_adapter_names();
     puts("NEXUS GPU DISCOVERY AND FALLBACK TESTS PASSED");
     return 0;

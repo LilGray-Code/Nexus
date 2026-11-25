@@ -23,6 +23,15 @@ int main(void) {
     assert(nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE2));
     if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX2))
         assert(nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX));
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX512F)) {
+        assert(nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX));
+        assert(nexus_cpu_has_feature(NEXUS_CPU_FEATURE_XSAVE));
+        assert(nexus_cpu_has_feature(NEXUS_CPU_FEATURE_OSXSAVE));
+    }
+    nexus_cpu_disable_avx();
+    assert(!nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX));
+    assert(!nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX2));
+    assert(!nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX512F));
     assert(nexus_cpu_feature_level_label()[0] != '\0');
     printf("NEXUS CPU CAPABILITY TESTS PASSED (%s / %s)\n",
            info->vendor, info->brand);

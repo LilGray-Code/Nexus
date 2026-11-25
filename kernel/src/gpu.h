@@ -27,6 +27,13 @@ struct nexus_gpu_info {
     uint16_t subsystem_vendor_id;
     uint16_t subsystem_device_id;
     uint8_t revision_id;
+    uint8_t class_code;
+    uint8_t subclass;
+    uint8_t programming_interface;
+    bool pcie_capabilities_valid;
+    uint16_t segment_group;
+    uint32_t standard_capability_flags;
+    uint32_t extended_capability_flags;
     uint8_t bus;
     uint8_t slot;
     uint8_t function;

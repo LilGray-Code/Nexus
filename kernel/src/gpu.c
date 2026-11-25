@@ -55,6 +55,13 @@ bool gpu_init(void) {
         info->subsystem_vendor_id = device->subsystem_vendor_id;
         info->subsystem_device_id = device->subsystem_device_id;
         info->revision_id = device->revision_id;
+        info->class_code = device->class_code;
+        info->subclass = device->subclass;
+        info->programming_interface = device->programming_interface;
+        info->pcie_capabilities_valid = device->extended_capabilities_valid;
+        info->segment_group = device->segment_group;
+        info->standard_capability_flags = device->standard_capability_flags;
+        info->extended_capability_flags = device->extended_capability_flags;
         info->bus = device->bus;
         info->slot = device->slot;
         info->function = device->function;
@@ -74,6 +81,7 @@ bool gpu_init(void) {
             for (uint32_t j = 0U; j < pci_stored_device_count(); ++j) {
                 const struct nexus_pci_device *candidate = pci_device_at(j);
                 if (candidate != NULL &&
+                    candidate->segment_group == adapters[i].segment_group &&
                     candidate->bus == adapters[i].bus &&
                     candidate->slot == adapters[i].slot &&
                     candidate->function == adapters[i].function) {

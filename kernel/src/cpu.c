@@ -36,38 +36,36 @@ static void set_feature(uint64_t feature, bool present) {
     if (present) cpu_info.features |= feature;
 }
 
-static bool discover_cpu_topology(uint32_t maximum_basic_leaf) {
-    const uint32_t topology_leaf = maximum_basic_leaf >= 0x1FU ? 0x1FU
-        : (maximum_basic_leaf >= 0x0BU ? 0x0BU : 0U);
-    if (topology_leaf == 0U) return false;
-
+static bool discover_cpu_topology_leaf(uint32_t leaf) {
     uint32_t threads_per_core = 0U;
     uint32_t logical_per_package = 0U;
-    for (uint32_t subleaf = 0U; subleaf < 4U; ++subleaf) {
+    for (uint32_t subleaf = 0U; subleaf < 32U; ++subleaf) {
         uint32_t eax = 0U, ebx = 0U, ecx = 0U, edx = 0U;
-        cpuid(topology_leaf, subleaf, &eax, &ebx, &ecx, &edx);
+        cpuid(leaf, subleaf, &eax, &ebx, &ecx, &edx);
         (void)eax;
         (void)edx;
         const uint32_t level_type = (ecx >> 8) & 0xFFU;
         const uint32_t level_count = ebx & 0xFFFFU;
-        if (level_count == 0U) break;
+        if (level_count == 0U || level_type == 0U) break;
         if (level_type == 1U) threads_per_core = level_count;
-        if (level_type == 2U) {
-            logical_per_package = level_count;
-            break;
-        }
+        if (level_type == 2U) logical_per_package = level_count;
     }
-
     if (threads_per_core == 0U || logical_per_package == 0U ||
         logical_per_package < threads_per_core) return false;
     const uint32_t physical_cores = logical_per_package / threads_per_core;
     if (physical_cores == 0U || physical_cores > UINT16_MAX ||
         logical_per_package > UINT16_MAX) return false;
-
-    cpu_info.logical_processors_per_package =
-        (uint16_t)logical_per_package;
+    cpu_info.logical_processors_per_package = (uint16_t)logical_per_package;
     cpu_info.physical_cores_per_package = (uint16_t)physical_cores;
     return true;
+}
+
+static bool discover_cpu_topology(uint32_t maximum_basic_leaf) {
+    if (maximum_basic_leaf >= 0x1FU &&
+        discover_cpu_topology_leaf(0x1FU)) return true;
+    if (maximum_basic_leaf >= 0x0BU &&
+        discover_cpu_topology_leaf(0x0BU)) return true;
+    return false;
 }
 
 bool nexus_cpu_init(void) {
@@ -160,6 +158,29 @@ bool nexus_cpu_init(void) {
         set_feature(NEXUS_CPU_FEATURE_BMI2, (max7_ebx & (1U << 8)) != 0U);
         set_feature(NEXUS_CPU_FEATURE_RDSEED, (max7_ebx & (1U << 18)) != 0U);
         set_feature(NEXUS_CPU_FEATURE_SHA, (max7_ebx & (1U << 29)) != 0U);
+
+        /* AVX-512 requires both CPUID support and OS-managed ZMM/opmask
+         * state. Merely detecting the silicon feature is not sufficient.
+         */
+        const bool avx512_state_enabled =
+            avx_state_enabled && (xcr0 & 0xE0U) == 0xE0U;
+        set_feature(NEXUS_CPU_FEATURE_AVX512F,
+            avx512_state_enabled && (max7_ebx & (1U << 16)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_AVX512DQ,
+            (cpu_info.features & NEXUS_CPU_FEATURE_AVX512F) != 0U &&
+            (max7_ebx & (1U << 17)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_AVX512CD,
+            (cpu_info.features & NEXUS_CPU_FEATURE_AVX512F) != 0U &&
+            (max7_ebx & (1U << 28)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_AVX512BW,
+            (cpu_info.features & NEXUS_CPU_FEATURE_AVX512F) != 0U &&
+            (max7_ebx & (1U << 30)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_AVX512VL,
+            (cpu_info.features & NEXUS_CPU_FEATURE_AVX512F) != 0U &&
+            (max7_ebx & (1U << 31)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_AVX512VNNI,
+            (cpu_info.features & NEXUS_CPU_FEATURE_AVX512F) != 0U &&
+            (max7_ecx & (1U << 11)) != 0U);
     }
 
     uint32_t max_extended = 0U;
@@ -216,7 +237,7 @@ bool nexus_cpu_init(void) {
             cpu_info.brand[i] = fallback[i];
     } else {
         size_t first = 0U;
-        while (cpu_info.brand[first] == ' ' && first < 48U) ++first;
+        while (first < 48U && cpu_info.brand[first] == ' ') ++first;
         if (first != 0U) {
             size_t out = 0U;
             while (first < 48U && cpu_info.brand[first] != '\0')
@@ -236,6 +257,7 @@ bool nexus_cpu_has_feature(uint64_t feature) {
 }
 
 const char *nexus_cpu_feature_level_label(void) {
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX512F)) return "AVX-512 AVAILABLE";
     if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX2)) return "AVX2 AVAILABLE";
     if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX)) return "AVX AVAILABLE";
     if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE42)) return "SSE4.2 AVAILABLE";
@@ -247,5 +269,11 @@ void nexus_cpu_disable_avx(void) {
     cpu_info.features &= ~(NEXUS_CPU_FEATURE_OSXSAVE |
                            NEXUS_CPU_FEATURE_AVX |
                            NEXUS_CPU_FEATURE_AVX2 |
-                           NEXUS_CPU_FEATURE_FMA);
+                           NEXUS_CPU_FEATURE_FMA |
+                           NEXUS_CPU_FEATURE_AVX512F |
+                           NEXUS_CPU_FEATURE_AVX512DQ |
+                           NEXUS_CPU_FEATURE_AVX512CD |
+                           NEXUS_CPU_FEATURE_AVX512BW |
+                           NEXUS_CPU_FEATURE_AVX512VL |
+                           NEXUS_CPU_FEATURE_AVX512VNNI);
 }

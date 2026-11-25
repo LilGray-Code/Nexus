@@ -42,6 +42,7 @@ static enum desktop_view active_view = DESKTOP_HOME;
 static uint64_t screen_width;
 static uint64_t screen_height;
 static bool desktop_ready;
+static bool installer_session_mode;
 static bool start_menu_open;
 static char start_menu_query[32];
 static size_t start_menu_query_length;
@@ -246,6 +247,15 @@ static struct desktop_window_rect desktop_window_bounds(void) {
         ? screen_width - 32U : screen_width;
     const uint64_t usable_height = screen_height > top + bottom + 16U
         ? screen_height - top - bottom - 16U : 1U;
+
+    /* The ISO installer is a separate, undecorated full-screen session. */
+    if (installer_session_mode) {
+        bounds.x = screen_width > 16U ? 8U : 0U;
+        bounds.y = screen_height > 16U ? 8U : 0U;
+        bounds.width = screen_width > 16U ? screen_width - 16U : screen_width;
+        bounds.height = screen_height > 16U ? screen_height - 16U : screen_height;
+        return bounds;
+    }
 
     if (window_maximized) {
         bounds.x = 16U;
@@ -865,94 +875,112 @@ static void draw_shell(void) {
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
 
-    for (uint64_t y = 0; y < height; ++y) {
-        const uint8_t red = desktop_theme_is_light()
-            ? (uint8_t)(244U - (y * 12U / height))
-            : (uint8_t)(5U + (y * 8U / height));
-        const uint8_t green = desktop_theme_is_light()
-            ? (uint8_t)(247U - (y * 10U / height))
-            : (uint8_t)(11U + (y * 18U / height));
-        const uint8_t blue = desktop_theme_is_light()
-            ? (uint8_t)(252U - (y * 7U / height))
-            : (uint8_t)(25U + (y * 34U / height));
-        graphics_fill_rect(0U, y, width, 1U, red, green, blue);
+    if (installer_session_mode) {
+        /* No workspace wallpaper or OS taskbar in the install environment. */
+        for (uint64_t y = 0U; y < height; ++y) {
+            const uint8_t red = (uint8_t)(5U + y * 5U / height);
+            const uint8_t green = (uint8_t)(11U + y * 10U / height);
+            const uint8_t blue = (uint8_t)(24U + y * 22U / height);
+            graphics_fill_rect(0U, y, width, 1U, red, green, blue);
+        }
+        uint64_t radius = height / 3U;
+        if (radius > 240U) radius = 240U;
+        graphics_blend_circle(width * 4U / 5U, height / 4U,
+            (uint32_t)radius, 45U, 177U, 202U, 30U);
+        graphics_blend_circle(width / 5U, height * 4U / 5U,
+            (uint32_t)(radius / 2U), 117U, 136U, 244U, 20U);
+    } else {
+        for (uint64_t y = 0; y < height; ++y) {
+            const uint8_t red = desktop_theme_is_light()
+                ? (uint8_t)(244U - (y * 12U / height))
+                : (uint8_t)(5U + (y * 8U / height));
+            const uint8_t green = desktop_theme_is_light()
+                ? (uint8_t)(247U - (y * 10U / height))
+                : (uint8_t)(11U + (y * 18U / height));
+            const uint8_t blue = desktop_theme_is_light()
+                ? (uint8_t)(252U - (y * 7U / height))
+                : (uint8_t)(25U + (y * 34U / height));
+            graphics_fill_rect(0U, y, width, 1U, red, green, blue);
+        }
+        /* Layered geometric wallpaper: deliberately native framebuffer artwork. */
+        graphics_fill_rect(width / 2U, 0U, width / 2U, height,
+            desktop_theme_is_light() ? 238U : 9U,
+            desktop_theme_is_light() ? 244U : 26U,
+            desktop_theme_is_light() ? 250U : 49U);
+        graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
+            desktop_theme_is_light() ? 234U : 10U,
+            desktop_theme_is_light() ? 241U : 31U,
+            desktop_theme_is_light() ? 249U : 58U);
+        graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
+            desktop_theme_is_light() ? 230U : 12U,
+            desktop_theme_is_light() ? 238U : 35U,
+            desktop_theme_is_light() ? 247U : 63U);
+        /* Subtle layered accent glows add depth while remaining software-rendered. */
+        uint64_t glow_radius = height / 4U;
+        if (glow_radius > 220U) glow_radius = 220U;
+        if (glow_radius < 32U) glow_radius = 32U;
+        graphics_blend_circle(width * 4U / 5U, height / 3U,
+            (uint32_t)glow_radius,
+            desktop_accent_palette[desktop_accent_index][0],
+            desktop_accent_palette[desktop_accent_index][1],
+            desktop_accent_palette[desktop_accent_index][2],
+            desktop_theme_is_light() ? 22U : 38U);
+        graphics_blend_circle(width * 3U / 5U, height * 2U / 3U,
+            (uint32_t)(glow_radius / 2U),
+            117U, 136U, 244U, desktop_theme_is_light() ? 16U : 28U);
+        for (uint64_t band = 0U; band < 5U; ++band) {
+            const uint64_t x = width / 2U + band * (width / 14U);
+            if (x < width)
+                graphics_fill_rect(x, top_bar, 1U, height - top_bar,
+                                   14U, (uint8_t)(42U + band * 3U),
+                                   (uint8_t)(70U + band * 4U));
+        }
+        graphics_fill_rect(0U, 0U, width, top_bar,
+            desktop_theme_is_light() ? 239U : 10U,
+            desktop_theme_is_light() ? 243U : 17U,
+            desktop_theme_is_light() ? 249U : 33U);
+        desktop_draw_accent(0U, top_bar - 2U, width, 2U);
+        desktop_draw_accent(16U, 7U, 28U, top_bar - 14U);
+        graphics_draw_text(25U, top_bar / 2U - 4U, "N", 1U, 7U, 23U, 39U);
+        graphics_draw_text(54U, top_bar / 2U - 4U,
+                           "NEXUS  /  YOUR WORKSPACE", 1U,
+            desktop_theme_is_light() ? 39U : 232U,
+            desktop_theme_is_light() ? 57U : 243U,
+            desktop_theme_is_light() ? 79U : 252U);
+        char top_uptime[21];
+        format_u64(timer_ticks() / 100U, top_uptime);
+        graphics_draw_text(width > 170U ? width - 154U : 8U,
+                           top_bar / 2U - 4U, "RUNNING", 1U,
+                           desktop_theme_is_light() ? 34U : 112U,
+                           desktop_theme_is_light() ? 133U : 222U,
+                           desktop_theme_is_light() ? 91U : 190U);
+        graphics_draw_text(width > 102U ? width - 88U : 8U,
+                           top_bar / 2U - 4U, top_uptime, 1U,
+                           desktop_theme_is_light() ? 77U : 166U,
+                           desktop_theme_is_light() ? 94U : 194U,
+                           desktop_theme_is_light() ? 119U : 216U);
     }
-    /* Layered geometric wallpaper: deliberately native framebuffer artwork. */
-    graphics_fill_rect(width / 2U, 0U, width / 2U, height,
-        desktop_theme_is_light() ? 238U : 9U,
-        desktop_theme_is_light() ? 244U : 26U,
-        desktop_theme_is_light() ? 250U : 49U);
-    graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
-        desktop_theme_is_light() ? 234U : 10U,
-        desktop_theme_is_light() ? 241U : 31U,
-        desktop_theme_is_light() ? 249U : 58U);
-    graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
-        desktop_theme_is_light() ? 230U : 12U,
-        desktop_theme_is_light() ? 238U : 35U,
-        desktop_theme_is_light() ? 247U : 63U);
-    /* Subtle layered accent glows add depth while remaining software-rendered. */
-    uint64_t glow_radius = height / 4U;
-    if (glow_radius > 220U) glow_radius = 220U;
-    if (glow_radius < 32U) glow_radius = 32U;
-    graphics_blend_circle(width * 4U / 5U, height / 3U,
-        (uint32_t)glow_radius,
-        desktop_accent_palette[desktop_accent_index][0],
-        desktop_accent_palette[desktop_accent_index][1],
-        desktop_accent_palette[desktop_accent_index][2],
-        desktop_theme_is_light() ? 22U : 38U);
-    graphics_blend_circle(width * 3U / 5U, height * 2U / 3U,
-        (uint32_t)(glow_radius / 2U),
-        117U, 136U, 244U, desktop_theme_is_light() ? 16U : 28U);
-    for (uint64_t band = 0U; band < 5U; ++band) {
-        const uint64_t x = width / 2U + band * (width / 14U);
-        if (x < width)
-            graphics_fill_rect(x, top_bar, 1U, height - top_bar,
-                               14U, (uint8_t)(42U + band * 3U),
-                               (uint8_t)(70U + band * 4U));
-    }
-    graphics_fill_rect(0U, 0U, width, top_bar,
-        desktop_theme_is_light() ? 239U : 10U,
-        desktop_theme_is_light() ? 243U : 17U,
-        desktop_theme_is_light() ? 249U : 33U);
-    desktop_draw_accent(0U, top_bar - 2U, width, 2U);
-    desktop_draw_accent(16U, 7U, 28U, top_bar - 14U);
-    graphics_draw_text(25U, top_bar / 2U - 4U, "N", 1U, 7U, 23U, 39U);
-    graphics_draw_text(54U, top_bar / 2U - 4U,
-                       "NEXUS  /  YOUR WORKSPACE", 1U,
-        desktop_theme_is_light() ? 39U : 232U,
-        desktop_theme_is_light() ? 57U : 243U,
-        desktop_theme_is_light() ? 79U : 252U);
-    char top_uptime[21];
-    format_u64(timer_ticks() / 100U, top_uptime);
-    graphics_draw_text(width > 170U ? width - 154U : 8U,
-                       top_bar / 2U - 4U, "RUNNING", 1U,
-                       desktop_theme_is_light() ? 34U : 112U,
-                       desktop_theme_is_light() ? 133U : 222U,
-                       desktop_theme_is_light() ? 91U : 190U);
-    graphics_draw_text(width > 102U ? width - 88U : 8U,
-                       top_bar / 2U - 4U, top_uptime, 1U,
-                       desktop_theme_is_light() ? 77U : 166U,
-                       desktop_theme_is_light() ? 94U : 194U,
-                       desktop_theme_is_light() ? 119U : 216U);
 
     uint64_t panel_width = width * 3U / 4U;
     uint64_t panel_height = active_view == DESKTOP_HOME
         ? height * 53U / 100U : 512U;
-    if (panel_width > 920U) panel_width = 920U;
-    if (panel_height > 512U) panel_height = 512U;
-    if (panel_width > width - 16U) panel_width = width - 16U;
-    if (panel_height > height - top_bar - bottom_bar - 16U)
-        panel_height = height - top_bar - bottom_bar - 16U;
-
-    uint64_t panel_x = (width - panel_width) / 2U;
-    uint64_t panel_y = top_bar +
-        (height - top_bar - bottom_bar - panel_height) / 2U;
-    if (active_view != DESKTOP_HOME) {
+    uint64_t panel_x = 0U;
+    uint64_t panel_y = 0U;
+    if (installer_session_mode || active_view != DESKTOP_HOME) {
         const struct desktop_window_rect bounds = desktop_window_bounds();
         panel_x = bounds.x;
         panel_y = bounds.y;
         panel_width = bounds.width;
         panel_height = bounds.height;
+    } else {
+        if (panel_width > 920U) panel_width = 920U;
+        if (panel_height > 512U) panel_height = 512U;
+        if (panel_width > width - 16U) panel_width = width - 16U;
+        if (panel_height > height - top_bar - bottom_bar - 16U)
+            panel_height = height - top_bar - bottom_bar - 16U;
+        panel_x = (width - panel_width) / 2U;
+        panel_y = top_bar +
+            (height - top_bar - bottom_bar - panel_height) / 2U;
     }
 
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
@@ -980,26 +1008,28 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_BROWSER) window_title = "NEXUS BROWSER";
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
-    if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS INSTALLER";
+    if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS OS INSTALLER";
     graphics_draw_text(panel_x + 33U, panel_y + 16U, window_title,
                        1U,
                        desktop_theme_is_light() ? 41U : 234U,
                        desktop_theme_is_light() ? 59U : 244U,
                        desktop_theme_is_light() ? 80U : 252U);
     /* Custom window controls; close is wired to the shell input handler. */
-    const uint64_t controls_x = panel_x + panel_width - 66U;
-    graphics_fill_rect(controls_x, panel_y + 12U, 14U, 12U,
-                       49U, 69U, 91U);
-    graphics_draw_text(controls_x + 4U, panel_y + 15U, "-", 1U,
-                       229U, 239U, 248U);
-    graphics_fill_rect(controls_x + 22U, panel_y + 12U, 14U, 12U,
-                       49U, 69U, 91U);
-    graphics_draw_rect(controls_x + 26U, panel_y + 15U, 6U, 6U,
-                       207U, 224U, 239U);
-    graphics_fill_rect(controls_x + 44U, panel_y + 12U, 14U, 12U,
-                       177U, 67U, 80U);
-    graphics_draw_text(controls_x + 47U, panel_y + 16U, "X", 1U,
-                       255U, 239U, 241U);
+    if (!installer_session_mode) {
+        const uint64_t controls_x = panel_x + panel_width - 66U;
+        graphics_fill_rect(controls_x, panel_y + 12U, 14U, 12U,
+                           49U, 69U, 91U);
+        graphics_draw_text(controls_x + 4U, panel_y + 15U, "-", 1U,
+                           229U, 239U, 248U);
+        graphics_fill_rect(controls_x + 22U, panel_y + 12U, 14U, 12U,
+                           49U, 69U, 91U);
+        graphics_draw_rect(controls_x + 26U, panel_y + 15U, 6U, 6U,
+                           207U, 224U, 239U);
+        graphics_fill_rect(controls_x + 44U, panel_y + 12U, 14U, 12U,
+                           177U, 67U, 80U);
+        graphics_draw_text(controls_x + 47U, panel_y + 16U, "X", 1U,
+                           255U, 239U, 241U);
+    }
 
     const uint64_t text_x = panel_x + 32U;
     const uint64_t text_y = panel_y +
@@ -1940,8 +1970,14 @@ static void draw_shell(void) {
                                4U, 1U, 125U, 151U, 176U);
         }
     }
-    desktop_draw_taskbar(bottom_bar);
-    desktop_draw_start_menu(bottom_bar);
+    if (!installer_session_mode) {
+        desktop_draw_taskbar(bottom_bar);
+        desktop_draw_start_menu(bottom_bar);
+    }
+}
+
+void desktop_set_installer_mode(bool enabled) {
+    installer_session_mode = enabled;
 }
 
 bool desktop_show(const struct limine_framebuffer *framebuffer) {
@@ -1972,7 +2008,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 
     screen_width = graphics_width();
     screen_height = graphics_height();
-    active_view = DESKTOP_HOME;
+    active_view = installer_session_mode ? DESKTOP_INSTALLER : DESKTOP_HOME;
     nexus_browser_history_init(&browser_history);
     browser_address_length = 0U;
     browser_address[0] = '\0';
@@ -1983,6 +2019,11 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
     installer_drive_dropdown_open = false;
+    installer_ui_state = INSTALLER_UI_SELECT;
+    installer_input_length = 0U;
+    installer_input[0] = '\0';
+    installer_confirmed_id[0] = '\0';
+    installer_set_status("Select a supported target disk");
     installer_refresh_plan();
     mouse_left_was_down = false;
     start_menu_open = false;
@@ -2016,8 +2057,13 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 #endif
     draw_shell();
     draw_pointer();
-    serial_write("DESKTOP: interactive framebuffer shell rendered\r\n");
-    serial_write("NEXUS DESKTOP FRAMEBUFFER READY\r\n");
+    if (installer_session_mode) {
+        serial_write("INSTALLER: dedicated full-screen environment rendered\r\n");
+        serial_write("NEXUS INSTALLER SESSION READY\r\n");
+    } else {
+        serial_write("DESKTOP: interactive framebuffer shell rendered\r\n");
+        serial_write("NEXUS DESKTOP FRAMEBUFFER READY\r\n");
+    }
     return true;
 }
 
@@ -4458,7 +4504,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
 
         bool shell_click_handled = false;
-        if (clicked) {
+        if (clicked && !installer_session_mode) {
             const uint64_t taskbar_height = clamp_min(screen_height / 11U, 48U);
             const uint64_t taskbar_top = screen_height - taskbar_height;
             if (start_menu_open) {

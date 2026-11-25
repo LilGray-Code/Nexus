@@ -25,6 +25,7 @@
 #define NEXUS_APP_SYS_CLOCK_TICKS 10ULL
 #define NEXUS_APP_SYS_FRAMEBUFFER_BLIT 11ULL
 #define NEXUS_APP_SYS_SLEEP_TICKS 12ULL
+#define NEXUS_APP_SYS_GAMEPAD_POLL 13ULL
 
 #define NEXUS_APP_INPUT_KEYBOARD 1U
 #define NEXUS_APP_INPUT_MOUSE 2U
@@ -43,6 +44,22 @@ struct nexus_app_input_event {
     int16_t mouse_dy;
     int8_t mouse_wheel;
     uint8_t reserved2;
+};
+
+
+#define NEXUS_APP_GAMEPAD_MAX_AXES 8U
+#define NEXUS_APP_GAMEPAD_HAT_NEUTRAL 0xFFU
+
+struct nexus_app_gamepad_event {
+    uint16_t device_id;
+    uint16_t vendor_id;
+    uint16_t product_id;
+    uint16_t reserved;
+    uint32_t buttons;
+    uint8_t axis_count;
+    uint8_t hat;
+    uint8_t reserved2[2];
+    int16_t axes[NEXUS_APP_GAMEPAD_MAX_AXES];
 };
 
 struct nexus_app_display_info {
@@ -118,6 +135,13 @@ static inline int64_t nexus_app_file_write(const char *path,
 /* Returns 1 for an event, 0 when the queue is empty, or a negative errno. */
 static inline int64_t nexus_app_input_poll(struct nexus_app_input_event *event) {
     return nexus_app_syscall3(NEXUS_APP_SYS_INPUT_POLL,
+                              (uint64_t)(uintptr_t)event, 0U, 0U);
+}
+
+/* Returns 1 for a controller event, 0 for no pending event, or -errno. */
+static inline int64_t nexus_app_gamepad_poll(
+    struct nexus_app_gamepad_event *event) {
+    return nexus_app_syscall3(NEXUS_APP_SYS_GAMEPAD_POLL,
                               (uint64_t)(uintptr_t)event, 0U, 0U);
 }
 

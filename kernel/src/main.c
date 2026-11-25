@@ -10,6 +10,7 @@
 #include "desktop.h"
 #include "elf64.h"
 #include "e1000.h"
+#include "rtl8139.h"
 #include "netdev.h"
 #include "net.h"
 #include "gdt.h"
@@ -332,6 +333,9 @@ void kmain(void) {
         } else {
             serial_write("WARNING: E1000 ARP probe transmit did not complete\r\n");
         }
+    }
+    if (rtl8139_init()) {
+        serial_write("NEXUS RTL8139 TX/RX READY\r\n");
     }
     if (virtio_net_init()) {
         serial_write("NEXUS VIRTIO-NET TX/RX READY\r\n");

@@ -115,6 +115,30 @@ static void test_redirect_and_content_type_metadata(void) {
         body, sizeof(body), &response));
 }
 
+static void test_content_disposition_metadata(void) {
+    static const uint8_t download[] =
+        "HTTP/1.1 200 OK\\r\\n"
+        "Content-Type: application/pdf\\r\\n"
+        "Content-Disposition: attachment; filename=\\\"Nexus Guide.pdf\\\"\\r\\n"
+        "Content-Length: 4\\r\\n\\r\\n%PDF";
+    static const uint8_t unsafe_disposition[] =
+        "HTTP/1.1 200 OK\\r\\n"
+        "Content-Disposition: attachment; filename=bad\\001name.exe\\r\\n"
+        "Content-Length: 0\\r\\n\\r\\n";
+    uint8_t body[8] = {0U};
+    struct nexus_http_response response;
+    assert(nexus_http_decode_response(
+        download, sizeof(download) - 1U, body, sizeof(body), &response));
+    assert(response.has_content_type);
+    assert(response.has_content_disposition);
+    assert(strcmp(response.content_disposition,
+                  "attachment; filename=\\\"Nexus Guide.pdf\\\"") == 0);
+    assert(body[0] == '%' && body[3] == 'F');
+    assert(!nexus_http_decode_response(
+        unsafe_disposition, sizeof(unsafe_disposition) - 1U,
+        body, sizeof(body), &response));
+}
+
 int main(void) {
     test_content_length();
     test_chunked_extensions_and_trailers();
@@ -122,5 +146,6 @@ int main(void) {
     test_reject_ambiguous_or_truncated();
     test_capacity_and_malformed_status();
     test_redirect_and_content_type_metadata();
+    test_content_disposition_metadata();
     return 0;
 }

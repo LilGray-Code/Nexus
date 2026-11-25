@@ -20,7 +20,10 @@ int main(void) {
     devices[1] = (struct nexus_pci_device){
         .class_code = 0x02U, .subclass = 0x80U,
         .bus = 2U, .slot = 3U,
-        .vendor_id = 0x8086U, .device_id = 0x2723U
+        .vendor_id = 0x8086U, .device_id = 0x2723U,
+        .revision_id = 0x01U,
+        .subsystem_vendor_id = 0x8086U,
+        .subsystem_device_id = 0x0024U
     };
     devices[2] = (struct nexus_pci_device){
         .class_code = 0x02U, .subclass = 0x80U,
@@ -38,6 +41,9 @@ int main(void) {
     const struct nexus_wifi_pci_candidate *second = wifi_pci_candidate_at(1U);
     assert(first != NULL && first->vendor_id == 0x8086U);
     assert(first->bus == 2U && first->slot == 3U);
+    assert(first->revision_id == 0x01U);
+    assert(first->subsystem_vendor_id == 0x8086U);
+    assert(first->subsystem_device_id == 0x0024U);
     assert(second != NULL && second->vendor_id == 0x10ECU);
     assert(second->vendor_name[0] == 'R');
     assert(wifi_pci_candidate_at(2U) == NULL);

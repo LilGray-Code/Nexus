@@ -5,9 +5,8 @@ APP := $(OUT)/kinetic_demo.elf
 GAMEPAD_APP := $(OUT)/gamepad_demo.elf
 AUDIO_APP := $(OUT)/audio_demo.elf
 PIE_APP := $(OUT)/pie_demo.elf
-PIE_CFLAGS := $(filter-out -fno-pic -fno-pie,$(CFLAGS)) -fPIE
-PIE_LDFLAGS := -nostdlib -static-pie -Wl,-e,_start \\
-	-Wl,--build-id=none -Wl,-z,noexecstack -Wl,-z,max-page-size=0x1000
+PIE_CFLAGS = $(filter-out -fno-pic -fno-pie,$(CFLAGS)) -fPIE
+PIE_LDFLAGS := -nostdlib -static-pie -Wl,-e,_start -Wl,--build-id=none -Wl,-z,noexecstack -Wl,-z,max-page-size=0x1000
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -fno-asynchronous-unwind-tables \

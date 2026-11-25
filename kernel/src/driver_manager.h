@@ -36,12 +36,15 @@ struct nexus_driver_match {
 };
 typedef bool (*nexus_driver_probe_fn)(
     const struct nexus_driver_device *device, void *context);
+typedef void (*nexus_driver_remove_fn)(
+    const struct nexus_driver_device *device, void *context);
 struct nexus_driver_descriptor {
     const char *name;
     uint32_t version;
     int16_t priority;
     struct nexus_driver_match match;
     nexus_driver_probe_fn probe;
+    nexus_driver_remove_fn remove;
     void *context;
 };
 struct nexus_driver_binding_info {

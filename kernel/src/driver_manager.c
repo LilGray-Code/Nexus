@@ -7,6 +7,7 @@ struct registered_driver {
     int16_t priority;
     struct nexus_driver_match match;
     nexus_driver_probe_fn probe;
+    nexus_driver_remove_fn remove;
     void *context;
 };
 static struct registered_driver drivers[NEXUS_DRIVER_MAX_DRIVERS];
@@ -95,6 +96,7 @@ bool nexus_driver_manager_register(
     candidate.priority = descriptor->priority;
     candidate.match = descriptor->match;
     candidate.probe = descriptor->probe;
+    candidate.remove = descriptor->remove;
     candidate.context = descriptor->context;
     drivers[drivers_used++] = candidate;
     return true;

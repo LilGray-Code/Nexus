@@ -2026,6 +2026,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     installer_confirmed_id[0] = '\0';
     installer_set_status("Select a supported target disk");
     installer_refresh_plan();
+    if (installer_session_mode) installer_log_selected_target();
     mouse_left_was_down = false;
     start_menu_open = false;
     start_menu_query_length = 0U;

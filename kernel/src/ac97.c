@@ -120,11 +120,23 @@ bool ac97_init(void) {
     audio_physical = 0U;
 
     const struct nexus_pci_device *device = NULL;
+    serial_write("AC97: PCI inventory entries=");
+    serial_write_hex(pci_stored_device_count());
+    serial_write("\\r\\n");
     for (uint32_t index = 0U; index < pci_stored_device_count(); ++index) {
         const struct nexus_pci_device *candidate = pci_device_at(index);
-        if (candidate == NULL || candidate->class_code != 0x04U ||
-            candidate->subclass != 0x01U)
-            continue;
+        if (candidate == NULL) continue;
+        if (candidate->class_code == 0x04U) {
+            serial_write("AC97: PCI multimedia candidate index/class/subclass=");
+            serial_write_hex(index);
+            serial_write("/");
+            serial_write_hex(candidate->class_code);
+            serial_write("/");
+            serial_write_hex(candidate->subclass);
+            serial_write("\\r\\n");
+        }
+        if (candidate->class_code != 0x04U ||
+            candidate->subclass != 0x01U) continue;
 
         struct nexus_pci_bar mixer_bar;
         struct nexus_pci_bar busmaster_bar;

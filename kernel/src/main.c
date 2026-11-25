@@ -194,7 +194,7 @@ void kmain(void) {
         if (nexus_fpu_init()) {
             serial_write("CPU: isolated x87/SSE2 state enabled for foreground apps; AVX remains disabled\r\n");
         } else {
-            serial_write("WARNING: x87/SSE2 app runtime unavailable on this CPU\\r\\n");
+            serial_write("WARNING: x87/SSE2 app runtime unavailable on this CPU\r\n");
         }
         const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
         serial_write("CPU: ");
@@ -535,7 +535,7 @@ void kmain(void) {
     scheduler_preempt_b_observed_a = 0U;
     if (!scheduler_create_thread(scheduler_preempt_worker_a, NULL) ||
         !scheduler_create_thread(scheduler_preempt_worker_b, NULL)) {
-        serial_write("ERROR: unable to create timer-preemption test threads\\r\\n");
+        serial_write("ERROR: unable to create timer-preemption test threads\r\n");
         halt_forever();
     }
     scheduler_set_preemption_enabled(true);
@@ -544,10 +544,10 @@ void kmain(void) {
     scheduler_set_preemption_enabled(false);
     if (scheduler_preempt_a_observed_b == 0U ||
         scheduler_preempt_b_observed_a == 0U) {
-        serial_write("ERROR: timer IRQ did not preempt CPU-bound kernel threads\\r\\n");
+        serial_write("ERROR: timer IRQ did not preempt CPU-bound kernel threads\r\n");
         halt_forever();
     }
-    serial_write("K2: timer IRQ preemption between kernel threads passed\\r\\n");
+    serial_write("K2: timer IRQ preemption between kernel threads passed\r\n");
 
     const char *boot_command_line = NULL;
     if (executable_cmdline_request.response != NULL)

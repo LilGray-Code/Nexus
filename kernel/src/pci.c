@@ -140,6 +140,30 @@ bool pci_read_config32(const struct nexus_pci_device *device,
     return true;
 }
 
+bool pci_enable_io_bus_master(const struct nexus_pci_device *device) {
+    if (device == NULL) return false;
+
+    /* Read the live low Command word, then write only that word. PCI Status
+     * contains write-one-to-clear bits in the upper half of the dword.
+     */
+    const uint32_t command_status = pci_config_read(
+        device->bus, device->slot, device->function, 0x04U);
+    if (command_status == UINT32_MAX) return false;
+    const uint16_t command = (uint16_t)command_status;
+    const uint16_t enabled = (uint16_t)(command | 0x0005U); /* I/O + bus master */
+
+    const uint32_t address = 0x80000000U |
+        ((uint32_t)device->bus << 16) |
+        ((uint32_t)device->slot << 11) |
+        ((uint32_t)device->function << 8) | 0x04U;
+    outl(PCI_CONFIG_ADDRESS, address);
+    outw(PCI_CONFIG_DATA, enabled);
+
+    const uint32_t updated = pci_config_read(
+        device->bus, device->slot, device->function, 0x04U);
+    return updated != UINT32_MAX && (updated & 0x0005U) == 0x0005U;
+}
+
 bool pci_enable_memory_bus_master(const struct nexus_pci_device *device) {
     if (device == NULL) return false;
 

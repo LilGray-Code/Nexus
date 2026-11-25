@@ -357,6 +357,7 @@ bool nexus_installer_deploy_boot_payloads(
  static const char config[]=
   "timeout: 3\n"
   "default_entry: 1\n"
+  "remember_last_entry: no\n"
   "interface_branding: NEXUS OS\n"
   "interface_branding_colour: 18D2EB\n"
   "interface_resolution: 1920x1080\n"
@@ -364,7 +365,6 @@ bool nexus_installer_deploy_boot_payloads(
   "    protocol: limine\n"
   "    path: boot():/NEXUS/KERNEL.ELF\n"
   "    cmdline: nexus.mode=desktop\n"
-  "    resolution: 1920x1080x32\n"
   "    resolution: 1920x1080x32\n"
   "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
   "    module_path: boot():/boot/limine/limine-bios-hdd.bin\n"

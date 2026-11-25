@@ -3472,8 +3472,26 @@ browser_retry:
     }
     if (!nexus_http_decode_response(response, response_length, body,
                                     NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
-        if (search_request)
-            serial_write("NEXUS BING SEARCH HTTP FRAMING INVALID\r\n");
+        if (search_request) {
+            serial_write("NEXUS BING SEARCH HTTP FRAMING INVALID length=");
+            serial_write_hex(response_length);
+            serial_write("\r\nNEXUS BING RAW RESPONSE PREFIX:\r\n");
+            size_t debug_length = response_length < 512U
+                ? response_length : 512U;
+            char debug_line[65];
+            for (size_t offset = 0U; offset < debug_length; offset += 64U) {
+                size_t amount = debug_length - offset;
+                if (amount > 64U) amount = 64U;
+                for (size_t i = 0U; i < amount; ++i) {
+                    const uint8_t value = response[offset + i];
+                    debug_line[i] = value >= 0x20U && value <= 0x7EU
+                        ? (char)value : '.';
+                }
+                debug_line[amount] = '\\0';
+                serial_write(debug_line);
+                serial_write("\\r\\n");
+            }
+        }
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
     }

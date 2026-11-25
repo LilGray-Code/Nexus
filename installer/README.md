@@ -92,28 +92,47 @@ is mounted, RAM-only file saves are volatile and do not survive a reboot.
 
 ## Keyboard, mouse, and display compatibility
 
-The input stack supports legacy PS/2 keyboards/mice and xHCI USB HID
-boot-protocol keyboards and mice. Wired USB devices and standard 2.4 GHz
-wireless keyboard/mouse receivers work when they expose a standard boot-HID
-interface. xHCI root-port status events are now monitored after startup, so a
-supported wired device or 2.4 GHz receiver can be plugged in or removed while
-the installer or desktop is running. The kernel synthesizes key/button releases
-on disconnect to avoid stuck input state. The current controller keeps one
-USB keyboard and one USB mouse active at a time. Receiver-specific features,
-USB hubs, multi-interface receivers, non-boot HID reports, and native Bluetooth
-discovery/pairing are not implemented; Bluetooth devices are not guaranteed to
-work unless their receiver independently presents standard boot-HID.
+The input stack supports legacy PS/2 keyboards and mice plus xHCI USB HID
+boot-protocol keyboards and mice. The PS/2 keyboard parser handles E0 extended
+keys, keeps right Ctrl/Alt separate from their left-side counterparts, filters
+Print Screen's fake Shift bytes, and safely consumes the multi-byte Pause
+sequence. PS/2 IntelliMouse negotiation enables four-byte wheel packets for
+compatible ID 3 devices and wheel/side-button packets for compatible ID 4
+devices. The desktop maps wheel movement to the active app's page navigation.
+
+Wired USB devices and standard 2.4 GHz wireless keyboard/mouse receivers work
+when they expose a standard HID boot interface. xHCI root-port status events
+are monitored after startup, so a supported wired device or 2.4 GHz receiver
+can be plugged in or removed while the installer or desktop is running. The
+kernel synthesizes key/button releases on disconnect to avoid stuck input
+state. USB keyboard reports preserve all eight modifier bits, including
+right-side modifiers and GUI keys, and include extended navigation/keypad
+mappings. The current xHCI controller keeps one USB keyboard and one USB mouse
+active at a time. USB boot-mouse reports are three-byte reports, so wheel and
+extra buttons on a USB mouse are not exposed by this path yet.
+
+Receiver-specific features, USB hubs, multi-interface receivers, non-boot HID
+reports, native Bluetooth discovery/pairing, and non-xHCI USB host controllers
+(OHCI/UHCI/EHCI) are not implemented. Bluetooth devices and devices requiring
+vendor-specific drivers are not guaranteed to work. A Bluetooth receiver is
+usable only if it independently presents a standard USB HID boot interface.
 
 The ISO and installed Limine configuration request a 1920x1080, 32-bit
 framebuffer. Limine automatically selects another available mode when that
-resolution is unavailable. The renderer includes fractional-coverage text
-rasterization, alpha blending, and 4x sub-pixel coverage at rounded panel/window
-corners to reduce jagged edges. Rendering is still CPU software-composited into
-the framebuffer. No Intel, AMD, or NVIDIA GPU driver or hardware-accelerated
-composition backend is present yet; OpenGL, Vulkan, and DirectX are not
-supported. A real accelerated desktop requires a device-specific GPU driver,
-GPU memory management, command submission, synchronization, and recovery; this
-must not be represented as enabled by framebuffer resolution or antialiasing.
+resolution is unavailable. Nexus identifies the PCI display adapter (Intel,
+AMD, NVIDIA, VirtIO, VMware, or QEMU where recognized) and shows the active
+display/render path in Settings. The GPU supplies scanout through the firmware
+framebuffer while the Nexus CPU renderer draws the desktop; solid fills use
+the CPU's REP STOSD store path, and text/rounded surfaces use fractional
+coverage and alpha blending to reduce jagged edges.
+
+This is **not yet GPU command acceleration**. Intel, AMD, NVIDIA, VirtIO GPU,
+OpenGL, Vulkan, and DirectX accelerated rendering backends are not implemented.
+The current desktop uses the GPU for framebuffer scanout and the CPU for
+composition/drawing. A real accelerated desktop still requires a
+device-specific command engine driver, GPU memory management, command
+submission, synchronization, and recovery; detection alone never enables or
+claims hardware rendering.
 
 ## Recovery and test coverage
 

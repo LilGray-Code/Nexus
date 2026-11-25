@@ -596,6 +596,78 @@ bool vfs_remove_root_file(const char *name) {
     return nxfs_remove_file(name);
 }
 
+/*
+ * Package paths are kept inside the NXFS Data volume. Accept only simple
+ * ASCII components: no empty, dot, parent, backslash, or control segments.
+ * These APIs deliberately require writable NXFS and never use RAMFS/FAT32.
+ */
+static bool vfs_valid_root_path(const char *path) {
+    if (path == NULL) return false;
+    size_t length = 0U;
+    size_t component_length = 0U;
+    while (path[length] != '\0') {
+        if (length >= NEXUS_VFS_NAME_MAX - 1U) return false;
+        const char c = path[length];
+        if (c == '/') {
+            if (component_length == 0U) return false;
+            component_length = 0U;
+        } else {
+            const bool valid =
+                (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+            if (!valid) return false;
+            ++component_length;
+        }
+        ++length;
+    }
+    if (length == 0U || component_length == 0U) return false;
+    size_t start = 0U;
+    for (size_t i = 0U; i <= length; ++i) {
+        if (i == length || path[i] == '/') {
+            const size_t part = i - start;
+            if (part == 0U || (part == 1U && path[start] == '.') ||
+                (part == 2U && path[start] == '.' && path[start + 1U] == '.'))
+                return false;
+            start = i + 1U;
+        }
+    }
+    return true;
+}
+
+bool vfs_create_root_directory(const char *name) {
+    if (!vfs_valid_root_path(name) || !nxfs_root_mounted ||
+        !nxfs_is_writable()) return false;
+    if (nxfs_is_directory(name)) return true;
+    return nxfs_create_directory(name);
+}
+
+bool vfs_write_root_path(const char *path, const void *data, size_t length) {
+    if (!vfs_valid_root_path(path) || !nxfs_root_mounted ||
+        !nxfs_is_writable() || (length != 0U && data == NULL) ||
+        length > NEXUS_NXFS_MAX_FILE_BYTES) return false;
+    return nxfs_write_file(path, data, length);
+}
+
+bool vfs_remove_root_path(const char *path) {
+    if (!vfs_valid_root_path(path) || !nxfs_root_mounted ||
+        !nxfs_is_writable()) return false;
+    const struct nexus_nxfs_entry *entry = vfs_nxfs_find_path(path);
+    return entry != NULL && !entry->directory && nxfs_remove_file(path);
+}
+
+bool vfs_open_root_readonly_path(const char *path,
+                                 struct nexus_vfs_file *file) {
+    if (!vfs_valid_root_path(path) || file == NULL || !nxfs_root_mounted)
+        return false;
+    *file = (struct nexus_vfs_file){0};
+    const struct nexus_nxfs_entry *entry = vfs_nxfs_find_path(path);
+    if (entry == NULL || entry->directory) return false;
+    file->filesystem_entry = entry;
+    file->open = true;
+    file->nxfs_file = true;
+    return true;
+}
+
 bool vfs_current_directory_writable(void) {
     if (directory_backend == VFS_DIRECTORY_FAT32) return false;
     if (directory_backend == VFS_DIRECTORY_NXFS)

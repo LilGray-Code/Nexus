@@ -3514,6 +3514,24 @@ browser_retry:
         net_tcp_close();
     }
 
+    if (search_request && receive_ok && response_length != 0U) {
+        serial_write(search_use_bing
+            ? "NEXUS BING DECRYPTED RESPONSE bytes="
+            : "NEXUS DUCKDUCKGO DECRYPTED RESPONSE bytes=");
+        serial_write_hex(response_length);
+        serial_write(" prefix=");
+        char prefix[97];
+        size_t prefix_length = response_length < sizeof(prefix) - 1U
+            ? response_length : sizeof(prefix) - 1U;
+        for (size_t i = 0U; i < prefix_length; ++i) {
+            const uint8_t value = response[i];
+            prefix[i] = value >= 0x20U && value <= 0x7EU
+                ? (char)value : '.';
+        }
+        prefix[prefix_length] = '\0';
+        serial_write(prefix);
+        serial_write("\r\n");
+    }
     if (!receive_ok || response_length == 0U) {
         if (browser_search_fallback(
                 search_request, &search_use_bing,

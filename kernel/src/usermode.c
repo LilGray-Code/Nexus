@@ -1,6 +1,7 @@
 #include "usermode.h"
 
 #include "elf64.h"
+#include "fpu.h"
 #include "gdt.h"
 #include "graphics.h"
 #include "input.h"
@@ -140,6 +141,14 @@ static const uint8_t test_program[] = {
     0xCD, 0x80,
     0x48, 0x83, 0xF8, 0xF7, 0x74, 0x02, 0xEB, 0xFE,
 
+    /* Execute a small SSE2 round-trip before returning to the kernel. */
+    0xB8, 0x2A, 0x00, 0x00, 0x00,             /* mov eax, 42 */
+    0x66, 0x0F, 0x6E, 0xC0,                   /* movd eax, xmm0 */
+    0x66, 0x0F, 0xEF, 0xC9,                   /* pxor xmm1, xmm1 */
+    0x66, 0x0F, 0x7E, 0xC0,                   /* movd xmm0, eax */
+    0x83, 0xF8, 0x2A,                         /* cmp eax, 42 */
+    0x74, 0x02, 0xEB, 0xFE,                   /* jne spin */
+    
     /* exit(42) */
     0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00,
     0x48, 0xC7, 0xC7, 0x2A, 0x00, 0x00, 0x00,
@@ -246,13 +255,19 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
                       uint64_t *exit_status) {
     if (root_physical == 0U || entry_point == 0U ||
         stack_pointer == 0U || kernel_stack_top == 0U ||
-        (kernel_stack_top & 0x0FU) != 0U || exit_status == NULL) {
+        (kernel_stack_top & 0x0FU) != 0U || exit_status == NULL ||
+        !nexus_fpu_available()) {
         return false;
     }
 
     const uint64_t previous_kernel_stack = gdt_get_kernel_stack();
     if (previous_kernel_stack == 0U ||
         !gdt_set_kernel_stack(kernel_stack_top)) {
+        return false;
+    }
+
+    if (!nexus_fpu_user_begin()) {
+        (void)gdt_set_kernel_stack(previous_kernel_stack);
         return false;
     }
 
@@ -267,10 +282,11 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
 
     const bool exited = usermode_exit_seen;
     const uint64_t status = usermode_exit_status;
+    const bool fpu_restored = nexus_fpu_user_end();
     usermode_close_all_files();
     const bool stack_restored = gdt_set_kernel_stack(previous_kernel_stack);
     *exit_status = status;
-    return exited && stack_restored;
+    return exited && stack_restored && fpu_restored;
 }
 
 bool usermode_run_selftest(void) {

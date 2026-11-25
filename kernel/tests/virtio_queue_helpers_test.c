@@ -48,7 +48,7 @@ static void test_notify_address(void) {
     assert(physical == 0x1000201CU);
 
     assert(!nexus_virtio_notify_address(
-        0x10000000U, 0x2000U, 0x20U, 7U, 4U, &physical));
+        0x10000000U, 0x2000U, 0x1DU, 7U, 4U, &physical));
     assert(!nexus_virtio_notify_address(
         UINT64_MAX - 0x10U, 0x20U, 0x100U, 0U, 0U, &physical));
     assert(!nexus_virtio_notify_address(

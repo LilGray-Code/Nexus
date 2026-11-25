@@ -43,6 +43,8 @@ int main(void) {
     assert(!graphics_take_damage(&damage));
     assert(!graphics_blit_xrgb8888(0U, 0U, 0U, 1U, source, 4U));
     assert(!graphics_blit_xrgb8888(0U, 0U, 2U, 1U, source, 1U));
+    assert(!graphics_blit_xrgb8888(0U, 0U, 1U, 3U, source,
+                                   SIZE_MAX / sizeof(uint32_t)));
 
     puts("NEXUS GRAPHICS BLIT TESTS PASSED");
     return 0;

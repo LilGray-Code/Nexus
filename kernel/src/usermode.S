@@ -18,7 +18,8 @@ nexus_enter_user:
 
     pushq $0x1B
     pushq %rdx
-    pushq $0x02
+    /* Enter applications with IF set so timer and input IRQs stay live. */
+    pushq $0x202
     pushq $0x23
     pushq %rsi
     iretq

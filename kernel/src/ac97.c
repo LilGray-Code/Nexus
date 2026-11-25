@@ -153,7 +153,7 @@ bool ac97_init(void) {
     /* Reset codec mixer registers and select conservative PCM output volume. */
     io_out16((uint16_t)(mixer_base + AC97_MIXER_RESET), 0U);
     io_out16((uint16_t)(mixer_base + AC97_MIXER_MASTER_VOLUME), 0U);
-    io_out16((uint16_t)(mixer_base + AC97_MIXER_PCM_VOLUME), 0U);
+    io_out16((uint16_t)(mixer_base + AC97_MIXER_PCM_VOLUME), 0x0808U);
 
     if (!memory_alloc_dma_page(AC97_DMA_LIMIT, &bdl_physical) ||
         !memory_alloc_dma_page(AC97_DMA_LIMIT, &audio_physical)) {
@@ -184,6 +184,12 @@ bool ac97_init(void) {
 
     if (!reset_pcm_output()) {
         serial_write("AC97: PCM output DMA reset timed out\r\n");
+        (void)memory_free_page(bdl_physical);
+        (void)memory_free_page(audio_physical);
+        bdl_physical = 0U;
+        audio_physical = 0U;
+        bdl = NULL;
+        audio_buffer = NULL;
         return false;
     }
     io_out32((uint16_t)(busmaster_base + AC97_PCM_OUT_BASE +

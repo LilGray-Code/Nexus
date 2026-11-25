@@ -4,6 +4,7 @@
 #include "netdev.h"
 #include "pci.h"
 #include "serial.h"
+#include "timer.h"
 #include "virtio_pci.h"
 
 #include <stddef.h>
@@ -86,15 +87,15 @@ static bool virtio_net_send(void *context,
     /* Stop-and-wait keeps the single DMA packet buffer immutable until the
      * device has returned descriptor zero in the used ring.
      */
-    const uint64_t start = 0U; /* The caller's next net poll drives retries. */
-    (void)start;
+    const uint64_t start = timer_ticks();
     uint32_t descriptor = 0U, used_length = 0U;
-    for (uint64_t spin = 0U; spin < 5000000U; ++spin) {
+    for (;;) {
         if (virtio_pci_queue_pop_used(
                 &transmit_queue, &descriptor, &used_length)) {
             transmit_busy = false;
             return descriptor == 0U;
         }
+        if (timer_ticks() - start >= VIRTIO_NET_TX_TIMEOUT) break;
         __asm__ volatile ("pause" ::: "memory");
     }
     /* Do not reuse a buffer whose ownership by the device is uncertain. */

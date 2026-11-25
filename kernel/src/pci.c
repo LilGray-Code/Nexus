@@ -171,8 +171,8 @@ static void record_device(uint16_t segment, uint8_t bus, uint8_t slot,
         }
         for (uint8_t i = 0; i < bar_count; ++i) {
             saved->bars[i] =
-                pci_config_read(bus, slot, function,
-                                (uint8_t)(0x10U + i * 4U));
+                pci_config_read(segment, bus, slot, function,
+                                (uint16_t)(0x10U + i * 4U));
         }
     }
 }

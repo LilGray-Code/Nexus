@@ -10,6 +10,7 @@
 #include "blockdev.h"
 #include "boot_payload.h"
 #include "boot_pack.h"
+#include "app_store.h"
 #include "boot_mode.h"
 #include "desktop.h"
 #include "elf64.h"
@@ -661,6 +662,16 @@ void kmain(void) {
         serial_write("ERROR: RAM filesystem self-test failed\r\n");
         halt_forever();
     }
+#ifdef NEXUS_STORAGE_SELFTEST
+    uint64_t store_pie_exit_status = UINT64_MAX;
+    if (!nexus_store_launch_native(NEXUS_STORE_NATIVE_PIE_INDEX,
+                                   &store_pie_exit_status) ||
+        store_pie_exit_status != 0U) {
+        serial_write("ERROR: bundled native Store application self-test failed\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS STORE BUNDLED APP SELFTEST READY\r\n");
+#endif
     serial_write("NEXUS RAMFS READY\r\n");
     serial_write("NEXUS PROCESS MANAGER READY\r\n");
     serial_write("NEXUS ELF64 USER LOADER READY\r\n");

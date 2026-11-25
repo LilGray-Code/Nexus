@@ -414,6 +414,12 @@ bool virtio_pci_queue_submit_pair(struct nexus_virtio_queue *queue,
     if (!virtio_pci_queue_post(queue, 0U)) return false;
 
     const uint64_t start = timer_ticks();
+    /* Some early boot callers intentionally run with IF=0. Keep the timer
+     * deadline when interrupts are active, but also impose a finite polling
+     * ceiling so an unresponsive device can never hang desktop startup.
+     */
+    const uint64_t maximum_spins = 100000000ULL;
+    uint64_t spins = 0U;
     for (;;) {
         uint32_t id = 0U, used_length = 0U;
         if (virtio_pci_queue_pop_used(queue, &id, &used_length)) {
@@ -421,8 +427,9 @@ bool virtio_pci_queue_submit_pair(struct nexus_virtio_queue *queue,
             *response_length = used_length;
             return true;
         }
-        if (timeout_ticks != 0U && timer_ticks() - start >= timeout_ticks)
-            return false;
+        if ((timeout_ticks != 0U &&
+             timer_ticks() - start >= timeout_ticks) ||
+            ++spins >= maximum_spins) return false;
         __asm__ volatile ("pause" ::: "memory");
     }
 }

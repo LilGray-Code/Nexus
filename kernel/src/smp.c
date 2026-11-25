@@ -243,7 +243,7 @@ bool nexus_smp_init(struct limine_mp_response *response) {
 
     const uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
     x2apic_enabled = (apic_base & APIC_BASE_X2APIC) != 0U;
-    if (!local_apic_init_current_cpu(true)) {
+    if (!local_apic_init_current_cpu(false)) {
         lapic_ids[0] = response->bsp_lapic_id;
         smp_initialized = true;
         serial_write("SMP: BSP local APIC setup failed; single-CPU fallback\r\n");

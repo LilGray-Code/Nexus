@@ -525,6 +525,17 @@ static const char *installer_target_status(
 }
 
 
+static const char *installer_target_short_status(
+    const struct nexus_block_device *device) {
+    if (device == NULL) return "NO DEVICE";
+    if (!blockdev_boot_media_detection_complete()) return "BOOT ID UNKNOWN";
+    if (blockdev_is_boot_media(device)) return "BOOT SOURCE - LOCKED";
+    if (blockdev_is_mounted(device)) return "IN USE - LOCKED";
+    if (!blockdev_identity_is_unique(device)) return "DUPLICATE ID - LOCKED";
+    if (!blockdev_install_write_supported(device)) return "READ ONLY - LOCKED";
+    return "READY TO INSTALL";
+}
+
 static enum desktop_view desktop_view_for_app(size_t app_index) {
     switch (app_index) {
         case 0U: return DESKTOP_FILES;
@@ -1273,7 +1284,7 @@ static void draw_shell(void) {
                                       204U, 26U, "CONTINUE",
                                       false, false);
                 installer_draw_button(text_x, text_y + 365U,
-                                      104U, 26U, "RESCAN",
+                                      104U, 26U, "CANCEL",
                                       false, false);
 
                 if (installer_dropdown_open) {
@@ -1323,7 +1334,7 @@ static void draw_shell(void) {
                                            installer_transport_label(candidate),
                                            1U, 147U, 185U, 205U);
                         graphics_draw_text(text_x + 185U, row_y + 18U,
-                                           installer_target_status(candidate),
+                                           installer_target_short_status(candidate),
                                            1U, eligible ? 111U : 255U,
                                            eligible ? 220U : 174U,
                                            eligible ? 170U : 128U);
@@ -4330,7 +4341,28 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const int64_t relative_y = pointer_y - (int64_t)(py + 48U);
             if (relative_x >= 0 && relative_y >= 0) {
                 if (installer_ui_state == INSTALLER_UI_SELECT) {
-                    if (relative_y >= 158 && relative_y < 182) {
+                    const size_t device_count = blockdev_count();
+                    if (installer_dropdown_open) {
+                        const int64_t first_row_y = 118;
+                        const int64_t row_height = 32;
+                        if (relative_x < 456 &&
+                            relative_y >= first_row_y &&
+                            relative_y < first_row_y +
+                                (int64_t)device_count * row_height) {
+                            const size_t selected = (size_t)(
+                                (relative_y - first_row_y) / row_height);
+                            installer_select_device(selected);
+                        } else if (relative_y < 62 ||
+                                   relative_y >= 96 +
+                                       (int64_t)device_count * row_height) {
+                            installer_dropdown_open = false;
+                        } else if (relative_y >= 62 && relative_y < 96) {
+                            installer_dropdown_open = false;
+                        }
+                    } else if (relative_y >= 62 && relative_y < 96 &&
+                               relative_x < 456) {
+                        installer_dropdown_open = true;
+                    } else if (relative_y >= 218 && relative_y < 242) {
                         if (relative_x < 104) {
                             installer_firmware = NEXUS_FIRMWARE_UEFI;
                             installer_refresh_plan();
@@ -4341,12 +4373,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             installer_firmware = NEXUS_FIRMWARE_DUAL;
                             installer_refresh_plan();
                         }
-                    } else if (relative_y >= 310 && relative_y < 334) {
+                    } else if (relative_y >= 365 && relative_y < 391) {
                         if (relative_x < 104) {
-                            installer_select_delta(false);
-                        } else if (relative_x >= 112 && relative_x < 216) {
-                            installer_select_delta(true);
-                        } else if (relative_x >= 228 && relative_x < 448) {
+                            desktop_open_view(DESKTOP_HOME);
+                        } else if (relative_x >= 252 && relative_x < 456) {
                             (void)installer_begin_confirmation();
                         }
                     }

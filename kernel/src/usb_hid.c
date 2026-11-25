@@ -459,7 +459,8 @@ bool usb_hid_gamepad_decode(
         layout->report_bytes == 0U ||
         layout->report_bytes > NEXUS_USB_GAMEPAD_MAX_REPORT_BYTES ||
         layout->axis_count > NEXUS_USB_GAMEPAD_MAX_AXES ||
-        report_length < layout->report_bytes) return false;
+        report_length < layout->report_bytes || report_length > 4096U)
+        return false;
     if (layout->report_id != 0U &&
         (report_length == 0U || report[0] != layout->report_id))
         return false;

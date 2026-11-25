@@ -1,5 +1,6 @@
 #include "input.h"
 #include "serial.h"
+#include "usb_hid.h"
 
 #include <assert.h>
 #include <stdint.h>

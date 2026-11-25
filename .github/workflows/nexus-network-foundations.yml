@@ -189,5 +189,22 @@ jobs:
             kernel/src/ca_bundle_api.c /tmp/nexus-ca-bundle.o \
             kernel/tests/ca_bundle_test.c -o /tmp/nexus-ca-bundle-test
           /tmp/nexus-ca-bundle-test
+      - name: Parse the complete built-in root store with bounded TLS heap
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DNEXUS_TLS_HEAP_HOST_TEST -Ikernel/src \
+            -Ibuild/deps/mbedtls-build/generated/include \
+            -Ibuild/deps/mbedtls-4.1.2/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-build/tf-psa-crypto/include \
+            -Ibuild/deps/mbedtls-4.1.2/tf-psa-crypto/drivers/builtin/include \
+            kernel/src/tls_heap.c kernel/src/mbedtls_heap.c \
+            kernel/src/ca_bundle_api.c kernel/tests/ca_bundle_mbedtls_test.c \
+            /tmp/nexus-ca-bundle.o \
+            -Lbuild/deps/mbedtls-build/library \
+            -Lbuild/deps/mbedtls-build/tf-psa-crypto/library \
+            -Wl,--start-group -lmbedtls -lmbedx509 -lmbedcrypto \
+            -Wl,--end-group -o /tmp/nexus-ca-bundle-mbedtls-test
+          /tmp/nexus-ca-bundle-mbedtls-test
       - name: Build freestanding kernel with verified HTTPS enabled
         run: make -C kernel clean all NEXUS_TLS=1

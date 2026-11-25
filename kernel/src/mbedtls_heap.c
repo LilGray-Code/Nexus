@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 /*
- * Register Nexus's fixed 1 MiB heap with Mbed TLS before psa_crypto_init()
+ * Register Nexus's fixed 4 MiB heap with Mbed TLS before psa_crypto_init()
  * or any TLS context allocation. No libc malloc fallback is provided.
  */
 bool nexus_mbedtls_heap_init(void) {

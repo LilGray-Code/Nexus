@@ -74,7 +74,7 @@ static void local_apic_eoi(void) {
     __asm__ volatile ("mfence" : : : "memory");
 }
 
-static bool local_apic_init_current_cpu(void) {
+static bool local_apic_init_current_cpu(bool mask_lint0) {
     uint64_t base = read_msr(IA32_APIC_BASE_MSR);
     base |= APIC_BASE_ENABLE;
     if (x2apic_enabled) base |= APIC_BASE_X2APIC;
@@ -86,7 +86,8 @@ static bool local_apic_init_current_cpu(void) {
         write_msr(IA32_X2APIC_SVR,
                   (read_msr(IA32_X2APIC_SVR) & ~0xFFULL) |
                   APIC_SPURIOUS_VECTOR | (1ULL << 8));
-        write_msr(IA32_X2APIC_LVT_LINT0, APIC_LVT_MASKED);
+        if (mask_lint0)
+            write_msr(IA32_X2APIC_LVT_LINT0, APIC_LVT_MASKED);
         return true;
     }
 
@@ -97,7 +98,8 @@ static bool local_apic_init_current_cpu(void) {
     lapic_physical = physical;
     lapic_mmio = mapped;
     lapic_mmio[0x80U / 4U] = 0U;
-    lapic_mmio[APIC_LVT_LINT0_REGISTER / 4U] = APIC_LVT_MASKED;
+    if (mask_lint0)
+        lapic_mmio[APIC_LVT_LINT0_REGISTER / 4U] = APIC_LVT_MASKED;
     uint32_t svr = lapic_mmio[APIC_SVR_REGISTER / 4U];
     lapic_mmio[APIC_SVR_REGISTER / 4U] =
         (svr & ~0xFFU) | APIC_SPURIOUS_VECTOR | (1U << 8);
@@ -195,7 +197,7 @@ static void smp_ap_entry(struct limine_mp_info *info) {
         (uint32_t)__atomic_load_n(&info->extra_argument, __ATOMIC_ACQUIRE);
     if (slot == 0U || slot >= expected_cpu_count ||
         !gdt_init_ap(slot) || !idt_load_current_cpu() ||
-        !local_apic_init_current_cpu() ||
+        !local_apic_init_current_cpu(true) ||
         local_apic_id() != info->lapic_id) {
         for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
     }
@@ -221,7 +223,7 @@ bool nexus_smp_init(struct limine_mp_response *response) {
         response->cpus == NULL) {
         const uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
         x2apic_enabled = (apic_base & APIC_BASE_X2APIC) != 0U;
-        (void)local_apic_init_current_cpu();
+        (void)local_apic_init_current_cpu(false);
         lapic_ids[0] = local_apic_id();
         smp_initialized = true;
         serial_write("SMP: Limine MP response unavailable; single-CPU fallback\r\n");
@@ -241,7 +243,7 @@ bool nexus_smp_init(struct limine_mp_response *response) {
 
     const uint64_t apic_base = read_msr(IA32_APIC_BASE_MSR);
     x2apic_enabled = (apic_base & APIC_BASE_X2APIC) != 0U;
-    if (!local_apic_init_current_cpu()) {
+    if (!local_apic_init_current_cpu(true)) {
         lapic_ids[0] = response->bsp_lapic_id;
         smp_initialized = true;
         serial_write("SMP: BSP local APIC setup failed; single-CPU fallback\r\n");

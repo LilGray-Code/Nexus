@@ -7,6 +7,9 @@ on:
     paths:
       - "kernel/src/graphics.c"
       - "kernel/src/package.c"
+      - "kernel/src/catalog.c"
+      - "kernel/src/catalog.h"
+      - "kernel/tests/catalog_test.c"
       - "kernel/src/package.h"
       - "kernel/src/vfs.c"
       - "kernel/src/vfs.h"
@@ -36,6 +39,9 @@ on:
     paths:
       - "kernel/src/graphics.c"
       - "kernel/src/package.c"
+      - "kernel/src/catalog.c"
+      - "kernel/src/catalog.h"
+      - "kernel/tests/catalog_test.c"
       - "kernel/src/package.h"
       - "kernel/src/vfs.c"
       - "kernel/src/vfs.h"
@@ -77,6 +83,7 @@ jobs:
           for src in cpu fpu graphics package usermode interrupts process elf64 main; do
             cc $flags -c "kernel/src/$src.c" -o "/tmp/nexus-$src.o"
           done
+          cc $flags -c kernel/src/catalog.c -o /tmp/nexus-catalog.o
           cc -m64 -c kernel/src/usermode.S -o /tmp/nexus-usermode-entry.o
       - name: Check public ABI structure layouts
         run: |
@@ -99,3 +106,9 @@ jobs:
             kernel/src/package.c kernel/src/sha256.c \
             kernel/tests/package_test.c -o /tmp/nexus-package-test
           /tmp/nexus-package-test
+      - name: Test signed catalog verification and HTTPS restrictions
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/catalog.c kernel/src/sha256.c \
+            kernel/tests/catalog_test.c -o /tmp/nexus-catalog-test
+          /tmp/nexus-catalog-test

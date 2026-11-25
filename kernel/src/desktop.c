@@ -21,6 +21,7 @@
 #include "graphics.h"
 #include "gpu.h"
 #include "cpu.h"
+#include "pci.h"
 #include "wifi.h"
 #include "wifi_pci.h"
 #include "firmware.h"
@@ -46,6 +47,7 @@ enum desktop_view {
 };
 
 static enum desktop_view active_view = DESKTOP_HOME;
+static bool settings_hardware_page;
 static uint64_t screen_width;
 static uint64_t screen_height;
 static struct nexus_graphics_surface desktop_firmware_surface;
@@ -495,6 +497,262 @@ static void format_labeled_u64(const char *label, uint64_t value,
     for (size_t i = 0; number[i] != '\0' && length < 63U; ++i)
         output[length++] = number[i];
     output[length] = '\0';
+}
+
+
+static void hardware_append_text(char *output, size_t capacity,
+                                 size_t *length, const char *text) {
+    if (output == NULL || length == NULL || text == NULL || capacity == 0U)
+        return;
+    while (*text != '\0' && *length + 1U < capacity)
+        output[(*length)++] = *text++;
+    output[*length] = '\0';
+}
+
+static void hardware_append_hex(char *output, size_t capacity,
+                                size_t *length, uint32_t value,
+                                unsigned digits) {
+    static const char hex[] = "0123456789ABCDEF";
+    if (output == NULL || length == NULL || capacity == 0U) return;
+    for (unsigned i = 0U; i < digits && *length + 1U < capacity; ++i) {
+        const unsigned shift = (digits - i - 1U) * 4U;
+        output[(*length)++] = hex[(value >> shift) & 0x0FU];
+    }
+    output[*length] = '\0';
+}
+
+static void format_hardware_pci_identity(
+    uint16_t vendor, uint16_t device, uint8_t revision,
+    uint16_t subsystem_vendor, uint16_t subsystem_device,
+    char output[80]) {
+    size_t length = 0U;
+    output[0] = '\0';
+    hardware_append_text(output, 80U, &length, "PCI ");
+    hardware_append_hex(output, 80U, &length, vendor, 4U);
+    hardware_append_text(output, 80U, &length, ":");
+    hardware_append_hex(output, 80U, &length, device, 4U);
+    hardware_append_text(output, 80U, &length, " REV ");
+    hardware_append_hex(output, 80U, &length, revision, 2U);
+    hardware_append_text(output, 80U, &length, " SUB ");
+    hardware_append_hex(output, 80U, &length, subsystem_vendor, 4U);
+    hardware_append_text(output, 80U, &length, ":");
+    hardware_append_hex(output, 80U, &length, subsystem_device, 4U);
+}
+
+static void hardware_append_flag(char *output, size_t capacity,
+                                 size_t *length, bool enabled,
+                                 const char *name) {
+    if (enabled) {
+        if (*length != 0U) hardware_append_text(output, capacity, length, " ");
+        hardware_append_text(output, capacity, length, name);
+    }
+}
+
+static void desktop_draw_hardware_overview(uint64_t x, uint64_t y) {
+    const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
+    char line[96];
+    char number[21];
+
+    graphics_draw_text(x, y, "PROCESSOR / X86-64 CAPABILITIES",
+                       1U, 133U, 164U, 190U);
+    graphics_draw_text(x, y + 18U,
+        cpu->brand[0] != '\0' ? cpu->brand : "CPU INVENTORY UNAVAILABLE",
+        1U, 239U, 249U, 255U);
+    format_labeled_u64("CORES: ", cpu->physical_cores_per_package, line);
+    graphics_draw_text(x, y + 36U, line, 1U, 233U, 243U, 252U);
+    format_labeled_u64("LOGICAL: ", cpu->logical_processors_per_package, line);
+    graphics_draw_text(x + 118U, y + 36U, line, 1U, 233U, 243U, 252U);
+    format_labeled_u64("FAMILY: ", cpu->family, line);
+    graphics_draw_text(x + 236U, y + 36U, line, 1U, 170U, 225U, 190U);
+    format_labeled_u64("MODEL: ", cpu->model, line);
+    graphics_draw_text(x + 330U, y + 36U, line, 1U, 170U, 225U, 190U);
+
+    hardware_append_text(line, sizeof(line), &(size_t){0}, "");
+    size_t flags_length = 0U;
+    line[0] = '\0';
+    hardware_append_flag(line, sizeof(line), &flags_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_NX), "NX");
+    hardware_append_flag(line, sizeof(line), &flags_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SMEP), "SMEP");
+    hardware_append_flag(line, sizeof(line), &flags_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SMAP), "SMAP");
+    hardware_append_flag(line, sizeof(line), &flags_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_PCID), "PCID");
+    hardware_append_flag(line, sizeof(line), &flags_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_INVPCID), "INVPCID");
+    hardware_append_flag(line, sizeof(line), &flags_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_PAGE_1GB), "1G-PAGES");
+    if (flags_length == 0U) hardware_append_text(line, sizeof(line), &flags_length, "BASELINE ONLY");
+    graphics_draw_text(x, y + 54U, "MEMORY / SECURITY:", 1U,
+                       133U, 164U, 190U);
+    graphics_draw_text(x + 132U, y + 54U, line, 1U,
+                       108U, 216U, 229U);
+
+    size_t isa_length = 0U;
+    line[0] = '\0';
+    hardware_append_flag(line, sizeof(line), &isa_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE42), "SSE4.2");
+    hardware_append_flag(line, sizeof(line), &isa_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AES), "AES");
+    hardware_append_flag(line, sizeof(line), &isa_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX), "AVX");
+    hardware_append_flag(line, sizeof(line), &isa_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX2), "AVX2");
+    hardware_append_flag(line, sizeof(line), &isa_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_BMI2), "BMI2");
+    hardware_append_flag(line, sizeof(line), &isa_length,
+        nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SHA), "SHA");
+    if (isa_length == 0U) hardware_append_text(line, sizeof(line), &isa_length, "SCALAR");
+    graphics_draw_text(x, y + 72U, "INSTRUCTION SET:", 1U,
+                       133U, 164U, 190U);
+    graphics_draw_text(x + 132U, y + 72U, line, 1U,
+                       233U, 243U, 252U);
+
+    size_t width_length = 0U;
+    line[0] = '\0';
+    if (cpu->physical_address_bits != 0U) {
+        format_u64(cpu->physical_address_bits, number);
+        hardware_append_text(line, sizeof(line), &width_length, "PHYSICAL ");
+        hardware_append_text(line, sizeof(line), &width_length, number);
+        hardware_append_text(line, sizeof(line), &width_length, "-BIT");
+    } else {
+        hardware_append_text(line, sizeof(line), &width_length, "PHYSICAL WIDTH UNKNOWN");
+    }
+    hardware_append_text(line, sizeof(line), &width_length, " / ");
+    if (cpu->virtual_address_bits != 0U) {
+        format_u64(cpu->virtual_address_bits, number);
+        hardware_append_text(line, sizeof(line), &width_length, "VIRTUAL ");
+        hardware_append_text(line, sizeof(line), &width_length, number);
+        hardware_append_text(line, sizeof(line), &width_length, "-BIT");
+    } else {
+        hardware_append_text(line, sizeof(line), &width_length, "VIRTUAL WIDTH UNKNOWN");
+    }
+    graphics_draw_text(x + 300U, y + 72U, line, 1U,
+                       170U, 225U, 190U);
+
+    uint64_t row = y + 96U;
+    graphics_draw_text(x, row, "GRAPHICS ADAPTERS / ENGINE STATUS",
+                       1U, 133U, 164U, 190U);
+    row += 18U;
+    const uint32_t gpu_count = gpu_adapter_count();
+    const uint32_t gpu_visible = gpu_count < 2U ? gpu_count : 2U;
+    if (gpu_visible == 0U) {
+        graphics_draw_text(x, row, "NO PCI DISPLAY ADAPTER RECORDED",
+                           1U, 239U, 177U, 119U);
+        row += 18U;
+    }
+    for (uint32_t i = 0U; i < gpu_visible; ++i) {
+        const struct nexus_gpu_info *gpu = gpu_adapter_at(i);
+        if (gpu == NULL) continue;
+        format_u64(i, number);
+        line[0] = '\0';
+        size_t n = 0U;
+        hardware_append_text(line, sizeof(line), &n, "GPU ");
+        hardware_append_text(line, sizeof(line), &n, number);
+        hardware_append_text(line, sizeof(line), &n, ": ");
+        hardware_append_text(line, sizeof(line), &n, gpu->name);
+        graphics_draw_text(x, row, line, 1U, 233U, 243U, 252U);
+        row += 16U;
+        char ids[80];
+        format_hardware_pci_identity(gpu->vendor_id, gpu->device_id,
+            gpu->revision_id, gpu->subsystem_vendor_id,
+            gpu->subsystem_device_id, ids);
+        graphics_draw_text(x + 10U, row, ids, 1U,
+                           170U, 191U, 211U);
+        row += 16U;
+        graphics_draw_text(x + 10U, row,
+            gpu->hardware_2d_acceleration
+                ? "2D ENGINE: ACTIVE" : "2D ENGINE: NOT ENABLED",
+            1U, gpu->hardware_2d_acceleration ? 108U : 239U,
+            gpu->hardware_2d_acceleration ? 216U : 177U,
+            gpu->hardware_2d_acceleration ? 229U : 119U);
+        graphics_draw_text(x + 178U, row,
+            gpu->hardware_3d_acceleration
+                ? "3D ENGINE: ACTIVE" : "3D ENGINE: NOT ENABLED",
+            1U, gpu->hardware_3d_acceleration ? 108U : 239U,
+            gpu->hardware_3d_acceleration ? 216U : 177U,
+            gpu->hardware_3d_acceleration ? 229U : 119U);
+        row += 18U;
+    }
+    if (gpu_count > gpu_visible) {
+        format_labeled_u64("ADDITIONAL ADAPTERS: ", gpu_count - gpu_visible, line);
+        graphics_draw_text(x, row, line, 1U, 170U, 191U, 211U);
+        row += 16U;
+    }
+    graphics_draw_text(x, row, gpu_render_path_name(), 1U,
+                       108U, 216U, 229U);
+    row += 22U;
+
+    graphics_draw_text(x, row, "WIRELESS ADAPTER INVENTORY",
+                       1U, 133U, 164U, 190U);
+    row += 18U;
+    const uint32_t wifi_count = wifi_pci_candidate_count();
+    const uint32_t wifi_visible = wifi_count < 2U ? wifi_count : 2U;
+    if (wifi_count == 0U) {
+        graphics_draw_text(x, row, "NO PCI WI-FI CANDIDATES DETECTED",
+                           1U, 239U, 177U, 119U);
+        row += 16U;
+    }
+    for (uint32_t i = 0U; i < wifi_visible; ++i) {
+        const struct nexus_wifi_pci_candidate *radio =
+            wifi_pci_candidate_at(i);
+        if (radio == NULL) continue;
+        graphics_draw_text(x, row, radio->vendor_name, 1U,
+                           233U, 243U, 252U);
+        row += 16U;
+        char ids[80];
+        format_hardware_pci_identity(radio->vendor_id, radio->device_id,
+            radio->revision_id, radio->subsystem_vendor_id,
+            radio->subsystem_device_id, ids);
+        graphics_draw_text(x + 10U, row, ids, 1U,
+                           170U, 191U, 211U);
+        row += 16U;
+    }
+    if (wifi_count > wifi_visible) {
+        format_labeled_u64("ADDITIONAL RADIOS: ", wifi_count - wifi_visible, line);
+        graphics_draw_text(x, row, line, 1U, 170U, 191U, 211U);
+        row += 16U;
+    }
+    graphics_draw_text(x, row,
+        wifi_available() ? "WI-FI DRIVER REGISTERED"
+                         : "WI-FI: CHIPSET DRIVER / FIRMWARE NOT BOUND",
+        1U, wifi_available() ? 108U : 239U,
+        wifi_available() ? 216U : 177U,
+        wifi_available() ? 229U : 119U);
+    row += 20U;
+
+    const struct nexus_firmware_info *firmware = nexus_firmware_get_info();
+    graphics_draw_text(x, row, "PLATFORM FIRMWARE / BUS",
+                       1U, 133U, 164U, 190U);
+    row += 18U;
+    graphics_draw_text(x, row, nexus_firmware_type_label(),
+                       1U, 233U, 243U, 252U);
+    if (firmware->acpi_present) {
+        format_labeled_u64("ACPI REVISION: ", firmware->acpi_revision, line);
+        graphics_draw_text(x + 150U, row, line, 1U,
+                           170U, 225U, 190U);
+    } else {
+        graphics_draw_text(x + 150U, row, "ACPI NOT REPORTED",
+                           1U, 239U, 177U, 119U);
+    }
+    row += 18U;
+    if (firmware->smbios_present) {
+        format_u64(firmware->smbios_major, number);
+        line[0] = '\0';
+        size_t n = 0U;
+        hardware_append_text(line, sizeof(line), &n, "SMBIOS ");
+        hardware_append_text(line, sizeof(line), &n, number);
+        hardware_append_text(line, sizeof(line), &n, ".");
+        format_u64(firmware->smbios_minor, number);
+        hardware_append_text(line, sizeof(line), &n, number);
+    } else {
+        line[0] = '\0';
+        size_t n = 0U;
+        hardware_append_text(line, sizeof(line), &n, "SMBIOS NOT REPORTED");
+    }
+    graphics_draw_text(x, row, line, 1U, 170U, 191U, 211U);
+    format_labeled_u64("PCI FUNCTIONS: ", pci_device_count(), line);
+    graphics_draw_text(x + 180U, row, line, 1U, 170U, 191U, 211U);
 }
 
 static void format_ipv4_address(const uint8_t address[4], char output[16]) {
@@ -1746,6 +2004,34 @@ static void draw_shell(void) {
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_SETTINGS) {
+        graphics_blend_round_rect(text_x + 284U, text_y - 2U, 82U, 24U, 5U,
+            settings_hardware_page ? 47U : 25U,
+            settings_hardware_page ? 94U : 41U,
+            settings_hardware_page ? 117U : 64U, 245U);
+        graphics_round_rect(text_x + 284U, text_y - 2U, 82U, 24U, 5U,
+            desktop_accent_palette[desktop_accent_index][0],
+            desktop_accent_palette[desktop_accent_index][1],
+            desktop_accent_palette[desktop_accent_index][2]);
+        graphics_draw_text(text_x + 292U, text_y + 6U, "HARDWARE",
+                           1U, 239U, 247U, 255U);
+        graphics_blend_round_rect(text_x + 374U, text_y - 2U, 82U, 24U, 5U,
+            settings_hardware_page ? 25U : 47U,
+            settings_hardware_page ? 41U : 94U,
+            settings_hardware_page ? 64U : 117U, 245U);
+        graphics_round_rect(text_x + 374U, text_y - 2U, 82U, 24U, 5U,
+            desktop_accent_palette[desktop_accent_index][0],
+            desktop_accent_palette[desktop_accent_index][1],
+            desktop_accent_palette[desktop_accent_index][2]);
+        graphics_draw_text(text_x + 382U, text_y + 6U, "PERSONAL",
+                           1U, 239U, 247U, 255U);
+        if (settings_hardware_page) {
+            graphics_draw_text(text_x, text_y, "HARDWARE OVERVIEW",
+                               2U, 239U, 249U, 255U);
+            graphics_draw_text(text_x, text_y + 26U,
+                "DEVICE IDENTIFIERS, CAPABILITIES AND ACTIVE DRIVER STATE",
+                1U, 170U, 191U, 211U);
+            desktop_draw_hardware_overview(text_x, text_y + 46U);
+        } else {
         graphics_draw_text(text_x, text_y, "PERSONALIZATION",
                            2U, 239U, 249U, 255U);
         graphics_draw_text(text_x, text_y + 26U,
@@ -1908,6 +2194,7 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 426U,
                            gpu_render_path_name(), 1U,
                            108U, 216U, 229U);
+        }
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
                            2, 239, 249, 255);
@@ -4965,6 +5252,20 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t py = bounds.y;
             const uint64_t sx = px + 32U;
             const uint64_t sy = py + 82U;
+            const uint64_t tab_y = py + 60U;
+            if ((uint64_t)pointer_y >= tab_y &&
+                (uint64_t)pointer_y < tab_y + 24U) {
+                if ((uint64_t)pointer_x >= sx + 284U &&
+                    (uint64_t)pointer_x < sx + 366U) {
+                    settings_hardware_page = true;
+                } else if ((uint64_t)pointer_x >= sx + 374U &&
+                           (uint64_t)pointer_x < sx + 456U) {
+                    settings_hardware_page = false;
+                }
+                draw_shell();
+                draw_pointer();
+                return;
+            }
             bool changed = false;
             if ((uint64_t)pointer_y >= sy + 42U &&
                 (uint64_t)pointer_y < sy + 74U) {
@@ -5514,6 +5815,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             desktop_toggle_theme();
         } else if (event->scancode == 0x1EU) {
             desktop_cycle_accent();
+        } else if (event->scancode == 0x23U) {
+            settings_hardware_page = true;
+        } else if (event->scancode == 0x19U) {
+            settings_hardware_page = false;
         } else {
             return;
         }

@@ -28,6 +28,14 @@ on:
       - "kernel/src/usermode.h"
       - "kernel/src/interrupts.c"
       - "kernel/src/elf64.c"
+      - "kernel/tests/ac97_format_test.c"
+      - "kernel/src/ac97_format.c"
+      - "kernel/src/ac97.h"
+      - "kernel/src/ac97.c"
+      - "kernel/tests/elf64_parser_test.c"
+      - "kernel/src/elf64.h"
+      - "kernel/src/paging.h"
+      - "kernel/src/paging.c"
       - "kernel/src/process.c"
       - "kernel/src/syscall.h"
       - "kernel/include/nexus/**"
@@ -80,11 +88,19 @@ jobs:
       - name: Compile changed kernel runtime sources
         run: |
           flags="-std=gnu11 -Os -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -Ikernel/include -Ikernel/src -Iinstaller"
-          for src in cpu fpu graphics package usermode interrupts process elf64 main; do
+          for src in cpu fpu graphics package usermode interrupts process elf64 paging ac97 ac97_format main; do
             cc $flags -c "kernel/src/$src.c" -o "/tmp/nexus-$src.o"
           done
           cc $flags -c kernel/src/catalog.c -o /tmp/nexus-catalog.o
           cc -m64 -c kernel/src/usermode.S -o /tmp/nexus-usermode-entry.o
+
+      - name: Test ELF64 static PIE parsing and relocation loading
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/include -Ikernel/src kernel/src/elf64.c \
+            kernel/tests/elf64_parser_test.c \
+            -o /tmp/nexus-elf64-parser-test
+          /tmp/nexus-elf64-parser-test
       - name: Check public ABI structure layouts
         run: |
           cc -std=gnu11 -Wall -Wextra -Werror -Ikernel/include \
@@ -112,6 +128,21 @@ jobs:
           readelf -h sdk/build/audio_demo.elf | grep -q 'Machine:.*X86-64'
           if readelf -lW sdk/build/audio_demo.elf | grep -Eq 'INTERP|DYNAMIC|TLS'; then
             echo "Audio SDK app unexpectedly needs a dynamic loader or TLS"
+            exit 1
+          fi
+
+          readelf -h sdk/build/pie_demo.elf | grep -q 'Class:.*ELF64'
+          readelf -h sdk/build/pie_demo.elf | grep -q 'Type:.*DYN'
+          readelf -h sdk/build/pie_demo.elf | grep -q 'Machine:.*X86-64'
+          readelf -lW sdk/build/pie_demo.elf | grep -q 'DYNAMIC'
+          if readelf -lW sdk/build/pie_demo.elf | grep -Eq 'INTERP|TLS'; then
+            echo "Static PIE demo unexpectedly needs an interpreter or TLS"
+            exit 1
+          fi
+          readelf -dW sdk/build/pie_demo.elf | grep -q '(RELA)'
+          readelf -rW sdk/build/pie_demo.elf | grep -q 'R_X86_64_RELATIVE'
+          if readelf -dW sdk/build/pie_demo.elf | grep -q '(NEEDED)'; then
+            echo "Static PIE demo unexpectedly needs external shared libraries"
             exit 1
           fi
       - name: Test signed package parsing and transactional install

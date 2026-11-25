@@ -164,9 +164,9 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
     return true;
 }
 
-bool process_execute_file(const char *name,
-                          struct nexus_process_result *result,
-                          enum nexus_process_error *error) {
+static bool process_execute_file_internal(
+    const char *name, struct nexus_process_result *result,
+    enum nexus_process_error *error, bool root_scoped) {
     if (error != NULL) *error = NEXUS_PROCESS_ERROR_NONE;
     if (result == NULL || name == NULL) {
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_NOT_FOUND;
@@ -178,7 +178,10 @@ bool process_execute_file(const char *name,
     }
 
     struct nexus_vfs_file file;
-    if (!vfs_open_readonly(name, &file)) {
+    const bool opened = root_scoped
+        ? vfs_open_root_readonly(name, &file)
+        : vfs_open_readonly(name, &file);
+    if (!opened) {
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_NOT_FOUND;
         return false;
     }
@@ -230,6 +233,18 @@ bool process_execute_file(const char *name,
     result->pid = pid;
     result->exit_status = exit_status;
     return true;
+}
+
+bool process_execute_file(const char *name,
+                          struct nexus_process_result *result,
+                          enum nexus_process_error *error) {
+    return process_execute_file_internal(name, result, error, false);
+}
+
+bool process_execute_root_file(const char *name,
+                               struct nexus_process_result *result,
+                               enum nexus_process_error *error) {
+    return process_execute_file_internal(name, result, error, true);
 }
 
 size_t process_count(void) {

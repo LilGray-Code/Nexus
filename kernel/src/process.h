@@ -46,6 +46,10 @@ bool process_run(uint32_t pid, uint64_t *exit_status);
 bool process_execute_file(const char *name,
                           struct nexus_process_result *result,
                           enum nexus_process_error *error);
+/* Runs an immutable/system file from the VFS root, independent of cwd. */
+bool process_execute_root_file(const char *name,
+                               struct nexus_process_result *result,
+                               enum nexus_process_error *error);
 size_t process_count(void);
 bool process_get_info(size_t slot, struct nexus_process_info *info);
 bool process_reap(uint32_t pid);

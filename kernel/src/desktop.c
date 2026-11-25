@@ -2225,7 +2225,7 @@ static void draw_shell(void) {
         graphics_draw_text_aa(text_x, text_y, "NEXUS APP STORE",
                               163840U, 239U, 249U, 255U);
         graphics_draw_text(text_x, text_y + 27U,
-            "OFFICIAL WEB SHORTCUTS TODAY - NATIVE CLIENT SUPPORT IS IN DEVELOPMENT",
+            "NEXUS NATIVE DEMOS + OFFICIAL WEB SHORTCUTS",
             1U, 170U, 191U, 211U);
         const uint64_t list_x = text_x;
         const uint64_t list_y = text_y + 56U;
@@ -2264,8 +2264,12 @@ static void draw_shell(void) {
                 desktop_theme_is_light() ? 91U : 151U,
                 desktop_theme_is_light() ? 108U : 180U,
                 desktop_theme_is_light() ? 131U : 201U);
-            graphics_draw_text(list_x + 228U, row_y + 13U,
-                store_installed[i] ? "ADDED" : "WEB LINK",
+            const bool native_app =
+                app->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT;
+            graphics_draw_text(list_x + 218U, row_y + 13U,
+                native_app
+                    ? (store_installed[i] ? "BUNDLED" : "MISSING")
+                    : (store_installed[i] ? "ADDED" : "WEB LINK"),
                 1U, store_installed[i] ? 108U : 170U,
                 store_installed[i] ? 216U : 191U,
                 store_installed[i] ? 229U : 211U);
@@ -2288,19 +2292,30 @@ static void draw_shell(void) {
                 selected->publisher, 1U, 170U, 191U, 211U);
             graphics_draw_text(detail_x + 14U, list_y + 69U,
                 selected->description, 1U, 233U, 243U, 252U);
+            const bool native_app =
+                selected->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT;
             graphics_draw_text(detail_x + 14U, list_y + 100U,
-                "DELIVERY: HTTPS WEBSITE SHORTCUT", 1U,
+                native_app
+                    ? "DELIVERY: BUNDLED NEXUS ELF APPLICATION"
+                    : "DELIVERY: HTTPS WEBSITE SHORTCUT", 1U,
                 108U, 216U, 229U);
             graphics_draw_text(detail_x + 14U, list_y + 123U,
-                "NATIVE WINDOWS CLIENT: NOT AVAILABLE", 1U,
-                239U, 177U, 119U);
+                native_app
+                    ? "RUNS ON THE NEXUS NATIVE ABI"
+                    : "FULL WINDOWS CLIENT NOT AVAILABLE", 1U,
+                native_app ? 108U : 239U,
+                native_app ? 216U : 177U,
+                native_app ? 229U : 119U);
             graphics_draw_text(detail_x + 14U, list_y + 146U,
                 selected->native_status, 1U,
                 170U, 191U, 211U);
             graphics_draw_text(detail_x + 14U, list_y + 182U,
-                store_installed[store_selected_index]
-                    ? "SHORTCUT INSTALLED"
-                    : "SHORTCUT NOT INSTALLED",
+                native_app
+                    ? (store_installed[store_selected_index]
+                        ? "BUNDLED SYSTEM APP - READ ONLY"
+                        : "SYSTEM APP MISSING FROM IMAGE")
+                    : (store_installed[store_selected_index]
+                        ? "SHORTCUT INSTALLED" : "SHORTCUT NOT INSTALLED"),
                 1U, store_installed[store_selected_index] ? 108U : 239U,
                 store_installed[store_selected_index] ? 216U : 177U,
                 store_installed[store_selected_index] ? 229U : 119U);
@@ -2309,27 +2324,34 @@ static void draw_shell(void) {
             40U, 111U, 99U, 245U);
         graphics_round_rect(detail_x, list_y + 194U, 108U, 28U, 6U,
             82U, 198U, 155U);
+        const struct nexus_store_application *selected_action =
+            nexus_store_application_at(store_selected_index);
+        const bool selected_native = selected_action != NULL &&
+            selected_action->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT;
         graphics_draw_text(detail_x + 13U, list_y + 204U,
-            "ADD SHORTCUT", 1U, 245U, 250U, 255U);
+            selected_native ? "RUN APP" : "ADD SHORTCUT",
+            1U, 245U, 250U, 255U);
         graphics_blend_round_rect(detail_x + 118U, list_y + 194U,
             108U, 28U, 6U, 43U, 63U, 91U, 245U);
         graphics_round_rect(detail_x + 118U, list_y + 194U,
             108U, 28U, 6U, 117U, 136U, 244U);
         graphics_draw_text(detail_x + 133U, list_y + 204U,
-            "OPEN WEBSITE", 1U, 245U, 250U, 255U);
+            selected_native ? "OPEN FILES" : "OPEN WEBSITE",
+            1U, 245U, 250U, 255U);
         graphics_blend_round_rect(detail_x, list_y + 228U, 108U, 22U, 5U,
             76U, 41U, 48U, 245U);
         graphics_round_rect(detail_x, list_y + 228U, 108U, 22U, 5U,
             177U, 67U, 80U);
         graphics_draw_text(detail_x + 23U, list_y + 235U,
-            "REMOVE LINK", 1U, 255U, 239U, 241U);
+            selected_native ? "READ ONLY" : "REMOVE LINK",
+            1U, 255U, 239U, 241U);
         graphics_draw_text(text_x, text_y + 310U, store_status, 1U,
             170U, 225U, 190U);
         graphics_draw_text(text_x, text_y + 334U,
-            "I ADD LINK   ENTER OPEN SITE   U REMOVE   ESC HOME",
+            "I RUN / ADD   ENTER OPEN   U REMOVE WEB LINK   ESC HOME",
             1U, 151U, 178U, 201U);
         graphics_draw_text(text_x, text_y + 356U,
-            "WEB APPS MAY REQUIRE JAVASCRIPT / MEDIA / DRM NOT YET IN NEXUS BROWSER",
+            "NATIVE DEMOS USE THE NEXUS ABI; WEB SITES MAY REQUIRE FULL JS / MEDIA / DRM",
             1U, 239U, 177U, 119U);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
@@ -5174,6 +5196,21 @@ static void desktop_store_refresh(void) {
 
 static void desktop_store_install_selected(void) {
     if (store_selected_index >= nexus_store_count()) return;
+    const struct nexus_store_application *app =
+        nexus_store_application_at(store_selected_index);
+    if (app != NULL &&
+        app->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT) {
+        uint64_t exit_status = UINT64_MAX;
+        if (nexus_store_launch_native(store_selected_index, &exit_status)) {
+            store_status = exit_status == 0U
+                ? "Nexus native application finished successfully."
+                : "Nexus native application exited with a nonzero status.";
+        } else {
+            store_status =
+                "Native app launch failed: check the system pack and runtime limits.";
+        }
+        return;
+    }
     if (nexus_store_install_shortcut(store_selected_index)) {
         store_installed[store_selected_index] = true;
         store_status = vfs_nxfs_writable()
@@ -5187,6 +5224,13 @@ static void desktop_store_install_selected(void) {
 
 static void desktop_store_remove_selected(void) {
     if (store_selected_index >= nexus_store_count()) return;
+    const struct nexus_store_application *app =
+        nexus_store_application_at(store_selected_index);
+    if (app != NULL &&
+        app->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT) {
+        store_status = "Bundled system applications are read-only.";
+        return;
+    }
     if (nexus_store_uninstall_shortcut(store_selected_index)) {
         store_installed[store_selected_index] = false;
         store_status = "Nexus website shortcut removed.";
@@ -5196,6 +5240,14 @@ static void desktop_store_remove_selected(void) {
 }
 
 static void desktop_store_open_selected(void) {
+    const struct nexus_store_application *app =
+        nexus_store_application_at(store_selected_index);
+    if (app != NULL &&
+        app->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT) {
+        desktop_open_view(DESKTOP_FILES);
+        store_status = "Bundled applications are also available in the Files view.";
+        return;
+    }
     char target[NEXUS_STORE_URL_MAX];
     if (!nexus_store_copy_url(store_selected_index,
                               target, sizeof(target))) {
@@ -5526,7 +5578,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     desktop_store_open_selected();
             } else if (relative_x >= 330 && relative_x < 438 &&
                        relative_y >= 284 && relative_y < 306) {
-                desktop_store_remove_selected();
+                const struct nexus_store_application *selected =
+                    nexus_store_application_at(store_selected_index);
+                if (selected != NULL &&
+                    selected->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT)
+                    store_status = "Bundled system applications are read-only.";
+                else
+                    desktop_store_remove_selected();
             }
             draw_shell();
             draw_pointer();

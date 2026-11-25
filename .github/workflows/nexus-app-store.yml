@@ -10,6 +10,10 @@ on:
       - "kernel/tests/app_store_test.c"
       - "kernel/src/vfs.c"
       - "kernel/src/vfs.h"
+      - "kernel/src/boot_pack.h"
+      - "kernel/src/process.h"
+      - "kernel/src/process.c"
+      - "kernel/src/desktop.c"
       - ".github/workflows/nexus-app-store.yml"
   pull_request:
     branches:
@@ -39,3 +43,5 @@ jobs:
         run: |
           grep -q 'app_store.o' kernel/Makefile
           grep -q 'vfs_remove_root_file' kernel/src/vfs.h
+          grep -q 'process_execute_root_file' kernel/src/process.h
+          grep -q 'nexus_store_launch_native' kernel/src/app_store.h

@@ -1,5 +1,7 @@
 #include "app_store.h"
 #include "vfs.h"
+#include "boot_pack.h"
+#include "process.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -14,6 +16,42 @@ static uint8_t mock_data[MOCK_CAPACITY];
 static size_t mock_size;
 static bool mock_present;
 static bool mock_remove_allowed = true;
+static bool mock_native_available[4];
+static size_t mock_native_launches;
+static char mock_native_last_launch[32];
+static struct nexus_boot_pack_entry mock_native_entry;
+
+const struct nexus_boot_pack_entry *nexus_boot_pack_find(
+    const char *name) {
+    static const char *const names[4] = {
+        "KINETIC.ELF", "GAMEPAD.ELF", "AUDIO.ELF", "PIE.ELF"
+    };
+    if (name == NULL) return NULL;
+    for (size_t i = 0U; i < 4U; ++i) {
+        if (strcmp(name, names[i]) == 0 && mock_native_available[i]) {
+            memset(&mock_native_entry, 0, sizeof(mock_native_entry));
+            (void)snprintf(mock_native_entry.name,
+                           sizeof(mock_native_entry.name), "%s", name);
+            return &mock_native_entry;
+        }
+    }
+    return NULL;
+}
+bool process_execute_root_file(const char *name,
+                               struct nexus_process_result *result,
+                               enum nexus_process_error *error) {
+    if (name == NULL || result == NULL || nexus_boot_pack_find(name) == NULL) {
+        if (error != NULL) *error = NEXUS_PROCESS_ERROR_NOT_FOUND;
+        return false;
+    }
+    ++mock_native_launches;
+    (void)snprintf(mock_native_last_launch, sizeof(mock_native_last_launch),
+                   "%s", name);
+    result->pid = 42U;
+    result->exit_status = 0U;
+    if (error != NULL) *error = NEXUS_PROCESS_ERROR_NONE;
+    return true;
+}
 
 bool vfs_open_root_readonly(const char *name, struct nexus_vfs_file *file) {
     if (name == NULL || file == NULL || !mock_present ||
@@ -87,21 +125,36 @@ static void reset_mock(void) {
     mock_size = 0U;
     mock_present = false;
     mock_remove_allowed = true;
+    mock_native_launches = 0U;
+    mock_native_last_launch[0] = '\0';
+    for (size_t i = 0U; i < 4U; ++i) mock_native_available[i] = false;
     for (size_t i = 0U; i < sizeof(mock_data); ++i) mock_data[i] = 0U;
 }
 
-static void test_catalog_has_official_https_entries(void) {
+static void test_catalog_has_web_and_native_entries(void) {
     assert(nexus_store_count() == NEXUS_STORE_MAX_APPS);
-    const char *expected[] = {"STEAM", "DISCORD", "SPOTIFY",
-                              "GITHUB", "VSCODE", "ITCH"};
-    for (size_t i = 0U; i < nexus_store_count(); ++i) {
+    const char *web_expected[] = {"STEAM", "DISCORD", "SPOTIFY",
+                                  "GITHUB", "VSCODE", "ITCH"};
+    for (size_t i = 0U; i < 6U; ++i) {
         const struct nexus_store_application *app =
             nexus_store_application_at(i);
         assert(app != NULL);
-        assert(strcmp(app->id, expected[i]) == 0);
-        assert(app->url[0] == 'h' && app->url[1] == 't' &&
-               app->url[2] == 't' && app->url[3] == 'p' &&
-               app->url[4] == 's' && app->url[5] == ':');
+        assert(strcmp(app->id, web_expected[i]) == 0);
+        assert(app->delivery == NEXUS_STORE_DELIVERY_WEB_SHORTCUT);
+        assert(app->url != NULL && app->url[0] == 'h');
+    }
+    const char *native_expected[] = {
+        "KINETIC.ELF", "GAMEPAD.ELF", "AUDIO.ELF", "PIE.ELF"
+    };
+    for (size_t i = 0U; i < 4U; ++i) {
+        const size_t index = 6U + i;
+        const struct nexus_store_application *app =
+            nexus_store_application_at(index);
+        assert(app != NULL);
+        assert(app->delivery == NEXUS_STORE_DELIVERY_NATIVE_CLIENT);
+        assert(strcmp(app->native_filename, native_expected[i]) == 0);
+        assert(app->url == NULL);
+        assert(!nexus_store_copy_url(index, mock_name, sizeof(mock_name)));
     }
     assert(nexus_store_application_at(NEXUS_STORE_MAX_APPS) == NULL);
 }
@@ -142,11 +195,33 @@ static void test_bad_indices_and_failed_remove(void) {
     assert(nexus_store_is_installed(2U));
 }
 
+static void test_bundled_native_launch_and_read_only_lifecycle(void) {
+    reset_mock();
+    const size_t kinetic_index = 6U;
+    assert(!nexus_store_is_installed(kinetic_index));
+    assert(!nexus_store_launch_native(kinetic_index, NULL));
+
+    mock_native_available[0] = true;
+    assert(nexus_store_is_installed(kinetic_index));
+    assert(!nexus_store_install_shortcut(kinetic_index));
+    assert(!nexus_store_uninstall_shortcut(kinetic_index));
+    uint64_t exit_status = UINT64_MAX;
+    assert(nexus_store_launch_native(kinetic_index, &exit_status));
+    assert(exit_status == 0U);
+    assert(mock_native_launches == 1U);
+    assert(strcmp(mock_native_last_launch, "KINETIC.ELF") == 0);
+
+    mock_native_available[0] = false;
+    assert(!nexus_store_is_installed(kinetic_index));
+    assert(!nexus_store_launch_native(kinetic_index, &exit_status));
+}
+
 int main(void) {
-    test_catalog_has_official_https_entries();
+    test_catalog_has_web_and_native_entries();
     test_install_open_and_remove_shortcut();
     test_collision_does_not_overwrite_user_data();
     test_bad_indices_and_failed_remove();
-    puts("NEXUS APP STORE SHORTCUT TESTS PASSED");
+    test_bundled_native_launch_and_read_only_lifecycle();
+    puts("NEXUS APP STORE NATIVE + WEB TESTS PASSED");
     return 0;
 }

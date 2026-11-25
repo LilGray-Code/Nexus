@@ -15,6 +15,7 @@
 #include "ca_bundle.h"
 #include "html_text.h"
 #include "browser_history.h"
+#include "download.h"
 #include "nxfs.h"
 
 #include "graphics.h"
@@ -192,9 +193,12 @@ static char installer_status_text[96] = "Select a supported target disk";
  * clipped at the old 1.5 KiB limit. Buffers live in BSS, not the small kernel
  * stack. TCP itself remains a single-connection, bounded receive transport.
  */
-#define NEXUS_BROWSER_RESPONSE_CAPACITY (64U * 1024U)
+#define NEXUS_BROWSER_RESPONSE_CAPACITY (NEXUS_NXFS_MAX_FILE_BYTES + 16384U)
 static uint8_t browser_response_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
-static uint8_t browser_body_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
+static uint8_t browser_body_buffer[NEXUS_NXFS_MAX_FILE_BYTES];
+static bool browser_download_ready;
+static size_t browser_download_length;
+static char browser_download_name[NEXUS_DOWNLOAD_NAME_MAX];
 static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_address[NEXUS_BROWSER_SEARCH_URL_MAX];
 static size_t browser_address_length;
@@ -1886,6 +1890,20 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 382U,
                            "HTTPS TLS 1.3 / HTTP 1.1  HTML TEXT + SEARCH RESULTS",
                            1, 239, 177, 119);
+        graphics_blend_round_rect(text_x + 420U, text_y + 398U,
+                                  112U, 28U, 7U,
+                                  browser_download_ready ? 45U : 35U,
+                                  browser_download_ready ? 177U : 59U,
+                                  browser_download_ready ? 202U : 83U, 245U);
+        graphics_round_rect(text_x + 420U, text_y + 398U,
+                            112U, 28U, 7U, 105U, 133U, 160U);
+        graphics_draw_text(text_x + 451U, text_y + 408U, "SAVE  F6",
+                           1U, 245U, 250U, 255U);
+        graphics_draw_text(text_x, text_y + 406U,
+                           browser_download_ready
+                               ? "VERIFIED FILE READY TO SAVE"
+                               : "OPEN A VERIFIED HTTPS FILE TO DOWNLOAD",
+                           1U, 170U, 191U, 211U);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
                            2, 239, 249, 255);
@@ -2958,6 +2976,91 @@ static char terminal_scancode_char(uint8_t code) {
     return value;
 }
 
+static void browser_set_status(const char *message);
+
+static bool browser_download_name_exists(const char *name) {
+    if (name == NULL) return false;
+    for (size_t i = 0U; i < vfs_root_entry_count(); ++i) {
+        struct nexus_vfs_dirent entry;
+        if (!vfs_root_entry(i, &entry)) continue;
+        size_t j = 0U;
+        bool same = true;
+        while (name[j] != '\0' || entry.name[j] != '\0') {
+            char left = name[j];
+            char right = entry.name[j];
+            if (left >= 'a' && left <= 'z')
+                left = (char)(left - 'a' + 'A');
+            if (right >= 'a' && right <= 'z')
+                right = (char)(right - 'a' + 'A');
+            if (left != right) { same = false; break; }
+            ++j;
+            if (j >= NEXUS_VFS_NAME_MAX) { same = false; break; }
+        }
+        if (same) return true;
+    }
+    return false;
+}
+
+static void browser_save_current_download(void) {
+    if (!browser_download_ready || browser_download_length == 0U) {
+        browser_set_status("No verified HTTPS file is ready to save");
+        return;
+    }
+    if (!vfs_current_directory_writable()) {
+        browser_set_status("Current folder is read-only; choose Nexus Data in Files");
+        return;
+    }
+    if (browser_download_length > NEXUS_NXFS_MAX_FILE_BYTES) {
+        browser_set_status("Download exceeds the 1 MiB file limit");
+        return;
+    }
+
+    char target[NEXUS_DOWNLOAD_NAME_MAX];
+    bool selected = false;
+    for (uint32_t suffix = 0U; suffix < 1000U; ++suffix) {
+        if (!nexus_download_unique_name(browser_download_name, suffix, target))
+            break;
+        if (!browser_download_name_exists(target)) {
+            selected = true;
+            break;
+        }
+    }
+    if (!selected) {
+        browser_set_status("Could not choose a unique download filename");
+        return;
+    }
+
+    if (!vfs_write_file(target, browser_body_buffer, browser_download_length)) {
+        browser_set_status(vfs_nxfs_writable()
+            ? "Save failed: Nexus Data storage is full or unavailable"
+            : (browser_download_length > NEXUS_VFS_RAM_MAX_FILE_SIZE
+                ? "Persistent Nexus Data is needed for downloads over 4 KiB"
+                : "Save failed: no writable Nexus Data or RAM storage"));
+        return;
+    }
+
+    serial_write("BROWSER: saved verified HTTPS download ");
+    serial_write(target);
+    serial_write(" bytes=");
+    serial_write_hex(browser_download_length);
+    serial_write(vfs_nxfs_writable()
+        ? " persistent\r\n" : " volatile RAM\r\n");
+
+    char message[80] = "SAVED: ";
+    size_t used = 7U;
+    for (size_t i = 0U; target[i] != '\0' &&
+         used < sizeof(message) - 1U; ++i)
+        message[used++] = target[i];
+    const char *storage = vfs_nxfs_writable()
+        ? " TO NEXUS DATA" : " TO RAM ONLY";
+    for (size_t i = 0U; storage[i] != '\0' &&
+         used < sizeof(message) - 1U; ++i)
+        message[used++] = storage[i];
+    message[used] = '\0';
+    browser_set_status(message);
+    browser_download_ready = false;
+}
+
 static void browser_set_status(const char *message) {
     size_t i = 0U;
     if (message == NULL) message = "";
@@ -3357,6 +3460,9 @@ static void browser_navigate(bool record_history) {
     browser_search_page = false;
     browser_search_result_count = 0U;
     browser_search_selected = 0U;
+    browser_download_ready = false;
+    browser_download_length = 0U;
+    browser_download_name[0] = '\0';
 browser_retry:
     browser_clear_page();
     if (browser_address_length == 0U) {
@@ -3572,7 +3678,7 @@ browser_retry:
     if (use_https) {
         receive_ok = browser_https_receive_response(
             &https, response, NEXUS_BROWSER_RESPONSE_CAPACITY,
-            &response_length, body, NEXUS_BROWSER_RESPONSE_CAPACITY,
+            &response_length, body, NEXUS_NXFS_MAX_FILE_BYTES,
             &parsed, &orderly_eof, &receive_error);
         if (search_request && !receive_ok) {
             serial_write("NEXUS BING SEARCH TLS READ FAILED code=");
@@ -3700,6 +3806,16 @@ browser_retry:
         return;
     }
 
+    if (!search_request && use_https && parsed.body_length != 0U &&
+        parsed.body_length <= NEXUS_NXFS_MAX_FILE_BYTES &&
+        nexus_download_filename(browser_address,
+            parsed.has_content_disposition ? parsed.content_disposition : NULL,
+            parsed.has_content_type ? parsed.content_type : NULL,
+            browser_download_name)) {
+        browser_download_ready = true;
+        browser_download_length = parsed.body_length;
+    }
+
     bool rendered_plain_text = false;
     if (search_request &&
         (!parsed.has_content_type ||
@@ -3764,27 +3880,52 @@ browser_retry:
         } else if (!browser_content_type_is(parsed.content_type, "text/html") &&
                    !browser_content_type_is(
                        parsed.content_type, "application/xhtml+xml")) {
-            if (browser_search_fallback(
-                    search_request, &search_use_bing,
-                    &search_fallback_attempted)) goto browser_retry;
-            if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
-            browser_set_status("Unsupported content type (text and HTML only)");
+            if (search_request) {
+                if (browser_search_fallback(
+                        search_request, &search_use_bing,
+                        &search_fallback_attempted)) goto browser_retry;
+                serial_write("NEXUS WEB SEARCH FAILED\r\n");
+                browser_set_status("Search response has an unsupported content type");
+                return;
+            }
+            if (!browser_download_ready) {
+                browser_set_status(use_https
+                    ? "Could not prepare this file for download"
+                    : "Downloads require verified HTTPS; use an https:// URL");
+                return;
+            }
+            browser_clear_page();
+            browser_append_page_text("DOWNLOAD READY\n\n");
+            browser_append_page_text(browser_download_name);
+            browser_append_page_text("\n\nSIZE: ");
+            char download_size[21];
+            format_u64(browser_download_length, download_size);
+            browser_append_page_text(download_size);
+            browser_append_page_text(" BYTES\n\n");
+            browser_append_page_text("PRESS F6 OR CLICK SAVE TO STORE THIS FILE");
+            browser_address_edited = false;
+            browser_set_status("Verified HTTPS file ready; press F6 or click SAVE");
             return;
+        }
         }
     }
     if (!rendered_plain_text)
         browser_render_body(body, parsed.body_length);
     browser_address_edited = false;
     if (browser_content_truncated) {
-        browser_set_status("Page text clipped to the bounded browser view");
+        browser_set_status(browser_download_ready
+            ? "Page clipped; verified download copy is ready with F6"
+            : "Page text clipped to the bounded browser view");
     } else if (use_https) {
-        browser_set_status(rendered_plain_text
-            ? "HTTPS certificate verified (TLS 1.3); plain text"
-            : "HTTPS certificate verified (TLS 1.3); HTML text only");
+        browser_set_status(browser_download_ready
+            ? "Verified HTTPS page ready; press F6 to save a copy"
+            : (rendered_plain_text
+                ? "HTTPS certificate verified (TLS 1.3); plain text"
+                : "HTTPS certificate verified (TLS 1.3); HTML text only"));
     } else {
         browser_set_status(rendered_plain_text
-            ? "HTTP loaded without encryption; plain text"
-            : "HTTP loaded without encryption; HTML text only");
+            ? "HTTP loaded without encryption; downloads disabled"
+            : "HTTP loaded without encryption; downloads disabled");
     }
 }
 static void browser_history_navigate(bool forward) {
@@ -4883,6 +5024,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 }
             }
         }
+        if (clicked && active_view == DESKTOP_BROWSER) {
+            const struct desktop_window_rect bounds = desktop_window_bounds();
+            const int64_t save_x = (int64_t)(bounds.x + 32U + 420U);
+            const int64_t save_y = (int64_t)(bounds.y + 82U + 398U);
+            if (pointer_x >= save_x && pointer_x < save_x + 112 &&
+                pointer_y >= save_y && pointer_y < save_y + 28) {
+                browser_save_current_download();
+                draw_shell();
+                draw_pointer();
+                return;
+            }
+        }
         if (clicked && active_view == DESKTOP_HOME) {
             const uint64_t top = clamp_min(screen_height / 16U, 34U);
             const uint64_t bottom = clamp_min(screen_height / 11U, 48U);
@@ -5222,6 +5375,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_BROWSER) {
         if ((event->scancode & 0x80U) != 0U) return;
+        if (event->scancode == 0x40U ||
+            (keyboard_left_control && event->scancode == 0x1FU)) {
+            browser_save_current_download();
+            draw_shell(); draw_pointer(); return;
+        }
         if (event->scancode == 0x01U) {
             desktop_open_view(DESKTOP_HOME);
             draw_shell(); draw_pointer(); return;

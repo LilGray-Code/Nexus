@@ -616,7 +616,7 @@ int main(void) {
         payload[i] = (uint8_t)(i & 0xFFU);
 
     assert(net_tcp_send(payload, (uint16_t)sizeof(payload)));
-    assert(data_transmissions == 5U); /* one bad ACK is ignored; both chunks recover */
+    assert(data_transmissions == 4U); /* valid ACKs are accepted even on out-of-order peer data */
     assert(bad_ack_injected);
     assert(tcp_connection.local_sequence ==
            first_data_sequence + (uint32_t)sizeof(payload));

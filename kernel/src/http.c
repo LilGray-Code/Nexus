@@ -209,7 +209,7 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
             }
             content_type[value_length] = '\0';
             have_content_type = true;
-         else if (bytes_equal_ci(wire + cursor, colon - cursor,
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
                                   "Content-Disposition")) {
             if (have_content_disposition || value_length == 0U ||
                 value_length > NEXUS_HTTP_DISPOSITION_MAX) return false;

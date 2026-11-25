@@ -418,7 +418,15 @@ bool virtio_pci_queue_submit_pair(struct nexus_virtio_queue *queue,
      * deadline when interrupts are active, but also impose a finite polling
      * ceiling so an unresponsive device can never hang desktop startup.
      */
-    const uint64_t maximum_spins = 100000000ULL;
+    uint64_t flags = 0U;
+    __asm__ volatile ("pushfq; popq %0" : "=r"(flags) : : "memory");
+    /* Boot-time GPU setup runs before kmain enables maskable interrupts.
+     * In that state timer_ticks cannot advance, so use a much smaller hard
+     * bound and let the display driver select its firmware-framebuffer
+     * fallback instead of burning seconds in a dead device queue.
+     */
+    const uint64_t maximum_spins =
+        (flags & (1ULL << 9)) != 0U ? 20000000ULL : 2000000ULL;
     uint64_t spins = 0U;
     for (;;) {
         uint32_t id = 0U, used_length = 0U;

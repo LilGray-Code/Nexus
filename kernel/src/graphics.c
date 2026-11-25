@@ -345,7 +345,7 @@ static void graphics_rounded_rect_internal(
             continue;
         }
 
-        const uint64_t corner_y = top_corner ? row : row - (height - radius);
+        const uint64_t corner_y = row;
         for (uint64_t column = 0U; column < radius; ++column) {
             uint8_t coverage = rounded_corner_coverage(
                 radius, column, corner_y, width, height, false,

@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdio.h>
 
 /* Time is irrelevant to PEM parsing, but the compiled Mbed TLS platform
  * adapter still references the kernel's monotonic tick source.
@@ -23,13 +24,17 @@ int main(void) {
     mbedtls_x509_crt chain;
     mbedtls_x509_crt_init(&chain);
     const int result = mbedtls_x509_crt_parse(&chain, pem, pem_length);
-    assert(result == 0);
 
     size_t certificate_count = 0U;
     for (const mbedtls_x509_crt *certificate = &chain;
          certificate != NULL; certificate = certificate->next) {
         if (certificate->raw.len != 0U) ++certificate_count;
     }
+    fprintf(stderr,
+        "bundle_parse_result=%d certificates=%zu heap_free=%zu heap_largest=%zu\\n",
+        result, certificate_count, nexus_tls_heap_free_bytes(),
+        nexus_tls_heap_largest_free_block());
+    assert(result == 0);
     assert(certificate_count >= 80U);
 
     mbedtls_x509_crt_free(&chain);

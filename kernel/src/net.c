@@ -1253,20 +1253,66 @@ static bool send_tcp_segment(uint8_t flags, const void *payload,
     return send_ethernet(destination_mac, ETHERTYPE_IPV4, packet, ip_length);
 }
 
+static unsigned int tcp_https_trace_events;
+
+static void tcp_https_trace(const char *stage, const uint8_t *segment,
+                            size_t length) {
+    if (tcp_connection.remote_port != NEXUS_HTTPS_PORT ||
+        tcp_https_trace_events >= 96U) return;
+    ++tcp_https_trace_events;
+    serial_write("NEXUS HTTPS TCP ");
+    serial_write(stage);
+    if (segment != NULL && length >= NET_TCP_HEADER) {
+        const size_t header_length = (size_t)(segment[12] >> 4) * 4U;
+        serial_write(" ports=");
+        serial_write_hex(read_be16(segment));
+        serial_write("/");
+        serial_write_hex(read_be16(segment + 2U));
+        serial_write(" flags=");
+        serial_write_hex(segment[13]);
+        serial_write(" seq=");
+        serial_write_hex(read_be32(segment + 4U));
+        serial_write(" ack=");
+        serial_write_hex(read_be32(segment + 8U));
+        serial_write(" bytes=");
+        serial_write_hex(header_length <= length
+            ? length - header_length : 0U);
+    } else {
+        serial_write(" length=");
+        serial_write_hex(length);
+    }
+    serial_write(" expected-rx=");
+    serial_write_hex(tcp_connection.remote_sequence);
+    serial_write(" local-seq=");
+    serial_write_hex(tcp_connection.local_sequence);
+    serial_write(" ack-expected=");
+    serial_write_hex(tcp_connection.ack_expected);
+    serial_write(" ack-waiting=");
+    serial_write_hex(tcp_connection.ack_waiting ? 1U : 0U);
+    serial_write("\r\n");
+}
+
 static void receive_tcp(const uint8_t *segment, size_t length,
                         const uint8_t source_ip[4],
                         const uint8_t destination_ip[4]) {
+    const bool https_trace = tcp_connection.remote_port == NEXUS_HTTPS_PORT;
+    if (https_trace) tcp_https_trace("RX", segment, length);
     if (!tcp_connection.active || segment == NULL || source_ip == NULL ||
         destination_ip == NULL || length < NET_TCP_HEADER ||
         !equal_bytes(source_ip, tcp_connection.remote_ipv4, 4U) ||
         !equal_bytes(destination_ip, network.ipv4, 4U) ||
         read_be16(segment) != tcp_connection.remote_port ||
         read_be16(segment + 2U) != tcp_connection.local_port ||
-        tcp_checksum_value(source_ip, destination_ip, segment, length) != 0U)
+        tcp_checksum_value(source_ip, destination_ip, segment, length) != 0U) {
+        if (https_trace) tcp_https_trace("DROP TUPLE/CHECKSUM", segment, length);
         return;
+    }
 
     const size_t header_length = (size_t)(segment[12] >> 4) * 4U;
-    if (header_length < NET_TCP_HEADER || header_length > length) return;
+    if (header_length < NET_TCP_HEADER || header_length > length) {
+        if (https_trace) tcp_https_trace("DROP HEADER", segment, length);
+        return;
+    }
     const uint8_t flags = segment[13];
     const uint32_t sequence = read_be32(segment + 4U);
     const uint32_t acknowledgement = read_be32(segment + 8U);
@@ -1274,6 +1320,7 @@ static void receive_tcp(const uint8_t *segment, size_t length,
     const size_t payload_length = length - header_length;
 
     if ((flags & TCP_FLAG_RST) != 0U) {
+        if (https_trace) tcp_https_trace("RST", segment, length);
         tcp_connection.failed = true;
         tcp_connection.connected = false;
         return;
@@ -1300,6 +1347,7 @@ static void receive_tcp(const uint8_t *segment, size_t length,
      * future/out-of-order data is discarded rather than appended incorrectly.
      */
     if (sequence != tcp_connection.remote_sequence) {
+        if (https_trace) tcp_https_trace("DROP SEQUENCE", segment, length);
         if ((int32_t)(sequence - tcp_connection.remote_sequence) < 0)
             (void)send_tcp_segment(TCP_FLAG_ACK, NULL, 0U);
         return;
@@ -1313,6 +1361,7 @@ static void receive_tcp(const uint8_t *segment, size_t length,
             tcp_connection.ack_waiting = false;
         } else if (acknowledgement != tcp_connection.local_sequence) {
             /* Reject acknowledgements outside the one outstanding segment. */
+            if (https_trace) tcp_https_trace("DROP ACK", segment, length);
             return;
         }
     }
@@ -1320,6 +1369,7 @@ static void receive_tcp(const uint8_t *segment, size_t length,
     if (payload_length != 0U &&
         sequence == tcp_connection.remote_sequence &&
         payload_length <= NET_TCP_RX_CAPACITY - tcp_connection.receive_length) {
+        if (https_trace) tcp_https_trace("ACCEPT PAYLOAD", segment, length);
         copy_bytes(tcp_connection.receive_buffer + tcp_connection.receive_length,
                    payload, payload_length);
         tcp_connection.receive_length += payload_length;
@@ -1350,6 +1400,7 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
 
     tcp_connection = (struct net_tcp_connection){0};
     tcp_connection.active = true;
+    if (remote_port == NEXUS_HTTPS_PORT) tcp_https_trace_events = 0U;
     copy_bytes(tcp_connection.remote_ipv4, remote_ipv4, 4U);
     tcp_connection.remote_port = remote_port;
     tcp_connection.local_port = tcp_next_port++;

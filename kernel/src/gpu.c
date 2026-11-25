@@ -83,10 +83,10 @@ const char *gpu_primary_name(void) {
 
 const char *gpu_render_path_name(void) {
     if (virtio_display_active)
-        return "VIRTIO GPU SCANOUT / CPU RASTER";
+        return "GPU: VIRTIO SCANOUT / CPU RASTER";
     return primary_gpu.firmware_framebuffer_active
-        ? "FIRMWARE FRAMEBUFFER / CPU RASTER"
-        : "CPU RASTER / FRAMEBUFFER PENDING";
+        ? "GPU: FIRMWARE FRAMEBUFFER / CPU RASTER"
+        : "GPU: CPU RASTER / FRAMEBUFFER PENDING";
 }
 
 bool gpu_hardware_acceleration_available(void) {

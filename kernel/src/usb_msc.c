@@ -476,10 +476,10 @@ static bool copy_blockdev_text(char *destination, size_t capacity,
                                const char *source) {
     if (destination == NULL || capacity == 0U || source == NULL) return false;
     size_t length = 0U;
-    while (length < capacity && source[length] != '\\0') ++length;
+    while (length < capacity && source[length] != '\0') ++length;
     if (length == 0U || length >= capacity) return false;
     for (size_t i = 0U; i < length; ++i) destination[i] = source[i];
-    destination[length] = '\\0';
+    destination[length] = '\0';
     return true;
 }
 
@@ -497,17 +497,17 @@ bool nexus_usb_msc_register_blockdev(struct nexus_usb_msc_device *device,
     size_t model_length = 0U;
     const char *fields[2] = {device->vendor, device->product};
     for (size_t field = 0U; field < 2U; ++field) {
-        if (fields[field][0] == '\\0') continue;
+        if (fields[field][0] == '\0') continue;
         if (model_length != 0U &&
             model_length + 1U < sizeof(block.model))
             block.model[model_length++] = ' ';
-        for (size_t i = 0U; fields[field][i] != '\\0'; ++i) {
+        for (size_t i = 0U; fields[field][i] != '\0'; ++i) {
             if (model_length + 1U >= sizeof(block.model)) return false;
             block.model[model_length++] = fields[field][i];
         }
     }
     if (model_length == 0U) return false;
-    block.model[model_length] = '\\0';
+    block.model[model_length] = '\0';
 
     block.block_count = device->block_count;
     block.block_size = device->block_size;

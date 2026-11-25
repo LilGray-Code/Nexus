@@ -57,9 +57,11 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
     size_t count = 0U;
 
     /*
-     * Boot-keyboard modifier bits are separate from the six-key array.
-     * Forward both make and break codes for Shift so USB and PS/2 input share
-     * the same Set-1 modifier state in the desktop.
+     * HID modifier bits are independent of the six-key array. Translate all
+     * eight modifiers so USB keyboards (including 2.4 GHz HID receivers) get
+     * the same shortcut support as PS/2 keyboards. The current desktop uses
+     * the legacy Set-1 modifier state, so left/right Ctrl and Alt share their
+     * legacy make/break codes while the two GUI keys remain distinguishable.
      */
     const uint8_t old_modifiers =
         have_previous_report ? previous_report[0] : 0U;
@@ -67,15 +69,21 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
     static const struct {
         uint8_t mask;
         uint8_t set1;
-    } shift_modifiers[] = {
+    } modifiers[] = {
+        {0x01U, 0x1DU}, /* Left Ctrl */
         {0x02U, 0x2AU}, /* Left Shift */
-        {0x20U, 0x36U}  /* Right Shift */
+        {0x04U, 0x38U}, /* Left Alt */
+        {0x08U, 0x5BU}, /* Left GUI / Windows */
+        {0x10U, 0x1DU}, /* Right Ctrl */
+        {0x20U, 0x36U}, /* Right Shift */
+        {0x40U, 0x38U}, /* Right Alt */
+        {0x80U, 0x5CU}  /* Right GUI / Windows */
     };
-    for (size_t i = 0U; i < sizeof(shift_modifiers) /
-                                sizeof(shift_modifiers[0]); ++i) {
-        const uint8_t mask = shift_modifiers[i].mask;
+    for (size_t i = 0U; i < sizeof(modifiers) /
+                                sizeof(modifiers[0]); ++i) {
+        const uint8_t mask = modifiers[i].mask;
         if ((changed_modifiers & mask) == 0U) continue;
-        uint8_t code = shift_modifiers[i].set1;
+        uint8_t code = modifiers[i].set1;
         if ((report[0] & mask) == 0U) code |= 0x80U;
         if (count < capacity) scancodes[count++] = code;
     }

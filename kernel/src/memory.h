@@ -17,6 +17,12 @@ bool memory_allocator_selftest(void);
 /* Allocate one page wholly below max_address_exclusive for DMA buffers. */
 bool memory_alloc_dma_page(uint64_t max_address_exclusive,
                            uint64_t *physical_address);
+/* Allocate/free one physically contiguous run for framebuffer DMA backing. */
+bool memory_alloc_contiguous_pages(uint64_t page_count,
+                                   uint64_t max_address_exclusive,
+                                   uint64_t *physical_address);
+bool memory_free_contiguous_pages(uint64_t physical_address,
+                                  uint64_t page_count);
 void *memory_phys_to_virt(uint64_t physical_address);
 uint64_t memory_total_bytes(void);
 uint64_t memory_free_bytes(void);

@@ -32,6 +32,11 @@
 #define NEXUS_APP_INPUT_MOUSE 2U
 #define NEXUS_APP_PIXEL_XRGB8888 1U
 #define NEXUS_APP_FRAME_MAX_PIXELS 16384U
+#define NEXUS_APP_EIO 5LL
+#define NEXUS_APP_EAGAIN 11LL
+#define NEXUS_APP_EFAULT 14LL
+#define NEXUS_APP_ENODEV 19LL
+#define NEXUS_APP_EINVAL 22LL
 #define NEXUS_APP_KEY_RELEASE 0x0080U
 #define NEXUS_APP_KEY_EXTENDED 0x0100U
 
@@ -151,8 +156,9 @@ static inline int64_t nexus_app_gamepad_poll(
 }
 
 /* Queue up to 1024 interleaved signed 16-bit stereo frames at 48 kHz.
- * Returns 0 when accepted, -EAGAIN when the single DMA buffer is still busy,
- * or -ENODEV when no supported audio device is present.
+ * Returns 0 when accepted, -NEXUS_APP_EAGAIN when the single DMA buffer is
+ * still busy, -NEXUS_APP_ENODEV when no audio device is present, -EFAULT for
+ * an invalid pointer, or -NEXUS_APP_EINVAL for an invalid frame count.
  */
 static inline int64_t nexus_app_audio_write_48k_s16_stereo(
     const int16_t *interleaved_samples, uint32_t sample_frames) {

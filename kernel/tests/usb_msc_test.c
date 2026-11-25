@@ -267,10 +267,10 @@ static void test_capacity_10_and_32bit_commands(void) {
     assert(nexus_usb_msc_init(&device,&ops,&mock,4U,0x81U,0x02U,0U));
     assert(device.block_count==4096U);
     uint8_t sector[512];
-    assert(nexus_usb_msc_read_blocks(&device,0x1234U,1U,sector));
+    assert(nexus_usb_msc_read_blocks(&device,0x123U,1U,sector));
     assert(mock.last_opcode==0x28U);
-    assert(be32(mock.last_cdb+2U)==0x1234U);
-    assert(nexus_usb_msc_write_blocks(&device,0x1234U,1U,sector));
+    assert(be32(mock.last_cdb+2U)==0x123U);
+    assert(nexus_usb_msc_write_blocks(&device,0x123U,1U,sector));
     assert(mock.last_opcode==0x2AU);
 }
 

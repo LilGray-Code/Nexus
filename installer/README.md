@@ -18,30 +18,30 @@ desktop, terminal, file browser, settings, and early HTTPS-capable text
 browser are currently kernel-integrated; this is not yet a separate full
 userland or a production desktop application environment.
 
-## ISO boot entries and installed startup
+## Installer-only ISO and installed startup
 
-The ISO provides two separate Limine entries:
+The distributable ISO is an installer medium, not a live desktop image. Its
+Limine menu has a single **Install Nexus OS** entry and starts the dedicated,
+full-screen installer session by default. The ISO does not offer or display
+the regular Nexus desktop, taskbar, workspace, or desktop shortcuts while
+installation is in progress. Last-entry memory is disabled so firmware cannot
+silently select a previously used desktop entry.
 
-- **Nexus OS - Live Desktop** starts the desktop for evaluation and is the
-  default entry used by the automated desktop checks.
-- **Install Nexus OS** starts a dedicated, full-screen installer session.
-  It does not show the normal desktop, taskbar, or workspace.
+The installer requires a target disk selection, exact stable-device-ID
+confirmation, and a separate typed `ERASE` confirmation before any
+destructive write. It excludes the installer boot medium and rejects
+ambiguous or mounted targets. After a successful install, the target disk
+receives its own Limine configuration with a single **Nexus OS - Installed
+Desktop** entry and the `nexus.mode=desktop` boot argument.
 
-Choose **Install Nexus OS** from the boot menu to install. The installer
-requires a target disk selection, exact stable-device-ID confirmation, and a
-separate typed `ERASE` confirmation before any destructive write. It excludes
-the live boot medium and rejects ambiguous or mounted targets. After a
-successful install, the target disk has its own Limine configuration with a
-single **Nexus OS - Installed Desktop** entry and the
-`nexus.mode=desktop` boot argument. Shut down or restart, remove the installer
-USB, and boot from the installed disk to start the normal desktop.
-
-The installed disk configuration does not include the ISO's installer entry,
-so it cannot accidentally boot back into the USB installer environment.
+When installation completes, shut down or restart, remove the installer USB,
+and boot from the newly installed drive. That drive starts the normal Nexus
+desktop; the installer environment remains on the separate USB ISO and is not
+part of the installed system's boot menu.
 
 ## Current installer flow
 
-The live desktop opens the graphical installer using **F5**. It discovers
+The installer-only ISO starts directly in the graphical installer. It discovers
 eligible block devices and provides a target selection and layout preview. A
 destructive install is blocked until the user confirms the selected device's
 stable identity and separately types `ERASE`. The kernel revalidates the

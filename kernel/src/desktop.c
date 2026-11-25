@@ -4699,8 +4699,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             if (event->scancode == 0x0FU) {
                 installer_drive_dropdown_open = !installer_drive_dropdown_open;
                 serial_write(installer_drive_dropdown_open
-                    ? "NEXUS INSTALLER DROPDOWN OPEN\\r\\n"
-                    : "NEXUS INSTALLER DROPDOWN CLOSED\\r\\n");
+                    ? "NEXUS INSTALLER DROPDOWN OPEN\r\n"
+                    : "NEXUS INSTALLER DROPDOWN CLOSED\r\n");
             } else if (event->scancode == 0x3BU) {
                 installer_firmware = NEXUS_FIRMWARE_UEFI;
                 installer_refresh_plan();
@@ -4717,7 +4717,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (event->scancode == 0x1CU) {
                 if (installer_drive_dropdown_open) {
                     installer_drive_dropdown_open = false;
-                    serial_write("NEXUS INSTALLER DROPDOWN CLOSED\\r\\n");
+                    serial_write("NEXUS INSTALLER DROPDOWN CLOSED\r\n");
                 } else {
                     (void)installer_begin_confirmation();
                 }

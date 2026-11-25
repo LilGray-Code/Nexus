@@ -200,6 +200,78 @@ bool memory_free_page(uint64_t physical_address) {
     return true;
 }
 
+/*
+ * Allocate a physically contiguous run from one usable memory region. This
+ * is used for scanout backing that a paravirtual GPU needs to DMA as one
+ * guest-memory entry. The early allocator is single-CPU and bump-pointer
+ * based, so the run is never assembled from unrelated freed pages.
+ */
+bool memory_alloc_contiguous_pages(uint64_t page_count,
+                                   uint64_t max_address_exclusive,
+                                   uint64_t *physical_address) {
+    if (!initialized || physical_address == NULL || page_count == 0U ||
+        page_count > UINT64_MAX / NEXUS_PAGE_SIZE) return false;
+
+    const uint64_t bytes = page_count * NEXUS_PAGE_SIZE;
+    const uint64_t limit_address = max_address_exclusive == 0U
+        ? UINT64_MAX : max_address_exclusive;
+    for (size_t i = 0U; i < usable_region_count; ++i) {
+        struct memory_region *region = &usable_regions[i];
+        uint64_t limit = region->end;
+        if (limit > limit_address) limit = limit_address;
+        if (region->next > limit || limit - region->next < bytes) continue;
+
+        const uint64_t start = region->next;
+        region->next += bytes;
+        *physical_address = start;
+        if (free_bytes >= bytes) free_bytes -= bytes;
+        else free_bytes = 0U;
+        return true;
+    }
+    return false;
+}
+
+/*
+ * Return a contiguous run to the bounded early free list. Validate the whole
+ * run before mutating allocator state, so failure never leaves a partial free.
+ */
+bool memory_free_contiguous_pages(uint64_t physical_address,
+                                  uint64_t page_count) {
+    if (!initialized || page_count == 0U ||
+        page_count > UINT64_MAX / NEXUS_PAGE_SIZE ||
+        (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
+        page_count > MEMORY_MAX_FREED_PAGES - freed_page_count)
+        return false;
+    const uint64_t bytes = page_count * NEXUS_PAGE_SIZE;
+    if (physical_address > UINT64_MAX - bytes) return false;
+    const uint64_t end = physical_address + bytes;
+
+    bool contained = false;
+    for (size_t i = 0U; i < usable_region_count; ++i) {
+        const struct memory_region *region = &usable_regions[i];
+        if (physical_address >= region->start &&
+            end <= region->next && end <= region->end) {
+            contained = true;
+            break;
+        }
+    }
+    if (!contained) return false;
+
+    for (uint64_t page = 0U; page < page_count; ++page) {
+        const uint64_t candidate =
+            physical_address + page * NEXUS_PAGE_SIZE;
+        for (size_t i = 0U; i < freed_page_count; ++i) {
+            if (freed_pages[i] == candidate) return false;
+        }
+    }
+    for (uint64_t page = 0U; page < page_count; ++page)
+        freed_pages[freed_page_count++] =
+            physical_address + page * NEXUS_PAGE_SIZE;
+    if (UINT64_MAX - free_bytes < bytes) free_bytes = UINT64_MAX;
+    else free_bytes += bytes;
+    return true;
+}
+
 bool memory_page_is_allocated(uint64_t physical_address) {
     if (!initialized ||
         (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U) return false;

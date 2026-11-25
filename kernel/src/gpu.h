@@ -24,6 +24,9 @@ struct nexus_gpu_info {
     enum nexus_gpu_vendor vendor;
     uint16_t vendor_id;
     uint16_t device_id;
+    uint16_t subsystem_vendor_id;
+    uint16_t subsystem_device_id;
+    uint8_t revision_id;
     uint8_t bus;
     uint8_t slot;
     uint8_t function;

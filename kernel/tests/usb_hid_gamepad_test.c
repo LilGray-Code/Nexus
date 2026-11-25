@@ -63,7 +63,7 @@ static void test_report_id_and_length_checks(void) {
         sizeof(descriptor), &layout));
     assert(layout.report_id == 1U);
     assert(layout.report_bytes == 4U);
-    const uint8_t report[4] = {1U, 0U, 0xFFU, 2U};
+    const uint8_t report[4] = {1U, 0U, 0xFFU, 1U};
     struct nexus_usb_gamepad_event event = {0};
     assert(usb_hid_gamepad_decode(&layout, report, sizeof(report),
         1U, 1U, 2U, &event));

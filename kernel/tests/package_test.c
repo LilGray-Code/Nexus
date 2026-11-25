@@ -243,8 +243,12 @@ int main(void) {
     const uint8_t second_payload[4] = {'E', 'L', 'F', '?'};
     package_length = build_package(package, sizeof(package), "1.0.1",
                                    second_payload);
-    assert(nexus_package_install(package, package_length,
-                                 mock_ed25519_verify, NULL, &installed));
+    if (!nexus_package_install(package, package_length,
+                               mock_ed25519_verify, NULL, &installed)) {
+        fprintf(stderr, "package update failed with error %d\\n",
+                (int)nexus_package_last_error());
+        assert(false);
+    }
     assert(strcmp(installed.version, "1.0.1") == 0);
     assert(mock_find("APPS/DEMO-1.0.1.ELF") != NULL);
     assert(mock_find("APPS/DEMO-1.0.0.ELF") == NULL);

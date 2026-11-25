@@ -605,35 +605,29 @@ static bool vfs_valid_root_path(const char *path) {
     if (path == NULL) return false;
     size_t length = 0U;
     size_t component_length = 0U;
-    while (path[length] != '\0') {
-        if (length >= NEXUS_VFS_NAME_MAX - 1U) return false;
+    bool previous_dot = false;
+    while (length < NEXUS_VFS_NAME_MAX - 1U && path[length] != '\0') {
         const char c = path[length];
         if (c == '/') {
-            if (component_length == 0U) return false;
+            if (component_length == 0U || previous_dot) return false;
             component_length = 0U;
+            previous_dot = false;
         } else {
             const bool valid =
                 (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
                 (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
-            if (!valid) return false;
+            if (!valid || (c == '.' &&
+                (component_length == 0U || previous_dot))) return false;
             ++component_length;
+            previous_dot = c == '.';
         }
         ++length;
     }
-    if (length == 0U || component_length == 0U) return false;
-    size_t start = 0U;
-    for (size_t i = 0U; i <= length; ++i) {
-        if (i == length || path[i] == '/') {
-            const size_t part = i - start;
-            if (part == 0U || (part == 1U && path[start] == '.') ||
-                (part == 2U && path[start] == '.' && path[start + 1U] == '.'))
-                return false;
-            start = i + 1U;
-        }
-    }
+    if (length == 0U || length >= NEXUS_VFS_NAME_MAX - 1U ||
+        path[length] != '\0' || component_length == 0U || previous_dot)
+        return false;
     return true;
 }
-
 bool vfs_create_root_directory(const char *name) {
     if (!vfs_valid_root_path(name) || !nxfs_root_mounted ||
         !nxfs_is_writable()) return false;

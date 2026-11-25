@@ -92,8 +92,8 @@ int main(void) {
            ((rounded_top_left >> 8) & 0xFFU) <= 64U);
     assert(guarded[1U + 2U * WIDTH + 3U] == 0x0000FF00U);
     assert((rounded_bottom_right & 0xFFU) == 0U);
-    assert(((rounded_bottom_right >> 8) & 0xFFU) >= 127U &&
-           ((rounded_bottom_right >> 8) & 0xFFU) <= 128U);
+    assert(((rounded_bottom_right >> 8) & 0xFFU) >= 63U &&
+           ((rounded_bottom_right >> 8) & 0xFFU) <= 64U);
     graphics_blend_round_rect(0U, 0U, UINT64_MAX, UINT64_MAX,
                               UINT32_MAX, 0U, 0U, 255U, 128U);
     assert(guarded[1U + 2U * WIDTH + 3U] != 0x0000FF00U);

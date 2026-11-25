@@ -351,6 +351,7 @@ jobs:
           grep -q "INSTALLER: verified kernel, UEFI loader, BIOS stage-2, and system-pack payloads available" uefi-serial.log
           grep -q "NEXUS ELF64 STATIC-PIE VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log
+          grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
           grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" uefi-serial.log
@@ -745,6 +746,8 @@ jobs:
             exit "$status"
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-uefi.log
+          grep -q "NEXUS READ-ONLY SYSTEM PACK READY; files=" installer-ui-installed-uefi.log
+          grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" installer-ui-installed-uefi.log
           grep -q "NEXUS BOOT MODE: DESKTOP" installer-ui-installed-uefi.log
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
@@ -759,6 +762,8 @@ jobs:
             exit "$status"
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-bios.log
+          grep -q "NEXUS READ-ONLY SYSTEM PACK READY; files=" installer-ui-installed-bios.log
+          grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" installer-ui-installed-bios.log
           grep -q "NEXUS BOOT MODE: DESKTOP" installer-ui-installed-bios.log
 
       - name: Test the graphical installer on a disposable SATA target
@@ -918,6 +923,7 @@ jobs:
             exit "$status"
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-sata-installed-uefi.log
+          grep -q "NEXUS READ-ONLY SYSTEM PACK READY; files=" installer-sata-installed-uefi.log
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
             -machine pc -cpu qemu64 -m 512M \
@@ -931,6 +937,7 @@ jobs:
             exit "$status"
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-sata-installed-bios.log
+          grep -q "NEXUS READ-ONLY SYSTEM PACK READY; files=" installer-sata-installed-bios.log
 
       - name: Verify persistent file creation, editing and reboot retention
         shell: bash

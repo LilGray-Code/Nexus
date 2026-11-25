@@ -8,6 +8,9 @@ on:
       - "kernel/src/http.c"
       - "kernel/src/http.h"
       - "kernel/tests/http_test.c"
+      - "kernel/src/download.c"
+      - "kernel/src/download.h"
+      - "kernel/tests/download_test.c"
       - ".github/workflows/nexus-http-tests.yml"
   pull_request:
     branches:
@@ -33,3 +36,11 @@ jobs:
             -o /tmp/nexus-http-test
       - name: Run HTTP parser tests
         run: /tmp/nexus-http-test
+
+      - name: Compile safe download filename tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
+            -Ikernel/src kernel/src/download.c kernel/tests/download_test.c \\
+            -o /tmp/nexus-download-test
+      - name: Run safe download filename tests
+        run: /tmp/nexus-download-test

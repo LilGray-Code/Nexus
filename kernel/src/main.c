@@ -6,6 +6,7 @@
 #include "acpi.h"
 #include "blockdev.h"
 #include "boot_payload.h"
+#include "boot_mode.h"
 #include "desktop.h"
 #include "elf64.h"
 #include "e1000.h"
@@ -50,6 +51,10 @@ static volatile struct limine_rsdp_request rsdp_request = {
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_executable_file_request executable_file_request = {
     .id = LIMINE_EXECUTABLE_FILE_REQUEST_ID, .revision = 0
+};
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_executable_cmdline_request executable_cmdline_request = {
+    .id = LIMINE_EXECUTABLE_CMDLINE_REQUEST_ID, .revision = 0
 };
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_module_request module_request = {
@@ -394,6 +399,15 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("K2: cooperative scheduling and thread-slot recycling passed\r\n");
+
+    const char *boot_command_line = NULL;
+    if (executable_cmdline_request.response != NULL)
+        boot_command_line = executable_cmdline_request.response->cmdline;
+    const bool installer_boot = nexus_boot_mode_is_installer(boot_command_line);
+    desktop_set_installer_mode(installer_boot);
+    serial_write(installer_boot
+        ? "NEXUS BOOT MODE: DEDICATED INSTALLER\\r\\n"
+        : "NEXUS BOOT MODE: DESKTOP\\r\\n");
 
     if (framebuffer_request.response != NULL &&
         framebuffer_request.response->framebuffer_count > 0) {

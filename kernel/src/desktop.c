@@ -11,6 +11,7 @@
 #include "net_https.h"
 #include "http.h"
 #include "browser_url.h"
+#include "browser_search.h"
 #include "html_text.h"
 #include "browser_history.h"
 #include "nxfs.h"
@@ -183,17 +184,23 @@ static char installer_status_text[96] = "Select a supported target disk";
  * clipped at the old 1.5 KiB limit. Buffers live in BSS, not the small kernel
  * stack. TCP itself remains a single-connection, bounded receive transport.
  */
-#define NEXUS_BROWSER_RESPONSE_CAPACITY (16U * 1024U)
+#define NEXUS_BROWSER_RESPONSE_CAPACITY (32U * 1024U)
 static uint8_t browser_response_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static uint8_t browser_body_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
-static char browser_address[96];
+static char browser_address[NEXUS_BROWSER_SEARCH_URL_MAX];
 static size_t browser_address_length;
+static bool browser_address_edited;
 static char browser_status[80] = "HTTPS-first; requires NEXUS.CRT on Nexus Data";
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 static size_t browser_line_scroll;
 static bool browser_content_truncated;
+static bool browser_search_page;
+static size_t browser_search_selected;
+static size_t browser_search_result_count;
+static struct nexus_browser_search_result
+    browser_search_results[NEXUS_BROWSER_SEARCH_MAX_RESULTS];
 static struct nexus_browser_history browser_history;
 #define NEXUS_BROWSER_CA_FILE "NEXUS.CRT"
 #define NEXUS_BROWSER_CA_MAX_BYTES (64U * 1024U)
@@ -1804,11 +1811,11 @@ static void draw_shell(void) {
                            "T: TOGGLE THEME     A: CYCLE ACCENT",
                            1U, 170U, 191U, 211U);
     } else if (active_view == DESKTOP_BROWSER) {
-        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - SECURE WEB TEXT VIEW",
+        graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
                            2, 239, 249, 255);
-        graphics_draw_text(text_x, text_y + 38U, "HOST/PATH:",
+        graphics_draw_text(text_x, text_y + 38U, "SEARCH / URL:",
                            1, 108, 216, 229);
-        graphics_draw_text(text_x + 82U, text_y + 38U, browser_address,
+        graphics_draw_text(text_x + 92U, text_y + 38U, browser_address,
                            1, 239, 249, 255);
         graphics_draw_text(text_x, text_y + 66U, browser_status,
                            1, 170, 225, 190);
@@ -1823,10 +1830,10 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 360U, text_y + 66U,
                                "TRUNCATED", 1, 239, 177, 119);
         graphics_draw_text(text_x, text_y + 360U,
-                           "PGUP/PGDN SCROLL  HOME/END  ALT+LEFT BACK  ALT+RIGHT FORWARD",
+                           "UP/DOWN SELECT RESULT  ENTER OPEN/SEARCH  PGUP/PGDN SCROLL",
                            1, 170, 191, 211);
         graphics_draw_text(text_x, text_y + 382U,
-                           "HTTPS TLS 1.3 / HTTP 1.1  TEXT ONLY - NO CSS OR JAVASCRIPT",
+                           "HTTPS TLS 1.3 / HTTP 1.1  HTML TEXT + SEARCH RESULTS",
                            1, 239, 177, 119);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
@@ -1967,6 +1974,10 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     nexus_browser_history_init(&browser_history);
     browser_address_length = 0U;
     browser_address[0] = '\0';
+    browser_address_edited = false;
+    browser_search_page = false;
+    browser_search_selected = 0U;
+    browser_search_result_count = 0U;
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
     installer_drive_dropdown_open = false;
@@ -2969,6 +2980,35 @@ static void browser_render_body(const uint8_t *data, size_t length) {
         browser_content_truncated = result.truncated;
 }
 
+static void browser_append_page_text(const char *text) {
+    if (text == NULL) return;
+    for (size_t i = 0U; text[i] != '\0'; ++i)
+        browser_append_page_char(text[i]);
+}
+
+static void browser_render_search_results(void) {
+    browser_clear_page();
+    browser_append_page_text("WEB SEARCH RESULTS - UP/DOWN SELECT, ENTER OPEN\n\n");
+    for (size_t i = 0U; i < browser_search_result_count; ++i) {
+        browser_append_page_char(i == browser_search_selected ? '>' : ' ');
+        browser_append_page_char(' ');
+        browser_append_page_char((char)('1' + (char)i));
+        browser_append_page_char('.');
+        browser_append_page_char(' ');
+        browser_append_page_text(browser_search_results[i].title);
+        browser_append_page_char('\n');
+        browser_append_page_text("    ");
+        browser_append_page_text(browser_search_results[i].snippet);
+        browser_append_page_char('\n');
+        browser_append_page_text("    ");
+        browser_append_page_text(browser_search_results[i].url);
+        browser_append_page_char('\n');
+        browser_append_page_char('\n');
+    }
+    browser_line_scroll = 0U;
+    browser_search_page = browser_search_result_count != 0U;
+}
+
 static bool browser_append_text(char *buffer, size_t capacity,
                                 size_t *length, const char *text) {
     if (buffer == NULL || length == NULL || text == NULL) return false;
@@ -3017,6 +3057,38 @@ static bool browser_starts_with(const char *value, size_t length,
         ++i;
     }
     return true;
+}
+
+static bool browser_address_is_search_query(void) {
+    if (browser_address_length == 0U ||
+        browser_starts_with(browser_address, browser_address_length, "http://") ||
+        browser_starts_with(browser_address, browser_address_length, "https://"))
+        return false;
+
+    bool has_dot = false;
+    for (size_t i = 0U; i < browser_address_length; ++i) {
+        const char ch = browser_address[i];
+        if (ch == ' ' || ch == '\t') return true;
+        if (ch == '/') break;
+        if (ch == '.') has_dot = true;
+    }
+    return !has_dot;
+}
+
+static bool browser_build_search_target(char *host, size_t host_capacity,
+                                        size_t *host_length,
+                                        char *path, size_t path_capacity,
+                                        size_t *path_length) {
+    static const char search_host[] = "html.duckduckgo.com";
+    if (host == NULL || host_length == NULL || path == NULL ||
+        path_length == NULL || sizeof(search_host) > host_capacity)
+        return false;
+    for (size_t i = 0U; i < sizeof(search_host); ++i)
+        host[i] = search_host[i];
+    *host_length = sizeof(search_host) - 1U;
+    return nexus_browser_search_build_path(
+        browser_address, browser_address_length,
+        path, path_capacity, path_length);
 }
 
 static bool browser_is_http_redirect(uint16_t status_code) {
@@ -3139,74 +3211,85 @@ static bool browser_https_receive_response(
 static void browser_navigate(bool record_history) {
     size_t redirect_count = 0U;
     bool history_saved = false;
+    bool search_request = browser_address_is_search_query();
+    browser_search_page = false;
+    browser_search_result_count = 0U;
+    browser_search_selected = 0U;
 browser_retry:
     browser_clear_page();
     if (browser_address_length == 0U) {
-        browser_set_status("Enter a URL or host name");
+        browser_set_status("Enter a search query or URL");
         return;
     }
 
-    /* HTTPS-first for scheme-less addresses. Plain HTTP requires http://. */
     bool use_https = true;
-    size_t address_start = 0U;
-    if (browser_starts_with(browser_address, browser_address_length,
-                            "https://")) {
-        address_start = 8U;
-    } else if (browser_starts_with(browser_address, browser_address_length,
-                                   "http://")) {
-        use_https = false;
-        address_start = 7U;
-    } else {
-        for (size_t i = 0U; i + 2U < browser_address_length; ++i) {
-            if (browser_address[i] == ':' &&
-                browser_address[i + 1U] == '/' &&
-                browser_address[i + 2U] == '/') {
-                browser_set_status("Unsupported URL scheme");
-                return;
-            }
-        }
-    }
-
     char host[64];
-    char path[96];
+    char path[NEXUS_BROWSER_SEARCH_PATH_MAX];
     size_t host_length = 0U;
     size_t path_length = 0U;
-    bool in_path = false;
-    path[path_length++] = '/';
-    for (size_t i = address_start; i < browser_address_length; ++i) {
-        const char ch = browser_address[i];
-        if (!in_path && ch == '/') {
-            in_path = true;
-            path_length = 0U;
-            path[path_length++] = '/';
-            continue;
+    if (search_request) {
+        if (!browser_build_search_target(host, sizeof(host), &host_length,
+                                         path, sizeof(path), &path_length)) {
+            browser_set_status("Search query is empty, invalid or too long");
+            return;
         }
-        if (!in_path) {
-            if (host_length >= sizeof(host) - 1U) {
-                browser_set_status("Host name is too long");
-                return;
-            }
-            host[host_length++] = ch;
+    } else {
+        size_t address_start = 0U;
+        if (browser_starts_with(browser_address, browser_address_length,
+                                "https://")) {
+            address_start = 8U;
+        } else if (browser_starts_with(browser_address, browser_address_length,
+                                       "http://")) {
+            use_https = false;
+            address_start = 7U;
         } else {
-            if (ch == '#') break;
-            if (path_length >= sizeof(path) - 1U ||
-                ch < 0x21 || ch > 0x7E) {
-                browser_set_status("Invalid or overlong URL path");
-                return;
+            for (size_t i = 0U; i + 2U < browser_address_length; ++i) {
+                if (browser_address[i] == ':' &&
+                    browser_address[i + 1U] == '/' &&
+                    browser_address[i + 2U] == '/') {
+                    browser_set_status("Unsupported URL scheme");
+                    return;
+                }
             }
-            path[path_length++] = ch;
         }
-    }
-    if (host_length == 0U) {
-        browser_set_status("Enter a host name");
-        return;
-    }
-    host[host_length] = '\0';
-    path[path_length] = '\0';
-    if (!browser_valid_host(host, host_length)) {
-        browser_set_status(
-            "Invalid host; ports and IPv6 literals are not supported");
-        return;
+
+        bool in_path = false;
+        path[path_length++] = '/';
+        for (size_t i = address_start; i < browser_address_length; ++i) {
+            const char ch = browser_address[i];
+            if (!in_path && ch == '/') {
+                in_path = true;
+                path_length = 0U;
+                path[path_length++] = '/';
+                continue;
+            }
+            if (!in_path) {
+                if (host_length >= sizeof(host) - 1U) {
+                    browser_set_status("Host name is too long");
+                    return;
+                }
+                host[host_length++] = ch;
+            } else {
+                if (ch == '#') break;
+                if (path_length >= sizeof(path) - 1U ||
+                    ch < 0x21 || ch > 0x7E) {
+                    browser_set_status("Invalid or overlong URL path");
+                    return;
+                }
+                path[path_length++] = ch;
+            }
+        }
+        if (host_length == 0U) {
+            browser_set_status("Enter a host name");
+            return;
+        }
+        host[host_length] = '\0';
+        path[path_length] = '\0';
+        if (!browser_valid_host(host, host_length)) {
+            browser_set_status(
+                "Invalid host; ports and IPv6 literals are not supported");
+            return;
+        }
     }
     if (record_history && !history_saved) {
         if (!nexus_browser_history_push(&browser_history, browser_address)) {
@@ -3252,7 +3335,7 @@ browser_retry:
         }
     }
 
-    char request[384];
+    char request[1024];
     size_t request_length = 0U;
     const bool request_ok =
         browser_append_text(request, sizeof(request), &request_length,
@@ -3361,6 +3444,7 @@ browser_retry:
             browser_address[i] = redirect_target[i];
         browser_address[redirect_length] = '\0';
         browser_address_length = redirect_length;
+        search_request = false;
         ++redirect_count;
         goto browser_retry;
     }
@@ -3378,6 +3462,26 @@ browser_retry:
     }
 
     bool rendered_plain_text = false;
+    if (search_request &&
+        (!parsed.has_content_type ||
+         browser_content_type_is(parsed.content_type, "text/html") ||
+         browser_content_type_is(parsed.content_type, "application/xhtml+xml"))) {
+        size_t result_count = 0U;
+        if (nexus_browser_search_parse(
+                body, parsed.body_length, browser_search_results,
+                NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count)) {
+            browser_search_result_count = result_count;
+            browser_search_selected = 0U;
+            browser_render_search_results();
+            browser_address_edited = false;
+            browser_set_status(use_https
+                ? "Web results received over verified HTTPS/TLS 1.3"
+                : "Search provider response was not encrypted");
+            return;
+        }
+        browser_set_status(
+            "No compatible result links; showing the search page text");
+    }
     if (parsed.has_content_type) {
         if (browser_content_type_is(parsed.content_type, "text/plain") ||
             browser_content_type_is(parsed.content_type, "application/json") ||
@@ -3395,6 +3499,7 @@ browser_retry:
     }
     if (!rendered_plain_text)
         browser_render_body(body, parsed.body_length);
+    browser_address_edited = false;
     if (browser_content_truncated) {
         browser_set_status("Page text clipped to the bounded browser view");
     } else if (use_https) {
@@ -3428,6 +3533,7 @@ static void browser_history_navigate(bool forward) {
     }
     browser_address[length] = '\0';
     browser_address_length = length;
+    browser_address_edited = false;
     browser_navigate(false);
 }
 
@@ -4790,7 +4896,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else if (keyboard_alt && event->scancode == 0x4DU) {
             browser_history_navigate(true);
         } else if (event->scancode == 0x1CU) {
+            if (browser_search_page && !browser_address_edited &&
+                browser_search_result_count != 0U &&
+                browser_search_selected < browser_search_result_count) {
+                const char *target =
+                    browser_search_results[browser_search_selected].url;
+                size_t length = 0U;
+                while (length < sizeof(browser_address) - 1U &&
+                       target[length] != '\0') {
+                    browser_address[length] = target[length];
+                    ++length;
+                }
+                browser_address[length] = '\0';
+                browser_address_length = length;
+                browser_address_edited = true;
+            }
             browser_navigate(true);
+        } else if (browser_search_page && !browser_address_edited &&
+                   event->scancode == 0x48U) {
+            if (browser_search_selected > 0U) --browser_search_selected;
+            browser_render_search_results();
+        } else if (browser_search_page && !browser_address_edited &&
+                   event->scancode == 0x50U) {
+            if (browser_search_selected + 1U < browser_search_result_count)
+                ++browser_search_selected;
+            browser_render_search_results();
         } else if (event->scancode == 0x49U) {
             browser_line_scroll = browser_line_scroll > NEXUS_BROWSER_VISIBLE_LINES
                 ? browser_line_scroll - NEXUS_BROWSER_VISIBLE_LINES : 0U;
@@ -4807,11 +4937,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else if (event->scancode == 0x0EU) {
             if (browser_address_length > 0U)
                 browser_address[--browser_address_length] = '\0';
+            browser_address_edited = true;
         } else {
             const char ch = terminal_scancode_char(event->scancode);
             if (ch != '\0' && browser_address_length < sizeof(browser_address)-1U) {
                 browser_address[browser_address_length++] = ch;
                 browser_address[browser_address_length] = '\0';
+                browser_address_edited = true;
             }
         }
         draw_shell(); draw_pointer(); return;

@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 #define NEXUS_BROWSER_HISTORY_CAPACITY 12U
-#define NEXUS_BROWSER_HISTORY_URL_MAX 96U
+#define NEXUS_BROWSER_HISTORY_URL_MAX 256U
 
 struct nexus_browser_history {
     char entries[NEXUS_BROWSER_HISTORY_CAPACITY]

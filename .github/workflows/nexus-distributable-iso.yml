@@ -37,7 +37,7 @@ jobs:
             build-essential binutils curl git xorriso qemu-system-x86 ovmf \
             file dosfstools mtools
 
-      - name: Test the current App Store shortcut contract
+      - name: Test bundled native and web Store entries
         shell: bash
         run: |
           set -euo pipefail
@@ -46,8 +46,8 @@ jobs:
             kernel/tests/app_store_test.c \
             -o /tmp/nexus-app-store-test
           /tmp/nexus-app-store-test
-          grep -q "OFFICIAL WEB SHORTCUTS TODAY" kernel/src/desktop.c
-          grep -q "Store is not yet connected to this package pipeline" README.md
+          grep -q "NEXUS NATIVE DEMOS + OFFICIAL WEB SHORTCUTS" kernel/src/desktop.c
+          grep -q "verified system-pack demos can now be launched directly from the Store" README.md
 
       - name: Test signed package and catalog parser contracts
         shell: bash

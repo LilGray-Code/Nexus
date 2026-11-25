@@ -380,6 +380,7 @@ jobs:
           grep -q "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=0023" uefi-serial.log
           grep -q "DESKTOP: HELLO.ELF native SDK file read/write, formatted output and capture passed" uefi-serial.log
           grep -q "NEXUS CPU CAPABILITY QUERY READY" uefi-serial.log
+          grep -q "NEXUS AVX2 USER SIMD READY" uefi-serial.log
           grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
           grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log

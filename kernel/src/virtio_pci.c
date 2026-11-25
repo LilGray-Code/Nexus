@@ -26,7 +26,6 @@
 #define VIRTIO_QUEUE_DRIVER 40U
 #define VIRTIO_QUEUE_DEVICE 48U
 #define VIRTIO_DMA_LIMIT 0x100000000ULL
-#define VIRTQ_DESC_BYTES 16U
 
 static uint16_t read_le16(const volatile uint8_t *p) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
@@ -48,9 +47,6 @@ static void write_le32(volatile uint8_t *p, uint32_t value) {
 static void write_le64(volatile uint8_t *p, uint64_t value) {
     write_le32(p, (uint32_t)value);
     write_le32(p + 4U, (uint32_t)(value >> 32));
-}
-static uint64_t align_up(uint64_t value, uint64_t alignment) {
-    return (value + alignment - 1U) & ~(alignment - 1U);
 }
 static void memory_barrier(void) {
     __asm__ volatile ("mfence" ::: "memory");

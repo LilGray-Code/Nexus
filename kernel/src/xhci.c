@@ -1523,6 +1523,11 @@ bool xhci_mouse_ready(void) {
            controller.mouse.active;
 }
 
+bool xhci_storage_ready(void) {
+    return controller.initialized && controller.storage_active &&
+           controller.storage.active && nexus_usb_msc_ready();
+}
+
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized ||

@@ -188,13 +188,11 @@ static char installer_status_text[96] = "Select a supported target disk";
 #define NEXUS_BROWSER_RESPONSE_CAPACITY (32U * 1024U)
 static uint8_t browser_response_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static uint8_t browser_body_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
-static char browser_search_form_body[NEXUS_BROWSER_SEARCH_PATH_MAX];
-static size_t browser_search_form_body_length;
 static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_address[NEXUS_BROWSER_SEARCH_URL_MAX];
 static size_t browser_address_length;
 static bool browser_address_edited;
-static char browser_status[80] = "HTTPS-first with built-in Mozilla trust roots";
+static char browser_status[80] = "HTTPS-first browser with live web search";
 static char browser_lines[NEXUS_BROWSER_LINE_COUNT][NEXUS_BROWSER_LINE_WIDTH];
 static size_t browser_line_count;
 static size_t browser_line_scroll;
@@ -3083,8 +3081,8 @@ static bool browser_build_search_target(char *host, size_t host_capacity,
                                         size_t *host_length,
                                         char *path, size_t path_capacity,
                                         size_t *path_length) {
-    static const char search_host[] = "html.duckduckgo.com";
-    static const char search_path[] = "/html/";
+    static const char search_host[] = "www.bing.com";
+    static const char search_path[] = "/search";
     if (host == NULL || host_length == NULL || path == NULL ||
         path_length == NULL || sizeof(search_host) > host_capacity ||
         sizeof(search_path) > path_capacity) return false;
@@ -3257,15 +3255,13 @@ browser_retry:
     if (search_request) {
         if (!browser_build_search_target(host, sizeof(host), &host_length,
                                          path, sizeof(path), &path_length) ||
-            !nexus_browser_search_build_form_body(
+            !nexus_browser_search_build_bing_path(
                 browser_address, browser_address_length,
-                browser_search_form_body, sizeof(browser_search_form_body),
-                &browser_search_form_body_length)) {
+                path, sizeof(path), &path_length)) {
             browser_set_status("Search query is empty, invalid or too long");
             return;
         }
     } else {
-        browser_search_form_body_length = 0U;
         size_t address_start = 0U;
         if (browser_starts_with(browser_address, browser_address_length,
                                 "https://")) {
@@ -3371,7 +3367,7 @@ browser_retry:
     size_t request_length = 0U;
     const bool request_ok =
         browser_append_text(request, sizeof(request), &request_length,
-                            search_request ? "POST " : "GET ") &&
+                            "GET ") &&
         browser_append_text(request, sizeof(request), &request_length, path) &&
         browser_append_text(request, sizeof(request), &request_length,
                             " HTTP/1.1\r\nHost: ") &&
@@ -3381,30 +3377,15 @@ browser_retry:
                 "\r\nUser-Agent: Mozilla/5.0 (X11; Nexus OS x86_64; rv:128.0) "
                 "Gecko/20100101 NexusBrowser/1.0\r\n"
                 "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+                "Accept-Language: en-US,en;q=0.8\r\n"
                 "Accept-Encoding: identity\r\n"
-                "Content-Type: application/x-www-form-urlencoded\r\n"
-                "Content-Length: ") &&
-              browser_append_u64_decimal(request, sizeof(request),
-                                         &request_length,
-                                         browser_search_form_body_length) &&
-              browser_append_text(request, sizeof(request), &request_length,
-                "\r\nOrigin: https://html.duckduckgo.com\r\n"
-                "Referer: https://html.duckduckgo.com/\r\n"
-                "Sec-Fetch-Dest: document\r\n"
-                "Sec-Fetch-Mode: navigate\r\n"
-                "Sec-Fetch-Site: same-origin\r\n"
-                "Sec-Fetch-User: ?1\r\n"
-                "Upgrade-Insecure-Requests: 1\r\n"
                 "Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
             : browser_append_text(request, sizeof(request), &request_length,
                 "\r\nUser-Agent: NexusBrowser/0.3\r\n"
                 "Accept: text/html,text/plain,*/*\r\n"
                 "Accept-Encoding: identity\r\n"
                 "Cache-Control: no-cache\r\n"
-                "Connection: close\r\n\r\n")) &&
-        (!search_request ||
-         browser_append_text(request, sizeof(request), &request_length,
-                             browser_search_form_body));
+                "Connection: close\r\n\r\n"));
     bool request_sent = false;
     if (request_ok) {
         request_sent = use_https
@@ -3528,7 +3509,7 @@ browser_retry:
             browser_render_plain_body(body, parsed.body_length);
             return;
         }
-        if (nexus_browser_search_parse(
+        if (nexus_browser_search_parse_bing(
                 body, parsed.body_length, browser_search_results,
                 NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count)) {
             browser_search_result_count = result_count;

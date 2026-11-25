@@ -100,6 +100,30 @@ bool nexus_browser_search_build_path(
     return true;
 }
 
+bool nexus_browser_search_build_bing_path(
+    const char *query, size_t query_length,
+    char *path, size_t path_capacity, size_t *path_length) {
+    static const char prefix[] = "/search?q=";
+    static const char suffix[] = "&count=8&setlang=en&cc=us";
+    if (path == NULL || path_length == NULL || path_capacity == 0U)
+        return false;
+    const size_t prefix_length = sizeof(prefix) - 1U;
+    const size_t suffix_length = sizeof(suffix) - 1U;
+    if (prefix_length + suffix_length >= path_capacity) return false;
+    for (size_t i = 0U; i < prefix_length; ++i) path[i] = prefix[i];
+    size_t encoded_length = 0U;
+    if (!encode_query(query, query_length, path + prefix_length,
+                      path_capacity - prefix_length - suffix_length,
+                      &encoded_length)) return false;
+    size_t used = prefix_length + encoded_length;
+    for (size_t i = 0U; i < suffix_length; ++i)
+        path[used++] = suffix[i];
+    if (used >= path_capacity) return false;
+    path[used] = '\0';
+    *path_length = used;
+    return true;
+}
+
 bool nexus_browser_search_build_form_body(
     const char *query, size_t query_length,
     char *body, size_t body_capacity, size_t *body_length) {
@@ -128,7 +152,9 @@ bool nexus_browser_search_is_challenge(
     if (html == NULL || html_length == 0U) return false;
     return find_ci(html, html_length, 0U, "anomaly-modal") != SIZE_MAX ||
            find_ci(html, html_length, 0U, "detected unusual traffic") != SIZE_MAX ||
-           find_ci(html, html_length, 0U, "automated requests") != SIZE_MAX;
+           find_ci(html, html_length, 0U, "automated requests") != SIZE_MAX ||
+           find_ci(html, html_length, 0U, "verify you are human") != SIZE_MAX ||
+           find_ci(html, html_length, 0U, "captcha") != SIZE_MAX;
 }
 
 static bool find_tag_end(const uint8_t *html, size_t length, size_t start,
@@ -253,6 +279,150 @@ static bool starts_with_ci(const char *value, size_t length,
            span_equal_ci(value, prefix_length, prefix);
 }
 
+static int base64url_value(uint8_t ch) {
+    if (ch >= 'A' && ch <= 'Z') return (int)(ch - 'A');
+    if (ch >= 'a' && ch <= 'z') return (int)(ch - 'a' + 26U);
+    if (ch >= '0' && ch <= '9') return (int)(ch - '0' + 52U);
+    if (ch == '-' || ch == '+') return 62;
+    if (ch == '_' || ch == '/') return 63;
+    return -1;
+}
+
+static bool decode_bing_tracker(const char *input, size_t input_length,
+                                char *output, size_t output_capacity,
+                                size_t *output_length) {
+    const size_t marker = find_ci(
+        (const uint8_t *)input, input_length, 0U, "bing.com/ck/a");
+    if (marker == SIZE_MAX || output == NULL || output_capacity == 0U ||
+        output_length == NULL) return false;
+
+    size_t cursor = marker;
+    while (cursor < input_length && input[cursor] != '?') ++cursor;
+    if (cursor == input_length) return false;
+    ++cursor;
+
+    size_t encoded_start = SIZE_MAX;
+    size_t encoded_end = SIZE_MAX;
+    while (cursor < input_length) {
+        while (cursor < input_length &&
+               (input[cursor] == '&' || input[cursor] == '?')) ++cursor;
+        const size_t name_start = cursor;
+        while (cursor < input_length && input[cursor] != '=' &&
+               input[cursor] != '&' && input[cursor] != '#') ++cursor;
+        if (cursor >= input_length || input[cursor] != '=') break;
+        const size_t name_length = cursor - name_start;
+        ++cursor;
+        const size_t value_start = cursor;
+        while (cursor < input_length && input[cursor] != '&' &&
+               input[cursor] != '#') ++cursor;
+        if (bytes_equal_ci((const uint8_t *)input + name_start,
+                           name_length, "u")) {
+            encoded_start = value_start;
+            encoded_end = cursor;
+            break;
+        }
+    }
+    if (encoded_start == SIZE_MAX || encoded_end <= encoded_start + 2U ||
+        input[encoded_start] != 'a' || input[encoded_start + 1U] != '1')
+        return false;
+
+    uint32_t accumulator = 0U;
+    unsigned int bits = 0U;
+    size_t used = 0U;
+    bool padding_seen = false;
+    for (size_t i = encoded_start + 2U; i < encoded_end; ++i) {
+        const uint8_t ch = (uint8_t)input[i];
+        if (ch == '=') {
+            padding_seen = true;
+            continue;
+        }
+        if (padding_seen) return false;
+        const int digit = base64url_value(ch);
+        if (digit < 0) return false;
+        accumulator = (accumulator << 6) | (uint32_t)digit;
+        bits += 6U;
+        if (bits >= 8U) {
+            bits -= 8U;
+            if (used + 1U >= output_capacity) return false;
+            const uint8_t decoded = (uint8_t)(accumulator >> bits);
+            if (decoded < 0x21U || decoded > 0x7EU) return false;
+            output[used++] = (char)decoded;
+            if (bits == 0U) accumulator = 0U;
+            else accumulator &= (1U << bits) - 1U;
+        }
+    }
+    if (used == 0U || used >= output_capacity) return false;
+    output[used] = '\0';
+    if (!starts_with_ci(output, used, "https://") &&
+        !starts_with_ci(output, used, "http://")) return false;
+    *output_length = used;
+    return true;
+}
+
+static bool tag_has_class_token(const uint8_t *html, size_t tag_start,
+                                size_t tag_end, const char *wanted) {
+    if (html == NULL || tag_end <= tag_start + 3U) return false;
+    size_t cursor = tag_start + 3U;
+    while (cursor < tag_end && !html_space(html[cursor]) &&
+           html[cursor] != '/' && html[cursor] != '>') ++cursor;
+    while (cursor < tag_end) {
+        while (cursor < tag_end && html_space(html[cursor])) ++cursor;
+        if (cursor >= tag_end || html[cursor] == '/') break;
+        const size_t name_start = cursor;
+        while (cursor < tag_end && !html_space(html[cursor]) &&
+               html[cursor] != '=' && html[cursor] != '/' &&
+               html[cursor] != '>') ++cursor;
+        if (cursor == name_start) {
+            ++cursor;
+            continue;
+        }
+        const size_t name_length = cursor - name_start;
+        while (cursor < tag_end && html_space(html[cursor])) ++cursor;
+        if (cursor >= tag_end || html[cursor] != '=') continue;
+        ++cursor;
+        while (cursor < tag_end && html_space(html[cursor])) ++cursor;
+        if (cursor >= tag_end) break;
+        uint8_t quote = 0U;
+        if (html[cursor] == '"' || html[cursor] == '\'')
+            quote = html[cursor++];
+        const size_t value_start = cursor;
+        if (quote != 0U) {
+            while (cursor < tag_end && html[cursor] != quote) ++cursor;
+        } else {
+            while (cursor < tag_end && !html_space(html[cursor])) ++cursor;
+        }
+        const size_t value_length = cursor - value_start;
+        if (quote != 0U && cursor < tag_end) ++cursor;
+        if (bytes_equal_ci(html + name_start, name_length, "class") &&
+            class_has_token(html + value_start, value_length, wanted))
+            return true;
+    }
+    return false;
+}
+
+static void extract_bing_snippet(const uint8_t *html, size_t start,
+                                 size_t limit, char *output,
+                                 size_t output_capacity) {
+    if (output == NULL || output_capacity == 0U) return;
+    output[0] = '\0';
+    const size_t marker = find_ci(html, limit, start, "b_caption");
+    if (marker == SIZE_MAX) return;
+    size_t tag_start = marker;
+    while (tag_start != 0U && html[tag_start] != '<') --tag_start;
+    if (html[tag_start] != '<') return;
+    size_t tag_end = 0U;
+    if (!find_tag_end(html, limit, tag_start + 1U, &tag_end)) return;
+    const size_t paragraph = find_ci(html, limit, tag_end + 1U, "<p");
+    if (paragraph == SIZE_MAX) return;
+    size_t paragraph_end = 0U;
+    if (!find_tag_end(html, limit, paragraph + 2U, &paragraph_end)) return;
+    const size_t close = find_ci(html, limit, paragraph_end + 1U, "</p");
+    if (close == SIZE_MAX || close <= paragraph_end + 1U) return;
+    extract_text(html + paragraph_end + 1U,
+                 close - paragraph_end - 1U,
+                 output, output_capacity);
+}
+
 static bool normalize_result_url(const char *input, size_t input_length,
                                  char *output, size_t output_capacity) {
     if (input == NULL || output == NULL || output_capacity == 0U ||
@@ -260,9 +430,18 @@ static bool normalize_result_url(const char *input, size_t input_length,
 
     char decoded[NEXUS_BROWSER_SEARCH_URL_MAX];
     size_t decoded_length = 0U;
-    const size_t ddg_marker = find_ci(
-        (const uint8_t *)input, input_length, 0U, "duckduckgo.com/l/");
-    if (ddg_marker != SIZE_MAX) {
+    const size_t bing_marker = find_ci(
+        (const uint8_t *)input, input_length, 0U, "bing.com/ck/a");
+    if (bing_marker != SIZE_MAX) {
+        if (!decode_bing_tracker(input, input_length, decoded,
+                                 sizeof(decoded), &decoded_length))
+            return false;
+        input = decoded;
+        input_length = decoded_length;
+    } else {
+        const size_t ddg_marker = find_ci(
+            (const uint8_t *)input, input_length, 0U, "duckduckgo.com/l/");
+        if (ddg_marker != SIZE_MAX) {
         const size_t query_marker = find_ci(
             (const uint8_t *)input, input_length, ddg_marker, "uddg=");
         if (query_marker != SIZE_MAX) {
@@ -288,6 +467,7 @@ static bool normalize_result_url(const char *input, size_t input_length,
             if (decoded_length == 0U) return false;
             input = decoded;
             input_length = decoded_length;
+        }
         }
     }
 
@@ -444,6 +624,96 @@ bool nexus_browser_search_parse(
                    results[i].url[a] != '\0' &&
                    candidate.url[a] == results[i].url[a]) ++a;
             if (candidate.url[a] == '\0' && results[i].url[a] == '\0') {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) results[(*result_count)++] = candidate;
+    }
+    return *result_count != 0U;
+}
+
+bool nexus_browser_search_parse_bing(
+    const uint8_t *html, size_t html_length,
+    struct nexus_browser_search_result *results,
+    size_t result_capacity, size_t *result_count) {
+    if (html == NULL || html_length == 0U || results == NULL ||
+        result_capacity == 0U || result_count == NULL) return false;
+    *result_count = 0U;
+    if (result_capacity > NEXUS_BROWSER_SEARCH_MAX_RESULTS)
+        result_capacity = NEXUS_BROWSER_SEARCH_MAX_RESULTS;
+
+    size_t cursor = 0U;
+    while (cursor < html_length && *result_count < result_capacity) {
+        const size_t item_start = find_ci(html, html_length, cursor, "<li");
+        if (item_start == SIZE_MAX || item_start + 3U >= html_length) break;
+        const uint8_t after_name = html[item_start + 3U];
+        if (!html_space(after_name) && after_name != '>' && after_name != '/') {
+            cursor = item_start + 3U;
+            continue;
+        }
+        size_t item_tag_end = 0U;
+        if (!find_tag_end(html, html_length, item_start + 3U,
+                          &item_tag_end)) break;
+        const size_t item_end = find_ci(html, html_length,
+                                        item_tag_end + 1U, "</li");
+        if (item_end == SIZE_MAX) break;
+        cursor = item_end + 4U;
+        if (!tag_has_class_token(html, item_start, item_tag_end, "b_algo"))
+            continue;
+
+        const size_t heading = find_ci(html, item_end, item_tag_end + 1U,
+                                       "<h2");
+        if (heading == SIZE_MAX) continue;
+        const size_t heading_end = find_ci(html, item_end, heading + 3U,
+                                            "</h2");
+        if (heading_end == SIZE_MAX) continue;
+        const size_t anchor = find_ci(html, heading_end, heading + 3U, "<a");
+        if (anchor == SIZE_MAX) continue;
+        size_t anchor_end = 0U;
+        if (!find_tag_end(html, heading_end, anchor + 2U, &anchor_end))
+            continue;
+
+        char href[NEXUS_BROWSER_SEARCH_URL_MAX];
+        size_t href_length = 0U;
+        bool ignored_class = false;
+        (void)extract_anchor_attributes(
+            html, anchor, anchor_end, href, sizeof(href),
+            &href_length, &ignored_class);
+        if (href_length == 0U) continue;
+
+        const size_t anchor_close = find_anchor_close(
+            html, heading_end, anchor_end + 1U);
+        if (anchor_close == SIZE_MAX) continue;
+
+        struct nexus_browser_search_result candidate = {0};
+        if (!normalize_result_url(href, href_length,
+                                  candidate.url, sizeof(candidate.url)))
+            continue;
+        extract_text(html + anchor_close - 1U,
+                     0U, candidate.title, sizeof(candidate.title));
+        /* The anchor's actual text starts after its opening tag. */
+        extract_text(html + anchor_end + 1U,
+                     anchor_close - anchor_end - 1U,
+                     candidate.title, sizeof(candidate.title));
+        if (candidate.title[0] == '\0') {
+            size_t i = 0U;
+            while (i < sizeof(candidate.title) - 1U &&
+                   candidate.url[i] != '\0') {
+                candidate.title[i] = candidate.url[i];
+                ++i;
+            }
+            candidate.title[i] = '\0';
+        }
+        extract_bing_snippet(html, anchor_end + 1U, item_end,
+                             candidate.snippet, sizeof(candidate.snippet));
+
+        bool duplicate = false;
+        for (size_t i = 0U; i < *result_count; ++i) {
+            size_t j = 0U;
+            while (candidate.url[j] != '\0' && results[i].url[j] != '\0' &&
+                   candidate.url[j] == results[i].url[j]) ++j;
+            if (candidate.url[j] == '\0' && results[i].url[j] == '\0') {
                 duplicate = true;
                 break;
             }

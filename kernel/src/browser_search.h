@@ -26,12 +26,24 @@ bool nexus_browser_search_build_form_body(
     const char *query, size_t query_length,
     char *body, size_t body_capacity, size_t *body_length);
 
+bool nexus_browser_search_build_bing_path(
+    const char *query, size_t query_length,
+    char *path, size_t path_capacity, size_t *path_length);
+
 /* Detects a provider anti-bot/interstitial response instead of treating it
  * as an empty search-result page. */
 bool nexus_browser_search_is_challenge(
     const uint8_t *html, size_t html_length);
 
 bool nexus_browser_search_parse(
+    const uint8_t *html, size_t html_length,
+    struct nexus_browser_search_result *results,
+    size_t result_capacity, size_t *result_count);
+
+/* Extracts organic results from the server-rendered Bing results document.
+ * Bing click-tracking URLs are resolved locally to their base64url target.
+ */
+bool nexus_browser_search_parse_bing(
     const uint8_t *html, size_t html_length,
     struct nexus_browser_search_result *results,
     size_t result_capacity, size_t *result_count);

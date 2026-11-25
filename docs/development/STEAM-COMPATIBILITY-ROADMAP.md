@@ -8,7 +8,7 @@
 The current branch has a working foundation for small Nexus-native applications, but it is not yet a general-purpose desktop ABI.
 
 - Ring-3 execution for a bounded, foreground static ELF64 application, with x87/SSE2 state management.
-- Native ABI version 1 for basic file calls, console output, display information, timer sleep, keyboard/mouse polling, framebuffer presentation, and gamepad polling.
+- Native ABI version 1 for basic file calls, console output, display information, timer sleep, keyboard/mouse polling, framebuffer presentation, gamepad polling, and optional AC'97 PCM playback.
 - Firmware-framebuffer display and VirtIO-GPU 2D scanout/presentation. Rendering is still CPU-side; this is not a Vulkan/OpenGL/Direct3D implementation.
 - PS/2 and xHCI boot-keyboard/mouse input. xHCI now has a bounded generic HID report-descriptor parser and an event path for up to four common USB gamepads. The parser supports one input report ID, up to eight axes, 32 buttons, and one hat field; composite controllers, arbitrary HID layouts, USB hubs, and Bluetooth pairing are not promised.
 - Network foundations including Ethernet device drivers, TCP/HTTP, and an Mbed TLS-backed HTTPS client.
@@ -21,7 +21,7 @@ See [Native App SDK](NATIVE-APP-SDK.md) and [Software Ecosystem](SOFTWARE-ECOSYS
 
 Steam is not just a browser or a downloadable executable. The Linux Steam client and its games expect a broad Linux userspace and kernel interface. Proton adds Wine and graphics translation layers; it does not remove the need for the host OS to provide the system-call, memory, threading, file, device, and graphics contracts that those components use.
 
-The current Nexus native ABI is intentionally much smaller. It does not provide Linux syscall compatibility, POSIX process semantics, a dynamic linker, shared libraries, mmap, clone, futex, epoll, Linux ioctl/device interfaces, or the usual /proc, /sys, and /dev contracts. The kernel's scheduler currently supports a small set of cooperative kernel threads; the native process runner executes one foreground app synchronously. There is no audio driver/service and no hardware-accelerated 3D API.
+The current Nexus native ABI is intentionally much smaller. It does not provide Linux syscall compatibility, POSIX process semantics, a dynamic linker, shared libraries, mmap, clone, futex, epoll, Linux ioctl/device interfaces, or the usual /proc, /sys, and /dev contracts. The kernel's scheduler currently supports a small set of cooperative kernel threads; the native process runner executes one foreground app synchronously. A minimal AC'97 48 kHz stereo PCM playback path is now present, but there is no audio capture, multi-stream mixer, userspace audio server, or general HDA driver. There is still no hardware-accelerated 3D API.
 
 The storage limits are also far below game requirements: current NXFS v2 files are at most 1 MiB each, packages accept one static ELF payload up to 1 MiB, and the volume has 64 entries. Most game installations are far larger and contain many files.
 
@@ -51,7 +51,8 @@ Therefore **the Steam client and commercial Steam games are not supported at thi
 
 ### 3. Add audio and complete game input
 
-- Implement an audio device layer (starting with a QEMU-testable device such as Intel HD Audio), DMA/ring management, codec discovery, playback/capture streams, and a userspace audio service.
+- Extend the initial AC'97 single-buffer 48 kHz PCM playback path with multi-buffer rings, robust interrupt/poll completion, and codec controls; add Intel HD Audio support for modern PCs.
+- Add capture streams, device hotplug, and a userspace audio service/mixer with latency management.
 - Define stable audio APIs with buffer queues, latency handling, sample formats, and device hotplug.
 - Expand controller support with per-interface composite-device handling, more HID report forms, reliable disconnect notifications, calibration/dead zones, rumble/force feedback, USB hubs, and Bluetooth HID.
 - Add game-facing input APIs that can be consumed by SDL-like libraries without exposing hardware internals.

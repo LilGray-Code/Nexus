@@ -132,7 +132,15 @@ static bool submit_command(const void *command, size_t command_length) {
             &control_queue, command_physical, (uint32_t)command_length,
             command_physical + VIRTIO_GPU_RESPONSE_OFFSET,
             64U, VIRTIO_GPU_COMMAND_TIMEOUT, &response_length)) {
-        serial_write("VIRTIO GPU: control queue command timed out or failed\r\n");
+        serial_write("VIRTIO GPU: control queue command timed out or failed type=");
+        serial_write_hex(read_le32(command_memory));
+        serial_write(" queue=");
+        serial_write_hex(VIRTIO_GPU_QUEUE_CONTROL);
+        serial_write(" avail=");
+        serial_write_hex(control_queue.available_index);
+        serial_write(" used=");
+        serial_write_hex(control_queue.last_used_index);
+        serial_write("\r\n");
         return false;
     }
     const uint32_t response_type =

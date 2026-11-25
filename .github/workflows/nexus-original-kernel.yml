@@ -741,8 +741,9 @@ jobs:
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-files-vars.fd \
-            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
-            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=usbtarget,format=raw \
+            -device qemu-xhci,id=xhci \
+            -device usb-storage,bus=xhci.0,drive=usbtarget,bootindex=1 \
             -boot order=c -display none -serial file:nexus-files-serial.log \
             -qmp unix:/tmp/nexus-files-qmp.sock,server,nowait \
             -monitor none -no-reboot -no-shutdown >/tmp/nexus-files-qemu.log 2>&1 &
@@ -836,8 +837,9 @@ jobs:
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-files-reboot-vars.fd \
-            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
-            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=usbtarget,format=raw \
+            -device qemu-xhci,id=xhci \
+            -device usb-storage,bus=xhci.0,drive=usbtarget,bootindex=1 \
             -boot order=c -display none -serial file:nexus-files-reboot-serial.log \
             -qmp unix:/tmp/nexus-files-reboot-qmp.sock,server,nowait \
             -monitor none -no-reboot -no-shutdown >/tmp/nexus-files-reboot-qemu.log 2>&1 &
@@ -1045,8 +1047,9 @@ jobs:
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-files-vars.fd \
-            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
-            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=usbtarget,format=raw \
+            -device qemu-xhci,id=xhci \
+            -device usb-storage,bus=xhci.0,drive=usbtarget,bootindex=1 \
             -boot order=c -display none -serial file:nexus-files-serial.log \
             -qmp unix:/tmp/nexus-files-qmp.sock,server,nowait \
             -monitor none -no-reboot -no-shutdown >/tmp/nexus-files-qemu.log 2>&1 &
@@ -1120,8 +1123,9 @@ jobs:
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-files-reboot-vars.fd \
-            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
-            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=usbtarget,format=raw \
+            -device qemu-xhci,id=xhci \
+            -device usb-storage,bus=xhci.0,drive=usbtarget,bootindex=1 \
             -boot order=c -display none -serial file:nexus-files-reboot-serial.log \
             -qmp unix:/tmp/nexus-files-reboot-qmp.sock,server,nowait \
             -monitor none -no-reboot -no-shutdown >/tmp/nexus-files-reboot-qemu.log 2>&1 &

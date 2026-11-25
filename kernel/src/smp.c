@@ -269,12 +269,10 @@ bool nexus_smp_init(struct limine_mp_response *response) {
     __atomic_thread_fence(__ATOMIC_RELEASE);
 
     /* Second pass is the release point for each AP. */
-    uint32_t slot = 1U;
     for (uint32_t i = 0U; i < capacity; ++i) {
         if (i == bsp_index) continue;
         __atomic_store_n(&response->cpus[i]->goto_address,
                          smp_ap_entry, __ATOMIC_RELEASE);
-        ++slot;
     }
     for (uint64_t spin = 0U; spin < SMP_WAIT_SPINS; ++spin) {
         if (__atomic_load_n(&online_cpu_count, __ATOMIC_ACQUIRE) >=

@@ -145,8 +145,10 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
     bool have_transfer_encoding = false;
     bool have_location = false;
     bool have_content_type = false;
+    bool have_content_disposition = false;
     char location[NEXUS_HTTP_LOCATION_MAX + 1U] = {0};
     char content_type[NEXUS_HTTP_CONTENT_TYPE_MAX + 1U] = {0};
+    char content_disposition[NEXUS_HTTP_DISPOSITION_MAX + 1U] = {0};
     size_t declared_length = 0U;
     size_t cursor = status_line_end + 2U;
     while (cursor < header_end) {
@@ -207,6 +209,17 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
             }
             content_type[value_length] = '\0';
             have_content_type = true;
+         else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Content-Disposition")) {
+            if (have_content_disposition || value_length == 0U ||
+                value_length > NEXUS_HTTP_DISPOSITION_MAX) return false;
+            for (size_t i = 0U; i < value_length; ++i) {
+                const uint8_t ch = wire[value_start + i];
+                if (ch < 0x20U || ch >= 0x7FU) return false;
+                content_disposition[i] = (char)ch;
+            }
+            content_disposition[value_length] = '\0';
+            have_content_disposition = true;
         }
         cursor = line_end + 2U;
     }
@@ -233,9 +246,12 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
     response->has_content_length = have_length;
     response->has_location = have_location;
     response->has_content_type = have_content_type;
+    response->has_content_disposition = have_content_disposition;
     for (size_t i = 0U; i < sizeof(response->location); ++i)
         response->location[i] = location[i];
     for (size_t i = 0U; i < sizeof(response->content_type); ++i)
         response->content_type[i] = content_type[i];
+    for (size_t i = 0U; i < sizeof(response->content_disposition); ++i)
+        response->content_disposition[i] = content_disposition[i];
     return true;
 }

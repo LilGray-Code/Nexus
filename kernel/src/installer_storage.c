@@ -319,7 +319,7 @@ enum nexus_installer_system_payload_result nexus_installer_deploy_system_payload
     if (chunk_count == 0U || chunk_count > 2U)
         return NEXUS_SYSTEM_PAYLOAD_INVALID_PAYLOAD;
 
-    char manifest[256] = {0};
+    char manifest[512] = {0};
     size_t manifest_length = 0U;
     if (!installer_manifest_append(manifest, sizeof(manifest),
             &manifest_length, "NEXUS SYSTEM IMAGE 2\nARCH=x86_64\nKERNEL_PREFIX=KERNEL.\nKERNEL_PARTS=") ||

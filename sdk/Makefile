@@ -6,7 +6,7 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -fno-asynchronous-unwind-tables \
 	-fno-unwind-tables -fno-common -m64 -march=x86-64 \
-	-mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only \
+	-mno-red-zone -mno-mmx -msse2 -mfpmath=sse -mno-avx -mno-avx2 -mno-fma \
 	-I../kernel/include
 LDFLAGS := -nostdlib -static -no-pie -Wl,-e,_start \
 	-Wl,-Ttext-segment=0x400000 -Wl,--build-id=none -Wl,-z,noexecstack

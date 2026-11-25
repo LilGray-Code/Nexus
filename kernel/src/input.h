@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "usb_hid.h"
 
 enum nexus_input_event_type {
     NEXUS_INPUT_KEYBOARD = 1,
@@ -28,6 +29,9 @@ bool input_pop_event(struct nexus_input_event *event);
 void input_usb_keyboard_report(const uint8_t report[8]);
 /* Submit a standard three-byte USB HID boot-mouse report. */
 void input_usb_mouse_report(const uint8_t report[3]);
+/* Submit decoded gamepad state without changing keyboard/mouse event layout. */
+void input_usb_gamepad_event(const struct nexus_usb_gamepad_event *event);
+bool input_pop_gamepad_event(struct nexus_usb_gamepad_event *event);
 
 #ifdef NEXUS_INPUT_HOST_TEST
 /* Test-only entry point for the PS/2 byte-stream decoder. */

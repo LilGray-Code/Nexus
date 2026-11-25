@@ -88,7 +88,9 @@ static void test_full_report_transition_capacity(void) {
 
 static void test_arrows_and_function_keys(void) {
     uint8_t report[8] = {0U,0U,82U,81U,79U,80U,58U,0U};
-    uint8_t expected[5] = {0x48U,0x50U,0x4DU,0x4BU,0x3BU};
+    uint16_t expected[5] = {
+        0x148U, 0x150U, 0x14DU, 0x14BU, 0x3BU
+    };
     uint16_t output[8] = {0U};
     usb_hid_keyboard_reset();
     size_t n = usb_hid_keyboard_decode(report, output, 8U);

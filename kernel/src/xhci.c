@@ -1329,7 +1329,7 @@ void xhci_poll(void) {
             device->active = false;
             if (device->kind == XHCI_HID_KEYBOARD)
                 xhci->keyboard_active = false;
-            else
+            else if (device->kind == XHCI_HID_MOUSE)
                 xhci->mouse_active = false;
             continue;
         }
@@ -1340,7 +1340,7 @@ void xhci_poll(void) {
             device->active = false;
             if (device->kind == XHCI_HID_KEYBOARD)
                 xhci->keyboard_active = false;
-            else
+            else if (device->kind == XHCI_HID_MOUSE)
                 xhci->mouse_active = false;
         }
     }

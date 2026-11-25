@@ -185,7 +185,7 @@ static char installer_status_text[96] = "Select a supported target disk";
  * clipped at the old 1.5 KiB limit. Buffers live in BSS, not the small kernel
  * stack. TCP itself remains a single-connection, bounded receive transport.
  */
-#define NEXUS_BROWSER_RESPONSE_CAPACITY (32U * 1024U)
+#define NEXUS_BROWSER_RESPONSE_CAPACITY (64U * 1024U)
 static uint8_t browser_response_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static uint8_t browser_body_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];

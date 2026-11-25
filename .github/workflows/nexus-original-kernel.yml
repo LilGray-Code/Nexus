@@ -751,6 +751,8 @@ jobs:
           fsck.fat -n /tmp/nexus-ui-esp.img
           mdir -i /tmp/nexus-ui-esp.img ::/EFI/BOOT
           mdir -i /tmp/nexus-ui-esp.img ::/boot/limine
+          mdir -i /tmp/nexus-ui-esp.img ::/NEXUS
+          mtype -i /tmp/nexus-ui-esp.img ::/EFI/BOOT/limine.conf
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-ui-installed-vars.fd
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
@@ -760,9 +762,14 @@ jobs:
             -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
             -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
             -boot order=c -display none -serial file:installer-ui-installed-uefi.log \
-            -monitor none -no-reboot -no-shutdown
+            -monitor none -no-reboot -no-shutdown \
+            >/tmp/nexus-ui-installed-uefi-qemu.log 2>&1
           status=$?
           set -e
+          echo "Installed UEFI serial log:"
+          cat installer-ui-installed-uefi.log || true
+          echo "Installed UEFI QEMU diagnostics:"
+          cat /tmp/nexus-ui-installed-uefi-qemu.log || true
           if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
             echo "UI-installed UEFI target exited unexpectedly: $status"
             exit "$status"

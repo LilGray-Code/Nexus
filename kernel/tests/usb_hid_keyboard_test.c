@@ -116,11 +116,53 @@ static void test_capacity_and_null_arguments(void) {
     assert(usb_hid_keyboard_decode(report, NULL, 1U) == 0U);
 }
 
+static void test_all_modifier_transitions_and_full_capacity(void) {
+    uint8_t previous[8] = {0U,0U,4U,5U,6U,7U,8U,9U};
+    uint8_t current[8] = {0xFFU,0U,10U,11U,12U,13U,14U,15U};
+    uint8_t output[24] = {0U};
+    static const uint8_t expected_modifiers[8] = {
+        0x1DU, 0x2AU, 0x38U, 0x5BU,
+        0x1DU, 0x36U, 0x38U, 0x5CU
+    };
+    usb_hid_keyboard_reset();
+    assert(usb_hid_keyboard_decode(previous, output, sizeof(output)) == 6U);
+
+    /* Eight modifiers plus six releases and six new presses = 20 events. */
+    size_t count = usb_hid_keyboard_decode(current, output, sizeof(output));
+    assert(count == 20U);
+    for (size_t i = 0U; i < 8U; ++i)
+        assert(output[i] == expected_modifiers[i]);
+
+    static const uint8_t expected_releases[6] = {
+        0x9EU, 0xB0U, 0xAEU, 0xA0U, 0x92U, 0xA1U
+    };
+    for (size_t i = 0U; i < 6U; ++i)
+        assert(output[8U + i] == expected_releases[i]);
+
+    static const uint8_t expected_presses[6] = {
+        0x22U, 0x23U, 0x17U, 0x24U, 0x25U, 0x26U
+    };
+    for (size_t i = 0U; i < 6U; ++i)
+        assert(output[14U + i] == expected_presses[i]);
+
+    current[0] = 0U; /* Release Ctrl, Shift, Alt and both GUI keys. */
+    for (size_t i = 2U; i < 8U; ++i) current[i] = 0U;
+    count = usb_hid_keyboard_decode(current, output, sizeof(output));
+    assert(count == 14U);
+    static const uint8_t expected_modifier_releases[8] = {
+        0x9DU, 0xAAU, 0xB8U, 0xDBU,
+        0x9DU, 0xB6U, 0xB8U, 0xDCU
+    };
+    for (size_t i = 0U; i < 8U; ++i)
+        assert(output[i] == expected_modifier_releases[i]);
+}
+
 int main(void) {
     test_basic_keys_and_deduplication();
     test_release_then_press();
     test_shift_and_caps_lock_transitions();
     test_full_report_transition_capacity();
+    test_all_modifier_transitions_and_full_capacity();
     test_arrows_and_function_keys();
     test_rollover_does_not_poison_state();
     test_capacity_and_null_arguments();

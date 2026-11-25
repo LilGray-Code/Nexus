@@ -359,9 +359,10 @@ bool nexus_installer_deploy_boot_payloads(
   "default_entry: 1\n"
   "interface_branding: NEXUS OS\n"
   "interface_branding_colour: 18D2EB\n"
-  "\n/Nexus OS\n"
+  "\n/Nexus OS - Installed Desktop\n"
   "    protocol: limine\n"
   "    path: boot():/NEXUS/KERNEL.ELF\n"
+  "    cmdline: nexus.mode=desktop\n"
   "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
   "    module_path: boot():/boot/limine/limine-bios-hdd.bin\n"
   "    module_path: boot():/boot/limine/limine-bios.sys\n";

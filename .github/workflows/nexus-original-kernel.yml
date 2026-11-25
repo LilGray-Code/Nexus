@@ -113,6 +113,23 @@ jobs:
             -o /tmp/nexus-usb-hid-mouse-test
           /tmp/nexus-usb-hid-mouse-test
 
+      - name: Test generic USB HID gamepad descriptor parsing
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hid.c \
+            kernel/tests/usb_hid_gamepad_test.c \
+            -o /tmp/nexus-usb-hid-gamepad-test
+          /tmp/nexus-usb-hid-gamepad-test
+
+      - name: Test gamepad input queue and overflow behavior
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_INPUT_HOST_TEST -Ikernel/src \
+            kernel/src/input.c kernel/src/usb_hid.c \
+            kernel/tests/usb_gamepad_input_test.c \
+            -o /tmp/nexus-usb-gamepad-input-test
+          /tmp/nexus-usb-gamepad-input-test
+
       - name: Test USB mouse desktop input queue
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

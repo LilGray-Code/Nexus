@@ -88,6 +88,23 @@ Recovery partition. It does not present the NXFS System volume as the user's
 writable file store. FAT32 volumes remain read-only. If no writable Data volume
 is mounted, RAM-only file saves are volatile and do not survive a reboot.
 
+## Keyboard, mouse, and display compatibility
+
+The early input stack supports legacy PS/2 keyboards/mice and directly attached
+USB HID boot-protocol keyboards and mice through xHCI. Some 2.4 GHz wireless
+keyboard/mouse receivers work when they expose the same standard USB boot-HID
+interfaces. Receiver-specific features, USB hubs, non-boot HID reports, and
+native Bluetooth discovery/pairing are not implemented; Bluetooth keyboards
+and mice are therefore not universally supported. Use a directly attached
+USB device or a tested USB receiver for installation.
+
+The ISO and installed Limine entry request a 1920x1080, 32-bit framebuffer.
+Limine automatically selects another available mode if that exact resolution
+is unavailable. The text renderer now supports fractional-coverage
+antialiasing for smoother UI titles. Rendering is still CPU software
+composited into the framebuffer; this does not add Intel, AMD, or NVIDIA GPU
+drivers, hardware-accelerated composition, OpenGL, Vulkan, or DirectX.
+
 ## Recovery and test coverage
 
 Host-side tests use disposable mock block devices and inject failures at

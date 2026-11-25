@@ -449,6 +449,20 @@ int64_t usermode_sys_input_poll(uint64_t user_event) {
         ? 1 : -NEXUS_EFAULT;
 }
 
+int64_t usermode_sys_gamepad_poll(uint64_t user_event) {
+    if (!paging_user_range_writable(
+            user_event, sizeof(struct nexus_app_gamepad_event)))
+        return -NEXUS_EFAULT;
+    xhci_poll();
+    struct nexus_usb_gamepad_event event;
+    if (!input_pop_gamepad_event(&event)) return 0;
+    _Static_assert(sizeof(struct nexus_usb_gamepad_event) ==
+                   sizeof(struct nexus_app_gamepad_event),
+                   "kernel and SDK gamepad event layouts must match");
+    return paging_copy_to_user(user_event, &event, sizeof(event))
+        ? 1 : -NEXUS_EFAULT;
+}
+
 int64_t usermode_sys_display_info(uint64_t user_info) {
     const uint64_t width = graphics_width();
     const uint64_t height = graphics_height();

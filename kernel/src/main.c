@@ -4,6 +4,7 @@
 #include <limine.h>
 
 #include "acpi.h"
+#include "ac97.h"
 #include "cpu.h"
 #include "fpu.h"
 #include "blockdev.h"
@@ -519,6 +520,7 @@ void kmain(void) {
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     const bool ps2_input_ready = input_init();
     (void)xhci_init();
+    (void)ac97_init();
     const bool usb_keyboard_ready = xhci_keyboard_ready();
     const bool usb_mouse_ready = xhci_mouse_ready();
     if (!ps2_input_ready && !usb_keyboard_ready) {
@@ -561,6 +563,7 @@ void kmain(void) {
     for (;;) {
         net_poll();
         xhci_poll();
+        ac97_poll();
         struct nexus_input_event event;
         while (input_pop_event(&event)) {
             desktop_handle_input(&event);

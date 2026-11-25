@@ -1463,7 +1463,8 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     xhci->initialized = true;
 
     for (uint8_t port = 1U; port <= xhci->max_ports; ++port) {
-        if (xhci->keyboard_active && xhci->mouse_active) break;
+        if (xhci->keyboard_active && xhci->mouse_active &&
+            xhci->storage_active) break;
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port, &speed)) continue;
         serial_write("xHCI: connected root port ");
@@ -1473,8 +1474,11 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         serial_write("\r\n");
 
         struct xhci_hid_device device = {0};
-        if (!xhci_enumerate_hid_port(xhci, port, speed, &device))
+        if (!xhci_enumerate_hid_port(xhci, port, speed, &device)) {
+            if (!xhci->storage_active)
+                (void)xhci_enumerate_msc_port(xhci, port, speed);
             continue;
+        }
         if (device.kind == XHCI_HID_KEYBOARD && !xhci->keyboard_active) {
             xhci->keyboard = device;
             xhci->keyboard_active = true;
@@ -1488,8 +1492,9 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
             xhci_release_hid_device(xhci, &device);
         }
     }
-    if (!xhci->keyboard_active && !xhci->mouse_active) {
-        serial_write("xHCI: no directly attached HID boot input found\r\n");
+    if (!xhci->keyboard_active && !xhci->mouse_active &&
+        !xhci->storage_active) {
+        serial_write("xHCI: no supported HID input or mass storage device found\r\n");
         return false;
     }
     return true;
@@ -1504,7 +1509,7 @@ bool xhci_init(void) {
             device->programming_interface != 0x30U) continue;
         if (xhci_try_controller(device)) return true;
     }
-    serial_write("USB: no usable xHCI HID keyboard or mouse\r\n");
+    serial_write("USB: no usable xHCI HID or mass storage device\r\n");
     return false;
 }
 
@@ -1521,7 +1526,8 @@ bool xhci_mouse_ready(void) {
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized ||
-        (!xhci->keyboard_active && !xhci->mouse_active)) return;
+        (!xhci->keyboard_active && !xhci->mouse_active &&
+         !xhci->storage_active)) return;
 
     struct xhci_trb event;
     while (xhci_event_next(xhci, &event)) {

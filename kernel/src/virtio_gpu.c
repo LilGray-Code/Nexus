@@ -14,7 +14,7 @@
 #define VIRTIO_GPU_QUEUE_SIZE 8U
 #define VIRTIO_GPU_RESOURCE_ID 1U
 #define VIRTIO_GPU_SCANOUT_ID 0U
-#define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM 1U
+#define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM 2U
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D 0x0101U
 #define VIRTIO_GPU_CMD_SET_SCANOUT 0x0103U
 #define VIRTIO_GPU_CMD_RESOURCE_FLUSH 0x0104U
@@ -65,8 +65,8 @@ struct virtio_gpu_attach_backing {
 struct virtio_gpu_set_scanout {
     struct virtio_gpu_header header;
     struct virtio_gpu_rectangle rectangle;
-    uint32_t resource_id;
     uint32_t scanout_id;
+    uint32_t resource_id;
 } __attribute__((packed));
 
 struct virtio_gpu_transfer {
@@ -182,8 +182,8 @@ static bool gpu_create_resource(void) {
         .header = make_header(VIRTIO_GPU_CMD_SET_SCANOUT),
         .rectangle = {0U, 0U, (uint32_t)width_pixels,
                       (uint32_t)height_pixels},
-        .resource_id = VIRTIO_GPU_RESOURCE_ID,
-        .scanout_id = VIRTIO_GPU_SCANOUT_ID
+        .scanout_id = VIRTIO_GPU_SCANOUT_ID,
+        .resource_id = VIRTIO_GPU_RESOURCE_ID
     };
     return submit_command(&scanout, sizeof(scanout));
 }

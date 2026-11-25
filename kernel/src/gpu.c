@@ -52,6 +52,9 @@ bool gpu_init(void) {
         info->present = true;
         info->vendor_id = device->vendor_id;
         info->device_id = device->device_id;
+        info->subsystem_vendor_id = device->subsystem_vendor_id;
+        info->subsystem_device_id = device->subsystem_device_id;
+        info->revision_id = device->revision_id;
         info->bus = device->bus;
         info->slot = device->slot;
         info->function = device->function;

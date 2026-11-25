@@ -1865,9 +1865,11 @@ static void draw_shell(void) {
                            gpu_render_path_name(), 1U,
                            108U, 216U, 229U);
         graphics_draw_text(text_x, text_y + 414U,
-                           gpu_hardware_acceleration_available()
-                               ? "HARDWARE RENDERING ENABLED"
-                               : "GPU 2D/3D DRIVER NOT AVAILABLE",
+                           virtio_gpu_active()
+                               ? "GPU SCANOUT ACTIVE - CPU RASTER"
+                               : (gpu_hardware_acceleration_available()
+                                   ? "HARDWARE RENDERING ENABLED"
+                                   : "GPU 2D/3D RENDER DRIVER NOT AVAILABLE"),
                            1U, 239U, 177U, 119U);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",

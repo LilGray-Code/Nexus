@@ -3084,6 +3084,10 @@ static void browser_save_current_download(void) {
         browser_set_status("No verified HTTPS file is ready to save");
         return;
     }
+    /* Downloading is a file-management operation too. Mount installed Nexus
+     * Data on demand so the user does not have to open Files first.
+     */
+    scan_files_once();
     if (!vfs_current_directory_writable()) {
         browser_set_status("Current folder is read-only; choose Nexus Data in Files");
         return;
@@ -3201,6 +3205,23 @@ static void browser_append_page_char(char value) {
     }
     line[length] = value;
     line[length + 1U] = '\0';
+}
+
+static bool browser_content_disposition_is_attachment(
+    const char *value) {
+    static const char keyword[] = "attachment";
+    if (value == NULL) return false;
+    size_t i = 0U;
+    while (keyword[i] != '\0') {
+        char actual = value[i];
+        char wanted = keyword[i];
+        if (actual >= 'A' && actual <= 'Z')
+            actual = (char)(actual - 'A' + 'a');
+        if (actual != wanted) return false;
+        ++i;
+    }
+    return value[i] == '\0' || value[i] == ';' ||
+           value[i] == ' ' || value[i] == '\t';
 }
 
 static bool browser_content_type_is(const char *value,
@@ -3895,6 +3916,22 @@ browser_retry:
     }
 
     bool rendered_plain_text = false;
+    if (!search_request && browser_download_ready &&
+        parsed.has_content_disposition &&
+        browser_content_disposition_is_attachment(parsed.content_disposition)) {
+        browser_clear_page();
+        browser_append_page_text("DOWNLOAD READY\\n\\n");
+        browser_append_page_text(browser_download_name);
+        browser_append_page_text("\\n\\nSIZE: ");
+        char download_size[21];
+        format_u64(browser_download_length, download_size);
+        browser_append_page_text(download_size);
+        browser_append_page_text(" BYTES\\n\\n");
+        browser_append_page_text("PRESS F6 OR CLICK SAVE TO STORE THIS FILE");
+        browser_address_edited = false;
+        browser_set_status("Verified HTTPS attachment ready; press F6 or click SAVE");
+        return;
+    }
     if (search_request &&
         (!parsed.has_content_type ||
          browser_content_type_is(parsed.content_type, "text/html") ||

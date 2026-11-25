@@ -92,6 +92,7 @@ struct nexus_app_display_info {
 #define NEXUS_APP_CPU_BMI1   (1ULL << 6)
 #define NEXUS_APP_CPU_BMI2   (1ULL << 7)
 #define NEXUS_APP_CPU_SHA    (1ULL << 8)
+#define NEXUS_APP_CPU_SMP    (1ULL << 9)
 
 struct nexus_app_cpu_info {
     uint32_t structure_size;
@@ -99,6 +100,8 @@ struct nexus_app_cpu_info {
     uint64_t feature_flags;
     uint32_t physical_cores;
     uint32_t logical_processors;
+    uint32_t online_processors;
+    uint32_t reserved;
     char vendor[13];
     char brand[49];
 };

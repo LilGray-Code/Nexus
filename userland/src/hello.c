@@ -11,6 +11,7 @@ int main(void) {
         cpu.vendor[0] == '\0' || cpu.brand[0] == '\0' ||
         cpu.physical_cores == 0U ||
         cpu.logical_processors == 0U ||
+        cpu.online_processors == 0U ||
         (cpu.feature_flags & NEXUS_CPU_FEATURE_SSE2) == 0U)
         return 18;
     if ((cpu.feature_flags & NEXUS_CPU_FEATURE_AVX2) != 0U &&
@@ -73,6 +74,13 @@ int main(void) {
         if (nexus_puts("NEXUS AVX2 USER SIMD READY") != 26) return 26;
     } else if (nexus_puts("NEXUS SCALAR USER SIMD FALLBACK READY") != 37) {
         return 27;
+    }
+    if (cpu.online_processors > 1U &&
+        (cpu.feature_flags & NEXUS_CPU_FEATURE_SMP) != 0U) {
+        if (nexus_puts("NEXUS SMP NATIVE APP CAPABILITY READY") != 38)
+            return 28;
+    } else if (nexus_puts("NEXUS SMP SINGLE-CORE MODE") != 26) {
+        return 29;
     }
 
     return 7;

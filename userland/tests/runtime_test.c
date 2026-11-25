@@ -44,6 +44,7 @@ static int64_t test_syscall(uint64_t number, uint64_t arg1,
 #endif
             info->physical_cores = 4U;
             info->logical_processors = 8U;
+            info->online_processors = 1U;
             info->vendor[0] = 'T';
             info->brand[0] = 'N';
             return 0;

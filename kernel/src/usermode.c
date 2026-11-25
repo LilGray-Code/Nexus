@@ -3,6 +3,7 @@
 #include "elf64.h"
 #include "ac97.h"
 #include "cpu.h"
+#include "smp.h"
 #include "fpu.h"
 #include "gdt.h"
 #include "graphics.h"
@@ -534,13 +535,16 @@ int64_t usermode_sys_cpu_info(uint64_t user_info) {
         features |= NEXUS_APP_CPU_BMI2;
     if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SHA))
         features |= NEXUS_APP_CPU_SHA;
+    if (nexus_smp_online_cpu_count() > 1U)
+        features |= NEXUS_APP_CPU_SMP;
 
     struct nexus_app_cpu_info info = {
         .structure_size = sizeof(struct nexus_app_cpu_info),
         .abi_version = NEXUS_APP_ABI_VERSION,
         .feature_flags = features,
         .physical_cores = cpu->physical_cores_per_package,
-        .logical_processors = cpu->logical_processors_per_package
+        .logical_processors = cpu->logical_processors_per_package,
+        .online_processors = nexus_smp_online_cpu_count()
     };
     for (size_t i = 0U; i < sizeof(info.vendor); ++i)
         info.vendor[i] = cpu->vendor[i];

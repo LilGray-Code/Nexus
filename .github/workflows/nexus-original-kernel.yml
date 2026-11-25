@@ -344,7 +344,7 @@ jobs:
           python3 build/create-gpt-test-image.py ahci-test.img build/userland/HELLO.ELF
           set +e
           timeout -k 2s 24s qemu-system-x86_64 \
-            -machine q35 -cpu max -m 512M \
+            -machine q35 -cpu max -smp 4 -m 512M \
             -netdev user,id=n0 -device e1000,netdev=n0 \
             -netdev user,id=virt0 -device virtio-net-pci,netdev=virt0,disable-legacy=on \
             -device virtio-gpu-pci,disable-legacy=on \
@@ -381,6 +381,9 @@ jobs:
           grep -q "DESKTOP: HELLO.ELF native SDK file read/write, formatted output and capture passed" uefi-serial.log
           grep -q "NEXUS CPU CAPABILITY QUERY READY" uefi-serial.log
           grep -q "NEXUS AVX2 USER SIMD READY" uefi-serial.log
+          grep -q "NEXUS SMP ONLINE CPU COUNT=0x0000000000000004" uefi-serial.log
+          grep -q "NEXUS SMP PARALLEL WORK TEST READY" uefi-serial.log
+          grep -q "NEXUS SMP NATIVE APP CAPABILITY READY" uefi-serial.log
           grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
           grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log

@@ -4,6 +4,7 @@
 #include "syscall.h"
 #include "scheduler.h"
 #include "gdt.h"
+#include "smp.h"
 
 #include "serial.h"
 #include "timer.h"
@@ -58,7 +59,7 @@ DECLARE_ISR(12); DECLARE_ISR(13); DECLARE_ISR(14); DECLARE_ISR(15);
 DECLARE_ISR(16); DECLARE_ISR(17); DECLARE_ISR(18); DECLARE_ISR(19);
 DECLARE_ISR(20); DECLARE_ISR(21); DECLARE_ISR(22); DECLARE_ISR(23);
 DECLARE_ISR(24); DECLARE_ISR(25); DECLARE_ISR(26); DECLARE_ISR(27);
-DECLARE_ISR(28); DECLARE_ISR(29); DECLARE_ISR(30); DECLARE_ISR(31); DECLARE_ISR(128);
+DECLARE_ISR(28); DECLARE_ISR(29); DECLARE_ISR(30); DECLARE_ISR(31); DECLARE_ISR(128); DECLARE_ISR(240);
 
 #define DECLARE_IRQ(n) extern void irq##n(void)
 DECLARE_IRQ(32); DECLARE_IRQ(33); DECLARE_IRQ(34); DECLARE_IRQ(35);
@@ -102,12 +103,18 @@ void idt_init(void) {
     }
     idt_set_gate(128U, isr128, code_segment);
     idt[128U].type_attributes = 0xEEU; /* Present, DPL3, 64-bit interrupt gate. */
+    idt_set_gate(240U, isr240, code_segment);
 
+    (void)idt_load_current_cpu();
+}
+
+bool idt_load_current_cpu(void) {
     const struct idt_register idtr = {
-        .limit = (uint16_t)(sizeof(idt) - 1),
+        .limit = (uint16_t)(sizeof(idt) - 1U),
         .base = (uint64_t)(uintptr_t)idt
     };
-    __asm__ volatile ("lidt %0" : : "m"(idtr));
+    __asm__ volatile ("lidt %0" : : "m"(idtr) : "memory");
+    return true;
 }
 
 #ifdef NEXUS_SYSCALL_TRACE
@@ -162,6 +169,11 @@ void exception_dispatch(const struct interrupt_frame *frame) {
 }
 
 void interrupt_dispatch(const struct interrupt_frame *frame) {
+    if (frame->vector == 240U) {
+        nexus_smp_ipi_interrupt();
+        return;
+    }
+
     if (frame->vector == 128U) {
         if ((frame->code_segment & 3U) != 3U) {
             serial_write("SYSCALL: rejected non-user invocation\r\n");

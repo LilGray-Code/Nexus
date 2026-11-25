@@ -68,6 +68,14 @@ isr128:
     pushq $128
     jmp interrupt_common
 
+/* Fixed local-APIC inter-processor interrupt used by the SMP work queue. */
+.global isr240
+.type isr240, @function
+isr240:
+    pushq $0
+    pushq $240
+    jmp interrupt_common
+
 IRQ_STUB 32
 IRQ_STUB 33
 IRQ_STUB 34

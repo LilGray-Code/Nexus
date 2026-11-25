@@ -38,6 +38,7 @@
 #include "xhci.h"
 #include "vfs.h"
 #include "service_manager.h"
+#include "smp.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
@@ -66,6 +67,13 @@ static volatile struct limine_firmware_type_request firmware_type_request = {
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_smbios_request smbios_request = {
     .id = LIMINE_SMBIOS_REQUEST_ID, .revision = 0
+};
+
+__attribute__((used, section(".limine_requests")))
+static volatile struct limine_mp_request mp_request = {
+    .id = LIMINE_MP_REQUEST_ID,
+    .revision = 0,
+    .flags = LIMINE_MP_REQUEST_X86_64_X2APIC
 };
 
 __attribute__((used, section(".limine_requests")))
@@ -113,6 +121,14 @@ static void scheduler_worker_b(void *argument) {
             scheduler_trace[scheduler_trace_count++] = 2;
         scheduler_yield();
     }
+}
+
+static volatile uint32_t smp_test_results[64];
+
+static void smp_test_worker(uint32_t cpu_index, uint32_t item_index,
+                            void *context) {
+    volatile uint32_t *results = (volatile uint32_t *)context;
+    if (item_index < 64U) results[item_index] = cpu_index + 1U;
 }
 
 static volatile uint32_t scheduler_preempt_a_started;
@@ -543,6 +559,24 @@ void kmain(void) {
     serial_write("\r\n");
 
     serial_write("K2: scheduler self-test initialization\r\n");
+    if (!nexus_smp_init(mp_request.response)) {
+        serial_write("SMP: initialization failed; boot continuing\r\n");
+    } else {
+        for (size_t i = 0U; i < 64U; ++i) smp_test_results[i] = 0U;
+        if (!nexus_smp_parallel_for(64U, smp_test_worker,
+                                    (void *)smp_test_results)) {
+            serial_write("SMP: parallel worker test failed\r\n");
+            halt_forever();
+        }
+        for (size_t i = 0U; i < 64U; ++i) {
+            if (smp_test_results[i] == 0U) {
+                serial_write("SMP: parallel worker left an item unprocessed\r\n");
+                halt_forever();
+            }
+        }
+        serial_write("NEXUS SMP PARALLEL WORK TEST READY\r\n");
+    }
+
     scheduler_init();
     scheduler_count_a = 0;
     scheduler_count_b = 0;

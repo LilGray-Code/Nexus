@@ -515,7 +515,7 @@ static const char *installer_candidate_status(
     if (blockdev_is_boot_media(device)) return "BOOT MEDIA";
     if (blockdev_is_mounted(device)) return "MOUNTED";
     if (!blockdev_identity_is_unique(device)) return "ID ERROR";
-    if (!blockdev_install_write_supported(device)) return "READ ONLY";
+    if (!blockdev_install_write_supported(device)) return "NO WRITE";
     return "READY";
 }
 
@@ -1154,7 +1154,8 @@ static void draw_shell(void) {
                                    device != NULL ? device->name : "NO DRIVE",
                                    1U, 119U, 229U, 211U);
                 graphics_draw_text(text_x + 142U, text_y + 58U,
-                                   device != NULL ? device->model : "No supported device",
+                                   device != NULL ? installer_transport_short_label(device)
+                                                  : "No supported device",
                                    1U, 203U, 217U, 230U);
                 graphics_draw_text(text_x + 494U, text_y + 58U,
                                    installer_drive_dropdown_open ? "^" : "v",
@@ -1346,17 +1347,17 @@ static void draw_shell(void) {
                     selected ? 101U : (i & 1U ? 56U : 49U));
                 char short_model[24];
                 size_t model_length = 0U;
-                while (candidate->model[model_length] != '\\0' &&
+                while (candidate->model[model_length] != '\0' &&
                        model_length < 20U) {
                     short_model[model_length] = candidate->model[model_length];
                     ++model_length;
                 }
-                if (candidate->model[model_length] != '\\0') {
+                if (candidate->model[model_length] != '\0') {
                     short_model[model_length++] = '.';
                     short_model[model_length++] = '.';
                     short_model[model_length++] = '.';
                 }
-                short_model[model_length] = '\\0';
+                short_model[model_length] = '\0';
                 const uint64_t blocks_per_gib = candidate->block_size == 0U
                     ? 0U : (1024ULL * 1024ULL * 1024ULL) /
                            candidate->block_size;
@@ -1374,13 +1375,13 @@ static void draw_shell(void) {
                                    capacity, 1U, 188U, 218U, 194U);
                 graphics_draw_text(text_x + 372U, row_y + 10U,
                                    "GiB", 1U, 155U, 177U, 196U);
-                graphics_draw_text(text_x + 408U, row_y + 10U,
+                graphics_draw_text(text_x + 400U, row_y + 10U,
                                    installer_transport_short_label(candidate),
                                    1U, 170U, 191U, 211U);
                 const char *candidate_status =
                     installer_candidate_status(candidate);
                 const bool eligible = candidate_status[0] == 'R';
-                graphics_draw_text(text_x + 462U, row_y + 10U,
+                graphics_draw_text(text_x + 464U, row_y + 10U,
                                    candidate_status, 1U,
                                    eligible ? 108U : 239U,
                                    eligible ? 216U : 177U,

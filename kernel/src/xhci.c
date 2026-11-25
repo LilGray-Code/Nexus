@@ -834,6 +834,63 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
     return found && *configuration_value != 0U && *kind != XHCI_HID_NONE;
 }
 
+static bool xhci_find_mass_storage(
+    const uint8_t *configuration, size_t length,
+    uint8_t *interface_number, uint8_t *configuration_value,
+    uint8_t *bulk_in_address, uint16_t *bulk_in_packet,
+    uint8_t *bulk_out_address, uint16_t *bulk_out_packet) {
+    if (configuration == NULL || length < 9U ||
+        interface_number == NULL || configuration_value == NULL ||
+        bulk_in_address == NULL || bulk_in_packet == NULL ||
+        bulk_out_address == NULL || bulk_out_packet == NULL)
+        return false;
+
+    *configuration_value = configuration[5];
+    bool in_mass_storage = false;
+    bool have_in = false;
+    bool have_out = false;
+    size_t offset = 0U;
+    while (offset + 2U <= length) {
+        const uint8_t descriptor_length = configuration[offset];
+        const uint8_t descriptor_type = configuration[offset + 1U];
+        if (descriptor_length < 2U ||
+            offset + descriptor_length > length) return false;
+
+        if (descriptor_type == 4U && descriptor_length >= 9U) {
+            in_mass_storage =
+                configuration[offset + 5U] == 0x08U &&
+                configuration[offset + 6U] == 0x06U &&
+                configuration[offset + 7U] == 0x50U &&
+                configuration[offset + 3U] == 0U;
+            have_in = false;
+            have_out = false;
+            if (in_mass_storage)
+                *interface_number = configuration[offset + 2U];
+        } else if (descriptor_type == 5U &&
+                   descriptor_length >= 7U && in_mass_storage) {
+            const uint8_t address = configuration[offset + 2U];
+            const uint8_t attributes = configuration[offset + 3U] & 0x03U;
+            const uint16_t packet = (uint16_t)(
+                configuration[offset + 4U] |
+                ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
+            if (attributes == 2U && packet != 0U && packet <= 1024U) {
+                if ((address & 0x80U) != 0U && !have_in) {
+                    *bulk_in_address = address;
+                    *bulk_in_packet = packet;
+                    have_in = true;
+                } else if ((address & 0x80U) == 0U && !have_out) {
+                    *bulk_out_address = address;
+                    *bulk_out_packet = packet;
+                    have_out = true;
+                }
+                if (have_in && have_out) return *configuration_value != 0U;
+            }
+        }
+        offset += descriptor_length;
+    }
+    return false;
+}
+
 static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
     if (interval == 0U) interval = 1U;
     if (speed >= 3U) {
@@ -984,6 +1041,10 @@ static void xhci_release_hid_device(struct xhci_controller *xhci,
         (void)memory_free_page(device->ep0_ring.physical);
     if (device->interrupt_ring.physical != 0U)
         (void)memory_free_page(device->interrupt_ring.physical);
+    if (device->bulk_in_ring.physical != 0U)
+        (void)memory_free_page(device->bulk_in_ring.physical);
+    if (device->bulk_out_ring.physical != 0U)
+        (void)memory_free_page(device->bulk_out_ring.physical);
     if (device->report_buffer_physical != 0U)
         (void)memory_free_page(device->report_buffer_physical);
     *device = (struct xhci_hid_device){0};

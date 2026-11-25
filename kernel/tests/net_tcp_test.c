@@ -193,6 +193,174 @@ static void setup_network(void) {
     copy_bytes(network.arp[0].ipv4, remote_ip, sizeof(remote_ip));
     copy_bytes(network.arp[0].mac, remote_mac, sizeof(remote_mac));
     tcp_connection = (struct net_tcp_connection){0};
+    dns_query_active = false;
+    dns_query_done = false;
+    dns_query_success = false;
+    dns_query_id = 0U;
+    dns_query_ttl = 0U;
+    dns_query_name[0] = '\0';
+    for (size_t i = 0U; i < 4U; ++i) dns_ipv4[i] = 0U;
+    dns_cache_clear();
+}
+
+static size_t dns_test_append_name(uint8_t *packet, size_t offset,
+                                   const char *hostname) {
+    size_t input = 0U;
+    while (hostname[input] != '\0') {
+        size_t label_length = 0U;
+        while (hostname[input + label_length] != '\0' &&
+               hostname[input + label_length] != '.') ++label_length;
+        assert(label_length != 0U && label_length <= 63U);
+        packet[offset++] = (uint8_t)label_length;
+        for (size_t i = 0U; i < label_length; ++i)
+            packet[offset++] = (uint8_t)hostname[input + i];
+        input += label_length;
+        if (hostname[input] == '.') ++input;
+    }
+    packet[offset++] = 0U;
+    return offset;
+}
+
+static size_t dns_test_build_cname_reply(uint8_t *packet,
+                                         const char *question_name) {
+    for (size_t i = 0U; i < NET_DNS_PACKET_SIZE; ++i) packet[i] = 0U;
+    write_be16(packet, 0x4455U);
+    write_be16(packet + 2U, 0x8180U);
+    write_be16(packet + 4U, 1U);
+    write_be16(packet + 6U, 3U);
+    size_t cursor = dns_test_append_name(packet, 12U, question_name);
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be16(packet + cursor, 1U); cursor += 2U;
+
+    /* www.example.com -> edge.example.net */
+    packet[cursor++] = 0xC0U;
+    packet[cursor++] = 0x0CU;
+    write_be16(packet + cursor, 5U); cursor += 2U;
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be32(packet + cursor, 120U); cursor += 4U;
+    const size_t first_length_offset = cursor;
+    cursor += 2U;
+    const size_t first_name_start = cursor;
+    cursor = dns_test_append_name(packet, cursor, "edge.example.net");
+    write_be16(packet + first_length_offset,
+               (uint16_t)(cursor - first_name_start));
+
+    /* edge.example.net -> origin.example.net */
+    cursor = dns_test_append_name(packet, cursor, "edge.example.net");
+    write_be16(packet + cursor, 5U); cursor += 2U;
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be32(packet + cursor, 90U); cursor += 4U;
+    const size_t second_length_offset = cursor;
+    cursor += 2U;
+    const size_t second_name_start = cursor;
+    cursor = dns_test_append_name(packet, cursor, "origin.example.net");
+    write_be16(packet + second_length_offset,
+               (uint16_t)(cursor - second_name_start));
+
+    /* origin.example.net -> 203.0.113.42 */
+    cursor = dns_test_append_name(packet, cursor, "origin.example.net");
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be32(packet + cursor, 60U); cursor += 4U;
+    write_be16(packet + cursor, 4U); cursor += 2U;
+    packet[cursor++] = 203U;
+    packet[cursor++] = 0U;
+    packet[cursor++] = 113U;
+    packet[cursor++] = 42U;
+    return cursor;
+}
+
+static size_t dns_test_build_bad_pointer_reply(uint8_t *packet) {
+    for (size_t i = 0U; i < NET_DNS_PACKET_SIZE; ++i) packet[i] = 0U;
+    write_be16(packet, 0x4455U);
+    write_be16(packet + 2U, 0x8180U);
+    write_be16(packet + 4U, 1U);
+    write_be16(packet + 6U, 1U);
+    size_t cursor = dns_test_append_name(packet, 12U, "www.example.com");
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    packet[cursor++] = 0xC0U;
+    packet[cursor++] = 0xFFU; /* Forward/out-of-packet compression pointer. */
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be16(packet + cursor, 1U); cursor += 2U;
+    write_be32(packet + cursor, 60U); cursor += 4U;
+    write_be16(packet + cursor, 4U); cursor += 2U;
+    packet[cursor++] = 203U;
+    packet[cursor++] = 0U;
+    packet[cursor++] = 113U;
+    packet[cursor++] = 42U;
+    return cursor;
+}
+
+static void test_dns_question_validation_and_cname_chains(void) {
+    setup_network();
+    dns_ipv4[0] = 192U;
+    dns_ipv4[1] = 0U;
+    dns_ipv4[2] = 2U;
+    dns_ipv4[3] = 53U;
+    dns_query_active = true;
+    dns_query_id = 0x4455U;
+    const char expected[] = "www.example.com";
+    for (size_t i = 0U; i < sizeof(expected); ++i)
+        dns_query_name[i] = expected[i];
+
+    uint8_t reply[NET_DNS_PACKET_SIZE];
+    size_t length = dns_test_build_cname_reply(reply, "other.example.com");
+    receive_dns(reply, length, dns_ipv4);
+    assert(!dns_query_done); /* A matching ID is not enough: question must match. */
+
+    const uint8_t wrong_source[4] = {192U, 0U, 2U, 54U};
+    length = dns_test_build_cname_reply(reply, "www.example.com");
+    receive_dns(reply, length, wrong_source);
+    assert(!dns_query_done);
+
+    receive_dns(reply, length, dns_ipv4);
+    assert(dns_query_done && dns_query_success);
+    assert(dns_query_ttl == 60U);
+    assert(dns_query_result[0] == 203U && dns_query_result[1] == 0U &&
+           dns_query_result[2] == 113U && dns_query_result[3] == 42U);
+
+    dns_query_done = false;
+    dns_query_success = false;
+    length = dns_test_build_bad_pointer_reply(reply);
+    receive_dns(reply, length, dns_ipv4);
+    assert(dns_query_done && !dns_query_success);
+}
+
+static void test_dns_cache_ttl_and_link_reset(void) {
+    setup_network();
+    const uint8_t address[4] = {203U, 0U, 113U, 42U};
+    uint8_t result[4] = {0U, 0U, 0U, 0U};
+
+    fake_ticks = 100U;
+    dns_cache_store("WWW.Example.COM.", address, 60U);
+    assert(dns_cache_lookup("www.example.com", result));
+    assert(equal_bytes(result, address, sizeof(address)));
+    assert(!dns_cache_lookup("other.example.com", result));
+
+    fake_ticks = 6099U;
+    assert(dns_cache_lookup("www.example.com", result));
+    assert(!dns_cache_lookup("www.example.com", result));
+
+    dns_cache_store("zero-ttl.example", address, 0U);
+    assert(!dns_cache_lookup("zero-ttl.example", result));
+
+    dns_cache_store("capped.example", address, 3600U);
+    size_t capped_slot = NET_DNS_CACHE_SIZE;
+    for (size_t i = 0U; i < NET_DNS_CACHE_SIZE; ++i) {
+        if (dns_cache[i].valid &&
+            dns_name_equal(dns_cache[i].hostname, "capped.example")) {
+            capped_slot = i;
+            break;
+        }
+    }
+    assert(capped_slot != NET_DNS_CACHE_SIZE);
+    assert(dns_cache[capped_slot].expires_at - timer_ticks() <=
+           (uint64_t)NET_DNS_MAX_TTL_SECONDS * NET_DNS_TICKS_PER_SECOND);
+
+    network.link_up = true;
+    network_handle_link_change(false);
+    assert(!dns_cache_lookup("capped.example", result));
 }
 
 static void test_receive_wait_reports_timeout_data_and_eof(void) {
@@ -257,5 +425,7 @@ int main(void) {
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
     test_receive_wait_reports_timeout_data_and_eof();
+    test_dns_question_validation_and_cname_chains();
+    test_dns_cache_ttl_and_link_reset();
     return 0;
 }

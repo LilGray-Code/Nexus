@@ -503,11 +503,14 @@ bool usb_hid_gamepad_decode(
             : (int32_t)raw_bits;
         if (raw >= p->hat_minimum && raw <= p->hat_maximum &&
             p->hat_maximum >= p->hat_minimum) {
-            const uint32_t range = (uint32_t)(
-                p->hat_maximum - p->hat_minimum + 1);
-            decoded.hat = (uint8_t)(
-                ((uint32_t)(raw - p->hat_minimum) * 8U) / range);
-            if (decoded.hat > 7U) decoded.hat = 7U;
+            const int64_t range =
+                (int64_t)p->hat_maximum - (int64_t)p->hat_minimum + 1LL;
+            const int64_t position =
+                (int64_t)raw - (int64_t)p->hat_minimum;
+            if (range > 0LL) {
+                decoded.hat = (uint8_t)((position * 8LL) / range);
+                if (decoded.hat > 7U) decoded.hat = 7U;
+            }
         }
     }
     *event = decoded;

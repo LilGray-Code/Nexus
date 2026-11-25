@@ -583,6 +583,19 @@ bool vfs_write_root_file(const char *name, const void *data, size_t length) {
     return vfs_ramfs_write(name, data, length);
 }
 
+/*
+ * Root-scoped removal mirrors root-scoped reads/writes and is restricted to
+ * Nexus-owned writable storage. It never removes a same-named FAT32 source.
+ */
+bool vfs_remove_root_file(const char *name) {
+    if (!vfs_target_is_leaf(name)) return false;
+    if (ramfs_find(name) != NULL) return vfs_ramfs_remove(name);
+    if (!nxfs_root_mounted || !nxfs_is_writable()) return false;
+    const struct nexus_nxfs_entry *entry = vfs_nxfs_find_path(name);
+    if (entry == NULL || entry->directory) return false;
+    return nxfs_remove_file(name);
+}
+
 bool vfs_current_directory_writable(void) {
     if (directory_backend == VFS_DIRECTORY_FAT32) return false;
     if (directory_backend == VFS_DIRECTORY_NXFS)

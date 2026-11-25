@@ -1342,8 +1342,10 @@ void xhci_poll(void) {
         }
         if (!xhci_schedule_interrupt_read(xhci, device)) {
             serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: unable to re-arm USB keyboard endpoint\r\n"
-                : "xHCI: unable to re-arm USB mouse endpoint\r\n");
+                ? "xHCI: unable to re-arm USB keyboard endpoint\\r\\n"
+                : device->kind == XHCI_HID_MOUSE
+                ? "xHCI: unable to re-arm USB mouse endpoint\\r\\n"
+                : "xHCI: unable to re-arm USB gamepad endpoint\\r\\n");
             device->active = false;
             if (device->kind == XHCI_HID_KEYBOARD)
                 xhci->keyboard_active = false;

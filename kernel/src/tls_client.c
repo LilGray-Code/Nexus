@@ -2,6 +2,7 @@
 
 #include "mbedtls_heap.h"
 #include "mbedtls_time.h"
+#include "serial.h"
 #include "sha256.h"
 
 #include "psa/crypto.h"
@@ -18,6 +19,9 @@
  * caller with an unending stream of control messages.
  */
 #define NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT 8U
+
+static unsigned int tls_receive_trace_events;
+static unsigned int tls_app_read_trace_events;
 
 static void secure_zero(void *memory, size_t length) {
     volatile unsigned char *bytes = (volatile unsigned char *)memory;
@@ -49,6 +53,20 @@ static int tls_receive_bridge(void *context, unsigned char *buffer,
 
     const int result =
         client->io.receive(client->io.context, buffer, capacity);
+    if (result > 0 && tls_receive_trace_events < 96U) {
+        ++tls_receive_trace_events;
+        serial_write("NEXUS TLS TRANSPORT RECEIVE bytes=");
+        serial_write_hex((uint64_t)result);
+        serial_write(" requested=");
+        serial_write_hex((uint64_t)capacity);
+        serial_write("\r\n");
+    } else if (result < 0 && result != MBEDTLS_ERR_SSL_WANT_READ &&
+               tls_receive_trace_events < 96U) {
+        ++tls_receive_trace_events;
+        serial_write("NEXUS TLS TRANSPORT RECEIVE error=");
+        serial_write_hex((uint64_t)(int64_t)result);
+        serial_write("\r\n");
+    }
     if (result < 0) return result;
     if ((size_t)result > capacity) return NEXUS_TLS_ERR_TRANSPORT;
     return result; /* Zero is an orderly transport EOF. */
@@ -235,6 +253,14 @@ int nexus_tls_client_read(struct nexus_tls_client *client,
     for (unsigned int attempt = 0U;
          attempt < NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT; ++attempt) {
         const int result = mbedtls_ssl_read(&client->ssl, buffer, capacity);
+        if (tls_app_read_trace_events < 128U) {
+            ++tls_app_read_trace_events;
+            serial_write("NEXUS TLS APPLICATION READ result=");
+            serial_write_hex((uint64_t)(int64_t)result);
+            serial_write(" capacity=");
+            serial_write_hex((uint64_t)capacity);
+            serial_write("\r\n");
+        }
         if (result != MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
             return result;
         /* This is a valid TLS 1.3 post-handshake control message, not

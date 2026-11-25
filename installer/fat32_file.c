@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #define MAX_SECTOR 4096U
-#define MAX_FILE (1024U*1024U)
+#define MAX_FILE (2U*1024U*1024U)
 static uint8_t sector[MAX_SECTOR];
 static uint8_t verify[MAX_SECTOR];
 static bool busy;

@@ -63,8 +63,24 @@ int main(void) {
     assert(nexus_driver_manager_binding_at(1U, &info));
     assert(info.state == NEXUS_DRIVER_STATE_REMOVED);
     assert(!nexus_driver_manager_remove_device(&removed));
+
+    /* The same bus/device/function may exist in another PCI segment. */
+    struct nexus_pci_device other_segment = pci;
+    other_segment.segment_group = 1U;
+    assert(nexus_driver_manager_probe_pci_device(&other_segment));
+    assert(nexus_driver_manager_binding_count() == 4U);
+    assert(nexus_driver_manager_binding_at(3U, &info));
+    assert(info.state == NEXUS_DRIVER_STATE_ACTIVE);
+    assert(info.segment_group == 1U);
+    struct nexus_driver_device other_removed = removed;
+    other_removed.segment_group = 1U;
+    assert(nexus_driver_manager_remove_device(&other_removed));
+    assert(nexus_driver_manager_binding_at(3U, &info));
+    assert(info.state == NEXUS_DRIVER_STATE_REMOVED);
+    assert(remove_count == 2U);
+
     pci.vendor_id = 0x1234U;
     assert(!nexus_driver_manager_probe_pci_device(&pci));
-    assert(nexus_driver_manager_binding_count() == 2U);
+    assert(nexus_driver_manager_binding_count() == 4U);
     return 0;
 }

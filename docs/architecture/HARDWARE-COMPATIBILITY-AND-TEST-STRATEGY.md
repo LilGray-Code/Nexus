@@ -11,9 +11,11 @@ machine, not the compatibility baseline or the only supported target.
 The first target is broad x86-64 PC compatibility through standard interfaces:
 
 - UEFI and legacy BIOS boot paths.
-- ACPI tables for platform discovery, including MADT and later power-management
-  tables.
-- PCI/PCIe enumeration and class-based device discovery.
+- ACPI tables for platform discovery, including MADT interrupt topology and
+  MCFG PCIe configuration windows; FADT/HPET and power-management support remain
+  separate follow-on work.
+- PCI/PCIe enumeration across firmware-described segments, with ECAM extended
+  configuration access and legacy CF8/CFC fallback.
 - Standard x86-64 CPU baseline; optional features are detected before use.
 - AHCI/SATA, NVMe, and legacy IDE storage controller families.
 - Common USB host-controller families, graphics adapters, network adapters,
@@ -105,11 +107,22 @@ details, firmware inventory, and the active graphics path while clearly
 distinguishing a detected device from a registered driver or active engine.
 
 Firmware reporting currently inventories the boot firmware mode plus ACPI and
-SMBIOS entry-point availability/version. Nexus does not rewrite or flash the
-motherboard's UEFI/BIOS; vendor firmware updates remain a platform maintenance
-operation. Future platform work includes ACPI FADT/HPET/MCFG support, CPU
-topology across more vendors, power states, secure-boot policy reporting, and
-more real-device validation.
+SMBIOS entry-point availability/version. ACPI discovery validates MADT and
+optionally parses bounded MCFG allocations, rejecting bad checksums, unaligned
+ECAM bases, invalid bus ranges, and overlapping ranges within one segment.
+PCI enumeration uses the MCFG-defined ECAM window for both segment zero and
+nonzero segments, reads extended configuration space, and retains CF8/CFC as
+a fallback for segment-zero buses not covered by MCFG. MMIO pages are mapped
+through a bounded, reusable uncached kernel window; device and driver-binding
+identity includes the PCI segment so matching BDFs in different segments do
+not alias during removal. Host tests cover MCFG parsing and segment isolation,
+and BIOS/UEFI QEMU runs exercise the live PCI discovery path.
+
+Nexus does not rewrite or flash the motherboard's UEFI/BIOS; vendor firmware
+updates remain a platform maintenance operation. Future platform work includes
+ACPI FADT/HPET power management, PCIe hot-plug event delivery, MSI/MSI-X
+interrupt routing, IOMMU/DMA isolation, CPU topology across more vendors,
+secure-boot policy reporting, and more real-device validation.
 
 These features improve discovery and the safe base-driver contracts. They do
 not imply that every display adapter, CPU feature, or Wi-Fi chipset is already

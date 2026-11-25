@@ -171,6 +171,13 @@ jobs:
             -o /tmp/nexus-firmware-test
           /tmp/nexus-firmware-test
 
+      - name: Test ACPI MCFG validation and PCIe segment ranges
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/include -Ikernel/src kernel/src/acpi.c \
+            kernel/tests/acpi_mcfg_test.c -o /tmp/nexus-acpi-mcfg-test
+          /tmp/nexus-acpi-mcfg-test
+
       - name: Test Limine BIOS boot-sector and stage-2 installation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

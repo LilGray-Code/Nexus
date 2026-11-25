@@ -122,6 +122,22 @@ jobs:
             -o /tmp/nexus-usb-mouse-input-test
           /tmp/nexus-usb-mouse-input-test
 
+      - name: Test PS/2 extended keyboard sequences and IntelliMouse wheel
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_INPUT_HOST_TEST -Ikernel/src \
+            kernel/src/input.c kernel/src/usb_hid.c \
+            kernel/tests/ps2_input_test.c \
+            -o /tmp/nexus-ps2-input-test
+          /tmp/nexus-ps2-input-test
+
+      - name: Test GPU adapter discovery and safe CPU fallback
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/gpu.c kernel/tests/gpu_test.c \
+            -o /tmp/nexus-gpu-test
+          /tmp/nexus-gpu-test
+
       - name: Test Limine BIOS boot-sector and stage-2 installation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

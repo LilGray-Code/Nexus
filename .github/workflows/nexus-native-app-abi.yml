@@ -6,6 +6,13 @@ on:
       - nexus-original-kernel-roadmap
     paths:
       - "kernel/src/graphics.c"
+      - "kernel/Makefile"
+      - "kernel/src/cpu.c"
+      - "kernel/src/cpu.h"
+      - "kernel/src/fpu.c"
+      - "kernel/src/fpu.h"
+      - "kernel/src/main.c"
+      - "kernel/src/usermode.S"
       - "kernel/src/graphics.h"
       - "kernel/src/usermode.c"
       - "kernel/src/usermode.h"
@@ -21,6 +28,13 @@ on:
   pull_request:
     paths:
       - "kernel/src/graphics.c"
+      - "kernel/Makefile"
+      - "kernel/src/cpu.c"
+      - "kernel/src/cpu.h"
+      - "kernel/src/fpu.c"
+      - "kernel/src/fpu.h"
+      - "kernel/src/main.c"
+      - "kernel/src/usermode.S"
       - "kernel/src/graphics.h"
       - "kernel/src/usermode.c"
       - "kernel/src/usermode.h"
@@ -49,6 +63,7 @@ jobs:
           for src in cpu fpu graphics usermode interrupts process elf64 main; do
             cc $flags -c "kernel/src/$src.c" -o "/tmp/nexus-$src.o"
           done
+          cc -m64 -c kernel/src/usermode.S -o /tmp/nexus-usermode-entry.o
       - name: Check public ABI structure layouts
         run: |
           cc -std=gnu11 -Wall -Wextra -Werror -Ikernel/include \

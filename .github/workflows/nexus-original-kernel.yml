@@ -113,6 +113,14 @@ jobs:
             -o /tmp/nexus-usb-hid-mouse-test
           /tmp/nexus-usb-hid-mouse-test
 
+      - name: Test bounded AC97 PCM DMA descriptor format
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/ac97_format.c \
+            kernel/tests/ac97_format_test.c \
+            -o /tmp/nexus-ac97-format-test
+          /tmp/nexus-ac97-format-test
+
       - name: Test generic USB HID gamepad descriptor parsing
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
@@ -299,6 +307,8 @@ jobs:
             -netdev user,id=n0 -device e1000,netdev=n0 \
             -netdev user,id=virt0 -device virtio-net-pci,netdev=virt0,disable-legacy=on \
             -device virtio-gpu-pci,disable-legacy=on \
+            -audiodev none,id=audio0 \
+            -device AC97,audiodev=audio0 \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \
             -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
@@ -318,6 +328,7 @@ jobs:
           cat uefi-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
+          grep -q "NEXUS AC97 AUDIO READY" uefi-serial.log
           grep -q "INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available" uefi-serial.log
           grep -q "NEXUS ELF64 VALIDATION READY" uefi-serial.log
           grep -q "NEXUS USER MODE SELFTEST READY" uefi-serial.log

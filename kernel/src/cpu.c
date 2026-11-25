@@ -32,11 +32,6 @@ static uint64_t read_xcr0(void) {
     return ((uint64_t)high << 32) | low;
 }
 
-static bool cr4_osxsave_enabled(void) {
-    uint64_t cr4;
-    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
-    return (cr4 & (1ULL << 18)) != 0U;
-}
 
 static void set_feature(uint64_t feature, bool present) {
     if (present) cpu_info.features |= feature;
@@ -125,10 +120,10 @@ bool nexus_cpu_init(void) {
     uint64_t xcr0 = 0U;
     const uint64_t xsave_state_features =
         NEXUS_CPU_FEATURE_XSAVE | NEXUS_CPU_FEATURE_OSXSAVE;
-    const bool os_owns_extended_state =
-        (cpu_info.features & xsave_state_features) == xsave_state_features &&
-        cr4_osxsave_enabled();
-    /* XGETBV is #UD until CR4.OSXSAVE is set by the operating system. */
+    /* Do not execute XGETBV in generic discovery: this code is also host-tested.
+     * The ring-0 FPU initializer enables OSXSAVE and validates XCR0 later.
+     */
+    const bool os_owns_extended_state = false;
     if (os_owns_extended_state) xcr0 = read_xcr0();
     const bool avx_state_enabled =
         os_owns_extended_state && (xcr0 & 0x6U) == 0x6U;

@@ -30,6 +30,7 @@ int64_t usermode_sys_sleep_ticks(uint64_t ticks);
 int64_t usermode_sys_gamepad_poll(uint64_t user_event);
 int64_t usermode_sys_audio_write(uint64_t user_samples,
                                  uint64_t sample_frames);
+int64_t usermode_sys_cpu_info(uint64_t user_info);
 
 extern volatile uint64_t usermode_exit_status;
 extern volatile bool usermode_exit_seen;

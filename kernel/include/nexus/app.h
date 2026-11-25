@@ -27,6 +27,7 @@
 #define NEXUS_APP_SYS_SLEEP_TICKS 12ULL
 #define NEXUS_APP_SYS_GAMEPAD_POLL 13ULL
 #define NEXUS_APP_SYS_AUDIO_WRITE 14ULL
+#define NEXUS_APP_SYS_CPU_INFO 15ULL
 
 #define NEXUS_APP_INPUT_KEYBOARD 1U
 #define NEXUS_APP_INPUT_MOUSE 2U
@@ -80,6 +81,26 @@ struct nexus_app_display_info {
     uint64_t stride_bytes;
     uint32_t pixel_format;
     uint32_t reserved;
+};
+
+#define NEXUS_APP_CPU_SSE2   (1ULL << 0)
+#define NEXUS_APP_CPU_SSE42  (1ULL << 1)
+#define NEXUS_APP_CPU_AES    (1ULL << 2)
+#define NEXUS_APP_CPU_AVX    (1ULL << 3)
+#define NEXUS_APP_CPU_AVX2   (1ULL << 4)
+#define NEXUS_APP_CPU_FMA    (1ULL << 5)
+#define NEXUS_APP_CPU_BMI1   (1ULL << 6)
+#define NEXUS_APP_CPU_BMI2   (1ULL << 7)
+#define NEXUS_APP_CPU_SHA    (1ULL << 8)
+
+struct nexus_app_cpu_info {
+    uint32_t structure_size;
+    uint32_t abi_version;
+    uint64_t feature_flags;
+    uint32_t physical_cores;
+    uint32_t logical_processors;
+    char vendor[13];
+    char brand[49];
 };
 
 struct nexus_app_blit_request {
@@ -169,6 +190,13 @@ static inline int64_t nexus_app_audio_write_48k_s16_stereo(
 static inline int64_t nexus_app_get_display(
     struct nexus_app_display_info *info) {
     return nexus_app_syscall3(NEXUS_APP_SYS_DISPLAY_INFO,
+                              (uint64_t)(uintptr_t)info, 0U, 0U);
+}
+
+/* Returns zero on success or a negative errno value. */
+static inline int64_t nexus_app_get_cpu_info(
+    struct nexus_app_cpu_info *info) {
+    return nexus_app_syscall3(NEXUS_APP_SYS_CPU_INFO,
                               (uint64_t)(uintptr_t)info, 0U, 0U);
 }
 

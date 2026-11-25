@@ -1,5 +1,6 @@
 #include "fpu.h"
 #include "cpu.h"
+#include <stddef.h>
 #include <stdint.h>
 
 #define CR0_MP (1ULL << 1)

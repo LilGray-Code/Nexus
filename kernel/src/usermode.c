@@ -2,6 +2,7 @@
 
 #include "elf64.h"
 #include "ac97.h"
+#include "cpu.h"
 #include "fpu.h"
 #include "gdt.h"
 #include "graphics.h"
@@ -501,6 +502,51 @@ int64_t usermode_sys_display_info(uint64_t user_info) {
         .pixel_format = NEXUS_APP_PIXEL_XRGB8888,
         .reserved = 0U
     };
+    if (!paging_user_range_writable(user_info, sizeof(info)))
+        return -NEXUS_EFAULT;
+    return paging_copy_to_user(user_info, &info, sizeof(info))
+        ? 0 : -NEXUS_EFAULT;
+}
+
+int64_t usermode_sys_cpu_info(uint64_t user_info) {
+    const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
+    if (cpu == NULL || !cpu->cpuid_available) return -NEXUS_ENODEV;
+
+    uint64_t features = 0U;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE2))
+        features |= NEXUS_APP_CPU_SSE2;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE42))
+        features |= NEXUS_APP_CPU_SSE42;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AES))
+        features |= NEXUS_APP_CPU_AES;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX) &&
+        nexus_fpu_avx_available())
+        features |= NEXUS_APP_CPU_AVX;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_AVX2) &&
+        nexus_fpu_avx_available())
+        features |= NEXUS_APP_CPU_AVX2;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_FMA) &&
+        nexus_fpu_avx_available())
+        features |= NEXUS_APP_CPU_FMA;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_BMI1))
+        features |= NEXUS_APP_CPU_BMI1;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_BMI2))
+        features |= NEXUS_APP_CPU_BMI2;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SHA))
+        features |= NEXUS_APP_CPU_SHA;
+
+    struct nexus_app_cpu_info info = {
+        .structure_size = sizeof(struct nexus_app_cpu_info),
+        .abi_version = NEXUS_APP_ABI_VERSION,
+        .feature_flags = features,
+        .physical_cores = cpu->physical_cores_per_package,
+        .logical_processors = cpu->logical_processors_per_package
+    };
+    for (size_t i = 0U; i < sizeof(info.vendor); ++i)
+        info.vendor[i] = cpu->vendor[i];
+    for (size_t i = 0U; i < sizeof(info.brand); ++i)
+        info.brand[i] = cpu->brand[i];
+
     if (!paging_user_range_writable(user_info, sizeof(info)))
         return -NEXUS_EFAULT;
     return paging_copy_to_user(user_info, &info, sizeof(info))

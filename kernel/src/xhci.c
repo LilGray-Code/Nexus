@@ -375,12 +375,7 @@ static bool xhci_wait_transfer(struct xhci_controller *xhci,
             __asm__ volatile ("pause");
             continue;
         }
-        const uint8_t event_type = xhci_event_type(&event);
-        if (event_type == XHCI_TRB_PORT_EVENT) {
-            xhci_handle_port_status_change(xhci, &event);
-            continue;
-        }
-        if (event_type != XHCI_TRB_TRANSFER_EVENT) continue;
+        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
         const uint8_t event_slot = (uint8_t)(event.control >> 24);
         const uint8_t event_ep = (uint8_t)((event.control >> 16) & 0x1FU);
         if (event_slot != slot_id || event_ep != endpoint_id) continue;
@@ -1178,7 +1173,12 @@ void xhci_poll(void) {
 
     struct xhci_trb event;
     while (xhci_event_next(xhci, &event)) {
-        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
+        const uint8_t event_type = xhci_event_type(&event);
+        if (event_type == XHCI_TRB_PORT_EVENT) {
+            xhci_handle_port_status_change(xhci, &event);
+            continue;
+        }
+        if (event_type != XHCI_TRB_TRANSFER_EVENT) continue;
         const uint8_t slot = (uint8_t)(event.control >> 24);
         const uint8_t endpoint =
             (uint8_t)((event.control >> 16) & 0x1FU);

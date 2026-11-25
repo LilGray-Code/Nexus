@@ -97,7 +97,8 @@ static bool parse_decimal(const char *text, uint32_t maximum,
     for (size_t i = 0U; text[i] != '\0'; ++i) {
         if (text[i] < '0' || text[i] > '9') return false;
         const uint32_t digit = (uint32_t)(text[i] - '0');
-        if (parsed > (maximum - digit) / 10U) return false;
+        if (digit > maximum || parsed > (maximum - digit) / 10U)
+            return false;
         parsed = parsed * 10U + digit;
     }
     if (parsed == 0U) return false;

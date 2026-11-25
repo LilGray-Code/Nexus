@@ -117,7 +117,7 @@ static void mouse_enable_wheel_if_supported(void) {
         mouse_read_id(&id) && id == 4U) {
         mouse_packet_length = PS2_MOUSE_PACKET_WHEEL;
         mouse_explorer_buttons = true;
-        serial_write("INPUT: PS/2 IntelliMouse wheel and side buttons enabled\\r\\n");
+        serial_write("INPUT: PS/2 IntelliMouse wheel and side buttons enabled\r\n");
         return;
     }
 
@@ -128,11 +128,11 @@ static void mouse_enable_wheel_if_supported(void) {
         mouse_read_id(&id) && id == 3U) {
         mouse_packet_length = PS2_MOUSE_PACKET_WHEEL;
         mouse_explorer_buttons = false;
-        serial_write("INPUT: PS/2 IntelliMouse wheel enabled\\r\\n");
+        serial_write("INPUT: PS/2 IntelliMouse wheel enabled\r\n");
     } else {
         mouse_packet_length = PS2_MOUSE_PACKET_STANDARD;
         mouse_explorer_buttons = false;
-        serial_write("INPUT: PS/2 standard three-byte mouse mode\\r\\n");
+        serial_write("INPUT: PS/2 standard three-byte mouse mode\r\n");
     }
 }
 
@@ -337,7 +337,7 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
     for (size_t i = 0U; i < count; ++i) {
         serial_write("INPUT: USB HID keyboard scancode=");
         serial_write_hex(scancodes[i]);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
     }
 }
 

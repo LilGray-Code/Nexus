@@ -2,7 +2,7 @@
 
 ## What this SDK targets
 
-The first Nexus-owned native application ABI targets x86-64 **static ELF64 ET_EXEC** programs. Applications are entered in ring 3 and use the Nexus `int 0x80` ABI from `kernel/include/nexus/app.h`. The ABI currently exposes:
+The first Nexus-owned native application ABI targets x86-64 **static ELF64 ET_EXEC** programs. Applications are entered in ring 3 and use the Nexus `int 0x80` ABI from `kernel/include/nexus/app.h`. Nexus explicitly enables x87 and SSE2 for a foreground app, saves/restores the kernel's 512-byte FXSAVE state across that app, and clears XMM registers before entry. Kernel code is compiled to avoid FPU/SIMD use while an app is running. AVX/AVX2/FMA remain disabled because the OS does not yet manage full XSAVE extended state. The ABI currently exposes:
 
 - stable ABI version query and process exit;
 - standard-output writes and bounded root-file open/read/write/close calls;
@@ -33,6 +33,6 @@ The example uses a 128×96 software-rendered frame, submits it through the nativ
 
 ## Compatibility boundary
 
-This is a first-party native ABI, not POSIX, Win32, SDL, Vulkan, OpenGL, or Direct3D. The current process runner is a foreground, synchronous launcher; it does not yet provide general-purpose multitasking, dynamic linking, shared libraries, a window manager API, audio, game controllers, or a 3D rendering API. VirtIO-GPU support here is **2D scanout and presentation only**; it must not be described as hardware-accelerated 3D rendering.
+This is a first-party native ABI, not POSIX, Win32, SDL, Vulkan, OpenGL, or Direct3D. Native app code can use x87/SSE2 floating-point and vector math, but must not use AVX/AVX2/FMA. The current process runner is a foreground, synchronous launcher; it does not yet provide general-purpose multitasking, dynamic linking, shared libraries, a window manager API, audio, game controllers, or a 3D rendering API. VirtIO-GPU support here is **2D scanout and presentation only**; it must not be described as hardware-accelerated 3D rendering.
 
 Windows PE applications and commercial Windows games do not run through this ABI. Native packages, publisher signatures, runtime libraries, and compatible device drivers remain required ecosystem work. Applications should query the ABI version and display capabilities instead of assuming a particular machine.

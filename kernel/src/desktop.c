@@ -3553,6 +3553,25 @@ browser_retry:
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
     }
+    if (search_request) {
+        serial_write(search_use_bing
+            ? "NEXUS BING HTTP STATUS="
+            : "NEXUS DUCKDUCKGO HTTP STATUS=");
+        serial_write_hex(parsed.status_code);
+        serial_write(" wire-bytes=");
+        serial_write_hex(response_length);
+        serial_write(" body-bytes=");
+        serial_write_hex(parsed.body_length);
+        serial_write(" content-type=");
+        serial_write(parsed.has_content_type ? parsed.content_type : "(none)");
+        serial_write(" content-length-present=");
+        serial_write_hex(parsed.has_content_length ? 1U : 0U);
+        serial_write(" chunked=");
+        serial_write_hex(parsed.chunked ? 1U : 0U);
+        serial_write(" eof=");
+        serial_write_hex(orderly_eof ? 1U : 0U);
+        serial_write("\\r\\n");
+    }
     /* Require TLS close_notify for close-delimited bodies; a timed-out TLS
      * stream must not be mistaken for a complete page.
      */

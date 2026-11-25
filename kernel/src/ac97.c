@@ -124,8 +124,33 @@ bool ac97_init(void) {
     while ((device = pci_find_class(0x04U, 0x01U, start, &start)) != NULL) {
         struct nexus_pci_bar mixer_bar;
         struct nexus_pci_bar busmaster_bar;
-        if (pci_decode_bar(device, 0U, &mixer_bar) &&
-            pci_decode_bar(device, 1U, &busmaster_bar) &&
+        const bool mixer_decoded = pci_decode_bar(device, 0U, &mixer_bar);
+        const bool busmaster_decoded = pci_decode_bar(device, 1U, &busmaster_bar);
+        serial_write("AC97: PCI candidate raw BAR0/BAR1=");
+        serial_write_hex(device->bars[0]);
+        serial_write("/");
+        serial_write_hex(device->bars[1]);
+        serial_write(" decoded=");
+        serial_write_hex((mixer_decoded ? 1U : 0U) |
+                         (busmaster_decoded ? 2U : 0U));
+        if (mixer_decoded) {
+            serial_write(" BAR0 base/io/assigned=");
+            serial_write_hex(mixer_bar.base);
+            serial_write("/");
+            serial_write_hex(mixer_bar.io_space ? 1U : 0U);
+            serial_write("/");
+            serial_write_hex(mixer_bar.assigned ? 1U : 0U);
+        }
+        if (busmaster_decoded) {
+            serial_write(" BAR1 base/io/assigned=");
+            serial_write_hex(busmaster_bar.base);
+            serial_write("/");
+            serial_write_hex(busmaster_bar.io_space ? 1U : 0U);
+            serial_write("/");
+            serial_write_hex(busmaster_bar.assigned ? 1U : 0U);
+        }
+        serial_write("\\r\\n");
+        if (mixer_decoded && busmaster_decoded &&
             io_window_valid(&mixer_bar) && io_window_valid(&busmaster_bar)) {
             mixer_base = (uint16_t)mixer_bar.base;
             busmaster_base = (uint16_t)busmaster_bar.base;

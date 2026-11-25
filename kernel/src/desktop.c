@@ -3528,24 +3528,6 @@ browser_retry:
         net_tcp_close();
     }
 
-    if (search_request && receive_ok && response_length != 0U) {
-        serial_write(search_use_bing
-            ? "NEXUS BING DECRYPTED RESPONSE bytes="
-            : "NEXUS DUCKDUCKGO DECRYPTED RESPONSE bytes=");
-        serial_write_hex(response_length);
-        serial_write(" prefix=");
-        char prefix[97];
-        size_t prefix_length = response_length < sizeof(prefix) - 1U
-            ? response_length : sizeof(prefix) - 1U;
-        for (size_t i = 0U; i < prefix_length; ++i) {
-            const uint8_t value = response[i];
-            prefix[i] = value >= 0x20U && value <= 0x7EU
-                ? (char)value : '.';
-        }
-        prefix[prefix_length] = '\0';
-        serial_write(prefix);
-        serial_write("\r\n");
-    }
     if (!receive_ok || response_length == 0U) {
         if (browser_search_fallback(
                 search_request, &search_use_bing,
@@ -3558,25 +3540,6 @@ browser_retry:
     }
     if (!nexus_http_decode_response(response, response_length, body,
                                     NEXUS_BROWSER_RESPONSE_CAPACITY, &parsed)) {
-        if (search_request) {
-            serial_write(search_use_bing
-                ? "NEXUS BING HTTP DECODE FAILED bytes="
-                : "NEXUS DUCKDUCKGO HTTP DECODE FAILED bytes=");
-            serial_write_hex(response_length);
-            serial_write(" tail=");
-            char tail[129];
-            const size_t tail_length = response_length < sizeof(tail) - 1U
-                ? response_length : sizeof(tail) - 1U;
-            const size_t tail_start = response_length - tail_length;
-            for (size_t i = 0U; i < tail_length; ++i) {
-                const uint8_t value = response[tail_start + i];
-                tail[i] = value >= 0x20U && value <= 0x7EU
-                    ? (char)value : '.';
-            }
-            tail[tail_length] = '\0';
-            serial_write(tail);
-            serial_write("\\r\\n");
-        }
         if (browser_search_fallback(
                 search_request, &search_use_bing,
                 &search_fallback_attempted)) goto browser_retry;
@@ -3603,25 +3566,6 @@ browser_retry:
         if (search_request) serial_write("NEXUS WEB SEARCH FAILED\r\n");
         browser_set_status("Invalid, truncated, or unsupported HTTP framing");
         return;
-    }
-    if (search_request) {
-        serial_write(search_use_bing
-            ? "NEXUS BING HTTP STATUS="
-            : "NEXUS DUCKDUCKGO HTTP STATUS=");
-        serial_write_hex(parsed.status_code);
-        serial_write(" wire-bytes=");
-        serial_write_hex(response_length);
-        serial_write(" body-bytes=");
-        serial_write_hex(parsed.body_length);
-        serial_write(" content-type=");
-        serial_write(parsed.has_content_type ? parsed.content_type : "(none)");
-        serial_write(" content-length-present=");
-        serial_write_hex(parsed.has_content_length ? 1U : 0U);
-        serial_write(" chunked=");
-        serial_write_hex(parsed.chunked ? 1U : 0U);
-        serial_write(" eof=");
-        serial_write_hex(orderly_eof ? 1U : 0U);
-        serial_write("\\r\\n");
     }
     /* Require TLS close_notify for close-delimited bodies; a timed-out TLS
      * stream must not be mistaken for a complete page.

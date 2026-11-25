@@ -115,6 +115,7 @@ bool nexus_cpu_init(void) {
     set_feature(NEXUS_CPU_FEATURE_OSXSAVE, (ecx & (1U << 27)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_RDRAND, (ecx & (1U << 30)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_HYPERVISOR, (ecx & (1U << 31)) != 0U);
+    set_feature(NEXUS_CPU_FEATURE_PCID, (ecx & (1U << 17)) != 0U);
 
     uint64_t xcr0 = 0U;
     const uint64_t xsave_state_features =
@@ -134,8 +135,23 @@ bool nexus_cpu_init(void) {
         uint32_t max7_eax = 0U, max7_ebx = 0U, max7_ecx = 0U, max7_edx = 0U;
         cpuid(7U, 0U, &max7_eax, &max7_ebx, &max7_ecx, &max7_edx);
         (void)max7_eax;
-        (void)max7_ecx;
         (void)max7_edx;
+        set_feature(NEXUS_CPU_FEATURE_FSGSBASE,
+                    (max7_ebx & (1U << 0)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_UMIP,
+                    (max7_ecx & (1U << 2)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_INVPCID,
+                    (max7_ebx & (1U << 10)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_SMEP,
+                    (max7_ebx & (1U << 7)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_SMAP,
+                    (max7_ebx & (1U << 20)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_CLFLUSHOPT,
+                    (max7_ebx & (1U << 23)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_CLWB,
+                    (max7_ebx & (1U << 24)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_LA57,
+                    (max7_ecx & (1U << 16)) != 0U);
         set_feature(NEXUS_CPU_FEATURE_AVX2,
             (cpu_info.features & NEXUS_CPU_FEATURE_AVX) != 0U &&
             (max7_ebx & (1U << 5)) != 0U);
@@ -152,6 +168,10 @@ bool nexus_cpu_init(void) {
         uint32_t ext_edx = 0U;
         cpuid(0x80000001U, 0U, NULL, NULL, NULL, &ext_edx);
         set_feature(NEXUS_CPU_FEATURE_NX, (ext_edx & (1U << 20)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_PAGE_1GB,
+                    (ext_edx & (1U << 26)) != 0U);
+        set_feature(NEXUS_CPU_FEATURE_RDTSCP,
+                    (ext_edx & (1U << 27)) != 0U);
         set_feature(NEXUS_CPU_FEATURE_LONG_MODE,
                     (ext_edx & (1U << 29)) != 0U);
     }
@@ -164,8 +184,10 @@ bool nexus_cpu_init(void) {
     if (max_extended >= 0x80000008U) {
         uint32_t address_eax = 0U, address_ebx = 0U, address_ecx = 0U;
         cpuid(0x80000008U, 0U, &address_eax, &address_ebx, &address_ecx, NULL);
-        (void)address_eax;
         (void)address_ebx;
+        cpu_info.physical_address_bits = (uint8_t)(address_eax & 0xFFU);
+        cpu_info.virtual_address_bits =
+            (uint8_t)((address_eax >> 8) & 0xFFU);
         const uint16_t cores = (uint16_t)((address_ecx & 0xFFU) + 1U);
         if (cores != 0U) cpu_info.physical_cores_per_package = cores;
     }

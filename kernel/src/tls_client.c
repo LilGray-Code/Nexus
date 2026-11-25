@@ -19,24 +19,6 @@
  */
 #define NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT 8U
 
-/*
- * Optional diagnostics: the freestanding kernel supplies these serial
- * routines, while host-only TLS unit tests intentionally do not link them.
- */
-extern void serial_write(const char *text) __attribute__((weak));
-extern void serial_write_hex(uint64_t value) __attribute__((weak));
-
-static unsigned int tls_receive_trace_events;
-static unsigned int tls_app_read_trace_events;
-
-static void tls_trace_text(const char *text) {
-    if (serial_write != NULL) serial_write(text);
-}
-
-static void tls_trace_hex(uint64_t value) {
-    if (serial_write_hex != NULL) serial_write_hex(value);
-}
-
 static void secure_zero(void *memory, size_t length) {
     volatile unsigned char *bytes = (volatile unsigned char *)memory;
     for (size_t i = 0U; i < length; ++i) bytes[i] = 0U;
@@ -67,20 +49,6 @@ static int tls_receive_bridge(void *context, unsigned char *buffer,
 
     const int result =
         client->io.receive(client->io.context, buffer, capacity);
-    if (result > 0 && tls_receive_trace_events < 96U) {
-        ++tls_receive_trace_events;
-        tls_trace_text("NEXUS TLS TRANSPORT RECEIVE bytes=");
-        tls_trace_hex((uint64_t)result);
-        tls_trace_text(" requested=");
-        tls_trace_hex((uint64_t)capacity);
-        tls_trace_text("\r\n");
-    } else if (result < 0 && result != MBEDTLS_ERR_SSL_WANT_READ &&
-               tls_receive_trace_events < 96U) {
-        ++tls_receive_trace_events;
-        tls_trace_text("NEXUS TLS TRANSPORT RECEIVE error=");
-        tls_trace_hex((uint64_t)(int64_t)result);
-        tls_trace_text("\r\n");
-    }
     if (result < 0) return result;
     if ((size_t)result > capacity) return NEXUS_TLS_ERR_TRANSPORT;
     return result; /* Zero is an orderly transport EOF. */
@@ -267,14 +235,6 @@ int nexus_tls_client_read(struct nexus_tls_client *client,
     for (unsigned int attempt = 0U;
          attempt < NEXUS_TLS_POST_HANDSHAKE_TICKET_LIMIT; ++attempt) {
         const int result = mbedtls_ssl_read(&client->ssl, buffer, capacity);
-        if (tls_app_read_trace_events < 128U) {
-            ++tls_app_read_trace_events;
-            tls_trace_text("NEXUS TLS APPLICATION READ result=");
-            tls_trace_hex((uint64_t)(int64_t)result);
-            tls_trace_text(" capacity=");
-            tls_trace_hex((uint64_t)capacity);
-            tls_trace_text("\r\n");
-        }
         if (result != MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET)
             return result;
         /* This is a valid TLS 1.3 post-handshake control message, not

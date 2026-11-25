@@ -46,10 +46,10 @@ void _start(void) {
         make_tone(&phase);
         const int64_t result = nexus_app_audio_write_48k_s16_stereo(
             audio_chunk, AUDIO_CHUNK_FRAMES);
-        if (result == 0 || result == -11) {
+        if (result == 0 || result == -NEXUS_APP_EAGAIN) {
             /* The single DMA buffer is either queued or still playing. */
             (void)nexus_app_sleep_ticks(1U);
-        } else if (result == -19) {
+        } else if (result == -NEXUS_APP_ENODEV) {
             static const char missing[] =
                 "No supported AC97 audio device is ready.\n";
             (void)nexus_app_write(1U, missing, sizeof(missing) - 1U);

@@ -15,8 +15,11 @@ struct nexus_pci_device {
     uint8_t class_code;
     uint8_t subclass;
     uint8_t programming_interface;
+    uint8_t revision_id;
     uint16_t vendor_id;
     uint16_t device_id;
+    uint16_t subsystem_vendor_id;
+    uint16_t subsystem_device_id;
     uint16_t command;
     uint16_t status;
     uint8_t interrupt_line;

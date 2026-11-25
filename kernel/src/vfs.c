@@ -606,7 +606,8 @@ static bool vfs_valid_root_path(const char *path) {
     size_t length = 0U;
     size_t component_length = 0U;
     bool previous_dot = false;
-    while (length < NEXUS_VFS_NAME_MAX - 1U && path[length] != '\0') {
+    while (length < NEXUS_VFS_NAME_MAX && path[length] != '\0') {
+        if (length >= NEXUS_VFS_NAME_MAX - 1U) return false;
         const char c = path[length];
         if (c == '/') {
             if (component_length == 0U || previous_dot) return false;

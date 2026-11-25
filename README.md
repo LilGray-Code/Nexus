@@ -42,11 +42,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   persistent NXFS is unavailable or read-only. Host integration tests exercise
   root preferences while nested in NXFS/FAT32 directories and verify remount
   retention.
-- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support.
+- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support; standard 2.4 GHz HID receivers may also work, while native Bluetooth pairing is not implemented.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.
 - GPT, FAT32, NXFS, and a virtual filesystem layer.
-- A Nexus graphical installer. The installer builds a GPT layout with an EFI
+- A separate ISO boot-menu installer entry that launches a full-screen install-only session. The installed disk boots directly into the Nexus desktop after restart. The installer builds a GPT layout with an EFI
   System Partition, Nexus System volume, Recovery journal partition, and
   separate Nexus Data volume; BIOS installs also include a BIOS Boot
   partition.

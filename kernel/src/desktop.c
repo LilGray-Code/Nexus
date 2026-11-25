@@ -5899,7 +5899,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else if (event->scancode == 0x1CU) {
             const size_t app =
                 desktop_start_menu_visible_app(start_menu_selection);
-            if (app < 5U) {
+            if (app < 6U) {
                 desktop_open_app(app);
                 redraw = true;
             }

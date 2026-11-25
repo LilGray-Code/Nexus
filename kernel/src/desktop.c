@@ -2003,8 +2003,8 @@ static void draw_shell(void) {
                            1U, 119U, 229U, 211U);
         if (firmware->smbios_present) {
             char smbios_version[16] = "SMBIOS ";
-            char major[4];
-            char minor[4];
+            char major[21];
+            char minor[21];
             format_u64(firmware->smbios_major, major);
             format_u64(firmware->smbios_minor, minor);
             size_t used = 7U;

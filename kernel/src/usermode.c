@@ -1,6 +1,7 @@
 #include "usermode.h"
 
 #include "elf64.h"
+#include "ac97.h"
 #include "fpu.h"
 #include "gdt.h"
 #include "graphics.h"
@@ -23,6 +24,8 @@
 #define TEST_ELF_FILE_CAPACITY 8192U
 #define USERMODE_FILE_SLOTS 8U
 #define USERMODE_FD_BASE 3U
+
+static uint8_t audio_staging[NEXUS_AC97_MAX_BYTES];
 
 struct test_elf_header {
     uint8_t ident[16];
@@ -447,6 +450,26 @@ int64_t usermode_sys_input_poll(uint64_t user_event) {
     };
     return paging_copy_to_user(user_event, &result, sizeof(result))
         ? 1 : -NEXUS_EFAULT;
+}
+
+int64_t usermode_sys_audio_write(uint64_t user_samples,
+                                 uint64_t sample_frames) {
+    if (sample_frames == 0U ||
+        sample_frames > NEXUS_AC97_MAX_FRAMES)
+        return -NEXUS_EINVAL;
+    const size_t bytes = (size_t)sample_frames * 4U;
+    if (!paging_copy_from_user(audio_staging, user_samples, bytes))
+        return -NEXUS_EFAULT;
+    const enum nexus_ac97_submit_result result =
+        ac97_write_pcm_s16_stereo_48k(
+            (const int16_t *)audio_staging, (uint32_t)sample_frames);
+    switch (result) {
+        case NEXUS_AC97_SUBMIT_OK: return 0;
+        case NEXUS_AC97_SUBMIT_BUSY: return -NEXUS_EAGAIN;
+        case NEXUS_AC97_SUBMIT_NOT_READY: return -NEXUS_ENODEV;
+        case NEXUS_AC97_SUBMIT_INVALID: return -NEXUS_EINVAL;
+        default: return -NEXUS_EIO;
+    }
 }
 
 int64_t usermode_sys_gamepad_poll(uint64_t user_event) {

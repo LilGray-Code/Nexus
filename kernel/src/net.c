@@ -1277,197 +1277,9 @@ static bool send_tcp_segment(uint8_t flags, const void *payload,
     return send_ethernet(destination_mac, ETHERTYPE_IPV4, packet, ip_length);
 }
 
-static unsigned int tcp_https_trace_events;
-
-static void tcp_https_trace(const char *stage, const uint8_t *segment,
-                            size_t length) {
-    if (tcp_connection.remote_port != 443U ||
-        tcp_https_trace_events >= 96U) return;
-    ++tcp_https_trace_events;
-    serial_write("NEXUS HTTPS TCP ");
-    serial_write(stage);
-    if (segment != NULL && length >= NET_TCP_HEADER) {
-        const size_t header_length = (size_t)(segment[12] >> 4) * 4U;
-        serial_write(" ports=");
-        serial_write_hex(read_be16(segment));
-        serial_write("/");
-        serial_write_hex(read_be16(segment + 2U));
-        serial_write(" flags=");
-        serial_write_hex(segment[13]);
-        serial_write(" seq=");
-        serial_write_hex(read_be32(segment + 4U));
-        serial_write(" ack=");
-        serial_write_hex(read_be32(segment + 8U));
-        serial_write(" bytes=");
-        serial_write_hex(header_length <= length
-            ? length - header_length : 0U);
-    } else {
-        serial_write(" length=");
-        serial_write_hex(length);
-    }
-    serial_write(" expected-rx=");
-    serial_write_hex(tcp_connection.remote_sequence);
-    serial_write(" local-seq=");
-    serial_write_hex(tcp_connection.local_sequence);
-    serial_write(" ack-expected=");
-    serial_write_hex(tcp_connection.ack_expected);
-    serial_write(" ack-waiting=");
-    serial_write_hex(tcp_connection.ack_waiting ? 1U : 0U);
-    serial_write("\r\n");
-}
-
-static bool tcp_sequence_before(uint32_t left, uint32_t right) {
-    return (int32_t)(left - right) < 0;
-}
-
-static size_t tcp_receive_space(void) {
-    if (tcp_connection.receive_length >= NET_TCP_RX_CAPACITY) return 0U;
-    return NET_TCP_RX_CAPACITY - tcp_connection.receive_length;
-}
-
-static void tcp_clear_reorder(void) {
-    for (size_t i = 0U; i < NET_TCP_REORDER_SLOTS; ++i)
-        tcp_connection.reorder[i].valid = false;
-    tcp_connection.reorder_length = 0U;
-}
-
-/*
- * Queue one future segment inside the advertised receive window. The queue is
- * intentionally small: it covers bursts reordered by a NIC/virtual switch,
- * while retransmission remains the recovery path when the queue is full.
- */
-static bool tcp_queue_out_of_order(uint32_t sequence,
-                                   const uint8_t *payload,
-                                   size_t payload_length, bool fin) {
-    if ((payload_length != 0U && payload == NULL) ||
-        payload_length > NET_TCP_REORDER_PAYLOAD_MAX ||
-        (payload_length == 0U && !fin)) return false;
-
-    const uint32_t forward = sequence - tcp_connection.remote_sequence;
-    if (forward >= 0x80000000U) return false;
-    const size_t available = tcp_receive_space();
-    if ((size_t)forward > available ||
-        payload_length > available - (size_t)forward ||
-        (fin && (size_t)forward + payload_length >= available)) return false;
-
-    size_t free_slot = NET_TCP_REORDER_SLOTS;
-    const size_t new_span = payload_length + (fin ? 1U : 0U);
-    for (size_t i = 0U; i < NET_TCP_REORDER_SLOTS; ++i) {
-        struct net_tcp_reorder_entry *entry = &tcp_connection.reorder[i];
-        if (!entry->valid) {
-            if (free_slot == NET_TCP_REORDER_SLOTS) free_slot = i;
-            continue;
-        }
-        if (entry->sequence == sequence) {
-            if (entry->payload_length != payload_length || entry->fin != fin)
-                return false;
-            for (size_t j = 0U; j < payload_length; ++j)
-                if (entry->payload[j] != payload[j]) return false;
-            return true; /* Exact retransmission of an already queued segment. */
-        }
-
-        const uint32_t existing_offset =
-            entry->sequence - tcp_connection.remote_sequence;
-        const size_t existing_span =
-            (size_t)entry->payload_length + (entry->fin ? 1U : 0U);
-        const size_t new_start = (size_t)forward;
-        const size_t existing_start = (size_t)existing_offset;
-        if (new_span != 0U && existing_span != 0U &&
-            new_start < existing_start + existing_span &&
-            existing_start < new_start + new_span) {
-            /* Do not keep conflicting overlapping segments. */
-            return false;
-        }
-    }
-    if (free_slot == NET_TCP_REORDER_SLOTS) return false;
-
-    struct net_tcp_reorder_entry *entry =
-        &tcp_connection.reorder[free_slot];
-    entry->sequence = sequence;
-    entry->payload_length = (uint16_t)payload_length;
-    entry->fin = fin;
-    for (size_t i = 0U; i < payload_length; ++i)
-        entry->payload[i] = payload[i];
-    entry->valid = true;
-    tcp_connection.reorder_length += new_span;
-    return true;
-}
-
-/* Move any now-contiguous queued segments into the application receive FIFO. */
-static void tcp_drain_reorder(void) {
-    for (;;) {
-        bool progressed = false;
-        for (size_t i = 0U; i < NET_TCP_REORDER_SLOTS; ++i) {
-            struct net_tcp_reorder_entry *entry = &tcp_connection.reorder[i];
-            if (!entry->valid) continue;
-
-            const uint32_t distance = entry->sequence -
-                                      tcp_connection.remote_sequence;
-            if (distance != 0U) {
-                if (distance < 0x80000000U) continue;
-
-                /* The missing segment overlapped this queued retransmission. */
-                const uint32_t overlap = tcp_connection.remote_sequence -
-                                         entry->sequence;
-                const size_t span =
-                    (size_t)entry->payload_length + (entry->fin ? 1U : 0U);
-                if ((size_t)overlap >= span) {
-                    tcp_connection.reorder_length -= span;
-                    entry->valid = false;
-                    progressed = true;
-                    break;
-                }
-                if ((size_t)overlap < entry->payload_length) {
-                    const size_t trim = (size_t)overlap;
-                    for (size_t j = trim; j < entry->payload_length; ++j)
-                        entry->payload[j - trim] = entry->payload[j];
-                    entry->payload_length =
-                        (uint16_t)((size_t)entry->payload_length - trim);
-                    entry->sequence = tcp_connection.remote_sequence;
-                    tcp_connection.reorder_length -= trim;
-                } else if ((size_t)overlap == entry->payload_length &&
-                           entry->fin) {
-                    tcp_connection.reorder_length -= entry->payload_length;
-                    entry->payload_length = 0U;
-                    entry->sequence = tcp_connection.remote_sequence;
-                } else {
-                    tcp_connection.reorder_length -= span;
-                    entry->valid = false;
-                    progressed = true;
-                    break;
-                }
-            }
-
-            if (entry->sequence != tcp_connection.remote_sequence) continue;
-            if ((size_t)entry->payload_length > tcp_receive_space()) continue;
-
-            const size_t amount = entry->payload_length;
-            if (amount != 0U) {
-                copy_bytes(tcp_connection.receive_buffer +
-                               tcp_connection.receive_length,
-                           entry->payload, amount);
-                tcp_connection.receive_length += amount;
-                tcp_connection.remote_sequence += (uint32_t)amount;
-                tcp_connection.reorder_length -= amount;
-            }
-            if (entry->fin) {
-                ++tcp_connection.remote_sequence;
-                tcp_connection.peer_closed = true;
-                --tcp_connection.reorder_length;
-            }
-            entry->valid = false;
-            progressed = true;
-            break;
-        }
-        if (!progressed) break;
-    }
-}
-
 static void receive_tcp(const uint8_t *segment, size_t length,
                         const uint8_t source_ip[4],
                         const uint8_t destination_ip[4]) {
-    const bool https_trace = tcp_connection.remote_port == 443U;
-    if (https_trace) tcp_https_trace("RX", segment, length);
     if (!tcp_connection.active || segment == NULL || source_ip == NULL ||
         destination_ip == NULL || length < NET_TCP_HEADER ||
         !equal_bytes(source_ip, tcp_connection.remote_ipv4, 4U) ||
@@ -1475,13 +1287,11 @@ static void receive_tcp(const uint8_t *segment, size_t length,
         read_be16(segment) != tcp_connection.remote_port ||
         read_be16(segment + 2U) != tcp_connection.local_port ||
         tcp_checksum_value(source_ip, destination_ip, segment, length) != 0U) {
-        if (https_trace) tcp_https_trace("DROP TUPLE/CHECKSUM", segment, length);
         return;
     }
 
     const size_t header_length = (size_t)(segment[12] >> 4) * 4U;
     if (header_length < NET_TCP_HEADER || header_length > length) {
-        if (https_trace) tcp_https_trace("DROP HEADER", segment, length);
         return;
     }
     const uint8_t flags = segment[13];
@@ -1492,7 +1302,6 @@ static void receive_tcp(const uint8_t *segment, size_t length,
     const bool fin = (flags & TCP_FLAG_FIN) != 0U;
 
     if ((flags & TCP_FLAG_RST) != 0U) {
-        if (https_trace) tcp_https_trace("RST", segment, length);
         tcp_connection.failed = true;
         tcp_connection.connected = false;
         return;
@@ -1525,7 +1334,6 @@ static void receive_tcp(const uint8_t *segment, size_t length,
     } else if (acknowledgement != tcp_connection.local_sequence &&
                !tcp_sequence_before(acknowledgement,
                                     tcp_connection.local_sequence)) {
-        if (https_trace) tcp_https_trace("DROP ACK", segment, length);
         return;
     }
 
@@ -1534,7 +1342,6 @@ static void receive_tcp(const uint8_t *segment, size_t length,
     if (sequence_delta > 0) {
         if (payload_length != 0U || fin)
             (void)tcp_queue_out_of_order(sequence, payload, payload_length, fin);
-        if (https_trace) tcp_https_trace("QUEUE OUT OF ORDER", segment, length);
         (void)send_tcp_segment(TCP_FLAG_ACK, NULL, 0U);
         return;
     }
@@ -1560,7 +1367,6 @@ static void receive_tcp(const uint8_t *segment, size_t length,
     }
 
     if (accepted_length != 0U) {
-        if (https_trace) tcp_https_trace("ACCEPT PAYLOAD", segment, length);
         copy_bytes(tcp_connection.receive_buffer +
                        tcp_connection.receive_length,
                    accepted_payload, accepted_length);
@@ -1595,7 +1401,6 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
     tcp_connection = (struct net_tcp_connection){0};
     tcp_clear_reorder();
     tcp_connection.active = true;
-    if (remote_port == 443U) tcp_https_trace_events = 0U;
     copy_bytes(tcp_connection.remote_ipv4, remote_ipv4, 4U);
     tcp_connection.remote_port = remote_port;
     tcp_connection.local_port = tcp_next_port++;

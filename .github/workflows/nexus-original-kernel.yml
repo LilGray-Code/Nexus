@@ -330,7 +330,7 @@ jobs:
           grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log
           grep -q "NEXUS K2 COOPERATIVE THREAD SCHEDULER READY" uefi-serial.log
-          grep -q "NEXUS DESKTOP FRAMEBUFFER READY" uefi-serial.log
+          grep -q "NEXUS INSTALLER SESSION READY" uefi-serial.log
           grep -q "NEXUS INSTALLER WRITE GATE ENABLED" uefi-serial.log
           grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" uefi-serial.log
           grep -q "NEXUS KEYBOARD INPUT READY" uefi-serial.log
@@ -546,11 +546,11 @@ jobs:
           while time.time() < deadline:
               if os.path.exists(log_path):
                   log = open(log_path, encoding="utf-8", errors="replace").read()
-                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS DESKTOP FRAMEBUFFER READY" in log:
+                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS INSTALLER SESSION READY" in log:
                       break
               time.sleep(1)
           else:
-              raise SystemExit("Live Nexus desktop did not become ready for keyboard-driven install")
+              raise SystemExit("Dedicated Nexus installer session did not become ready for keyboard-driven install")
 
           sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
           sock.settimeout(10)
@@ -689,11 +689,11 @@ jobs:
           while time.time() < deadline:
               if os.path.exists(log_path):
                   log = open(log_path, encoding="utf-8", errors="replace").read()
-                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS DESKTOP FRAMEBUFFER READY" in log:
+                  if "NEXUS K0 BOOT COMPLETE" in log and "NEXUS INSTALLER SESSION READY" in log:
                       break
               time.sleep(1)
           else:
-              raise SystemExit("Live Nexus desktop did not become ready for keyboard-driven install")
+              raise SystemExit("Dedicated Nexus installer session did not become ready for keyboard-driven install")
 
           sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
           sock.settimeout(10)

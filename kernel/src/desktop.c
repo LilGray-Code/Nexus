@@ -4715,22 +4715,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         if ((event->scancode & 0x80U) != 0U ||
             installer_ui_state == INSTALLER_UI_RUNNING) return;
         if (event->scancode == 0x01U) {
-            if (installer_ui_state == INSTALLER_UI_SELECT) {
+            if (installer_ui_state == INSTALLER_UI_SELECT &&
+                installer_dropdown_open) {
+                installer_dropdown_open = false;
+            } else if (installer_ui_state == INSTALLER_UI_SELECT) {
                 desktop_open_view(DESKTOP_HOME);
             } else {
+                installer_dropdown_open = false;
                 installer_ui_state = INSTALLER_UI_SELECT;
                 installer_input_length = 0U;
                 installer_input[0] = '\0';
                 installer_set_status("Select a supported target disk");
             }
         } else if (installer_ui_state == INSTALLER_UI_SELECT) {
-            if (event->scancode == 0x3BU) {
+            if (event->scancode == 0x20U || event->scancode == 0x39U) {
+                installer_dropdown_open = !installer_dropdown_open;
+            } else if (event->scancode == 0x3BU) {
+                installer_dropdown_open = false;
                 installer_firmware = NEXUS_FIRMWARE_UEFI;
                 installer_refresh_plan();
             } else if (event->scancode == 0x3CU) {
+                installer_dropdown_open = false;
                 installer_firmware = NEXUS_FIRMWARE_LEGACY_BIOS;
                 installer_refresh_plan();
             } else if (event->scancode == 0x3DU) {
+                installer_dropdown_open = false;
                 installer_firmware = NEXUS_FIRMWARE_DUAL;
                 installer_refresh_plan();
             } else if (event->scancode == 0x48U && blockdev_count() > 0U) {
@@ -4738,7 +4747,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (event->scancode == 0x50U && blockdev_count() > 0U) {
                 installer_select_delta(true);
             } else if (event->scancode == 0x1CU) {
-                (void)installer_begin_confirmation();
+                if (installer_dropdown_open)
+                    installer_dropdown_open = false;
+                else
+                    (void)installer_begin_confirmation();
             } else {
                 return;
             }

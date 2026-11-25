@@ -1223,6 +1223,18 @@ static uint16_t tcp_checksum_value(const uint8_t source_ip[4],
     return checksum(pseudo, length + 12U);
 }
 
+/*
+ * The advertised TCP window accounts for bytes held in both the application
+ * FIFO and the out-of-order reassembly queue. Sending a window update after
+ * the application drains data lets large TLS responses resume safely.
+ */
+static uint16_t tcp_advertised_receive_window(void) {
+    const size_t occupied = tcp_connection.receive_length +
+                            tcp_connection.reorder_length;
+    if (occupied >= NET_TCP_RX_CAPACITY) return 0U;
+    return (uint16_t)(NET_TCP_RX_CAPACITY - occupied);
+}
+
 static bool send_tcp_segment(uint8_t flags, const void *payload,
                              size_t payload_length) {
     if (!tcp_connection.active || payload_length > NET_TCP_MAX_PAYLOAD ||
@@ -1254,7 +1266,7 @@ static bool send_tcp_segment(uint8_t flags, const void *payload,
     write_be32(tcp + 8U, tcp_connection.remote_sequence);
     tcp[12] = 0x50U;
     tcp[13] = flags;
-    write_be16(tcp + 14U, (uint16_t)NET_TCP_RX_CAPACITY);
+    write_be16(tcp + 14U, tcp_advertised_receive_window());
     write_be16(tcp + 16U, 0U);
     write_be16(tcp + 18U, 0U);
     if (payload_length != 0U)
@@ -1719,6 +1731,14 @@ size_t net_tcp_receive(void *buffer, size_t capacity) {
     for (size_t i = 0; i < tcp_connection.receive_length; ++i)
         tcp_connection.receive_buffer[i] =
             tcp_connection.receive_buffer[count + i];
+
+    /*
+     * Advertise the newly freed FIFO space immediately. Without this ACK the
+     * peer can remain stalled behind a zero/small receive window after TLS
+     * drains a burst of encrypted records.
+     */
+    if (tcp_connection.active && tcp_connection.connected)
+        (void)send_tcp_segment(TCP_FLAG_ACK, NULL, 0U);
     return count;
 }
 

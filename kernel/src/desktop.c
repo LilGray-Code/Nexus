@@ -3341,9 +3341,19 @@ browser_retry:
         if (connect_result != 0 || !nexus_https_is_verified(&https)) {
             nexus_https_close(&https);
             if (search_request) {
-                serial_write("NEXUS BING SEARCH HTTPS CONNECT FAILED code=");
-                serial_write_hex((uint64_t)(int64_t)connect_result);
-                serial_write("\r\n");
+                if (connect_result == NEXUS_HTTPS_ERR_DNS) {
+                    serial_write("NEXUS BING SEARCH DNS RESOLUTION FAILED\r\n");
+                } else if (connect_result == NEXUS_HTTPS_ERR_CONNECT) {
+                    serial_write("NEXUS BING SEARCH TCP CONNECT FAILED\r\n");
+                } else if (connect_result == NEXUS_HTTPS_ERR_TIMEOUT) {
+                    serial_write("NEXUS BING SEARCH HTTPS CONNECT TIMEOUT\r\n");
+                } else if (connect_result == NEXUS_HTTPS_ERR_TLS) {
+                    serial_write("NEXUS BING SEARCH TLS CERTIFICATE VERIFY FAILED\r\n");
+                } else {
+                    serial_write("NEXUS BING SEARCH TLS STACK FAILED code=");
+                    serial_write_hex((uint64_t)(int64_t)connect_result);
+                    serial_write("\r\n");
+                }
             }
             browser_set_status(
                 "HTTPS failed: check CA trust bundle, RTC clock and network");

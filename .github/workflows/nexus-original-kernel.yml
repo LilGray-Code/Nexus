@@ -195,6 +195,10 @@ jobs:
           fsck.fat -n /tmp/nexus-installed-esp.img || true
           mdir -i /tmp/nexus-installed-esp.img ::/EFI/BOOT
           mdir -i /tmp/nexus-installed-esp.img ::/boot/limine
+          mtype -i /tmp/nexus-installed-esp.img ::/boot/limine/limine.conf > /tmp/nexus-installed-limine.conf
+          grep -q '^/Nexus OS - Installed Desktop$' /tmp/nexus-installed-limine.conf
+          grep -q 'cmdline: nexus.mode=desktop' /tmp/nexus-installed-limine.conf
+          ! grep -q 'nexus.mode=installer' /tmp/nexus-installed-limine.conf
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-installed-uefi-vars.fd
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
@@ -419,6 +423,7 @@ jobs:
           raise SystemExit("Timed out waiting for live web-search results")
           PY
           cat nexus-browser-search-serial.log
+          grep -q "NEXUS BOOT MODE: DESKTOP" nexus-browser-search-serial.log
 
       - name: Resolve exception IP from UEFI log
         if: always()
@@ -639,6 +644,7 @@ jobs:
             exit "$status"
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-uefi.log
+          grep -q "NEXUS BOOT MODE: DESKTOP" installer-ui-installed-uefi.log
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
             -machine pc -cpu qemu64 -m 512M \
@@ -652,6 +658,7 @@ jobs:
             exit "$status"
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-bios.log
+          grep -q "NEXUS BOOT MODE: DESKTOP" installer-ui-installed-bios.log
 
       - name: Test the graphical installer on a disposable SATA target
         shell: bash

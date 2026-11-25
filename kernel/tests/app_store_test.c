@@ -27,7 +27,7 @@ const struct nexus_boot_pack_entry *nexus_boot_pack_find(
         "KINETIC.ELF", "GAMEPAD.ELF", "AUDIO.ELF", "PIE.ELF", "ARCADE.ELF"
     };
     if (name == NULL) return NULL;
-    for (size_t i = 0U; i < 4U; ++i) {
+    for (size_t i = 0U; i < 5U; ++i) {
         if (strcmp(name, names[i]) == 0 && mock_native_available[i]) {
             memset(&mock_native_entry, 0, sizeof(mock_native_entry));
             (void)snprintf(mock_native_entry.name,

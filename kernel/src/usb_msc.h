@@ -75,15 +75,20 @@ bool nexus_usb_msc_init(struct nexus_usb_msc_device *device,
                         uint8_t bulk_out_endpoint,
                         uint8_t lun);
 
-/* Low-level SCSI commands. Disk writes must be routed through the kernel's
- * blockdev write/session policy; callers must never bypass that policy.
+/* Read-only transport primitive. Writes are intentionally not exported as a
+ * raw SCSI function: the block-device adapter is the only write entry point.
  */
 bool nexus_usb_msc_read_blocks(struct nexus_usb_msc_device *device,
                                uint64_t lba, uint32_t block_count,
                                void *buffer);
-bool nexus_usb_msc_write_blocks(struct nexus_usb_msc_device *device,
-                                uint64_t lba, uint32_t block_count,
-                                const void *buffer);
+/* Registers an install-capable, otherwise read-only USB disk. Call only after
+ * all boot devices have been enumerated and before boot-media provenance is
+ * finalized. The supplied stable ID must include a real serial or physical
+ * port identity; this API refuses late registration after provenance closes.
+ */
+bool nexus_usb_msc_register_blockdev(struct nexus_usb_msc_device *device,
+                                     const char *name,
+                                     const char *stable_id);
 bool nexus_usb_msc_flush(struct nexus_usb_msc_device *device);
 bool nexus_usb_msc_request_sense(struct nexus_usb_msc_device *device,
                                  struct nexus_usb_msc_sense *sense);

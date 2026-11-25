@@ -1,4 +1,5 @@
 #include "usb_msc.h"
+#include "blockdev.h"
 
 #include <assert.h>
 #include <stddef.h>
@@ -176,13 +177,26 @@ static void test_read_write_16_and_flush(void) {
     assert(sector[0]==0xA5U);
 
     sector[0]=0x5AU;
-    assert(nexus_usb_msc_write_blocks(&device,0x100000000ULL,1U,sector));
+    blockdev_init();
+    assert(nexus_usb_msc_register_blockdev(
+        &device,"USB0","USB-PORT-04-NX-USB-0000001"));
+    const struct nexus_block_device *registered=blockdev_at(0U);
+    assert(registered!=NULL);
+    assert(registered->transport==NEXUS_BLOCKDEV_TRANSPORT_USB);
+    assert((registered->flags & NEXUS_BLOCKDEV_READ_ONLY)!=0U);
+    assert((registered->flags & NEXUS_BLOCKDEV_INSTALL_CAPABLE)!=0U);
+    assert(!blockdev_write(registered,0x100000000ULL,1U,sector));
+    assert(blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_NETWORK));
+    assert(blockdev_install_session_begin(
+        registered,"USB-PORT-04-NX-USB-0000001","ERASE"));
+    assert(blockdev_install_write(registered,0x100000000ULL,1U,sector));
     assert(mock.last_opcode==0x8AU);
     assert(be64(mock.last_cdb+2U)==0x100000000ULL);
     assert(mock.last_data_out_first==0x5AU);
     assert(mock.last_data_out_length==sizeof(sector));
-    assert(nexus_usb_msc_flush(&device));
+    assert(blockdev_install_flush(registered));
     assert(mock.last_opcode==0x35U);
+    blockdev_install_session_end();
 }
 
 static void test_sense_and_command_failure(void) {
@@ -283,8 +297,16 @@ static void test_capacity_10_and_32bit_commands(void) {
     assert(nexus_usb_msc_read_blocks(&device,0x123U,1U,sector));
     assert(mock.last_opcode==0x28U);
     assert(be32(mock.last_cdb+2U)==0x123U);
-    assert(nexus_usb_msc_write_blocks(&device,0x123U,1U,sector));
+    blockdev_init();
+    assert(nexus_usb_msc_register_blockdev(
+        &device,"USB0","USB-PORT-04-NX-USB-0000001"));
+    const struct nexus_block_device *registered=blockdev_at(0U);
+    assert(blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_NETWORK));
+    assert(blockdev_install_session_begin(
+        registered,"USB-PORT-04-NX-USB-0000001","ERASE"));
+    assert(blockdev_install_write(registered,0x123U,1U,sector));
     assert(mock.last_opcode==0x2AU);
+    blockdev_install_session_end();
 }
 
 static void test_failed_recovery_disables_device(void) {
@@ -300,6 +322,7 @@ static void test_failed_recovery_disables_device(void) {
 }
 
 int main(void) {
+    test_blockdev_registration_requires_open_provenance();
     test_configuration_descriptor_parser();
     test_capacity_10_and_32bit_commands();
     test_initialize_and_read_capacity_16();

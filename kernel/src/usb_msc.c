@@ -1,5 +1,7 @@
 #include "usb_msc.h"
 
+#include "blockdev.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -420,9 +422,9 @@ bool nexus_usb_msc_read_blocks(struct nexus_usb_msc_device *device,
                         NULL, buffer, block_count * device->block_size);
 }
 
-bool nexus_usb_msc_write_blocks(struct nexus_usb_msc_device *device,
-                                uint64_t lba, uint32_t block_count,
-                                const void *buffer) {
+static bool usb_msc_write_blocks(struct nexus_usb_msc_device *device,
+                                 uint64_t lba, uint32_t block_count,
+                                 const void *buffer) {
     if (device == NULL || !device->initialized || buffer == NULL ||
         block_count == 0U || lba >= device->block_count ||
         (uint64_t)block_count > device->block_count - lba ||
@@ -451,6 +453,72 @@ bool nexus_usb_msc_flush(struct nexus_usb_msc_device *device) {
     cdb[0] = SCSI_SYNCHRONIZE_CACHE_10;
     return execute_scsi(device, cdb, sizeof(cdb), SCSI_DATA_NONE,
                         NULL, NULL, 0U);
+}
+
+
+static bool usb_msc_block_read(void *context, uint64_t lba,
+                               uint32_t block_count, void *buffer) {
+    return nexus_usb_msc_read_blocks(
+        (struct nexus_usb_msc_device *)context, lba, block_count, buffer);
+}
+
+static bool usb_msc_block_write(void *context, uint64_t lba,
+                                uint32_t block_count, const void *buffer) {
+    return usb_msc_write_blocks(
+        (struct nexus_usb_msc_device *)context, lba, block_count, buffer);
+}
+
+static bool usb_msc_block_flush(void *context) {
+    return nexus_usb_msc_flush((struct nexus_usb_msc_device *)context);
+}
+
+static bool copy_blockdev_text(char *destination, size_t capacity,
+                               const char *source) {
+    if (destination == NULL || capacity == 0U || source == NULL) return false;
+    size_t length = 0U;
+    while (length < capacity && source[length] != '\\0') ++length;
+    if (length == 0U || length >= capacity) return false;
+    for (size_t i = 0U; i < length; ++i) destination[i] = source[i];
+    destination[length] = '\\0';
+    return true;
+}
+
+bool nexus_usb_msc_register_blockdev(struct nexus_usb_msc_device *device,
+                                     const char *name,
+                                     const char *stable_id) {
+    if (!nexus_usb_msc_ready(device) ||
+        blockdev_boot_media_detection_complete()) return false;
+
+    struct nexus_block_device block = {0};
+    if (!copy_blockdev_text(block.name, sizeof(block.name), name) ||
+        !copy_blockdev_text(block.stable_id, sizeof(block.stable_id), stable_id))
+        return false;
+
+    size_t model_length = 0U;
+    const char *fields[2] = {device->vendor, device->product};
+    for (size_t field = 0U; field < 2U; ++field) {
+        if (fields[field][0] == '\\0') continue;
+        if (model_length != 0U &&
+            model_length + 1U < sizeof(block.model))
+            block.model[model_length++] = ' ';
+        for (size_t i = 0U; fields[field][i] != '\\0'; ++i) {
+            if (model_length + 1U >= sizeof(block.model)) return false;
+            block.model[model_length++] = fields[field][i];
+        }
+    }
+    if (model_length == 0U) return false;
+    block.model[model_length] = '\\0';
+
+    block.block_count = device->block_count;
+    block.block_size = device->block_size;
+    block.max_blocks_per_request = device->max_blocks_per_request;
+    block.flags = NEXUS_BLOCKDEV_READ_ONLY | NEXUS_BLOCKDEV_INSTALL_CAPABLE;
+    block.transport = NEXUS_BLOCKDEV_TRANSPORT_USB;
+    block.context = device;
+    block.read = usb_msc_block_read;
+    block.write = usb_msc_block_write;
+    block.flush = usb_msc_block_flush;
+    return blockdev_register(&block);
 }
 
 bool nexus_usb_msc_request_sense(struct nexus_usb_msc_device *device,

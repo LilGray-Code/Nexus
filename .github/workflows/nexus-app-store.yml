@@ -1,0 +1,41 @@
+name: Nexus App Store Contracts
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/app_store.c"
+      - "kernel/src/app_store.h"
+      - "kernel/tests/app_store_test.c"
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - ".github/workflows/nexus-app-store.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app-store-contract:
+    name: Test Store catalog and safe shortcut lifecycle
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Build and run host-side Store tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/app_store.c \
+            kernel/tests/app_store_test.c \
+            -o /tmp/nexus-app-store-test
+          /tmp/nexus-app-store-test
+
+      - name: Verify the kernel links the Store service
+        run: |
+          grep -q 'app_store.o' kernel/Makefile
+          grep -q 'vfs_remove_root_file' kernel/src/vfs.h

@@ -32,6 +32,8 @@ void input_usb_mouse_report(const uint8_t report[3]);
 #ifdef NEXUS_INPUT_HOST_TEST
 /* Test-only entry point for the PS/2 byte-stream decoder. */
 void input_test_keyboard_scancode(uint8_t scancode);
+void input_test_mouse_device_id(uint8_t id);
+void input_test_mouse_byte(uint8_t value);
 #endif
 
 #endif

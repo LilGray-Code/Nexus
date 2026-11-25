@@ -1260,6 +1260,13 @@ bool xhci_mouse_ready(void) {
            controller.mouse.active;
 }
 
+bool xhci_gamepads_ready(void) {
+    if (!controller.initialized) return false;
+    for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
+        if (controller.gamepads[i].active) return true;
+    return false;
+}
+
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized) return;

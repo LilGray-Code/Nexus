@@ -66,6 +66,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          chmod +x ./build/build-iso.sh
           EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" \
             timeout -k 10s 90m ./build/build-iso.sh
           test -s release/NexusOS-OriginalKernel-x86_64.iso

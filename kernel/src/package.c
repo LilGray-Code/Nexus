@@ -124,8 +124,7 @@ static bool valid_version(const char *version) {
     while (version[length] != '\0') {
         const char c = version[length];
         if (c == '.') {
-            if (length == component_start || version[component_start] == '0')
-                return false;
+            if (length == component_start) return false;
             if (component > 255U) return false;
             ++component_count;
             component_start = length + 1U;

@@ -324,7 +324,7 @@ jobs:
           rm -f /tmp/nexus-browser-qmp.sock nexus-browser-search-serial.log
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-browser-vars.fd
           qemu-system-x86_64 \
-            -machine q35 -cpu qemu64 -m 512M \
+            -machine q35 -cpu qemu64,+rdrand -m 512M \
             -netdev user,id=n0 -device e1000,netdev=n0 \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-browser-vars.fd \

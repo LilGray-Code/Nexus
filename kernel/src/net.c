@@ -288,6 +288,153 @@ static void receive_dhcp(const uint8_t *packet, size_t length,
                         const uint8_t source_ip[4]);
 static void receive_dns(const uint8_t *packet, size_t length,
                         const uint8_t source_ip[4]);
+static bool tcp_sequence_before(uint32_t left, uint32_t right) {
+    return (int32_t)(left - right) < 0;
+}
+
+static size_t tcp_receive_space(void) {
+    if (tcp_connection.receive_length >= NET_TCP_RX_CAPACITY) return 0U;
+    return NET_TCP_RX_CAPACITY - tcp_connection.receive_length;
+}
+
+static void tcp_clear_reorder(void) {
+    for (size_t i = 0U; i < NET_TCP_REORDER_SLOTS; ++i)
+        tcp_connection.reorder[i].valid = false;
+    tcp_connection.reorder_length = 0U;
+}
+
+/*
+ * Queue one future segment inside the advertised receive window. The queue is
+ * intentionally small: it covers bursts reordered by a NIC/virtual switch,
+ * while retransmission remains the recovery path when the queue is full.
+ */
+static bool tcp_queue_out_of_order(uint32_t sequence,
+                                   const uint8_t *payload,
+                                   size_t payload_length, bool fin) {
+    if ((payload_length != 0U && payload == NULL) ||
+        payload_length > NET_TCP_REORDER_PAYLOAD_MAX ||
+        (payload_length == 0U && !fin)) return false;
+
+    const uint32_t forward = sequence - tcp_connection.remote_sequence;
+    if (forward >= 0x80000000U) return false;
+    const size_t available = tcp_receive_space();
+    if ((size_t)forward > available ||
+        payload_length > available - (size_t)forward ||
+        (fin && (size_t)forward + payload_length >= available)) return false;
+
+    size_t free_slot = NET_TCP_REORDER_SLOTS;
+    const size_t new_span = payload_length + (fin ? 1U : 0U);
+    for (size_t i = 0U; i < NET_TCP_REORDER_SLOTS; ++i) {
+        struct net_tcp_reorder_entry *entry = &tcp_connection.reorder[i];
+        if (!entry->valid) {
+            if (free_slot == NET_TCP_REORDER_SLOTS) free_slot = i;
+            continue;
+        }
+        if (entry->sequence == sequence) {
+            if (entry->payload_length != payload_length || entry->fin != fin)
+                return false;
+            for (size_t j = 0U; j < payload_length; ++j)
+                if (entry->payload[j] != payload[j]) return false;
+            return true; /* Exact retransmission of an already queued segment. */
+        }
+
+        const uint32_t existing_offset =
+            entry->sequence - tcp_connection.remote_sequence;
+        const size_t existing_span =
+            (size_t)entry->payload_length + (entry->fin ? 1U : 0U);
+        const size_t new_start = (size_t)forward;
+        const size_t existing_start = (size_t)existing_offset;
+        if (new_span != 0U && existing_span != 0U &&
+            new_start < existing_start + existing_span &&
+            existing_start < new_start + new_span) {
+            /* Do not keep conflicting overlapping segments. */
+            return false;
+        }
+    }
+    if (free_slot == NET_TCP_REORDER_SLOTS) return false;
+
+    struct net_tcp_reorder_entry *entry =
+        &tcp_connection.reorder[free_slot];
+    entry->sequence = sequence;
+    entry->payload_length = (uint16_t)payload_length;
+    entry->fin = fin;
+    for (size_t i = 0U; i < payload_length; ++i)
+        entry->payload[i] = payload[i];
+    entry->valid = true;
+    tcp_connection.reorder_length += new_span;
+    return true;
+}
+
+/* Move any now-contiguous queued segments into the application receive FIFO. */
+static void tcp_drain_reorder(void) {
+    for (;;) {
+        bool progressed = false;
+        for (size_t i = 0U; i < NET_TCP_REORDER_SLOTS; ++i) {
+            struct net_tcp_reorder_entry *entry = &tcp_connection.reorder[i];
+            if (!entry->valid) continue;
+
+            const uint32_t distance = entry->sequence -
+                                      tcp_connection.remote_sequence;
+            if (distance != 0U) {
+                if (distance < 0x80000000U) continue;
+
+                /* The missing segment overlapped this queued retransmission. */
+                const uint32_t overlap = tcp_connection.remote_sequence -
+                                         entry->sequence;
+                const size_t span =
+                    (size_t)entry->payload_length + (entry->fin ? 1U : 0U);
+                if ((size_t)overlap >= span) {
+                    tcp_connection.reorder_length -= span;
+                    entry->valid = false;
+                    progressed = true;
+                    break;
+                }
+                if ((size_t)overlap < entry->payload_length) {
+                    const size_t trim = (size_t)overlap;
+                    for (size_t j = trim; j < entry->payload_length; ++j)
+                        entry->payload[j - trim] = entry->payload[j];
+                    entry->payload_length =
+                        (uint16_t)((size_t)entry->payload_length - trim);
+                    entry->sequence = tcp_connection.remote_sequence;
+                    tcp_connection.reorder_length -= trim;
+                } else if ((size_t)overlap == entry->payload_length &&
+                           entry->fin) {
+                    tcp_connection.reorder_length -= entry->payload_length;
+                    entry->payload_length = 0U;
+                    entry->sequence = tcp_connection.remote_sequence;
+                } else {
+                    tcp_connection.reorder_length -= span;
+                    entry->valid = false;
+                    progressed = true;
+                    break;
+                }
+            }
+
+            if (entry->sequence != tcp_connection.remote_sequence) continue;
+            if ((size_t)entry->payload_length > tcp_receive_space()) continue;
+
+            const size_t amount = entry->payload_length;
+            if (amount != 0U) {
+                copy_bytes(tcp_connection.receive_buffer +
+                               tcp_connection.receive_length,
+                           entry->payload, amount);
+                tcp_connection.receive_length += amount;
+                tcp_connection.remote_sequence += (uint32_t)amount;
+                tcp_connection.reorder_length -= amount;
+            }
+            if (entry->fin) {
+                ++tcp_connection.remote_sequence;
+                tcp_connection.peer_closed = true;
+                --tcp_connection.reorder_length;
+            }
+            entry->valid = false;
+            progressed = true;
+            break;
+        }
+        if (!progressed) break;
+    }
+}
+
 static void receive_tcp(const uint8_t *segment, size_t length,
                         const uint8_t source_ip[4],
                         const uint8_t destination_ip[4]);

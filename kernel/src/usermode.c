@@ -13,6 +13,7 @@
 #include "timer.h"
 #include "vfs.h"
 #include "virtio_gpu.h"
+#include "xhci.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -428,6 +429,8 @@ int64_t usermode_sys_input_poll(uint64_t user_event) {
         return -NEXUS_EFAULT;
     }
 
+    /* xHCI HID reports are drained by polling rather than an IRQ handler. */
+    xhci_poll();
     struct nexus_input_event event;
     if (!input_pop_event(&event)) return 0;
 

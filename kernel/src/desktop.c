@@ -1378,8 +1378,17 @@ static void draw_shell(void) {
                 graphics_draw_text(text_x + 400U, row_y + 10U,
                                    installer_transport_short_label(candidate),
                                    1U, 170U, 191U, 211U);
+                const enum nexus_firmware_mode candidate_layout =
+                    installer_firmware == NEXUS_FIRMWARE_LEGACY_BIOS
+                        ? NEXUS_FIRMWARE_DUAL : installer_firmware;
+                struct nexus_partition_plan candidate_plan;
+                const bool candidate_plan_valid = nexus_partition_plan_create(
+                    candidate->block_count, candidate->block_size,
+                    candidate_layout, &candidate_plan);
                 const char *candidate_status =
                     installer_candidate_status(candidate);
+                if (candidate_status[0] == 'R' && !candidate_plan_valid)
+                    candidate_status = "BAD LAYOUT";
                 const bool eligible = candidate_status[0] == 'R';
                 graphics_draw_text(text_x + 464U, row_y + 10U,
                                    candidate_status, 1U,

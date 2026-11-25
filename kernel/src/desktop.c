@@ -1325,10 +1325,17 @@ static void draw_shell(void) {
                     }
                 }
 
-                /* Continue is deliberately disabled for every unsafe target. */
+                const bool selected_target_safe = device != NULL &&
+                    installer_plan_valid &&
+                    blockdev_boot_media_detection_complete() &&
+                    !blockdev_is_boot_media(device) &&
+                    !blockdev_is_mounted(device) &&
+                    blockdev_identity_is_unique(device) &&
+                    blockdev_install_write_supported(device);
                 installer_draw_button(text_x + 252U, text_y + 365U,
                                       204U, 26U, "CONTINUE",
-                                      false, false);
+                                      selected_target_safe,
+                                      !selected_target_safe);
                 installer_draw_button(text_x, text_y + 365U,
                                       104U, 26U, "CANCEL",
                                       false, false);

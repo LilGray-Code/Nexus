@@ -12,12 +12,17 @@
 #define PS2_COMMAND_PORT 0x64U
 #define PS2_QUEUE_SIZE 64U
 #define PS2_QUEUE_MASK (PS2_QUEUE_SIZE - 1U)
+#define GAMEPAD_QUEUE_SIZE 16U
+#define GAMEPAD_QUEUE_MASK (GAMEPAD_QUEUE_SIZE - 1U)
 #define PS2_WAIT_LIMIT 100000U
 
 #define PS2_MOUSE_PACKET_STANDARD 3U
 #define PS2_MOUSE_PACKET_WHEEL    4U
 
 static struct nexus_input_event event_queue[PS2_QUEUE_SIZE];
+static struct nexus_usb_gamepad_event gamepad_queue[GAMEPAD_QUEUE_SIZE];
+static volatile uint8_t gamepad_head;
+static volatile uint8_t gamepad_tail;
 static volatile uint8_t event_head;
 static volatile uint8_t event_tail;
 static uint8_t mouse_packet[4];
@@ -205,6 +210,8 @@ static void input_interrupt_restore(uint64_t flags) {
 bool input_init(void) {
     event_head = 0;
     event_tail = 0;
+    gamepad_head = 0U;
+    gamepad_tail = 0U;
     mouse_packet_index = 0U;
     mouse_packet_length = PS2_MOUSE_PACKET_STANDARD;
     mouse_explorer_buttons = false;
@@ -364,4 +371,24 @@ void input_usb_mouse_report(const uint8_t report[3]) {
     };
     queue_event(&event);
     input_interrupt_restore(interrupt_flags);
+}
+
+void input_usb_gamepad_event(const struct nexus_usb_gamepad_event *event) {
+    if (event == NULL) return;
+    const uint64_t flags = input_interrupt_save();
+    const uint8_t next = (uint8_t)((gamepad_tail + 1U) & GAMEPAD_QUEUE_MASK);
+    if (next != gamepad_head) {
+        gamepad_queue[gamepad_tail] = *event;
+        __asm__ volatile ("" : : : "memory");
+        gamepad_tail = next;
+    }
+    input_interrupt_restore(flags);
+}
+
+bool input_pop_gamepad_event(struct nexus_usb_gamepad_event *event) {
+    if (event == NULL || gamepad_head == gamepad_tail) return false;
+    __asm__ volatile ("" : : : "memory");
+    *event = gamepad_queue[gamepad_head];
+    gamepad_head = (uint8_t)((gamepad_head + 1U) & GAMEPAD_QUEUE_MASK);
+    return true;
 }

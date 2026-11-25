@@ -1581,6 +1581,7 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
     if (!ipv4_next_hop(remote_ipv4, next_hop)) return false;
 
     tcp_connection = (struct net_tcp_connection){0};
+    tcp_clear_reorder();
     tcp_connection.active = true;
     if (remote_port == 443U) tcp_https_trace_events = 0U;
     copy_bytes(tcp_connection.remote_ipv4, remote_ipv4, 4U);

@@ -70,6 +70,8 @@ struct nexus_cpu_info {
 bool nexus_cpu_init(void);
 const struct nexus_cpu_info *nexus_cpu_get_info(void);
 bool nexus_cpu_has_feature(uint64_t feature);
+/* Publish AVX/AVX2 only after the kernel enables and verifies XCR0 state. */
+void nexus_cpu_enable_avx_features(void);
 /* Mark AVX unavailable when the OS deliberately disables XSAVE state. */
 void nexus_cpu_disable_avx(void);
 const char *nexus_cpu_feature_level_label(void);

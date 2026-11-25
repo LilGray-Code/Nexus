@@ -265,7 +265,12 @@ void kmain(void) {
     if (!register_boot_services()) { serial_write("ERROR: service registry failed\r\n"); halt_forever(); }
     if (nexus_cpu_init()) {
         if (nexus_fpu_init()) {
-            serial_write("CPU: isolated x87/SSE2 state enabled for foreground apps; AVX remains disabled\r\n");
+            serial_write("CPU: isolated x87/SSE2 state enabled for foreground apps\r\n");
+            if (nexus_fpu_avx_available()) {
+                serial_write("CPU: XSAVE AVX/YMM state enabled for native apps\r\n");
+            } else {
+                serial_write("CPU: AVX unavailable; using legacy FXSAVE/SSE2 state\r\n");
+            }
         } else {
             serial_write("WARNING: x87/SSE2 app runtime unavailable on this CPU\r\n");
         }

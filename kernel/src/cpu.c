@@ -32,6 +32,12 @@ static uint64_t read_xcr0(void) {
     return ((uint64_t)high << 32) | low;
 }
 
+static bool cr4_osxsave_enabled(void) {
+    uint64_t cr4;
+    __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
+    return (cr4 & (1ULL << 18)) != 0U;
+}
+
 static void set_feature(uint64_t feature, bool present) {
     if (present) cpu_info.features |= feature;
 }
@@ -120,7 +126,9 @@ bool nexus_cpu_init(void) {
     const uint64_t xsave_state_features =
         NEXUS_CPU_FEATURE_XSAVE | NEXUS_CPU_FEATURE_OSXSAVE;
     const bool os_owns_extended_state =
-        (cpu_info.features & xsave_state_features) == xsave_state_features;
+        (cpu_info.features & xsave_state_features) == xsave_state_features &&
+        cr4_osxsave_enabled();
+    /* XGETBV is #UD until CR4.OSXSAVE is set by the operating system. */
     if (os_owns_extended_state) xcr0 = read_xcr0();
     const bool avx_state_enabled =
         os_owns_extended_state && (xcr0 & 0x6U) == 0x6U;
@@ -254,6 +262,35 @@ const struct nexus_cpu_info *nexus_cpu_get_info(void) {
 
 bool nexus_cpu_has_feature(uint64_t feature) {
     return feature != 0U && (cpu_info.features & feature) == feature;
+}
+
+void nexus_cpu_enable_avx_features(void) {
+    if (!cpu_info.cpuid_available || cpu_info.max_basic_leaf < 1U ||
+        !cr4_osxsave_enabled()) return;
+
+    uint32_t ecx = 0U;
+    cpuid(1U, 0U, NULL, NULL, &ecx, NULL);
+    if ((ecx & (1U << 26)) == 0U ||
+        (ecx & (1U << 28)) == 0U ||
+        (ecx & (1U << 27)) == 0U ||
+        (read_xcr0() & 0x7U) != 0x7U) return;
+
+    cpu_info.features |= NEXUS_CPU_FEATURE_OSXSAVE |
+                         NEXUS_CPU_FEATURE_AVX;
+    set_feature(NEXUS_CPU_FEATURE_FMA, (ecx & (1U << 12)) != 0U);
+    if (cpu_info.max_basic_leaf >= 7U) {
+        uint32_t max7_ebx = 0U;
+        cpuid(7U, 0U, NULL, &max7_ebx, NULL, NULL);
+        set_feature(NEXUS_CPU_FEATURE_AVX2,
+                    (max7_ebx & (1U << 5)) != 0U);
+    }
+    /* XCR0=0x7 omits opmask/ZMM state; do not advertise AVX-512. */
+    cpu_info.features &= ~(NEXUS_CPU_FEATURE_AVX512F |
+                           NEXUS_CPU_FEATURE_AVX512DQ |
+                           NEXUS_CPU_FEATURE_AVX512CD |
+                           NEXUS_CPU_FEATURE_AVX512BW |
+                           NEXUS_CPU_FEATURE_AVX512VL |
+                           NEXUS_CPU_FEATURE_AVX512VNNI);
 }
 
 const char *nexus_cpu_feature_level_label(void) {

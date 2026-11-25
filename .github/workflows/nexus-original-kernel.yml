@@ -337,13 +337,13 @@ jobs:
       - name: Boot test - UEFI (OVMF)
         shell: bash
         run: |
-          # Generic x86-64 baseline profile with both AHCI and NVMe controllers.
+          # QEMU max exposes AVX/AVX2 so OS-managed XSAVE is exercised in CI.
           truncate -s 256M nvme-test.img ahci-test.img
           python3 build/create-gpt-test-image.py nvme-test.img build/userland/HELLO.ELF
           python3 build/create-gpt-test-image.py ahci-test.img build/userland/HELLO.ELF
           set +e
           timeout -k 2s 24s qemu-system-x86_64 \
-            -machine q35 -cpu qemu64 -m 512M \
+            -machine q35 -cpu max -m 512M \
             -netdev user,id=n0 -device e1000,netdev=n0 \
             -netdev user,id=virt0 -device virtio-net-pci,netdev=virt0,disable-legacy=on \
             -device virtio-gpu-pci,disable-legacy=on \
@@ -368,6 +368,7 @@ jobs:
           cat uefi-serial.log
           grep -q "BOOT MEDIA: optical source is not a registered disk" uefi-serial.log
           grep -q "NEXUS GDT TSS READY" uefi-serial.log
+          grep -q "CPU: XSAVE AVX/YMM state enabled for native apps" uefi-serial.log
           grep -Eq "NEXUS AC97 AUDIO READY|AUDIO: no supported AC97 device initialized" uefi-serial.log
           grep -q "INSTALLER: verified kernel, UEFI loader, BIOS stage-2, and system-pack payloads available" uefi-serial.log
           grep -q "NEXUS ELF64 STATIC-PIE VALIDATION READY" uefi-serial.log

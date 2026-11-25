@@ -5,6 +5,7 @@
 
 #include "acpi.h"
 #include "cpu.h"
+#include "fpu.h"
 #include "blockdev.h"
 #include "boot_payload.h"
 #include "boot_mode.h"
@@ -165,6 +166,11 @@ void kmain(void) {
     serial_write("Architecture: x86_64\r\n");
     serial_write("Boot protocol: Limine\r\n");
     if (nexus_cpu_init()) {
+        if (nexus_fpu_init()) {
+            serial_write("CPU: isolated x87/SSE2 state enabled for foreground apps; AVX remains disabled\\r\\n");
+        } else {
+            serial_write("WARNING: x87/SSE2 app runtime unavailable on this CPU\\r\\n");
+        }
         const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
         serial_write("CPU: ");
         serial_write(cpu->brand);

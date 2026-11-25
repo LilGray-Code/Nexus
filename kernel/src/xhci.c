@@ -919,6 +919,56 @@ static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
     return true;
 }
 
+static bool xhci_dispatch_hid_transfer_event(
+    struct xhci_controller *xhci, const struct xhci_trb *event) {
+    if (xhci == NULL || event == NULL ||
+        xhci_event_type(event) != XHCI_TRB_TRANSFER_EVENT)
+        return false;
+
+    const uint8_t slot = (uint8_t)(event->control >> 24);
+    const uint8_t endpoint = (uint8_t)((event->control >> 16) & 0x1FU);
+    struct xhci_hid_device *device = NULL;
+    if (xhci->keyboard_active && xhci->keyboard.active &&
+        slot == xhci->keyboard.slot_id &&
+        endpoint == xhci->keyboard.endpoint_id) {
+        device = &xhci->keyboard;
+    } else if (xhci->mouse_active && xhci->mouse.active &&
+               slot == xhci->mouse.slot_id &&
+               endpoint == xhci->mouse.endpoint_id) {
+        device = &xhci->mouse;
+    }
+    if (device == NULL) return false;
+
+    const uint8_t code = xhci_event_code(event);
+    if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
+        if (device->kind == XHCI_HID_KEYBOARD) {
+            input_usb_keyboard_report(
+                (const uint8_t *)(uintptr_t)device->report_buffer);
+        } else if (device->kind == XHCI_HID_MOUSE) {
+            input_usb_mouse_report(
+                (const uint8_t *)(uintptr_t)device->report_buffer);
+        }
+        if (!xhci_schedule_interrupt_read(xhci, device)) {
+            serial_write("xHCI: unable to re-arm HID input endpoint\r\n");
+            device->active = false;
+            if (device->kind == XHCI_HID_KEYBOARD)
+                xhci->keyboard_active = false;
+            else
+                xhci->mouse_active = false;
+        }
+    } else {
+        serial_write("xHCI: HID input transfer failed; code=");
+        serial_write_hex(code);
+        serial_write("\r\n");
+        device->active = false;
+        if (device->kind == XHCI_HID_KEYBOARD)
+            xhci->keyboard_active = false;
+        else
+            xhci->mouse_active = false;
+    }
+    return true;
+}
+
 static void xhci_release_hid_device(struct xhci_controller *xhci,
                                     struct xhci_hid_device *device) {
     if (xhci == NULL || device == NULL) return;
@@ -1120,53 +1170,6 @@ void xhci_poll(void) {
 
     struct xhci_trb event;
     while (xhci_event_next(xhci, &event)) {
-        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
-        const uint8_t slot = (uint8_t)(event.control >> 24);
-        const uint8_t endpoint =
-            (uint8_t)((event.control >> 16) & 0x1FU);
-        struct xhci_hid_device *device = NULL;
-        if (xhci->keyboard_active &&
-            slot == xhci->keyboard.slot_id &&
-            endpoint == xhci->keyboard.endpoint_id) {
-            device = &xhci->keyboard;
-        } else if (xhci->mouse_active &&
-                   slot == xhci->mouse.slot_id &&
-                   endpoint == xhci->mouse.endpoint_id) {
-            device = &xhci->mouse;
-        }
-        if (device == NULL || !device->active) continue;
-
-        const uint8_t code = xhci_event_code(&event);
-        if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
-            if (device->kind == XHCI_HID_KEYBOARD) {
-                input_usb_keyboard_report(
-                    (const uint8_t *)(uintptr_t)device->report_buffer);
-            } else if (device->kind == XHCI_HID_MOUSE) {
-                input_usb_mouse_report(
-                    (const uint8_t *)(uintptr_t)device->report_buffer);
-            }
-        } else {
-            serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: USB keyboard transfer failed; code="
-                : "xHCI: USB mouse transfer failed; code=");
-            serial_write_hex(code);
-            serial_write("\r\n");
-            device->active = false;
-            if (device->kind == XHCI_HID_KEYBOARD)
-                xhci->keyboard_active = false;
-            else
-                xhci->mouse_active = false;
-            continue;
-        }
-        if (!xhci_schedule_interrupt_read(xhci, device)) {
-            serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: unable to re-arm USB keyboard endpoint\r\n"
-                : "xHCI: unable to re-arm USB mouse endpoint\r\n");
-            device->active = false;
-            if (device->kind == XHCI_HID_KEYBOARD)
-                xhci->keyboard_active = false;
-            else
-                xhci->mouse_active = false;
-        }
+        (void)xhci_dispatch_hid_transfer_event(xhci, &event);
     }
 }

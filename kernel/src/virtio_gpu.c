@@ -105,13 +105,6 @@ static void copy_bytes(volatile uint8_t *output, const uint8_t *input,
     for (size_t i = 0U; i < length; ++i) output[i] = input[i];
 }
 
-static void write_le32(volatile uint8_t *p, uint32_t value) {
-    p[0] = (uint8_t)value;
-    p[1] = (uint8_t)(value >> 8);
-    p[2] = (uint8_t)(value >> 16);
-    p[3] = (uint8_t)(value >> 24);
-}
-
 static uint32_t read_le32(const volatile uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -252,7 +245,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     for (uint64_t i = 0U; i < framebuffer_pages * NEXUS_PAGE_SIZE; ++i)
         framebuffer_memory[i] = 0U;
 
-    if (!memory_alloc_page(&command_physical)) {
+    if (!memory_alloc_dma_page(0x100000000ULL, &command_physical)) {
         (void)memory_free_contiguous_pages(framebuffer_physical,
                                            framebuffer_pages);
         framebuffer_pages = 0U;

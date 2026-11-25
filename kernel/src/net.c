@@ -28,6 +28,8 @@
 #define NET_DNS_MAX_TTL_SECONDS 300U
 #define NET_DNS_TICKS_PER_SECOND 100U
 #define NET_DNS_MAX_CNAME_HOPS 8U
+#define NET_DNS_RETRY_INITIAL_TICKS 100U
+#define NET_DNS_MAX_RETRIES 2U
 #define ETHERTYPE_IPV4 0x0800U
 #define ETHERTYPE_ARP 0x0806U
 #define IP_PROTOCOL_UDP 17U
@@ -931,8 +933,26 @@ bool net_dns_resolve(const char *hostname, uint8_t result[4],
     }
 
     const uint64_t query_start = timer_ticks();
-    while (!dns_query_done &&
-           timer_ticks() - query_start < timeout_ticks) {
+    uint64_t last_send_tick = query_start;
+    uint64_t retry_interval = NET_DNS_RETRY_INITIAL_TICKS;
+    unsigned int retry_count = 0U;
+    while (!dns_query_done) {
+        const uint64_t now = timer_ticks();
+        if (now - query_start >= timeout_ticks) break;
+        if (retry_count < NET_DNS_MAX_RETRIES &&
+            now - last_send_tick >= retry_interval) {
+            /*
+             * DNS uses the same transaction ID for retransmissions so a late
+             * answer from an earlier attempt remains valid. Retry intervals
+             * back off (1s, then 2s) and stay inside the caller's deadline.
+             */
+            (void)net_udp_send(dns_ipv4, NET_DNS_CLIENT_PORT,
+                               NET_DNS_SERVER_PORT, query, (uint16_t)cursor);
+            ++retry_count;
+            last_send_tick = now;
+            if (retry_interval <= UINT64_MAX / 2U)
+                retry_interval *= 2U;
+        }
         net_poll();
         __asm__ volatile ("pause");
     }

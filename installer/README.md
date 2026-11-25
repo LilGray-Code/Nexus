@@ -92,23 +92,28 @@ is mounted, RAM-only file saves are volatile and do not survive a reboot.
 
 ## Keyboard, mouse, and display compatibility
 
-The input stack supports legacy PS/2 keyboards/mice and directly attached
-wired USB HID boot-protocol keyboards and mice through xHCI. Some 2.4 GHz
-wireless keyboard/mouse devices also work through their USB receiver when it
-presents a standard boot-HID keyboard or mouse interface. Connect the USB
-device or receiver before booting the installer. Receiver-specific features,
-USB hubs, non-boot HID reports, and native Bluetooth discovery and pairing are
-not implemented, so Bluetooth devices and many proprietary wireless receivers
-are not guaranteed to work.
+The input stack supports legacy PS/2 keyboards/mice and xHCI USB HID
+boot-protocol keyboards and mice. Wired USB devices and standard 2.4 GHz
+wireless keyboard/mouse receivers work when they expose a standard boot-HID
+interface. xHCI root-port status events are now monitored after startup, so a
+supported wired device or 2.4 GHz receiver can be plugged in or removed while
+the installer or desktop is running. The kernel synthesizes key/button releases
+on disconnect to avoid stuck input state. The current controller keeps one
+USB keyboard and one USB mouse active at a time. Receiver-specific features,
+USB hubs, multi-interface receivers, non-boot HID reports, and native Bluetooth
+discovery/pairing are not implemented; Bluetooth devices are not guaranteed to
+work unless their receiver independently presents standard boot-HID.
 
 The ISO and installed Limine configuration request a 1920x1080, 32-bit
 framebuffer. Limine automatically selects another available mode when that
-resolution is unavailable. The software renderer includes fractional
-coverage for smoother text and 4x sub-pixel coverage at rounded panel/window
-corners, reducing stair-step edges. Rendering is still CPU software
-composited into the framebuffer. No Intel, AMD, or NVIDIA GPU driver or
-hardware-accelerated composition backend is present yet; OpenGL, Vulkan, and
-DirectX are not supported.
+resolution is unavailable. The renderer includes fractional-coverage text
+rasterization, alpha blending, and 4x sub-pixel coverage at rounded panel/window
+corners to reduce jagged edges. Rendering is still CPU software-composited into
+the framebuffer. No Intel, AMD, or NVIDIA GPU driver or hardware-accelerated
+composition backend is present yet; OpenGL, Vulkan, and DirectX are not
+supported. A real accelerated desktop requires a device-specific GPU driver,
+GPU memory management, command submission, synchronization, and recovery; this
+must not be represented as enabled by framebuffer resolution or antialiasing.
 
 ## Recovery and test coverage
 

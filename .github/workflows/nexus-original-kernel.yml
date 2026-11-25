@@ -613,11 +613,13 @@ jobs:
               time.sleep(0.16)
 
           # Two eligible disks are attached: an NVMe decoy first and the
-          # intended SATA target second. The installer must honor the user's
-          # Down-arrow selection and never write to the unselected NVMe disk.
+          # intended SATA target second. Open the drive dropdown with Tab,
+          # choose the SATA target, and close the list before installation.
           key("f5")
           time.sleep(0.4)
+          key("tab")
           key("down")
+          key("ret")
           import re
           deadline = time.time() + 10
           stable_id = None
@@ -631,6 +633,11 @@ jobs:
               time.sleep(0.2)
           if stable_id is None:
               raise SystemExit("Installer did not log the user's selected disk")
+          log = open(log_path, encoding="utf-8", errors="replace").read()
+          if "NEXUS INSTALLER DROPDOWN OPEN" not in log:
+              raise SystemExit("Tab did not open the graphical install drive dropdown")
+          if "NEXUS INSTALLER DROPDOWN CLOSED" not in log:
+              raise SystemExit("Enter did not close the graphical install drive dropdown")
           if not stable_id.startswith("sata-"):
               raise SystemExit(f"Installer selected the wrong disk: {stable_id}")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.

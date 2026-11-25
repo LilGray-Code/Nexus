@@ -4696,7 +4696,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 installer_set_status("Select a supported target disk");
             }
         } else if (installer_ui_state == INSTALLER_UI_SELECT) {
-            if (event->scancode == 0x3BU) {
+            if (event->scancode == 0x0FU) {
+                installer_drive_dropdown_open = !installer_drive_dropdown_open;
+                serial_write(installer_drive_dropdown_open
+                    ? "NEXUS INSTALLER DROPDOWN OPEN\\r\\n"
+                    : "NEXUS INSTALLER DROPDOWN CLOSED\\r\\n");
+            } else if (event->scancode == 0x3BU) {
                 installer_firmware = NEXUS_FIRMWARE_UEFI;
                 installer_refresh_plan();
             } else if (event->scancode == 0x3CU) {
@@ -4710,10 +4715,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (event->scancode == 0x50U && blockdev_count() > 0U) {
                 installer_select_delta(true);
             } else if (event->scancode == 0x1CU) {
-                if (installer_drive_dropdown_open)
+                if (installer_drive_dropdown_open) {
                     installer_drive_dropdown_open = false;
-                else
+                    serial_write("NEXUS INSTALLER DROPDOWN CLOSED\\r\\n");
+                } else {
                     (void)installer_begin_confirmation();
+                }
             } else {
                 return;
             }

@@ -86,19 +86,13 @@ bool paging_nx_enabled(void) {
 }
 
 /*
- * Map device MMIO pages in dedicated supervisor-only top-level slots.
- *
- * The first shared-window implementation caused a firmware boot regression
- * when a later I/O APIC mapping reused intermediate tables. This deliberately
- * uses the simpler one-page-per-root-slot scheme that has already been used
- * successfully by the xAPIC and I/O APIC paths, while caching aliases so
- * repeated ECAM reads of the same PCI function do not consume more slots.
- *
- * This bootstrap mapper is bounded to 255 unique MMIO pages. It is intended
- * for early device discovery; a larger VM area allocator will replace it
- * before general hot-plug or many-device systems are enabled.
+ * Reserve one 2 MiB virtual region for early device MMIO. The single PT
+ * contains 512 uncached 4 KiB mappings. Sharing one top-level slot avoids
+ * consuming a root entry per PCI function and leaves the rest of the kernel
+ * address layout untouched. A full VM area allocator will replace this
+ * bounded bootstrap window before general hot-plug support is enabled.
  */
-#define MMIO_MAPPING_CACHE_SIZE 255U
+#define MMIO_MAPPING_CACHE_SIZE 512U
 
 struct mmio_mapping {
     uint64_t physical_page;
@@ -107,29 +101,17 @@ struct mmio_mapping {
 
 static struct mmio_mapping mmio_mappings[MMIO_MAPPING_CACHE_SIZE];
 static size_t mmio_mapping_count;
+static bool mmio_window_initialized;
+static uint64_t mmio_window_base;
+static volatile uint64_t *mmio_leaf_table;
 
-bool paging_map_mmio_page(uint64_t physical_address,
-                          volatile uint32_t **virtual_address) {
-    if (virtual_address == NULL) return false;
-    *virtual_address = NULL;
-    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U)
-        return false;
-
-    const uint64_t physical_page = physical_address & PAGE_ADDRESS_MASK;
-    for (size_t i = 0U; i < mmio_mapping_count; ++i) {
-        if (mmio_mappings[i].physical_page == physical_page) {
-            *virtual_address =
-                (volatile uint32_t *)mmio_mappings[i].virtual_address;
-            return true;
-        }
-    }
-    if (mmio_mapping_count >= MMIO_MAPPING_CACHE_SIZE) return false;
+static bool mmio_window_init(void) {
+    if (mmio_window_initialized) return true;
 
     uint64_t cr3, cr4;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
-
-    const unsigned int levels = (cr4 & CR4_LA57) ? 5U : 4U;
+    const unsigned int levels = (cr4 & CR4_LA57) != 0U ? 5U : 4U;
     const uint64_t root_physical = cr3 & PAGE_ADDRESS_MASK;
     volatile uint64_t *root =
         (volatile uint64_t *)memory_phys_to_virt(root_physical);
@@ -140,19 +122,16 @@ bool paging_map_mmio_page(uint64_t physical_address,
         ++root_index;
     if (root_index >= 511U) return false;
 
-    const uint64_t virtual_base = levels == 5U
-        ? (0xFF00000000000000ULL | ((uint64_t)root_index << 48))
-        : (0xFFFF000000000000ULL | ((uint64_t)root_index << 39));
-
     volatile uint64_t *parent = root;
     volatile uint64_t *created_entries[4];
     uint64_t created_pages[4];
     size_t created_count = 0U;
+
     for (unsigned int level = levels; level > 1U; --level) {
         uint64_t next_physical = 0U;
         volatile uint64_t *next_table = NULL;
         const unsigned int parent_index =
-            (level == levels) ? root_index : 0U;
+            level == levels ? root_index : 0U;
         if (!allocate_table(&next_physical, &next_table)) {
             while (created_count != 0U) {
                 --created_count;
@@ -161,7 +140,6 @@ bool paging_map_mmio_page(uint64_t physical_address,
             }
             return false;
         }
-
         created_entries[created_count] = &parent[parent_index];
         created_pages[created_count] = next_physical;
         ++created_count;
@@ -170,16 +148,49 @@ bool paging_map_mmio_page(uint64_t physical_address,
         parent = next_table;
     }
 
-    parent[0] = physical_page | PAGE_PRESENT | PAGE_WRITABLE |
-                PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE;
-    __asm__ volatile ("invlpg (%0)"
-                      : : "r"((uintptr_t)virtual_base) : "memory");
+    mmio_leaf_table = parent;
+    mmio_window_base = levels == 5U
+        ? (0xFF00000000000000ULL | ((uint64_t)root_index << 48))
+        : (0xFFFF000000000000ULL | ((uint64_t)root_index << 39));
+    mmio_mapping_count = 0U;
+    mmio_window_initialized = true;
+    return true;
+}
 
-    mmio_mappings[mmio_mapping_count++] = (struct mmio_mapping){
+bool paging_map_mmio_page(uint64_t physical_address,
+                          volatile uint32_t **virtual_address) {
+    if (virtual_address == NULL) return false;
+    *virtual_address = NULL;
+    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U ||
+        !mmio_window_init()) return false;
+
+    const uint64_t physical_page = physical_address & PAGE_ADDRESS_MASK;
+    for (size_t i = 0U; i < mmio_mapping_count; ++i) {
+        if (mmio_mappings[i].physical_page == physical_page) {
+            *virtual_address =
+                (volatile uint32_t *)mmio_mappings[i].virtual_address;
+            return true;
+        }
+    }
+    if (mmio_mapping_count >= MMIO_MAPPING_CACHE_SIZE ||
+        mmio_leaf_table == NULL) return false;
+
+    const size_t slot = mmio_mapping_count;
+    const uintptr_t mapped_address =
+        (uintptr_t)(mmio_window_base + ((uint64_t)slot << 12));
+    if ((mmio_leaf_table[slot] & PAGE_PRESENT) != 0U) return false;
+
+    mmio_leaf_table[slot] = physical_page | PAGE_PRESENT | PAGE_WRITABLE |
+                            PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE;
+    __asm__ volatile ("invlpg (%0)"
+                      : : "r"(mapped_address) : "memory");
+
+    mmio_mappings[slot] = (struct mmio_mapping){
         .physical_page = physical_page,
-        .virtual_address = (uintptr_t)virtual_base
+        .virtual_address = mapped_address
     };
-    *virtual_address = (volatile uint32_t *)(uintptr_t)virtual_base;
+    ++mmio_mapping_count;
+    *virtual_address = (volatile uint32_t *)mapped_address;
     return true;
 }
 

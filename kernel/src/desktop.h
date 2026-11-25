@@ -13,6 +13,8 @@ enum nexus_desktop_process_test_result {
     NEXUS_DESKTOP_PROCESS_TEST_PASSED = 1
 };
 enum nexus_desktop_process_test_result desktop_run_process_selftest(void);
+/* Selects the isolated installer session before the framebuffer shell starts. */
+void desktop_set_installer_mode(bool enabled);
 bool desktop_show(const struct limine_framebuffer *framebuffer);
 void desktop_handle_input(const struct nexus_input_event *event);
 

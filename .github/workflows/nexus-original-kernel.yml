@@ -138,6 +138,13 @@ jobs:
             -o /tmp/nexus-gpu-test
           /tmp/nexus-gpu-test
 
+      - name: Test firmware inventory and SMBIOS checksum handling
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
+            -Ikernel/src kernel/src/firmware.c kernel/tests/firmware_test.c \\
+            -o /tmp/nexus-firmware-test
+          /tmp/nexus-firmware-test
+
       - name: Test Limine BIOS boot-sector and stage-2 installation
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

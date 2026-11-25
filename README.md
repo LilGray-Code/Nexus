@@ -130,6 +130,18 @@ libraries, audio, controllers, or a window manager. See
 [`docs/development/NATIVE-APP-SDK.md`](docs/development/NATIVE-APP-SDK.md)
 for the SDK and compatibility limits.
 
+The software distribution layer now has a preview native `.NUP` package
+format, a signed catalog parser, and an NXFS-backed installer that writes
+versioned ELF payloads before atomically replacing each app's signed receipt.
+Catalog and package signatures use an Ed25519 verifier callback keyed by
+pinned key ID; the verifier is mandatory and missing verification fails
+closed. **A production Ed25519 provider and release public key are not yet
+shipped**, and the host tests use only a non-cryptographic mock verifier. The
+Store is not yet connected to this package pipeline, so its Steam/Discord/
+Spotify entries remain web shortcuts. See
+[`docs/development/SOFTWARE-ECOSYSTEM.md`](docs/development/SOFTWARE-ECOSYSTEM.md)
+for the format and trust requirements.
+
 The desktop applications and current system services are integrated into the
 kernel. The ELF64 loader has a bounded ring-3 execution test, but this does
 **not** mean that Nexus currently has a full separate userland, a mature

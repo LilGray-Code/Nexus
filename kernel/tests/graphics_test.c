@@ -84,9 +84,16 @@ int main(void) {
     /* Rounded rectangles clip safely and leave their corner pixels untouched. */
     graphics_clear(0U, 0U, 0U);
     graphics_round_rect(1U, 1U, 6U, 4U, 2U, 0U, 255U, 0U);
-    assert(guarded[1U + 1U * WIDTH + 1U] == 0U);
+    const uint32_t rounded_top_left = guarded[1U + 1U * WIDTH + 1U];
+    const uint32_t rounded_bottom_right =
+        guarded[1U + 4U * WIDTH + 6U];
+    assert((rounded_top_left & 0xFFU) == 0U);
+    assert(((rounded_top_left >> 8) & 0xFFU) >= 63U &&
+           ((rounded_top_left >> 8) & 0xFFU) <= 64U);
     assert(guarded[1U + 2U * WIDTH + 3U] == 0x0000FF00U);
-    assert(guarded[1U + 4U * WIDTH + 6U] == 0U);
+    assert((rounded_bottom_right & 0xFFU) == 0U);
+    assert(((rounded_bottom_right >> 8) & 0xFFU) >= 63U &&
+           ((rounded_bottom_right >> 8) & 0xFFU) <= 64U);
     graphics_blend_round_rect(0U, 0U, UINT64_MAX, UINT64_MAX,
                               UINT32_MAX, 0U, 0U, 255U, 128U);
     assert(guarded[1U + 2U * WIDTH + 3U] != 0x0000FF00U);

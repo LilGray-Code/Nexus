@@ -1307,6 +1307,7 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_SETTINGS) window_title = "SETTINGS";
     if (active_view == DESKTOP_TERMINAL) window_title = "NEXUS TERMINAL";
     if (active_view == DESKTOP_INSTALLER) window_title = "NEXUS OS INSTALLER";
+    if (active_view == DESKTOP_STORE) window_title = "NEXUS APP STORE";
     graphics_draw_text_aa(panel_x + 33U, panel_y + 15U, window_title,
                            98304U,
                        desktop_theme_is_light() ? 41U : 234U,

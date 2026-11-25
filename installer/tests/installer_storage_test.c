@@ -450,7 +450,11 @@ int main(int argc,char **argv) {
         (void)fprintf(stderr,"system payload deploy result=%u kernel_size=%u\\n",
             (unsigned)payload_result,kernel_payload_size);
     assert(payload_result==NEXUS_SYSTEM_PAYLOAD_OK);
-    assert(target.flushes==54U);
+    const uint32_t kernel_chunk_count_for_flush =
+        (kernel_payload_size + NEXUS_NXFS_MAX_FILE_BYTES - 1U) /
+        NEXUS_NXFS_MAX_FILE_BYTES;
+    assert(kernel_chunk_count_for_flush>=1U&&kernel_chunk_count_for_flush<=2U);
+    assert(target.flushes==50U+4U*(kernel_chunk_count_for_flush-1U));
     assert(gpt_scan_device(target_handle));
     const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
     assert(data_part!=NULL);
@@ -463,7 +467,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 58U);
+    assert(target.flushes == 54U+4U*(kernel_chunk_count_for_flush-1U));
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

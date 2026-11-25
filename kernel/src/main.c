@@ -568,8 +568,8 @@ void kmain(void) {
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     const bool ps2_input_ready = input_init();
-    (void)xhci_init();
     (void)ac97_init();
+    (void)xhci_init();
     const bool usb_keyboard_ready = xhci_keyboard_ready();
     const bool usb_mouse_ready = xhci_mouse_ready();
     if (!ps2_input_ready && !usb_keyboard_ready) {

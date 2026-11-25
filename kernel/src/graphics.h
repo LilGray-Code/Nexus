@@ -50,5 +50,11 @@ void graphics_blend_round_rect(uint64_t x, uint64_t y, uint64_t width,
 void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
                         uint32_t scale, uint8_t red, uint8_t green,
                         uint8_t blue);
+/* Draw the built-in 5x7 font with 16.16 fractional scale and per-pixel
+ * area coverage. Supported scale range is 1.0x through 4.0x.
+ */
+void graphics_draw_text_aa(uint64_t x, uint64_t y, const char *text,
+                           uint32_t scale_16_16, uint8_t red,
+                           uint8_t green, uint8_t blue);
 
 #endif

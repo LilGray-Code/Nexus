@@ -4,6 +4,10 @@ OUT := build
 APP := $(OUT)/kinetic_demo.elf
 GAMEPAD_APP := $(OUT)/gamepad_demo.elf
 AUDIO_APP := $(OUT)/audio_demo.elf
+PIE_APP := $(OUT)/pie_demo.elf
+PIE_CFLAGS := $(filter-out -fno-pic -fno-pie,$(CFLAGS)) -fPIE
+PIE_LDFLAGS := -nostdlib -static-pie -Wl,-e,_start \\
+	-Wl,--build-id=none -Wl,-z,noexecstack -Wl,-z,max-page-size=0x1000
 CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 	-ffreestanding -fno-builtin -fno-stack-protector \
 	-fno-pic -fno-pie -fno-asynchronous-unwind-tables \
@@ -14,7 +18,7 @@ LDFLAGS := -nostdlib -static -no-pie -Wl,-e,_start \
 	-Wl,-Ttext-segment=0x400000 -Wl,--build-id=none -Wl,-z,noexecstack
 
 .PHONY: all clean
-all: $(APP) $(GAMEPAD_APP) $(AUDIO_APP)
+all: $(APP) $(GAMEPAD_APP) $(AUDIO_APP) $(PIE_APP)
 
 $(OUT):
 	mkdir -p $(OUT)
@@ -27,6 +31,9 @@ $(GAMEPAD_APP): examples/gamepad_demo.c ../kernel/include/nexus/app.h | $(OUT)
 
 $(AUDIO_APP): examples/audio_demo.c ../kernel/include/nexus/app.h | $(OUT)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@
+
+$(PIE_APP): examples/pie_demo.c ../kernel/include/nexus/app.h | $(OUT)
+	$(CC) $(PIE_CFLAGS) $(PIE_LDFLAGS) $< -o $@
 
 clean:
 	rm -rf $(OUT)

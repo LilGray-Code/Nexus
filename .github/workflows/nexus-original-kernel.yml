@@ -410,20 +410,25 @@ jobs:
           grep -q "NEXUS K2 COOPERATIVE THREAD SCHEDULER READY" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 
-      - name: Test the graphical installer on a disposable NVMe target
+      - name: Install Nexus onto a disposable USB target with an NVMe decoy
         shell: bash
         run: |
           set -euo pipefail
           EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" ./build/build-iso.sh
-          truncate -s 16G /tmp/nexus-ui-target.img
+          truncate -s 16G /tmp/nexus-ui-target.img /tmp/nexus-ui-decoy.img
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-ui-vars.fd
           rm -f /tmp/nexus-installer-qmp.sock installer-ui-serial.log
           qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-ui-vars.fd \
-            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
+            -drive file=/tmp/nexus-ui-decoy.img,if=none,id=nvm0,format=raw \
             -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=usbtarget,format=raw \
+            -device qemu-xhci,id=xhci \
+            -device usb-kbd,bus=xhci.0 \
+            -device usb-mouse,bus=xhci.0 \
+            -device usb-storage,bus=xhci.0,drive=usbtarget \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso -boot order=d \
             -display none -serial file:installer-ui-serial.log \
             -qmp unix:/tmp/nexus-installer-qmp.sock,server,nowait \
@@ -469,10 +474,13 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-          # Open Install (F5), select the single NVMe target, and confirm its
-          # exact stable identifier followed by the separate ERASE phrase.
+          # Open Install, expand the detected-drive dropdown, and move from
+          # the NVMe decoy to the USB destination. Confirm the USB stable ID.
           key("f5")
           time.sleep(0.4)
+          key("spc")
+          key("down")
+          time.sleep(0.3)
           import re
           deadline = time.time() + 10
           stable_id = None
@@ -485,6 +493,8 @@ jobs:
               time.sleep(0.2)
           if stable_id is None:
               raise SystemExit("Installer did not expose the selected disk's stable ID")
+          if not stable_id.startswith("USB-MSC-PORT-"):
+              raise SystemExit(f"Dropdown did not select the USB destination: {stable_id}")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
           key("ret")
           for char in stable_id:
@@ -511,6 +521,8 @@ jobs:
           PY
           cat installer-ui-serial.log
           grep -q "NEXUS INSTALLER WRITE GATE ENABLED" installer-ui-serial.log
+          grep -q "NEXUS USB MASS STORAGE READY: USB" installer-ui-serial.log
+          grep -q "NEXUS INSTALLER TARGET SELECTED: USB-MSC-PORT-" installer-ui-serial.log
           grep -q "NEXUS INSTALLER RESULT: SUCCESS" installer-ui-serial.log
           kill "$QEMU_PID" 2>/dev/null || true
           wait "$QEMU_PID" 2>/dev/null || true
@@ -527,8 +539,9 @@ jobs:
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive if=pflash,format=raw,file=/tmp/nexus-ui-installed-vars.fd \
-            -drive file=/tmp/nexus-ui-target.img,if=none,id=nvm0,format=raw \
-            -device nvme,drive=nvm0,serial=NEXUSNVME0001 \
+            -drive file=/tmp/nexus-ui-target.img,if=none,id=usbtarget,format=raw \
+            -device qemu-xhci,id=xhci \
+            -device usb-storage,bus=xhci.0,drive=usbtarget,bootindex=1 \
             -boot order=c -display none -serial file:installer-ui-installed-uefi.log \
             -monitor none -no-reboot -no-shutdown
           status=$?

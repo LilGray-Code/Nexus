@@ -1,6 +1,7 @@
 #include "paging.h"
 
 #include "memory.h"
+#include "serial.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -115,12 +116,18 @@ static bool mmio_window_init(void) {
     const uint64_t root_physical = cr3 & PAGE_ADDRESS_MASK;
     volatile uint64_t *root =
         (volatile uint64_t *)memory_phys_to_virt(root_physical);
-    if (root == NULL) return false;
+    if (root == NULL) {
+        serial_write("MMIO: active page-table root is not mapped\r\n");
+        return false;
+    }
 
     unsigned int root_index = 256U;
     while (root_index < 511U && (root[root_index] & PAGE_PRESENT) != 0U)
         ++root_index;
-    if (root_index >= 511U) return false;
+    if (root_index >= 511U) {
+        serial_write("MMIO: no free top-level page-table slot\r\n");
+        return false;
+    }
 
     volatile uint64_t *parent = root;
     volatile uint64_t *created_entries[4];
@@ -133,6 +140,9 @@ static bool mmio_window_init(void) {
         const unsigned int parent_index =
             level == levels ? root_index : 0U;
         if (!allocate_table(&next_physical, &next_table)) {
+            serial_write("MMIO: page-table allocation failed at level ");
+            serial_write_hex(level);
+            serial_write("\r\n");
             while (created_count != 0U) {
                 --created_count;
                 *created_entries[created_count] = 0U;
@@ -154,6 +164,9 @@ static bool mmio_window_init(void) {
         : (0xFFFF000000000000ULL | ((uint64_t)root_index << 39));
     mmio_mapping_count = 0U;
     mmio_window_initialized = true;
+    serial_write("MMIO: reserved uncached 2 MiB device window at ");
+    serial_write_hex(mmio_window_base);
+    serial_write("\r\n");
     return true;
 }
 
@@ -161,8 +174,16 @@ bool paging_map_mmio_page(uint64_t physical_address,
                           volatile uint32_t **virtual_address) {
     if (virtual_address == NULL) return false;
     *virtual_address = NULL;
-    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U ||
-        !mmio_window_init()) return false;
+    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U) {
+        serial_write("MMIO: rejected physical address outside x86 page mask: ");
+        serial_write_hex(physical_address);
+        serial_write("\r\n");
+        return false;
+    }
+    if (!mmio_window_init()) {
+        serial_write("MMIO: unable to initialize device mapping window\r\n");
+        return false;
+    }
 
     const uint64_t physical_page = physical_address & PAGE_ADDRESS_MASK;
     for (size_t i = 0U; i < mmio_mapping_count; ++i) {
@@ -173,12 +194,20 @@ bool paging_map_mmio_page(uint64_t physical_address,
         }
     }
     if (mmio_mapping_count >= MMIO_MAPPING_CACHE_SIZE ||
-        mmio_leaf_table == NULL) return false;
+        mmio_leaf_table == NULL) {
+        serial_write("MMIO: mapping window is full or leaf table is missing\r\n");
+        return false;
+    }
 
     const size_t slot = mmio_mapping_count;
     const uintptr_t mapped_address =
         (uintptr_t)(mmio_window_base + ((uint64_t)slot << 12));
-    if ((mmio_leaf_table[slot] & PAGE_PRESENT) != 0U) return false;
+    if ((mmio_leaf_table[slot] & PAGE_PRESENT) != 0U) {
+        serial_write("MMIO: reserved leaf slot is unexpectedly occupied: ");
+        serial_write_hex(slot);
+        serial_write("\r\n");
+        return false;
+    }
 
     mmio_leaf_table[slot] = physical_page | PAGE_PRESENT | PAGE_WRITABLE |
                             PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE;

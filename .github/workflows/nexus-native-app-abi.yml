@@ -6,6 +6,13 @@ on:
       - nexus-original-kernel-roadmap
     paths:
       - "kernel/src/graphics.c"
+      - "kernel/src/package.c"
+      - "kernel/src/package.h"
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - "kernel/src/nxfs.c"
+      - "kernel/src/nxfs.h"
+      - "kernel/tests/package_test.c"
       - "kernel/Makefile"
       - "kernel/src/cpu.c"
       - "kernel/src/cpu.h"
@@ -28,6 +35,13 @@ on:
   pull_request:
     paths:
       - "kernel/src/graphics.c"
+      - "kernel/src/package.c"
+      - "kernel/src/package.h"
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - "kernel/src/nxfs.c"
+      - "kernel/src/nxfs.h"
+      - "kernel/tests/package_test.c"
       - "kernel/Makefile"
       - "kernel/src/cpu.c"
       - "kernel/src/cpu.h"
@@ -60,7 +74,7 @@ jobs:
       - name: Compile changed kernel runtime sources
         run: |
           flags="-std=gnu11 -Os -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -Ikernel/include -Ikernel/src -Iinstaller"
-          for src in cpu fpu graphics usermode interrupts process elf64 main; do
+          for src in cpu fpu graphics package usermode interrupts process elf64 main; do
             cc $flags -c "kernel/src/$src.c" -o "/tmp/nexus-$src.o"
           done
           cc -m64 -c kernel/src/usermode.S -o /tmp/nexus-usermode-entry.o
@@ -79,3 +93,9 @@ jobs:
             echo "SDK app unexpectedly needs a dynamic loader or TLS"
             exit 1
           fi
+      - name: Test signed package parsing and transactional install
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/package.c kernel/src/sha256.c \
+            kernel/tests/package_test.c -o /tmp/nexus-package-test
+          /tmp/nexus-package-test

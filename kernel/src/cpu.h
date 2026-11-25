@@ -40,7 +40,8 @@ enum nexus_cpu_feature {
     NEXUS_CPU_FEATURE_CLWB      = 1ULL << 32,
     NEXUS_CPU_FEATURE_LA57      = 1ULL << 33,
     NEXUS_CPU_FEATURE_RDTSCP    = 1ULL << 34,
-    NEXUS_CPU_FEATURE_PAGE_1GB  = 1ULL << 35
+    NEXUS_CPU_FEATURE_PAGE_1GB  = 1ULL << 35,
+    NEXUS_CPU_FEATURE_FXSR      = 1ULL << 36
 };
 
 struct nexus_cpu_info {

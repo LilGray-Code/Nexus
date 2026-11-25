@@ -9,6 +9,7 @@ struct nexus_boot_payloads {
     struct nexus_boot_blob uefi_loader;
     struct nexus_boot_blob bios_hdd_image;
     struct nexus_boot_blob bios_sys;
+    struct nexus_boot_blob system_pack;
 };
 bool nexus_boot_payloads_init(void *module_response, void *executable_response);
 const struct nexus_boot_payloads *nexus_boot_payloads_get(void);

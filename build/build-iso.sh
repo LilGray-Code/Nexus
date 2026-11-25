@@ -50,9 +50,21 @@ cmake -S build/deps/mbedtls-4.1.2 -B build/deps/mbedtls-kernel-build \
 cmake --build build/deps/mbedtls-kernel-build --parallel 2
 make -C kernel clean all NEXUS_TLS=1
 
+# Ship first-party Nexus-native applications as a checksummed read-only system
+# pack. These static x86-64 ELF programs have no host OS dependencies.
+make -C sdk clean all CC="${NEXUS_SDK_CC:-gcc}"
+python3 build/make-system-pack.py \
+  --output build/system-pack/NEXUS-SYSTEM.NXP \
+  --file README.TXT=system/README.TXT \
+  --file APPS.TXT=system/APPS.TXT \
+  --file KINETIC.ELF=sdk/build/kinetic_demo.elf \
+  --file GAMEPAD.ELF=sdk/build/gamepad_demo.elf \
+  --file AUDIO.ELF=sdk/build/audio_demo.elf \
+  --file PIE.ELF=sdk/build/pie_demo.elf
+
 ISO_ROOT="$ROOT/build/iso-root"
 rm -rf "$ISO_ROOT"
-mkdir -p "$ISO_ROOT/boot/limine" "$ISO_ROOT/EFI/BOOT"
+mkdir -p "$ISO_ROOT/boot/limine" "$ISO_ROOT/EFI/BOOT" "$ISO_ROOT/NEXUS"
 cp build/nexus-kernel.elf "$ISO_ROOT/boot/nexus-kernel.elf"
 cp boot/limine.conf "$ISO_ROOT/boot/limine/limine.conf"
 cp build/limine-binary/limine-bios.sys "$ISO_ROOT/boot/limine/"
@@ -60,11 +72,15 @@ cp build/limine-binary/limine-bios-hdd.bin "$ISO_ROOT/boot/limine/"
 cp build/limine-binary/limine-bios-cd.bin "$ISO_ROOT/boot/limine/"
 cp build/limine-binary/limine-uefi-cd.bin "$ISO_ROOT/boot/limine/"
 cp build/limine-binary/BOOTX64.EFI "$ISO_ROOT/EFI/BOOT/"
+cp build/system-pack/NEXUS-SYSTEM.NXP "$ISO_ROOT/NEXUS/SYSTEM.NXP"
 # Keep installer payload paths identical to the Limine module request order.
 test -s "$ISO_ROOT/EFI/BOOT/BOOTX64.EFI"
 test -s "$ISO_ROOT/boot/limine/limine-bios.sys"
 test -s "$ISO_ROOT/boot/limine/limine-bios-hdd.bin"
 test -s "$ISO_ROOT/boot/nexus-kernel.elf"
+test -s "$ISO_ROOT/NEXUS/SYSTEM.NXP"
+test "$(stat -c %s "$ISO_ROOT/NEXUS/SYSTEM.NXP")" -le 2097152
+grep -q 'module_path: boot():/NEXUS/SYSTEM.NXP' "$ISO_ROOT/boot/limine/limine.conf"
 
 xorriso -as mkisofs \
   -R -r -J \

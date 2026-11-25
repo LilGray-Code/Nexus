@@ -9,6 +9,10 @@ on:
       - "kernel/src/service_manager.*"
       - "kernel/tests/driver_manager_test.c"
       - "kernel/tests/service_manager_test.c"
+      - "kernel/src/boot_pack.*"
+      - "kernel/tests/boot_pack_test.c"
+      - "build/make-system-pack.py"
+      - "build/test-system-pack.py"
       - ".github/workflows/nexus-platform-foundations.yml"
   pull_request:
     branches:
@@ -32,6 +36,13 @@ jobs:
             kernel/tests/driver_manager_test.c \
             -o /tmp/nexus-driver-manager-test
           /tmp/nexus-driver-manager-test
+      - name: Test checksummed boot-time system pack
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/boot_pack.c kernel/tests/boot_pack_test.c \
+            -o /tmp/nexus-boot-pack-test
+          /tmp/nexus-boot-pack-test
+          python3 build/test-system-pack.py
       - name: Test dependency-aware service supervisor
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

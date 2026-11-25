@@ -6,6 +6,7 @@
 #include "gpt.h"
 #include "nxfs.h"
 #include "boot_payload.h"
+#include "boot_pack.h"
 #include "bios_install.h"
 
 static bool installer_target_read(void *context, uint64_t lba,
@@ -329,7 +330,7 @@ enum nexus_installer_system_payload_result nexus_installer_deploy_system_payload
         !installer_manifest_append_u32(manifest, sizeof(manifest),
             &manifest_length, kernel_size) ||
         !installer_manifest_append(manifest, sizeof(manifest),
-            &manifest_length, "\nKERNEL_FORMAT=ELF64\nDESKTOP=FRAMEBUFFER\nFILESYSTEM=NXFS\nBOOT=UEFI+LEGACY_BIOS\nRELEASE_STATUS=DEVELOPMENT_PROTOTYPE\n"))
+            &manifest_length, "\nKERNEL_FORMAT=ELF64\nSYSTEM_PACK=NEXUS/SYSTEM.NXP\nDESKTOP=FRAMEBUFFER\nFILESYSTEM=NXFS\nBOOT=UEFI+LEGACY_BIOS\nRELEASE_STATUS=DEVELOPMENT_PROTOTYPE\n"))
         return NEXUS_SYSTEM_PAYLOAD_MANIFEST_WRITE_FAILED;
 
     static const char readme[] =
@@ -392,7 +393,8 @@ bool nexus_installer_deploy_boot_payloads(
  const char *typed_id,const char *typed_erase,
  uint64_t esp_first,uint64_t esp_blocks) {
  const struct nexus_boot_payloads *p=nexus_boot_payloads_get();
- if(!p||!device||!identity)return false;
+ if(!p||!device||!identity||p->system_pack.data==NULL||
+    p->system_pack.size==0U||!nexus_boot_pack_ready())return false;
  /* Each file write revalidates the selected ESP and disk identity. The HDD
   * image is staged for guarded BIOS installation; limine-bios.sys remains
   * on the ESP because Limine's BIOS stage requires it at boot. */
@@ -402,6 +404,9 @@ bool nexus_installer_deploy_boot_payloads(
  if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
     esp_first,esp_blocks,"NEXUS/KERNEL.ELF",
     p->kernel_elf.data,p->kernel_elf.size)!=NEXUS_FAT32_FILE_OK)return false;
+ if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
+    esp_first,esp_blocks,"NEXUS/SYSTEM.NXP",
+    p->system_pack.data,p->system_pack.size)!=NEXUS_FAT32_FILE_OK)return false;
  if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
     esp_first,esp_blocks,"boot/limine/limine-bios-hdd.bin",
     p->bios_hdd_image.data,p->bios_hdd_image.size)!=NEXUS_FAT32_FILE_OK)return false;
@@ -422,7 +427,8 @@ bool nexus_installer_deploy_boot_payloads(
   "    resolution: 1920x1080x32\n"
   "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
   "    module_path: boot():/boot/limine/limine-bios-hdd.bin\n"
-  "    module_path: boot():/boot/limine/limine-bios.sys\n";
+  "    module_path: boot():/boot/limine/limine-bios.sys\n"
+  "    module_path: boot():/NEXUS/SYSTEM.NXP\n";
  if(nexus_installer_write_efi_file(device,identity,typed_id,typed_erase,
     esp_first,esp_blocks,"EFI/BOOT/limine.conf",
     config,(uint32_t)(sizeof(config)-1U))!=NEXUS_FAT32_FILE_OK)return false;

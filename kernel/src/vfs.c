@@ -3,6 +3,7 @@
 #include "fat32.h"
 #include "blockdev.h"
 #include "nxfs.h"
+#include "boot_pack.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -208,7 +209,7 @@ static struct ramfs_entry *ramfs_find(const char *name) {
 }
 
 bool vfs_has_filesystem(void) {
-    if (root_mounted || nxfs_root_mounted) return true;
+    if (root_mounted || nxfs_root_mounted || nexus_boot_pack_ready()) return true;
     for (size_t i = 0; i < NEXUS_VFS_RAM_MAX_FILES; ++i) {
         if (ramfs[i].used) return true;
     }
@@ -682,6 +683,7 @@ size_t vfs_root_entry_count(void) {
     for (size_t i = 0U; i < NEXUS_VFS_RAM_MAX_FILES; ++i)
         if (ramfs[i].used) ++count;
     if (nxfs_root_mounted) count += vfs_nxfs_child_count("");
+    count += nexus_boot_pack_count();
     if (root_mounted) count += fat32_root_entry_count();
     return count;
 }
@@ -761,6 +763,23 @@ bool vfs_root_entry(size_t index, struct nexus_vfs_dirent *entry) {
         }
         index -= vfs_nxfs_child_count("");
     }
+    const size_t boot_count = nexus_boot_pack_count();
+    if (index < boot_count) {
+        const struct nexus_boot_pack_entry *boot =
+            nexus_boot_pack_entry_at(index);
+        if (boot == NULL) return false;
+        size_t n = 0U;
+        while (n < NEXUS_VFS_NAME_MAX - 1U && boot->name[n] != '\0') {
+            entry->name[n] = boot->name[n];
+            ++n;
+        }
+        entry->name[n] = '\0';
+        entry->type = NEXUS_VFS_FILE;
+        entry->size = boot->size;
+        entry->first_cluster = 0U;
+        return true;
+    }
+    index -= boot_count;
     if (!root_mounted) return false;
     const struct nexus_fat32_entry *fat = fat32_root_entry_at(index);
     if (fat == NULL) return false;
@@ -804,6 +823,16 @@ bool vfs_open_readonly(const char *name, struct nexus_vfs_file *file) {
             }
         }
     }
+    if (directory_backend == VFS_DIRECTORY_ROOT) {
+        const struct nexus_boot_pack_entry *boot = nexus_boot_pack_find(name);
+        if (boot != NULL) {
+            file->filesystem_entry = boot;
+            file->offset = 0U;
+            file->open = true;
+            file->system_pack_file = true;
+            return true;
+        }
+    }
     if (directory_backend == VFS_DIRECTORY_NXFS || !root_mounted)
         return false;
     for (size_t i = 0U; i < fat32_root_entry_count(); ++i) {
@@ -844,6 +873,14 @@ bool vfs_open_root_readonly(const char *name, struct nexus_vfs_file *file) {
             file->nxfs_file = true;
             return true;
         }
+    }
+
+    const struct nexus_boot_pack_entry *boot = nexus_boot_pack_find(name);
+    if (boot != NULL) {
+        file->filesystem_entry = boot;
+        file->open = true;
+        file->system_pack_file = true;
+        return true;
     }
 
     if (root_mounted) {
@@ -896,6 +933,12 @@ bool vfs_file_size(const struct nexus_vfs_file *file, uint32_t *size) {
         return true;
     }
     if (file->filesystem_entry == NULL) return false;
+    if (file->system_pack_file) {
+        const struct nexus_boot_pack_entry *entry =
+            (const struct nexus_boot_pack_entry *)file->filesystem_entry;
+        *size = entry->size;
+        return true;
+    }
     if (file->ram_file) {
         const struct ramfs_entry *entry =
             (const struct ramfs_entry *)file->filesystem_entry;
@@ -941,6 +984,14 @@ bool vfs_read(struct nexus_vfs_file *file, void *buffer,
             completed += amount;
         }
         *bytes_read = completed;
+        return true;
+    }
+    if (file->system_pack_file) {
+        const struct nexus_boot_pack_entry *entry =
+            (const struct nexus_boot_pack_entry *)file->filesystem_entry;
+        if (!nexus_boot_pack_read(entry, file->offset, buffer,
+                                  requested, bytes_read)) return false;
+        file->offset += (uint32_t)*bytes_read;
         return true;
     }
     if (file->ram_file) {

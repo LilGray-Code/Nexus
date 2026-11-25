@@ -114,6 +114,19 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   image/video/audio rendering, downloads, compression support, or full
   browser compatibility layer.
 
+The dual-mode ISO now carries a deterministic, checksummed `NEXUS/SYSTEM.NXP`
+boot pack. It contains a system manifest, quick-start/index text, and the four
+first-party SDK examples (`KINETIC.ELF`, `GAMEPAD.ELF`, `AUDIO.ELF`, and
+`PIE.ELF`). The installer copies the pack to the EFI System Partition and
+adds it as a Limine boot module, so the installed desktop can use the same
+built-in apps after reboot. The kernel validates the pack header, file table,
+non-overlapping file ranges, table/payload CRCs, and per-file CRCs before
+publishing it. The read-only VFS overlay exposes its files to the Files view;
+the existing Run ELF action can launch the included native demos. These are
+small Nexus ABI demonstrations, not a general-purpose app catalog or Windows/
+Linux compatibility runtime. User changes still belong on the writable Nexus
+Data volume, not in the immutable boot pack.
+
 The first-party native application SDK is in `kernel/include/nexus/app.h`,
 with freestanding samples and build targets under `sdk/`. Its additive v1
 syscall ABI exposes keyboard/mouse event polling, separate gamepad polling,

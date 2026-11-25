@@ -9,6 +9,7 @@
 #include "fpu.h"
 #include "blockdev.h"
 #include "boot_payload.h"
+#include "boot_pack.h"
 #include "boot_mode.h"
 #include "desktop.h"
 #include "elf64.h"
@@ -296,7 +297,18 @@ void kmain(void) {
 
     if (nexus_boot_payloads_init((void *)module_request.response,
                                  (void *)executable_file_request.response)) {
-        serial_write("INSTALLER: verified kernel, UEFI loader, and BIOS stage-2 payloads available\r\n");
+        serial_write("INSTALLER: verified kernel, UEFI loader, BIOS stage-2, and system-pack payloads available\r\n");
+        const struct nexus_boot_payloads *boot_payloads =
+            nexus_boot_payloads_get();
+        if (boot_payloads != NULL &&
+            nexus_boot_pack_init(boot_payloads->system_pack.data,
+                                 boot_payloads->system_pack.size)) {
+            serial_write("NEXUS READ-ONLY SYSTEM PACK READY; files=");
+            serial_write_hex(nexus_boot_pack_count());
+            serial_write("\r\n");
+        } else {
+            serial_write("WARNING: system pack checksum/format validation failed; bundled apps unavailable and installation blocked\r\n");
+        }
     } else {
         serial_write("INSTALLER: boot payload set unavailable or invalid; deployment disabled\r\n");
         struct limine_module_response *mods =

@@ -1,0 +1,17 @@
+NEXUS APPLICATION INDEX
+-----------------------
+
+KINETIC.ELF
+  Demonstrates the Nexus display, input, clock and framebuffer syscalls.
+
+GAMEPAD.ELF
+  Demonstrates bounded USB HID controller polling, buttons and axes.
+
+AUDIO.ELF
+  Demonstrates one bounded AC'97 48 kHz stereo PCM submission at a time.
+
+PIE.ELF
+  Demonstrates the static-PIE loader and symbol-free relative relocations.
+
+To build your own native app, use kernel/include/nexus/app.h and run:
+  make -C sdk CC=gcc

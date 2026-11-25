@@ -42,6 +42,24 @@ supervisor is a lifecycle/control plane, not yet a collection of isolated
 ring-3 daemons. Moving services into user mode requires robust IPC, handles,
 process scheduling, and restart/recovery semantics first.
 
+### Installed system pack
+
+The installer medium and installed EFI System Partition carry
+`NEXUS/SYSTEM.NXP`, a bounded `NXSPACK1` archive of immutable system files.
+The kernel rejects malformed headers, invalid names, duplicate entries,
+overlapping extents, unexpected flags, and mismatched table, payload, or
+per-file CRC-32 values before publishing any entry. The VFS exposes verified
+entries as read-only root files; they can be opened and run through the
+existing static ELF process launcher.
+
+The ISO build generates the pack from the native SDK examples plus
+`README.TXT` and `APPS.TXT`. The installer writes this exact pack to the EFI
+System Partition and records it as a Limine module in the installed boot
+configuration. The 2 MiB bound keeps boot-time validation and installer
+deployment bounded. This makes the demo apps available after installation,
+but it is not yet a package manager, writable system volume, dynamic loader,
+or complete userland.
+
 ## Remaining work across the eight platform goals
 
 | Area | Current state | Required next engineering |
@@ -53,7 +71,7 @@ process scheduling, and restart/recovery semantics first.
 | Desktop | Built-in shell and app views | Independent overlapping windows, compositor, window protocol, input focus, accessibility, display settings, and isolated user applications |
 | Browser, network, Store | IPv4/DHCP/DNS/TCP and TLS text browser; signed package format exists | Full HTML/CSS/JavaScript engine, downloads/media, Wi-Fi chipset drivers, production Ed25519 provider/key, and Store-to-package installation flow |
 | Gaming | Gamepad polling and bounded AC'97 output; native 2D app ABI | Concurrent app runtime, low-latency audio/mixer, 3D graphics API, controller mappings, Linux ABI/dynamic loader and/or Win32/PE compatibility |
-| Distributable ISO | Hybrid BIOS/UEFI installer image includes the kernel and boot payloads | Package the finished userland, services, drivers, assets, applications, trust roots and recovery/update metadata, then verify deployment on installed systems |
+| Distributable ISO | Hybrid BIOS/UEFI installer includes the kernel, boot payloads, and a checksummed read-only system pack with four SDK demos and documentation; installer preserves the pack on the EFI partition | Package the finished userland, services, drivers, broader applications, trust roots and recovery/update metadata, then verify deployment on installed systems |
 
 ## Steam compatibility gate
 

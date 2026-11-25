@@ -79,7 +79,7 @@ jobs:
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src -Ikernel/include -Iinstaller kernel/src/blockdev.c kernel/src/gpt.c \
             kernel/src/installer_storage.c kernel/src/installer_runtime.c \
-            kernel/src/boot_payload.c kernel/src/nxfs.c installer/installer_journal.c installer/partition_plan.c \
+            kernel/src/boot_payload.c kernel/src/boot_pack.c kernel/src/nxfs.c installer/installer_journal.c installer/partition_plan.c \
             installer/fat32_format.c installer/fat32_file.c installer/bios_install.c installer/gpt_image.c installer/gpt_install.c \
             installer/tests/installer_storage_test.c \
             -o /tmp/nexus-installer-storage-test
@@ -93,6 +93,7 @@ jobs:
           /tmp/nexus-boot-mode-test
           grep -q '^/Install Nexus OS$' boot/limine.conf
           grep -q 'cmdline: nexus.mode=installer' boot/limine.conf
+          grep -q 'module_path: boot():/NEXUS/SYSTEM.NXP' boot/limine.conf
           grep -q 'default_entry: 1' boot/limine.conf
           grep -q 'remember_last_entry: no' boot/limine.conf
           ! grep -q 'nexus.mode=desktop' boot/limine.conf
@@ -184,6 +185,14 @@ jobs:
             kernel/tests/boot_payload_test.c -o /tmp/nexus-boot-payload-test
           /tmp/nexus-boot-payload-test
 
+      - name: Test Nexus read-only system pack validation and access
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/boot_pack.c kernel/tests/boot_pack_test.c \
+            -o /tmp/nexus-boot-pack-test
+          /tmp/nexus-boot-pack-test
+          python3 build/test-system-pack.py
+
       - name: Test FAT32 file deployment beyond 2 TiB
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
@@ -209,6 +218,15 @@ jobs:
 
       - name: Build first-party Nexus native application SDK
         run: |
+          make -C sdk clean all CC=gcc
+          python3 build/make-system-pack.py \
+            --output build/system-pack/NEXUS-SYSTEM.NXP \
+            --file README.TXT=system/README.TXT \
+            --file APPS.TXT=system/APPS.TXT \
+            --file KINETIC.ELF=sdk/build/kinetic_demo.elf \
+            --file GAMEPAD.ELF=sdk/build/gamepad_demo.elf \
+            --file AUDIO.ELF=sdk/build/audio_demo.elf \
+            --file PIE.ELF=sdk/build/pie_demo.elf
           make -C userland inspect
           python3 - <<'PY'
           from pathlib import Path

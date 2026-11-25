@@ -55,6 +55,7 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
     struct limine_file *uefi = NULL;
     struct limine_file *bios_hdd = NULL;
     struct limine_file *bios_sys = NULL;
+    struct limine_file *system_pack = NULL;
     for (uint64_t i = 0U; i < modules->module_count; ++i) {
         struct limine_file *file = modules->modules[i];
         if (file == NULL || file->path == NULL) continue;
@@ -67,14 +68,19 @@ bool nexus_boot_payloads_init(void *module_response, void *executable_response) 
         } else if (path_is(file->path, "boot():/boot/limine/limine-bios.sys")) {
             if (bios_sys != NULL) return false;
             bios_sys = file;
+        } else if (path_is(file->path, "boot():/NEXUS/SYSTEM.NXP")) {
+            if (system_pack != NULL) return false;
+            system_pack = file;
         }
     }
     struct limine_file *kernel = executable->executable_file;
     if (uefi == NULL || bios_hdd == NULL || bios_sys == NULL ||
+        system_pack == NULL ||
         !blob_from_file(kernel, &payloads.kernel_elf, 64U) ||
         !blob_from_file(uefi, &payloads.uefi_loader, 512U) ||
         !blob_from_file(bios_hdd, &payloads.bios_hdd_image, 512U) ||
-        !blob_from_file(bios_sys, &payloads.bios_sys, 512U)) return false;
+        !blob_from_file(bios_sys, &payloads.bios_sys, 512U) ||
+        !blob_from_file(system_pack, &payloads.system_pack, 32U)) return false;
 
     const uint8_t *k = payloads.kernel_elf.data;
     if (k[0] != 0x7fU || k[1] != 'E' || k[2] != 'L' || k[3] != 'F' ||

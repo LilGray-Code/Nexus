@@ -5,6 +5,7 @@
 #include "gpt_image.h"
 #include <limine.h>
 #include "boot_payload.h"
+#include "boot_pack.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -154,6 +155,41 @@ static bool dump_installed_disk(const char *path,const struct mock_disk *disk){
 
 uint64_t timer_ticks(void) { return 123456U; }
 
+static uint32_t test_crc32(const uint8_t *data, size_t length) {
+    uint32_t crc = 0xFFFFFFFFU;
+    for (size_t i = 0U; i < length; ++i) {
+        crc ^= data[i];
+        for (unsigned bit = 0U; bit < 8U; ++bit)
+            crc = (crc >> 1) ^ ((crc & 1U) ? 0xEDB88320U : 0U);
+    }
+    return ~crc;
+}
+static void test_write_le32(uint8_t *p, uint32_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+    p[2] = (uint8_t)(value >> 16);
+    p[3] = (uint8_t)(value >> 24);
+}
+static void test_make_system_pack(uint8_t image[80]) {
+    for (size_t i = 0U; i < 80U; ++i) image[i] = 0U;
+    const uint8_t magic[8] = {'N','X','S','P','A','C','K','1'};
+    for (size_t i = 0U; i < 8U; ++i) image[i] = magic[i];
+    test_write_le32(image + 8U, 1U);
+    test_write_le32(image + 12U, 80U);
+    test_write_le32(image + 16U, 80U);
+    test_write_le32(image + 20U, 1U);
+    uint8_t *record = image + 32U;
+    const char name[] = "BOOT.TXT";
+    for (size_t i = 0U; i < sizeof(name) - 1U; ++i)
+        record[i] = (uint8_t)name[i];
+    test_write_le32(record + 32U, 80U);
+    test_write_le32(record + 36U, 0U);
+    test_write_le32(record + 40U, 0U);
+    test_write_le32(record + 44U, 0U);
+    test_write_le32(image + 24U, test_crc32(record, 48U));
+    test_write_le32(image + 28U, 0U);
+}
+
 int main(int argc,char **argv) {
     uint8_t *external_kernel=NULL,*external_uefi=NULL,*external_bios_hdd=NULL,*external_bios_sys=NULL;
     uint32_t external_kernel_size=0U,external_uefi_size=0U,external_bios_hdd_size=0U,external_bios_sys_size=0U;
@@ -265,6 +301,8 @@ int main(int argc,char **argv) {
     static uint8_t fake_uefi[512] = {'M','Z'};
     static uint8_t fake_bios_hdd[1024] = {0};
     static uint8_t fake_bios_sys[512] = {0};
+    static uint8_t fake_system_pack[80] = {0};
+    test_make_system_pack(fake_system_pack);
     fake_bios_hdd[510]=0x55U;fake_bios_hdd[511]=0xAAU;
     fake_uefi[0x3c]=0x40U;fake_uefi[0x40]='P';fake_uefi[0x41]='E';
     uint8_t *kernel_payload=argc==6?external_kernel:fake_kernel;
@@ -282,13 +320,16 @@ int main(int argc,char **argv) {
         .path="boot():/boot/limine/limine-bios-hdd.bin"};
     struct limine_file bios_sys_file={.address=bios_sys_payload,.size=bios_sys_payload_size,
         .path="boot():/boot/limine/limine-bios.sys"};
-    struct limine_file *module_files[3]={&uefi_file,&bios_hdd_file,&bios_sys_file};
-    struct limine_module_response module_response={.module_count=3U,.modules=module_files};
+    struct limine_file pack_file={.address=fake_system_pack,.size=sizeof(fake_system_pack),
+        .path="boot():/NEXUS/SYSTEM.NXP"};
+    struct limine_file *module_files[4]={&uefi_file,&bios_hdd_file,&bios_sys_file,&pack_file};
+    struct limine_module_response module_response={.module_count=4U,.modules=module_files};
     struct limine_executable_file_response executable_response={.executable_file=&kernel_file};
     assert(nexus_boot_payloads_init(&module_response,&executable_response));
+    assert(nexus_boot_pack_init(fake_system_pack,sizeof(fake_system_pack)));
     assert(nexus_installer_deploy_boot_payloads(target_handle,&identity,
         identity.stable_id,"ERASE",esp->first_lba,esp_blocks));
-    assert(target.flushes == 29U);
+    assert(target.flushes == 30U);
     /* The target disk must boot straight into the installed desktop, never
      * back into the temporary USB/ISO installer environment. */
     assert(bytes_contain_text(target.format_area, sizeof(target.format_area),
@@ -306,7 +347,7 @@ int main(int argc,char **argv) {
     struct nexus_gpt_partition bios_copy=*bios_part;
     assert(nexus_installer_install_bios_bootloader(target_handle,&identity,
         identity.stable_id,"ERASE",&bios_copy));
-    assert(target.flushes==31U);
+    assert(target.flushes==32U);
     assert(memcmp(target.bios_area,bios_hdd_payload+512U,
         bios_hdd_payload_size-512U)==0);
     assert(target.first[510U]==0x55U&&target.first[511U]==0xAAU);
@@ -344,7 +385,7 @@ int main(int argc,char **argv) {
         &recovery_copy,&journal_readback)==NEXUS_JOURNAL_OK);
     assert(journal_readback.sequence==2U&&
            journal_readback.phase==NEXUS_JOURNAL_GPT_WRITTEN);
-    assert(target.flushes==33U);
+    assert(target.flushes==34U);
     journal.disk_guid[0]^=0xFFU;
     assert(nexus_installer_store_recovery_record(target_handle,&identity,
         identity.stable_id,"ERASE",&recovery_copy,&journal)==NEXUS_JOURNAL_INVALID);
@@ -439,7 +480,7 @@ int main(int argc,char **argv) {
     struct nexus_gpt_partition system_copy = *system_part;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &system_copy));
-    assert(target.flushes == 38U);
+    assert(target.flushes == 39U);
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
 
     /* Deploy the actual kernel ELF and basic system-volume documentation. */
@@ -454,7 +495,7 @@ int main(int argc,char **argv) {
         (kernel_payload_size + NEXUS_NXFS_MAX_FILE_BYTES - 1U) /
         NEXUS_NXFS_MAX_FILE_BYTES;
     assert(kernel_chunk_count_for_flush>=1U&&kernel_chunk_count_for_flush<=2U);
-    assert(target.flushes==50U+4U*(kernel_chunk_count_for_flush-1U));
+    assert(target.flushes==51U+4U*(kernel_chunk_count_for_flush-1U));
     assert(gpt_scan_device(target_handle));
     const struct nexus_gpt_partition *data_part=gpt_partition_at(4U);
     assert(data_part!=NULL);
@@ -467,7 +508,7 @@ int main(int argc,char **argv) {
     assert(nexus_installer_write_nxfs_file(target_handle,&identity,
         identity.stable_id,"ERASE",&system_copy,"KERNEL.BIN",
         system_payload,sizeof(system_payload)));
-    assert(target.flushes == 54U+4U*(kernel_chunk_count_for_flush-1U));
+    assert(target.flushes == 55U+4U*(kernel_chunk_count_for_flush-1U));
     assert(nxfs_mount(target_handle,&system_copy));
     const struct nexus_nxfs_entry *system_entry=NULL;
     for(size_t i=0U;i<nxfs_entry_count();++i){

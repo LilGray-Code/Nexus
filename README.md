@@ -42,7 +42,7 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   persistent NXFS is unavailable or read-only. Host integration tests exercise
   root preferences while nested in NXFS/FAT32 directories and verify remount
   retention.
-- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support; standard 2.4 GHz HID receivers may also work, while native Bluetooth pairing is not implemented.
+- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support, plus generic USB HID gamepad polling for up to four controllers with bounded report parsing and hotplug/disconnect events. Composite controllers, USB hubs, arbitrary HID formats, and native Bluetooth pairing are not yet supported.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.
 - GPT, FAT32, NXFS, and a virtual filesystem layer.
@@ -140,7 +140,7 @@ shipped**, and the host tests use only a non-cryptographic mock verifier. The
 Store is not yet connected to this package pipeline, so its Steam/Discord/
 Spotify entries remain web shortcuts. See
 [`docs/development/SOFTWARE-ECOSYSTEM.md`](docs/development/SOFTWARE-ECOSYSTEM.md)
-for the format and trust requirements.
+for the format and trust requirements. The [Steam/game compatibility roadmap](docs/development/STEAM-COMPATIBILITY-ROADMAP.md) lists the Linux ABI, process model, audio, 3D, filesystem, and runtime work that still blocks Steam titles.
 
 The desktop applications and current system services are integrated into the
 kernel. The ELF64 loader has a bounded ring-3 execution test, but this does

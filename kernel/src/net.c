@@ -1257,7 +1257,7 @@ static unsigned int tcp_https_trace_events;
 
 static void tcp_https_trace(const char *stage, const uint8_t *segment,
                             size_t length) {
-    if (tcp_connection.remote_port != NEXUS_HTTPS_PORT ||
+    if (tcp_connection.remote_port != 443U ||
         tcp_https_trace_events >= 96U) return;
     ++tcp_https_trace_events;
     serial_write("NEXUS HTTPS TCP ");
@@ -1295,7 +1295,7 @@ static void tcp_https_trace(const char *stage, const uint8_t *segment,
 static void receive_tcp(const uint8_t *segment, size_t length,
                         const uint8_t source_ip[4],
                         const uint8_t destination_ip[4]) {
-    const bool https_trace = tcp_connection.remote_port == NEXUS_HTTPS_PORT;
+    const bool https_trace = tcp_connection.remote_port == 443U;
     if (https_trace) tcp_https_trace("RX", segment, length);
     if (!tcp_connection.active || segment == NULL || source_ip == NULL ||
         destination_ip == NULL || length < NET_TCP_HEADER ||
@@ -1400,7 +1400,7 @@ bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
 
     tcp_connection = (struct net_tcp_connection){0};
     tcp_connection.active = true;
-    if (remote_port == NEXUS_HTTPS_PORT) tcp_https_trace_events = 0U;
+    if (remote_port == 443U) tcp_https_trace_events = 0U;
     copy_bytes(tcp_connection.remote_ipv4, remote_ipv4, 4U);
     tcp_connection.remote_port = remote_port;
     tcp_connection.local_port = tcp_next_port++;

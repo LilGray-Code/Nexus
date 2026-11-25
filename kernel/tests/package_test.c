@@ -245,6 +245,15 @@ int main(void) {
     assert(mock_find("APPS/DEMO.NPK") != NULL);
     assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                       NULL, &installed));
+    /* Installed-image verification must reject a late-byte payload change. */
+    struct mock_file *installed_image = mock_find("APPS/DEMO-1.0.0.ELF");
+    assert(installed_image != NULL && installed_image->size == 4U);
+    installed_image->data[3] ^= 1U;
+    assert(!nexus_package_is_installed("DEMO", mock_ed25519_verify,
+                                       NULL, NULL));
+    installed_image->data[3] ^= 1U;
+    assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
+                                      NULL, &installed));
     uint64_t exit_status = UINT64_MAX;
     assert(nexus_package_launch("DEMO", mock_ed25519_verify, NULL, &exit_status));
     assert(strcmp(launched_path, "APPS/DEMO-1.0.0.ELF") == 0);

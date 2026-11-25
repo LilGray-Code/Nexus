@@ -1,6 +1,7 @@
 #include "usb_hid.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 
 static const uint8_t gamepad_descriptor[] = {
@@ -77,6 +78,44 @@ static void test_report_id_and_length_checks(void) {
         1U, 1U, 2U, &event));
 }
 
+static void test_hat_direction(void) {
+    const uint8_t descriptor[] = {
+        0x05,0x01, 0x09,0x05, 0xA1,0x01,
+        0x09,0x30, 0x15,0x00, 0x25,0x7F,
+        0x75,0x08, 0x95,0x01, 0x81,0x02,
+        0x09,0x39, 0x15,0x00, 0x25,0x07,
+        0x75,0x04, 0x95,0x01, 0x81,0x02,
+        0xC0
+    };
+    struct nexus_usb_gamepad_layout layout = {0};
+    assert(usb_hid_gamepad_parse_descriptor(descriptor,
+        sizeof(descriptor), &layout));
+    assert(layout.axis_count == 1U);
+    assert(layout.hat_size == 4U);
+    assert(layout.report_bytes == 2U);
+    const uint8_t report[2] = {0x40U, 0x04U};
+    struct nexus_usb_gamepad_event event = {0};
+    assert(usb_hid_gamepad_decode(&layout, report, sizeof(report),
+        1U, 0x1234U, 0x5678U, &event));
+    assert(event.hat == 4U);
+    assert(event.axis_count == 1U);
+}
+
+static void test_extreme_hat_range_is_safe(void) {
+    struct nexus_usb_gamepad_layout layout = {0};
+    layout.report_bytes = 1U;
+    layout.hat_offset = 0U;
+    layout.hat_size = 32U;
+    layout.hat_minimum = INT32_MIN;
+    layout.hat_maximum = INT32_MAX;
+    const uint8_t report[4] = {0U, 0U, 0U, 0x80U};
+    layout.report_bytes = 4U;
+    struct nexus_usb_gamepad_event event = {0};
+    assert(usb_hid_gamepad_decode(&layout, report, sizeof(report),
+        1U, 1U, 1U, &event));
+    assert(event.hat == 4U);
+}
+
 static void test_malformed_descriptor_is_rejected(void) {
     struct nexus_usb_gamepad_layout layout = {0};
     const uint8_t truncated[] = {0x05, 0x01, 0x09};
@@ -91,6 +130,8 @@ static void test_malformed_descriptor_is_rejected(void) {
 int main(void) {
     test_axes_and_buttons();
     test_report_id_and_length_checks();
+    test_hat_direction();
+    test_extreme_hat_range_is_safe();
     test_malformed_descriptor_is_rejected();
     puts("NEXUS HID GAMEPAD PARSER/DECODER TESTS PASSED");
     return 0;

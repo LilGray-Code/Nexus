@@ -108,6 +108,38 @@ static void record_device(uint8_t bus, uint8_t slot, uint8_t function,
     }
 }
 
+bool pci_read_config8(const struct nexus_pci_device *device,
+                      uint8_t offset, uint8_t *value) {
+    if (device == NULL || value == NULL) return false;
+    const uint32_t raw = pci_config_read(device->bus, device->slot,
+                                         device->function, offset);
+    if (raw == UINT32_MAX) return false;
+    *value = (uint8_t)(raw >> ((offset & 3U) * 8U));
+    return true;
+}
+
+bool pci_read_config16(const struct nexus_pci_device *device,
+                       uint8_t offset, uint16_t *value) {
+    if (device == NULL || value == NULL || offset > 0xFEU) return false;
+    uint8_t low = 0U, high = 0U;
+    if (!pci_read_config8(device, offset, &low) ||
+        !pci_read_config8(device, (uint8_t)(offset + 1U), &high))
+        return false;
+    *value = (uint16_t)low | ((uint16_t)high << 8);
+    return true;
+}
+
+bool pci_read_config32(const struct nexus_pci_device *device,
+                       uint8_t offset, uint32_t *value) {
+    if (device == NULL || value == NULL || (offset & 3U) != 0U)
+        return false;
+    const uint32_t raw = pci_config_read(device->bus, device->slot,
+                                         device->function, offset);
+    if (raw == UINT32_MAX) return false;
+    *value = raw;
+    return true;
+}
+
 bool pci_enable_memory_bus_master(const struct nexus_pci_device *device) {
     if (device == NULL) return false;
 

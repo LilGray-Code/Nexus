@@ -69,6 +69,19 @@ bool vfs_remove_root_file(const char *name) {
     return true;
 }
 
+static bool bytes_contain(const uint8_t *data, size_t data_length,
+                          const char *needle) {
+    size_t needle_length = strlen(needle);
+    if (needle_length == 0U || needle_length > data_length) return false;
+    for (size_t start = 0U; start + needle_length <= data_length; ++start) {
+        size_t i = 0U;
+        while (i < needle_length &&
+               data[start + i] == (uint8_t)needle[i]) ++i;
+        if (i == needle_length) return true;
+    }
+    return false;
+}
+
 static void reset_mock(void) {
     mock_name[0] = '\0';
     mock_size = 0U;
@@ -99,8 +112,8 @@ static void test_install_open_and_remove_shortcut(void) {
     assert(nexus_store_install_shortcut(0U));
     assert(nexus_store_is_installed(0U));
     assert(strcmp(mock_name, "APP-STEAM.URL") == 0);
-    assert(memmem(mock_data, mock_size, "https://store.steampowered.com/",
-                  sizeof("https://store.steampowered.com/") - 1U) != NULL);
+    assert(bytes_contain(mock_data, mock_size,
+                         "https://store.steampowered.com/"));
     assert(nexus_store_install_shortcut(0U)); /* Idempotent */
     assert(nexus_store_uninstall_shortcut(0U));
     assert(!nexus_store_is_installed(0U));

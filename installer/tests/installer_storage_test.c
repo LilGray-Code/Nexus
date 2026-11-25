@@ -128,8 +128,8 @@ static bool load_payload_file(const char *path,uint8_t **data,uint32_t *size){
     if(!f){fprintf(stderr,"installer test: cannot open payload '%s'\\n",path);return false;}
     if(fseek(f,0,SEEK_END)!=0){fprintf(stderr,"installer test: cannot seek payload '%s'\\n",path);fclose(f);return false;}
     long n=ftell(f);
-    fprintf(stderr,"installer test: payload '%s' is %ld bytes (maximum 1048576)\\n",path,n);
-    if(n<=0||(unsigned long)n>1024UL*1024UL){fclose(f);return false;}
+    fprintf(stderr,"installer test: payload '%s' is %ld bytes (maximum 2097152)\\n",path,n);
+    if(n<=0||(unsigned long)n>2UL*1024UL*1024UL){fclose(f);return false;}
     if(fseek(f,0,SEEK_SET)!=0){fprintf(stderr,"installer test: cannot rewind payload '%s'\\n",path);fclose(f);return false;}
     uint8_t *p=malloc((size_t)n);
     if(!p){fprintf(stderr,"installer test: cannot allocate %ld-byte payload\\n",n);fclose(f);return false;}

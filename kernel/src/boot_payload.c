@@ -1,7 +1,7 @@
 #include "boot_payload.h"
 #include <limine.h>
 
-#define NEXUS_PAYLOAD_LIMIT (1024U * 1024U)
+#define NEXUS_PAYLOAD_LIMIT (2U * 1024U * 1024U)
 static struct nexus_boot_payloads payloads;
 static bool payloads_ready;
 

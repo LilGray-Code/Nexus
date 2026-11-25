@@ -9,9 +9,9 @@ _Static_assert(offsetof(struct nexus_app_input_event, scancode) == 2U,
                "scancode offset is stable");
 _Static_assert(offsetof(struct nexus_app_input_event, mouse_dx) == 6U,
                "mouse delta offset is stable");
-_Static_assert(sizeof(struct nexus_app_gamepad_event) == 28U,
+_Static_assert(sizeof(struct nexus_app_gamepad_event) == 32U,
                "gamepad event layout is stable");
-_Static_assert(offsetof(struct nexus_app_gamepad_event, axes) == 12U,
+_Static_assert(offsetof(struct nexus_app_gamepad_event, axes) == 16U,
                "gamepad axis offset is stable");
 _Static_assert(sizeof(struct nexus_app_display_info) == 40U,
                "display info layout is stable");

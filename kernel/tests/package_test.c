@@ -245,6 +245,11 @@ int main(void) {
     assert(mock_find("APPS/DEMO.NPK") != NULL);
     assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                       NULL, &installed));
+    uint64_t exit_status = UINT64_MAX;
+    assert(nexus_package_launch("DEMO", mock_ed25519_verify, NULL, &exit_status));
+    assert(strcmp(launched_path, "APPS/DEMO-1.0.0.ELF") == 0);
+    assert(exit_status == 42U);
+    assert(!nexus_package_launch("DEMO", NULL, NULL, &exit_status));
 
     /* An update stages the new image, commits its receipt, then reclaims old. */
     const uint8_t second_payload[4] = {'E', 'L', 'F', '?'};

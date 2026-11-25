@@ -1327,7 +1327,7 @@ static void draw_shell(void) {
                                    "NEXUS INSTALLATION COMPLETED",
                                    1U, 108U, 216U, 229U);
                 graphics_draw_text(text_x, text_y + 146U,
-                                   "Shut down, remove the installer media, then boot Nexus.",
+                                   "Remove the installer USB and restart to launch Nexus OS.",
                                    1U, 170U, 225U, 190U);
             } else if (installer_ui_state == INSTALLER_UI_FAILED) {
                 graphics_draw_text(text_x, text_y + 116U,
@@ -1959,8 +1959,8 @@ static void draw_shell(void) {
                            1, 170, 191, 211);
     }
 
-    if (active_view != DESKTOP_HOME && !window_maximized &&
-        window_snap_state == DESKTOP_SNAP_NONE &&
+    if (!installer_session_mode && active_view != DESKTOP_HOME &&
+        !window_maximized && window_snap_state == DESKTOP_SNAP_NONE &&
         panel_width >= 36U && panel_height >= 36U) {
         const uint64_t grip_x = panel_x + panel_width - 17U;
         const uint64_t grip_y = panel_y + panel_height - 17U;

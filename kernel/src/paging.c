@@ -356,7 +356,7 @@ bool paging_user_address_space_selftest(void) {
     }
     if (paging_copy_to_address_space(test_root_physical, 0x00400FF8ULL,
             write_probe, sizeof(write_probe))) valid = false;
-    if (paging_copy_to_address_space(test_root_physical, 0x00800000ULL,
+    if (paging_copy_to_address_space(test_root_physical, 0x00C00000ULL,
             write_probe, sizeof(write_probe))) valid = false;
     if (paging_map_user_page(test_root_physical, 0x00800000ULL,
                              user_page, true, false)) valid = false;

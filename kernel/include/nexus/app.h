@@ -26,6 +26,7 @@
 #define NEXUS_APP_SYS_FRAMEBUFFER_BLIT 11ULL
 #define NEXUS_APP_SYS_SLEEP_TICKS 12ULL
 #define NEXUS_APP_SYS_GAMEPAD_POLL 13ULL
+#define NEXUS_APP_SYS_AUDIO_WRITE 14ULL
 
 #define NEXUS_APP_INPUT_KEYBOARD 1U
 #define NEXUS_APP_INPUT_MOUSE 2U
@@ -50,6 +51,9 @@ struct nexus_app_input_event {
 #define NEXUS_APP_GAMEPAD_MAX_AXES 8U
 #define NEXUS_APP_GAMEPAD_HAT_NEUTRAL 0xFFU
 #define NEXUS_APP_GAMEPAD_DISCONNECTED 0x0001U
+#define NEXUS_APP_AUDIO_SAMPLE_RATE_HZ 48000U
+#define NEXUS_APP_AUDIO_CHANNELS 2U
+#define NEXUS_APP_AUDIO_MAX_FRAMES 1024U
 
 struct nexus_app_gamepad_event {
     uint16_t device_id;
@@ -144,6 +148,16 @@ static inline int64_t nexus_app_gamepad_poll(
     struct nexus_app_gamepad_event *event) {
     return nexus_app_syscall3(NEXUS_APP_SYS_GAMEPAD_POLL,
                               (uint64_t)(uintptr_t)event, 0U, 0U);
+}
+
+/* Queue up to 1024 interleaved signed 16-bit stereo frames at 48 kHz.
+ * Returns 0 when accepted, -EAGAIN when the single DMA buffer is still busy,
+ * or -ENODEV when no supported audio device is present.
+ */
+static inline int64_t nexus_app_audio_write_48k_s16_stereo(
+    const int16_t *interleaved_samples, uint32_t sample_frames) {
+    return nexus_app_syscall3(NEXUS_APP_SYS_AUDIO_WRITE,
+        (uint64_t)(uintptr_t)interleaved_samples, sample_frames, 0U);
 }
 
 static inline int64_t nexus_app_get_display(

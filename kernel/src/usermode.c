@@ -2,11 +2,16 @@
 
 #include "elf64.h"
 #include "gdt.h"
+#include "graphics.h"
+#include "input.h"
+#include "nexus/app.h"
 #include "paging.h"
 #include "process.h"
 #include "serial.h"
 #include "syscall.h"
+#include "timer.h"
 #include "vfs.h"
+#include "virtio_gpu.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -398,5 +403,115 @@ int64_t usermode_sys_close(uint64_t descriptor) {
     if (!usermode_file_used[slot]) return -NEXUS_EBADF;
     vfs_close(&usermode_files[slot]);
     usermode_file_used[slot] = false;
+    return 0;
+}
+
+int64_t usermode_sys_input_poll(uint64_t user_event) {
+    if (!paging_user_range_writable(user_event,
+                                    sizeof(struct nexus_app_input_event))) {
+        return -NEXUS_EFAULT;
+    }
+
+    struct nexus_input_event event;
+    if (!input_pop_event(&event)) return 0;
+
+    const struct nexus_app_input_event result = {
+        .type = event.type,
+        .reserved0 = 0U,
+        .scancode = event.scancode,
+        .mouse_buttons = event.mouse_buttons,
+        .reserved1 = 0U,
+        .mouse_dx = event.mouse_dx,
+        .mouse_dy = event.mouse_dy,
+        .mouse_wheel = event.mouse_wheel,
+        .reserved2 = 0U
+    };
+    return paging_copy_to_user(user_event, &result, sizeof(result))
+        ? 1 : -NEXUS_EFAULT;
+}
+
+int64_t usermode_sys_display_info(uint64_t user_info) {
+    const uint64_t width = graphics_width();
+    const uint64_t height = graphics_height();
+    const uint64_t pitch = graphics_pitch();
+    if (width == 0U || height == 0U || pitch == 0U)
+        return -NEXUS_ENODEV;
+    const struct nexus_app_display_info info = {
+        .structure_size = sizeof(struct nexus_app_display_info),
+        .abi_version = NEXUS_APP_ABI_VERSION,
+        .width = width,
+        .height = height,
+        .stride_bytes = pitch,
+        .pixel_format = NEXUS_APP_PIXEL_XRGB8888,
+        .reserved = 0U
+    };
+    if (!paging_user_range_writable(user_info, sizeof(info)))
+        return -NEXUS_EFAULT;
+    return paging_copy_to_user(user_info, &info, sizeof(info))
+        ? 0 : -NEXUS_EFAULT;
+}
+
+int64_t usermode_sys_clock_ticks(void) {
+    return (int64_t)timer_ticks();
+}
+
+int64_t usermode_sys_framebuffer_blit(uint64_t user_request) {
+    struct nexus_app_blit_request request;
+    static uint32_t staging[NEXUS_APP_FRAME_MAX_PIXELS];
+
+    if (!paging_copy_from_user(&request, user_request, sizeof(request)))
+        return -NEXUS_EFAULT;
+    if (request.reserved != 0U || request.width == 0U ||
+        request.height == 0U || request.stride_pixels < request.width ||
+        request.width > NEXUS_APP_FRAME_MAX_PIXELS ||
+        request.height > NEXUS_APP_FRAME_MAX_PIXELS / request.width ||
+        request.stride_pixels > NEXUS_APP_FRAME_MAX_PIXELS) {
+        return -NEXUS_EINVAL;
+    }
+
+    const uint64_t display_width = graphics_width();
+    const uint64_t display_height = graphics_height();
+    if (display_width == 0U || display_height == 0U ||
+        request.x >= display_width || request.y >= display_height) {
+        return -NEXUS_ENODEV;
+    }
+
+    uint64_t copy_width = request.width;
+    uint64_t copy_height = request.height;
+    if (copy_width > display_width - request.x)
+        copy_width = display_width - request.x;
+    if (copy_height > display_height - request.y)
+        copy_height = display_height - request.y;
+    if (copy_width == 0U || copy_height == 0U ||
+        copy_width > NEXUS_APP_FRAME_MAX_PIXELS / copy_height) {
+        return -NEXUS_EINVAL;
+    }
+
+    const uint64_t source_stride = request.stride_pixels;
+    for (uint64_t row = 0U; row < copy_height; ++row) {
+        if (row != 0U && source_stride >
+            (UINT64_MAX / sizeof(uint32_t)) / row) {
+            return -NEXUS_EFAULT;
+        }
+        const uint64_t source_offset =
+            row * source_stride * sizeof(uint32_t);
+        if (request.pixels > UINT64_MAX - source_offset)
+            return -NEXUS_EFAULT;
+        if (!paging_copy_from_user(staging + row * copy_width,
+                request.pixels + source_offset,
+                (size_t)copy_width * sizeof(uint32_t))) {
+            return -NEXUS_EFAULT;
+        }
+    }
+
+    if (!graphics_blit_xrgb8888(request.x, request.y, copy_width,
+            copy_height, staging, (size_t)copy_width)) {
+        return -NEXUS_EINVAL;
+    }
+    if (virtio_gpu_active() &&
+        !virtio_gpu_present_region(request.x, request.y,
+                                   copy_width, copy_height)) {
+        return -NEXUS_EIO;
+    }
     return 0;
 }

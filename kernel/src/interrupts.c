@@ -222,6 +222,12 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                 syscall_frame_trace("return", mutable_frame);
                 return;
 
+            case NEXUS_SYS_AUDIO_WRITE:
+                mutable_frame->rax = (uint64_t)usermode_sys_audio_write(
+                    frame->rdi, frame->rsi);
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
             case NEXUS_SYS_GAMEPAD_POLL:
                 mutable_frame->rax = (uint64_t)
                     usermode_sys_gamepad_poll(frame->rdi);

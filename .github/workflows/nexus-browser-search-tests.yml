@@ -1,0 +1,40 @@
+name: Nexus browser web-search parser tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/browser_search.c"
+      - "kernel/src/browser_search.h"
+      - "kernel/src/html_text.c"
+      - "kernel/src/html_text.h"
+      - "kernel/tests/browser_search_test.c"
+      - ".github/workflows/nexus-browser-search-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/browser_search.c"
+      - "kernel/src/browser_search.h"
+      - "kernel/src/html_text.c"
+      - "kernel/src/html_text.h"
+      - "kernel/tests/browser_search_test.c"
+      - ".github/workflows/nexus-browser-search-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  browser-search-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile browser search tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/html_text.c \
+            kernel/src/browser_search.c kernel/tests/browser_search_test.c \
+            -o /tmp/nexus-browser-search-test
+      - name: Run browser query and result parsing tests
+        run: /tmp/nexus-browser-search-test

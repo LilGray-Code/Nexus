@@ -110,12 +110,19 @@ void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
 
     const uint32_t color = pack_rgb(red, green, blue);
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+    /*
+     * REP STOSD uses the CPU's optimized string-store path for solid fills.
+     * The active scanout is still the firmware-provided GPU framebuffer; this
+     * speeds up CPU rasterization without claiming a GPU drawing engine.
+     */
     for (uint64_t row = 0U; row < height; ++row) {
-        volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
+        uint32_t *pixels = (uint32_t *)(uintptr_t)
             (base + (y + row) * active_surface.pitch + x * 4U);
-        for (uint64_t column = 0U; column < width; ++column) {
-            pixels[column] = color;
-        }
+        size_t remaining = (size_t)width;
+        __asm__ volatile ("cld; rep stosl"
+                          : "+D"(pixels), "+c"(remaining)
+                          : "a"(color)
+                          : "memory", "cc");
     }
 }
 

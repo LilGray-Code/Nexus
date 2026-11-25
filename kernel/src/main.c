@@ -167,7 +167,7 @@ void kmain(void) {
     serial_write("Boot protocol: Limine\r\n");
     if (nexus_cpu_init()) {
         if (nexus_fpu_init()) {
-            serial_write("CPU: isolated x87/SSE2 state enabled for foreground apps; AVX remains disabled\\r\\n");
+            serial_write("CPU: isolated x87/SSE2 state enabled for foreground apps; AVX remains disabled\r\n");
         } else {
             serial_write("WARNING: x87/SSE2 app runtime unavailable on this CPU\\r\\n");
         }

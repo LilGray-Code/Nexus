@@ -4,7 +4,6 @@
 #include "serial.h"
 
 static struct nexus_gpu_info primary_gpu;
-static uint32_t detected_gpu_count;
 
 static enum nexus_gpu_vendor identify_vendor(uint16_t vendor_id) {
     switch (vendor_id) {
@@ -32,7 +31,6 @@ static const char *vendor_name(enum nexus_gpu_vendor vendor) {
 
 bool gpu_init(void) {
     primary_gpu = (struct nexus_gpu_info){0};
-    detected_gpu_count = 0U;
 
     /* PCI class 03 is a display controller. Firmware remains responsible for
      * the active scanout mode until a reviewed device driver is available.
@@ -41,7 +39,6 @@ bool gpu_init(void) {
         const struct nexus_pci_device *device = pci_device_at(i);
         if (device == NULL || device->class_code != 0x03U) continue;
 
-        ++detected_gpu_count;
         if (!primary_gpu.present || device->subclass == 0x00U) {
             primary_gpu.present = true;
             primary_gpu.vendor_id = device->vendor_id;

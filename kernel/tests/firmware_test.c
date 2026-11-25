@@ -14,9 +14,18 @@ static void finish_checksum(uint8_t *bytes, size_t length,
     bytes[checksum_offset] = (uint8_t)(0U - sum);
 }
 
-static void test_uefi_smbios3_inventory(void) {
-    uint8_t rsdp[16] = {'R','S','D',' ','P','T','R',' '};
+static void make_rsdp_v2(uint8_t rsdp[36]) {
+    memset(rsdp, 0, 36U);
+    memcpy(rsdp, "RSD PTR ", 8U);
     rsdp[15] = 2U;
+    rsdp[20] = 36U;
+    finish_checksum(rsdp, 20U, 8U);
+    finish_checksum(rsdp, 36U, 32U);
+}
+
+static void test_uefi_smbios3_inventory(void) {
+    uint8_t rsdp[36];
+    make_rsdp_v2(rsdp);
     uint8_t entry[24] = {0U};
     memcpy(entry, "_SM3_", 5U);
     entry[6] = sizeof(entry);
@@ -30,6 +39,10 @@ static void test_uefi_smbios3_inventory(void) {
     assert(info->smbios_present && info->smbios_64bit);
     assert(info->smbios_major == 3U && info->smbios_minor == 6U);
     assert(strcmp(nexus_firmware_type_label(), "UEFI 64-BIT") == 0);
+
+    rsdp[32] ^= 1U;
+    assert(nexus_firmware_init(2U, NULL, entry, rsdp));
+    assert(!nexus_firmware_get_info()->acpi_present);
 }
 
 static void test_legacy_smbios2_and_invalid_checksum(void) {
@@ -53,9 +66,22 @@ static void test_legacy_smbios2_and_invalid_checksum(void) {
     assert(!nexus_firmware_get_info()->smbios_present);
 }
 
+static void test_acpi_v1_checksum_and_bad_signature(void) {
+    uint8_t rsdp[20] = {0U};
+    memcpy(rsdp, "RSD PTR ", 8U);
+    rsdp[15] = 0U;
+    finish_checksum(rsdp, sizeof(rsdp), 8U);
+    assert(nexus_firmware_init(0U, NULL, NULL, rsdp));
+    assert(nexus_firmware_get_info()->acpi_present);
+    rsdp[0] ^= 1U;
+    assert(nexus_firmware_init(0U, NULL, NULL, rsdp));
+    assert(!nexus_firmware_get_info()->acpi_present);
+}
+
 int main(void) {
     test_uefi_smbios3_inventory();
     test_legacy_smbios2_and_invalid_checksum();
+    test_acpi_v1_checksum_and_bad_signature();
     puts("NEXUS FIRMWARE INVENTORY TESTS PASSED");
     return 0;
 }

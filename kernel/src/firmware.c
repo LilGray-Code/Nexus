@@ -5,6 +5,8 @@
 
 #define SMBIOS3_ENTRY_MAX_LENGTH 64U
 #define SMBIOS2_ENTRY_MAX_LENGTH 64U
+#define ACPI_RSDP_V2_MIN_LENGTH 36U
+#define ACPI_RSDP_MAX_LENGTH 4096U
 
 static struct nexus_firmware_info firmware_info;
 
@@ -17,12 +19,35 @@ static bool signature_equals(const uint8_t *actual,
 }
 
 static bool checksum_valid(const uint8_t *bytes, size_t length) {
-    if (bytes == NULL || length == 0U ||
-        length > SMBIOS3_ENTRY_MAX_LENGTH) return false;
+    if (bytes == NULL || length == 0U) return false;
     uint8_t sum = 0U;
     for (size_t i = 0U; i < length; ++i)
         sum = (uint8_t)(sum + bytes[i]);
     return sum == 0U;
+}
+
+static uint32_t read_le32(const uint8_t *bytes) {
+    return (uint32_t)bytes[0] |
+           ((uint32_t)bytes[1] << 8) |
+           ((uint32_t)bytes[2] << 16) |
+           ((uint32_t)bytes[3] << 24);
+}
+
+static bool parse_rsdp(const void *address, uint8_t *revision) {
+    if (address == NULL || revision == NULL) return false;
+    const uint8_t *bytes = (const uint8_t *)address;
+    if (!signature_equals(bytes, "RSD PTR ", 8U) ||
+        !checksum_valid(bytes, 20U)) return false;
+
+    const uint8_t acpi_revision = bytes[15];
+    if (acpi_revision >= 2U) {
+        const uint32_t length = read_le32(bytes + 20U);
+        if (length < ACPI_RSDP_V2_MIN_LENGTH ||
+            length > ACPI_RSDP_MAX_LENGTH ||
+            !checksum_valid(bytes, length)) return false;
+    }
+    *revision = acpi_revision;
+    return true;
 }
 
 static bool parse_smbios3(const void *entry_point) {
@@ -61,12 +86,8 @@ bool nexus_firmware_init(uint64_t firmware_type,
                          const void *rsdp_address) {
     firmware_info = (struct nexus_firmware_info){0};
     firmware_info.firmware_type = firmware_type;
-    if (rsdp_address != NULL) {
-        const uint8_t *rsdp = (const uint8_t *)rsdp_address;
-        firmware_info.acpi_revision = rsdp[15];
-        firmware_info.acpi_present =
-            signature_equals(rsdp, "RSD PTR ", 8U);
-    }
+    firmware_info.acpi_present =
+        parse_rsdp(rsdp_address, &firmware_info.acpi_revision);
 
     if (!parse_smbios3(smbios_entry_64)) {
         if (!parse_smbios2(smbios_entry_32))

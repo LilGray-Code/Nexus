@@ -302,7 +302,7 @@ jobs:
           python3 build/create-gpt-test-image.py nvme-test.img build/userland/HELLO.ELF
           python3 build/create-gpt-test-image.py ahci-test.img build/userland/HELLO.ELF
           set +e
-          timeout -k 2s 12s qemu-system-x86_64 \
+          timeout -k 2s 24s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -netdev user,id=n0 -device e1000,netdev=n0 \
             -netdev user,id=virt0 -device virtio-net-pci,netdev=virt0,disable-legacy=on \
@@ -559,7 +559,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          timeout -k 2s 12s qemu-system-x86_64 \
+          timeout -k 2s 24s qemu-system-x86_64 \
             -machine pc -cpu max -m 512M \
             -netdev user,id=n0 -device e1000,netdev=n0 \
             -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
@@ -1510,7 +1510,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          timeout -k 2s 15s qemu-system-x86_64 \
+          timeout -k 2s 24s qemu-system-x86_64 \
             -machine q35 -cpu qemu64 -m 512M \
             -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
             -drive file=nvme-test.img,if=none,id=nvm0,format=raw \

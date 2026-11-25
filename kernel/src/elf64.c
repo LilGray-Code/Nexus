@@ -732,6 +732,26 @@ static bool elf64_static_pie_selftest(void) {
     program[2].type = ELF64_PT_INTERP;
     if (nexus_elf64_parse(fixture.bytes, sizeof(fixture.bytes), &image))
         return false;
+    program[2].type = ELF64_PT_DYNAMIC;
+
+    /* Exercise the full map/copy/relocate path, then read back the pointer. */
+    uint64_t user_root = 0U;
+    uint64_t entry_point = 0U;
+    uint64_t stack_pointer = 0U;
+    if (!nexus_elf64_load(fixture.bytes, sizeof(fixture.bytes),
+            &user_root, &entry_point, &stack_pointer))
+        return false;
+    uint64_t relocated_pointer = 0U;
+    const bool relocation_matches =
+        paging_copy_from_address_space(user_root, &relocated_pointer,
+            ELF64_PIE_BASE + 0x1080U, sizeof(relocated_pointer)) &&
+        relocated_pointer == ELF64_PIE_BASE + 0x1010U;
+    const bool entry_matches = entry_point == ELF64_PIE_BASE + 8U;
+    const bool stack_matches = stack_pointer ==
+        ELF64_STACK_TOP - sizeof(uint64_t);
+    const bool destroyed = paging_destroy_user_address_space(user_root);
+    if (!relocation_matches || !entry_matches || !stack_matches || !destroyed)
+        return false;
 
     return true;
 }

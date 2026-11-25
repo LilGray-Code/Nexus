@@ -23,6 +23,11 @@
 #define NET_DNS_SERVER_PORT 53U
 #define NET_DNS_CLIENT_PORT 53000U
 #define NET_DNS_PACKET_SIZE 512U
+#define NET_DNS_CACHE_SIZE 8U
+#define NET_DNS_HOSTNAME_MAX 253U
+#define NET_DNS_MAX_TTL_SECONDS 300U
+#define NET_DNS_TICKS_PER_SECOND 100U
+#define NET_DNS_MAX_CNAME_HOPS 8U
 #define ETHERTYPE_IPV4 0x0800U
 #define ETHERTYPE_ARP 0x0806U
 #define IP_PROTOCOL_UDP 17U
@@ -80,6 +85,18 @@ static bool dns_query_success;
 static uint16_t dns_query_id;
 static uint16_t dns_next_id = 0x4E58U;
 static uint8_t dns_query_result[4];
+static char dns_query_name[NET_DNS_HOSTNAME_MAX + 1U];
+static uint32_t dns_query_ttl;
+
+struct net_dns_cache_entry {
+    bool valid;
+    char hostname[NET_DNS_HOSTNAME_MAX + 1U];
+    uint8_t ipv4[4];
+    uint64_t expires_at;
+};
+
+static struct net_dns_cache_entry dns_cache[NET_DNS_CACHE_SIZE];
+static size_t dns_cache_replace;
 static uint8_t rx_frame[NET_MAX_FRAME];
 
 struct net_tcp_connection {
@@ -487,22 +504,241 @@ static void dhcp_retry(void) {
 
 
 
-static bool dns_skip_name(const uint8_t *packet, size_t length,
-                          size_t *offset) {
-    if (packet == NULL || offset == NULL) return false;
-    while (*offset < length) {
-        const uint8_t label = packet[(*offset)++];
-        if (label == 0U) return true;
-        if ((label & 0xC0U) == 0xC0U) {
-            if (*offset >= length) return false;
-            ++(*offset);
+static bool dns_name_equal(const char *left, const char *right) {
+    if (left == NULL || right == NULL) return false;
+    size_t i = 0U;
+    while (left[i] != '\0' && right[i] != '\0') {
+        char a = left[i];
+        char b = right[i];
+        if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+        if (a != b) return false;
+        ++i;
+    }
+    return left[i] == '\0' && right[i] == '\0';
+}
+
+/* Convert a user-supplied DNS name to a bounded, lowercase ASCII hostname. */
+static bool dns_normalize_hostname(const char *hostname,
+                                   char output[NET_DNS_HOSTNAME_MAX + 1U]) {
+    if (hostname == NULL || output == NULL) return false;
+    size_t length = 0U;
+    while (hostname[length] != '\0') {
+        if (length >= NET_DNS_HOSTNAME_MAX + 1U) return false;
+        ++length;
+    }
+    if (length != 0U && hostname[length - 1U] == '.') --length;
+    if (length == 0U || length > NET_DNS_HOSTNAME_MAX) return false;
+
+    size_t label_length = 0U;
+    for (size_t i = 0U; i < length; ++i) {
+        char ch = hostname[i];
+        if (ch == '.') {
+            if (label_length == 0U || output[i - 1U] == '-') return false;
+            output[i] = '.';
+            label_length = 0U;
+            continue;
+        }
+        const bool alpha = (ch >= 'a' && ch <= 'z') ||
+                           (ch >= 'A' && ch <= 'Z');
+        const bool digit = ch >= '0' && ch <= '9';
+        if (!alpha && !digit && ch != '-') return false;
+        if (label_length == 0U && ch == '-') return false;
+        if (++label_length > 63U) return false;
+        if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+        output[i] = ch;
+    }
+    if (label_length == 0U || output[length - 1U] == '-') return false;
+    output[length] = '\0';
+    return true;
+}
+
+static void dns_cache_clear(void) {
+    for (size_t i = 0U; i < NET_DNS_CACHE_SIZE; ++i)
+        dns_cache[i].valid = false;
+    dns_cache_replace = 0U;
+}
+
+static bool dns_cache_lookup(const char *hostname, uint8_t result[4]) {
+    if (hostname == NULL || result == NULL) return false;
+    const uint64_t now = timer_ticks();
+    for (size_t i = 0U; i < NET_DNS_CACHE_SIZE; ++i) {
+        struct net_dns_cache_entry *entry = &dns_cache[i];
+        if (!entry->valid) continue;
+        if (now >= entry->expires_at) {
+            entry->valid = false;
+            continue;
+        }
+        if (dns_name_equal(entry->hostname, hostname)) {
+            copy_bytes(result, entry->ipv4, 4U);
             return true;
         }
-        if ((label & 0xC0U) != 0U || label > 63U ||
-            (size_t)label > length - *offset) return false;
-        *offset += label;
     }
     return false;
+}
+
+static void dns_cache_store(const char *hostname, const uint8_t address[4],
+                            uint32_t ttl_seconds) {
+    if (hostname == NULL || address == NULL || ttl_seconds == 0U) return;
+    if (ipv4_zero(address)) return;
+    if (ttl_seconds > NET_DNS_MAX_TTL_SECONDS)
+        ttl_seconds = NET_DNS_MAX_TTL_SECONDS;
+
+    size_t slot = NET_DNS_CACHE_SIZE;
+    for (size_t i = 0U; i < NET_DNS_CACHE_SIZE; ++i) {
+        if (dns_cache[i].valid &&
+            dns_name_equal(dns_cache[i].hostname, hostname)) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == NET_DNS_CACHE_SIZE) {
+        slot = dns_cache_replace;
+        dns_cache_replace = (dns_cache_replace + 1U) % NET_DNS_CACHE_SIZE;
+    }
+
+    size_t length = 0U;
+    while (hostname[length] != '\0' &&
+           length < NET_DNS_HOSTNAME_MAX) ++length;
+    if (length == 0U || length > NET_DNS_HOSTNAME_MAX) return;
+
+    struct net_dns_cache_entry *entry = &dns_cache[slot];
+    for (size_t i = 0U; i < length; ++i)
+        entry->hostname[i] = hostname[i];
+    entry->hostname[length] = '\0';
+    copy_bytes(entry->ipv4, address, 4U);
+    const uint64_t now = timer_ticks();
+    const uint64_t ttl_ticks =
+        (uint64_t)ttl_seconds * NET_DNS_TICKS_PER_SECOND;
+    entry->expires_at = UINT64_MAX - now < ttl_ticks
+        ? UINT64_MAX : now + ttl_ticks;
+    entry->valid = true;
+}
+
+/*
+ * Decode a DNS name, following only bounded backward compression pointers.
+ * The caller's offset advances over the encoded name, not its pointed-to
+ * expansion. This rejects forward pointers, loops, invalid labels and
+ * truncated names before any record is consumed.
+ */
+static bool dns_decode_name(const uint8_t *packet, size_t length,
+                            size_t *offset, char *output,
+                            size_t output_capacity) {
+    if (packet == NULL || offset == NULL || output == NULL ||
+        output_capacity == 0U || *offset >= length) return false;
+
+    size_t cursor = *offset;
+    size_t resume = SIZE_MAX;
+    size_t output_length = 0U;
+    unsigned int pointer_hops = 0U;
+    unsigned int labels = 0U;
+
+    for (;;) {
+        if (cursor >= length) return false;
+        const size_t marker = cursor;
+        const uint8_t label = packet[cursor++];
+        if ((label & 0xC0U) == 0xC0U) {
+            if (cursor >= length) return false;
+            const size_t target =
+                ((size_t)(label & 0x3FU) << 8) | packet[cursor++];
+            if (target >= marker || target >= length ||
+                ++pointer_hops > 16U) return false;
+            if (resume == SIZE_MAX) resume = cursor;
+            cursor = target;
+            continue;
+        }
+        if ((label & 0xC0U) != 0U || label > 63U) return false;
+        if (label == 0U) {
+            if (resume == SIZE_MAX) *offset = cursor;
+            else *offset = resume;
+            output[output_length] = '\0';
+            return true;
+        }
+        if (++labels > 127U || (size_t)label > length - cursor)
+            return false;
+        if (output_length != 0U) {
+            if (output_length + 1U >= output_capacity) return false;
+            output[output_length++] = '.';
+        }
+        if ((size_t)label > output_capacity - output_length - 1U)
+            return false;
+        for (size_t i = 0U; i < (size_t)label; ++i) {
+            char ch = (char)packet[cursor + i];
+            const bool alpha = (ch >= 'a' && ch <= 'z') ||
+                               (ch >= 'A' && ch <= 'Z');
+            const bool digit = ch >= '0' && ch <= '9';
+            if (!alpha && !digit && ch != '-') return false;
+            if (ch >= 'A' && ch <= 'Z')
+                ch = (char)(ch - 'A' + 'a');
+            output[output_length++] = ch;
+        }
+        cursor += (size_t)label;
+    }
+}
+
+/* Parse all answer records and find an A or CNAME for the requested owner. */
+static bool dns_find_answer(const uint8_t *packet, size_t length,
+                            size_t answer_offset, uint16_t answer_count,
+                            const char *wanted_name, uint16_t wanted_type,
+                            char *cname_target, uint8_t address[4],
+                            uint32_t *ttl, bool *found) {
+    if (packet == NULL || wanted_name == NULL || ttl == NULL ||
+        found == NULL || (wanted_type != 1U && wanted_type != 5U))
+        return false;
+    *found = false;
+    size_t cursor = answer_offset;
+
+    for (uint16_t i = 0U; i < answer_count; ++i) {
+        char owner[NET_DNS_HOSTNAME_MAX + 1U];
+        if (!dns_decode_name(packet, length, &cursor,
+                             owner, sizeof(owner)) ||
+            cursor > length || length - cursor < 10U) return false;
+
+        const uint16_t type = read_be16(packet + cursor);
+        const uint16_t klass = read_be16(packet + cursor + 2U);
+        const uint32_t record_ttl = read_be32(packet + cursor + 4U);
+        const uint16_t data_length = read_be16(packet + cursor + 8U);
+        cursor += 10U;
+        if ((size_t)data_length > length - cursor) return false;
+        const size_t data_start = cursor;
+        const size_t data_end = cursor + (size_t)data_length;
+
+        if (klass == 1U && type == wanted_type &&
+            dns_name_equal(owner, wanted_name)) {
+            if (wanted_type == 1U) {
+                if (data_length != 4U || address == NULL) return false;
+                if (!*found) {
+                    copy_bytes(address, packet + data_start, 4U);
+                    *ttl = record_ttl;
+                    *found = true;
+                } else if (record_ttl < *ttl) {
+                    *ttl = record_ttl;
+                }
+            } else {
+                if (cname_target == NULL || data_length == 0U) return false;
+                size_t name_cursor = data_start;
+                char target[NET_DNS_HOSTNAME_MAX + 1U];
+                if (!dns_decode_name(packet, length, &name_cursor,
+                                     target, sizeof(target)) ||
+                    name_cursor != data_end) return false;
+                if (!*found) {
+                    size_t j = 0U;
+                    while (target[j] != '\0') {
+                        cname_target[j] = target[j];
+                        ++j;
+                    }
+                    cname_target[j] = '\0';
+                    *ttl = record_ttl;
+                    *found = true;
+                } else {
+                    if (!dns_name_equal(cname_target, target)) return false;
+                    if (record_ttl < *ttl) *ttl = record_ttl;
+                }
+            }
+        }
+        cursor = data_end;
+    }
+    return true;
 }
 
 static void receive_dns(const uint8_t *packet, size_t length,
@@ -512,46 +748,101 @@ static void receive_dns(const uint8_t *packet, size_t length,
         read_be16(packet) != dns_query_id) return;
 
     const uint16_t flags = read_be16(packet + 2U);
-    if ((flags & 0x8000U) == 0U || (flags & 0x000FU) != 0U) {
+    if ((flags & 0x8000U) == 0U || (flags & 0x7800U) != 0U ||
+        (flags & 0x0200U) != 0U) return;
+    const uint16_t questions = read_be16(packet + 4U);
+    const uint16_t answers = read_be16(packet + 6U);
+    if (questions != 1U) {
         dns_query_done = true;
         dns_query_success = false;
         return;
     }
 
-    const uint16_t questions = read_be16(packet + 4U);
-    const uint16_t answers = read_be16(packet + 6U);
     size_t cursor = 12U;
-    for (uint16_t i = 0; i < questions; ++i) {
-        if (!dns_skip_name(packet, length, &cursor) ||
-            cursor > length || length - cursor < 4U) {
-            dns_query_done = true;
-            return;
-        }
-        cursor += 4U;
+    char question_name[NET_DNS_HOSTNAME_MAX + 1U];
+    if (!dns_decode_name(packet, length, &cursor,
+                         question_name, sizeof(question_name)) ||
+        cursor > length || length - cursor < 4U) {
+        dns_query_done = true;
+        dns_query_success = false;
+        return;
+    }
+    const uint16_t question_type = read_be16(packet + cursor);
+    const uint16_t question_class = read_be16(packet + cursor + 2U);
+    cursor += 4U;
+
+    /* Ignore unrelated packets sharing an ID; keep waiting for our answer. */
+    if (!dns_name_equal(question_name, dns_query_name) ||
+        question_type != 1U || question_class != 1U) return;
+    if ((flags & 0x000FU) != 0U) {
+        dns_query_done = true;
+        dns_query_success = false;
+        return;
     }
 
-    for (uint16_t i = 0; i < answers; ++i) {
-        if (!dns_skip_name(packet, length, &cursor) ||
-            cursor > length || length - cursor < 10U) {
+    char current[NET_DNS_HOSTNAME_MAX + 1U];
+    char visited[NET_DNS_MAX_CNAME_HOPS][NET_DNS_HOSTNAME_MAX + 1U];
+    size_t current_length = 0U;
+    while (dns_query_name[current_length] != '\0') {
+        current[current_length] = dns_query_name[current_length];
+        ++current_length;
+    }
+    current[current_length] = '\0';
+    uint32_t effective_ttl = UINT32_MAX;
+
+    for (size_t hop = 0U; hop < NET_DNS_MAX_CNAME_HOPS; ++hop) {
+        for (size_t prior = 0U; prior < hop; ++prior) {
+            if (dns_name_equal(visited[prior], current)) {
+                dns_query_done = true;
+                dns_query_success = false;
+                return;
+            }
+        }
+        size_t copy = 0U;
+        while (current[copy] != '\0') {
+            visited[hop][copy] = current[copy];
+            ++copy;
+        }
+        visited[hop][copy] = '\0';
+
+        uint8_t address[4];
+        uint32_t address_ttl = 0U;
+        bool have_address = false;
+        if (!dns_find_answer(packet, length, cursor, answers, current, 1U,
+                             NULL, address, &address_ttl, &have_address)) {
             dns_query_done = true;
+            dns_query_success = false;
             return;
         }
-        const uint16_t type = read_be16(packet + cursor);
-        const uint16_t klass = read_be16(packet + cursor + 2U);
-        const uint16_t data_length = read_be16(packet + cursor + 8U);
-        cursor += 10U;
-        if ((size_t)data_length > length - cursor) {
-            dns_query_done = true;
-            return;
-        }
-        if (type == 1U && klass == 1U && data_length == 4U) {
-            copy_bytes(dns_query_result, packet + cursor, 4U);
+        if (have_address) {
+            if (address_ttl < effective_ttl)
+                effective_ttl = address_ttl;
+            copy_bytes(dns_query_result, address, 4U);
+            dns_query_ttl = effective_ttl;
             dns_query_success = true;
             dns_query_done = true;
             return;
         }
-        cursor += data_length;
+
+        char target[NET_DNS_HOSTNAME_MAX + 1U];
+        uint32_t cname_ttl = 0U;
+        bool have_cname = false;
+        if (!dns_find_answer(packet, length, cursor, answers, current, 5U,
+                             target, NULL, &cname_ttl, &have_cname)) {
+            dns_query_done = true;
+            dns_query_success = false;
+            return;
+        }
+        if (!have_cname) break;
+        if (cname_ttl < effective_ttl) effective_ttl = cname_ttl;
+        copy = 0U;
+        while (target[copy] != '\0') {
+            current[copy] = target[copy];
+            ++copy;
+        }
+        current[copy] = '\0';
     }
+
     dns_query_done = true;
     dns_query_success = false;
 }
@@ -562,8 +853,20 @@ bool net_dns_resolve(const char *hostname, uint8_t result[4],
         hostname == NULL || result == NULL || timeout_ticks == 0U ||
         ipv4_zero(dns_ipv4)) return false;
 
+    char normalized[NET_DNS_HOSTNAME_MAX + 1U];
+    if (!dns_normalize_hostname(hostname, normalized)) return false;
+    if (dns_cache_lookup(normalized, result)) return true;
+
+    size_t name_length = 0U;
+    while (normalized[name_length] != '\0') {
+        dns_query_name[name_length] = normalized[name_length];
+        ++name_length;
+    }
+    dns_query_name[name_length] = '\0';
+    dns_query_ttl = 0U;
+
     uint8_t query[NET_DNS_PACKET_SIZE];
-    for (size_t i = 0; i < sizeof(query); ++i) query[i] = 0U;
+    for (size_t i = 0U; i < sizeof(query); ++i) query[i] = 0U;
 
     dns_query_id = ++dns_next_id;
     if (dns_query_id == 0U) dns_query_id = ++dns_next_id;
@@ -573,39 +876,17 @@ bool net_dns_resolve(const char *hostname, uint8_t result[4],
 
     size_t cursor = 12U;
     size_t input = 0U;
-    size_t host_length = 0U;
-    while (hostname[host_length] != '\0') {
-        if (host_length >= 253U) return false;
-        ++host_length;
-    }
-    if (host_length == 0U) return false;
-    if (hostname[host_length - 1U] == '.') --host_length;
-    if (host_length == 0U) return false;
-
-    while (input < host_length) {
+    while (input < name_length) {
         size_t label_length = 0U;
-        while (input + label_length < host_length &&
-               hostname[input + label_length] != '.') {
-            const char ch = hostname[input + label_length];
-            const bool valid = (ch >= 'a' && ch <= 'z') ||
-                               (ch >= 'A' && ch <= 'Z') ||
-                               (ch >= '0' && ch <= '9') || ch == '-';
-            if (!valid || label_length >= 63U) return false;
-            ++label_length;
-        }
-        if (label_length == 0U || cursor + label_length + 1U >= sizeof(query))
-            return false;
+        while (input + label_length < name_length &&
+               normalized[input + label_length] != '.') ++label_length;
+        if (label_length == 0U || label_length > 63U ||
+            cursor + label_length + 1U >= sizeof(query)) return false;
         query[cursor++] = (uint8_t)label_length;
-        for (size_t i = 0; i < label_length; ++i) {
-            char ch = hostname[input + i];
-            if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
-            query[cursor++] = (uint8_t)ch;
-        }
+        for (size_t i = 0U; i < label_length; ++i)
+            query[cursor++] = (uint8_t)normalized[input + i];
         input += label_length;
-        if (input < host_length) {
-            if (hostname[input] != '.') return false;
-            ++input;
-        }
+        if (input < name_length) ++input;
     }
     if (cursor + 5U > sizeof(query)) return false;
     query[cursor++] = 0U;
@@ -658,6 +939,7 @@ bool net_dns_resolve(const char *hostname, uint8_t result[4],
     dns_query_active = false;
     if (!dns_query_done || !dns_query_success) return false;
     copy_bytes(result, dns_query_result, 4U);
+    dns_cache_store(dns_query_name, result, dns_query_ttl);
     return true;
 }
 
@@ -689,7 +971,10 @@ bool net_init(void) {
     dns_query_active = false;
     dns_query_done = false;
     dns_query_success = false;
+    dns_query_ttl = 0U;
+    dns_query_name[0] = '\0';
     dns_next_id = 0x4E58U;
+    dns_cache_clear();
     struct nexus_netdev_info device_info;
     if (!netdev_get_info(&device_info)) return false;
     copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
@@ -728,6 +1013,7 @@ static void network_handle_link_change(bool link_up) {
     dns_query_active = false;
     dns_query_done = true;
     dns_query_success = false;
+    dns_cache_clear();
 
     if (!link_up) {
         for (size_t i = 0U; i < 4U; ++i) {
@@ -780,6 +1066,7 @@ void net_poll(void) {
         dns_query_active = false;
         dns_query_done = true;
         dns_query_success = false;
+        dns_cache_clear();
         /* Force the existing link transition path to reacquire DHCP. */
         network.link_up = !link_up;
         serial_write("NEXUS NETWORK ADAPTER SELECTED: ");

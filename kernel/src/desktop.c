@@ -18,6 +18,7 @@
 #include "nxfs.h"
 
 #include "graphics.h"
+#include "gpu.h"
 #include "input.h"
 #include "serial.h"
 #include "memory.h"
@@ -699,11 +700,11 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 
     const uint64_t button_y = y + 7U;
     const uint64_t button_h = bottom_bar > 14U ? bottom_bar - 14U : 22U;
-    graphics_fill_rect(12U, button_y, 88U, button_h,
+    graphics_blend_round_rect(12U, button_y, 88U, button_h, 9U,
         desktop_theme_is_light() ? 215U : 28U,
         desktop_theme_is_light() ? 226U : 57U,
-        desktop_theme_is_light() ? 239U : 88U);
-    graphics_draw_rect(12U, button_y, 88U, button_h,
+        desktop_theme_is_light() ? 239U : 88U, 242U);
+    graphics_round_rect(12U, button_y, 88U, button_h, 9U,
         desktop_theme_is_light() ? 165U : 57U,
         desktop_theme_is_light() ? 184U : 112U,
         desktop_theme_is_light() ? 204U : 151U);
@@ -728,14 +729,14 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
-        graphics_fill_rect(x, button_y, tab_width, button_h,
+        graphics_blend_round_rect(x, button_y, tab_width, button_h, 8U,
                            selected ? desktop_accent_palette[desktop_accent_index][0]
                                     : (desktop_theme_is_light() ? 220U : 19U),
                            selected ? desktop_accent_palette[desktop_accent_index][1]
                                     : (desktop_theme_is_light() ? 228U : 31U),
                            selected ? desktop_accent_palette[desktop_accent_index][2]
-                                    : (desktop_theme_is_light() ? 238U : 49U));
-        graphics_draw_rect(x, button_y, tab_width, button_h,
+                                    : (desktop_theme_is_light() ? 238U : 49U), 238U);
+        graphics_round_rect(x, button_y, tab_width, button_h, 8U,
                            selected ? 70U : (desktop_theme_is_light() ? 171U : 43U),
                            selected ? 143U : (desktop_theme_is_light() ? 187U : 70U),
                            selected ? 176U : (desktop_theme_is_light() ? 205U : 99U));
@@ -807,13 +808,13 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         desktop_theme_is_light() ? 54U : 247U,
         desktop_theme_is_light() ? 76U : 255U);
 
-    graphics_fill_rect(menu_x + 8U, menu_y + 48U,
-                       menu_width - 16U, 25U,
+    graphics_blend_round_rect(menu_x + 8U, menu_y + 48U,
+                       menu_width - 16U, 25U, 7U,
         desktop_theme_is_light() ? 255U : 13U,
         desktop_theme_is_light() ? 255U : 22U,
-        desktop_theme_is_light() ? 255U : 36U);
-    graphics_draw_rect(menu_x + 8U, menu_y + 48U,
-                       menu_width - 16U, 25U,
+        desktop_theme_is_light() ? 255U : 36U, 244U);
+    graphics_round_rect(menu_x + 8U, menu_y + 48U,
+                       menu_width - 16U, 25U, 7U,
         desktop_theme_is_light() ? 173U : 65U,
         desktop_theme_is_light() ? 190U : 99U,
         desktop_theme_is_light() ? 208U : 135U);
@@ -841,14 +842,14 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         const uint64_t row_y = menu_y + 80U +
                                (uint64_t)visible_row * 33U;
         const bool selected = visible_row == start_menu_selection;
-        graphics_fill_rect(menu_x + 8U, row_y,
-                           menu_width - 16U, 28U,
+        graphics_blend_round_rect(menu_x + 8U, row_y,
+                           menu_width - 16U, 28U, 7U,
             selected ? desktop_accent_palette[desktop_accent_index][0]
                      : (desktop_theme_is_light() ? 233U : 25U),
             selected ? desktop_accent_palette[desktop_accent_index][1]
                      : (desktop_theme_is_light() ? 239U : 41U),
             selected ? desktop_accent_palette[desktop_accent_index][2]
-                     : (desktop_theme_is_light() ? 246U : 64U));
+                     : (desktop_theme_is_light() ? 246U : 64U), 244U);
         graphics_fill_rect(menu_x + 16U, row_y + 7U,
                            14U, 14U, accents[app][0],
                            accents[app][1], accents[app][2]);
@@ -1056,11 +1057,11 @@ static void draw_shell(void) {
         for (uint32_t i = 0U; i < 5U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
-            graphics_fill_rect(tile_x, tile_y, tile_width, 74U,
+            graphics_blend_round_rect(tile_x, tile_y, tile_width, 74U, 10U,
                 desktop_theme_is_light() ? 228U : 24U,
                 desktop_theme_is_light() ? 236U : 41U,
-                desktop_theme_is_light() ? 246U : 65U);
-            graphics_draw_rect(tile_x, tile_y, tile_width, 74U,
+                desktop_theme_is_light() ? 246U : 65U, 244U);
+            graphics_round_rect(tile_x, tile_y, tile_width, 74U, 10U,
                 desktop_theme_is_light() ? 175U : 58U,
                 desktop_theme_is_light() ? 192U : 91U,
                 desktop_theme_is_light() ? 210U : 121U);
@@ -1736,18 +1737,18 @@ static void draw_shell(void) {
 
         const uint64_t theme_y = text_y + 42U;
         const bool light_theme = desktop_theme_is_light();
-        graphics_fill_rect(text_x, theme_y, 116U, 32U,
+        graphics_blend_round_rect(text_x, theme_y, 116U, 32U, 8U,
             light_theme ? 37U : 43U, light_theme ? 57U : 63U,
-            light_theme ? 75U : 83U);
-        graphics_draw_rect(text_x, theme_y, 116U, 32U,
+            light_theme ? 75U : 83U, 245U);
+        graphics_round_rect(text_x, theme_y, 116U, 32U, 8U,
             !light_theme ? 45U : 95U, !light_theme ? 177U : 115U,
             !light_theme ? 202U : 135U);
         graphics_draw_text(text_x + 14U, theme_y + 12U, "DARK",
                            1U, 239U, 247U, 255U);
-        graphics_fill_rect(text_x + 128U, theme_y, 116U, 32U,
+        graphics_blend_round_rect(text_x + 128U, theme_y, 116U, 32U, 8U,
             light_theme ? 202U : 43U, light_theme ? 222U : 63U,
-            light_theme ? 237U : 83U);
-        graphics_draw_rect(text_x + 128U, theme_y, 116U, 32U,
+            light_theme ? 237U : 83U, 245U);
+        graphics_round_rect(text_x + 128U, theme_y, 116U, 32U, 8U,
             light_theme ? 45U : 95U, light_theme ? 177U : 115U,
             light_theme ? 202U : 135U);
         graphics_draw_text(text_x + 142U, theme_y + 12U, "LIGHT",
@@ -1763,11 +1764,11 @@ static void draw_shell(void) {
         };
         for (size_t i = 0U; i < 4U; ++i) {
             const uint64_t swatch_x = text_x + (uint64_t)i * 78U;
-            graphics_fill_rect(swatch_x, text_y + 104U, 62U, 25U,
+            graphics_blend_round_rect(swatch_x, text_y + 104U, 62U, 25U, 6U,
                 desktop_accent_palette[i][0],
                 desktop_accent_palette[i][1],
-                desktop_accent_palette[i][2]);
-            graphics_draw_rect(swatch_x, text_y + 104U, 62U, 25U,
+                desktop_accent_palette[i][2], 250U);
+            graphics_round_rect(swatch_x, text_y + 104U, 62U, 25U, 6U,
                 i == desktop_accent_index ? 255U : 91U,
                 i == desktop_accent_index ? 255U : 111U,
                 i == desktop_accent_index ? 255U : 135U);
@@ -1778,10 +1779,10 @@ static void draw_shell(void) {
                 light_theme ? 91U : 247U);
         }
 
-        graphics_fill_rect(text_x, text_y + 158U, 320U, 44U,
+        graphics_blend_round_rect(text_x, text_y + 158U, 320U, 44U, 8U,
             light_theme ? 233U : 23U,
             light_theme ? 240U : 40U,
-            light_theme ? 247U : 62U);
+            light_theme ? 247U : 62U, 244U);
         desktop_draw_accent(text_x, text_y + 158U, 4U, 44U);
         graphics_draw_text(text_x + 14U, text_y + 168U,
                            "LIVE PREVIEW - NEXUS WORKSPACE",
@@ -1843,6 +1844,19 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 372U,
                            "T: TOGGLE THEME     A: CYCLE ACCENT",
                            1U, 170U, 191U, 211U);
+        graphics_draw_text(text_x, text_y + 396U, "DISPLAY ADAPTER:",
+                           1U, 133U, 164U, 190U);
+        graphics_draw_text(text_x + 102U, text_y + 396U,
+                           gpu_primary_name(), 1U,
+                           233U, 243U, 252U);
+        graphics_draw_text(text_x, text_y + 420U,
+                           gpu_render_path_name(), 1U,
+                           108U, 216U, 229U);
+        graphics_draw_text(text_x, text_y + 444U,
+                           gpu_hardware_acceleration_available()
+                               ? "HARDWARE RENDERING ENABLED"
+                               : "GPU 2D/3D DRIVER NOT AVAILABLE - CPU FALLBACK",
+                           1U, 239U, 177U, 119U);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
                            2, 239, 249, 255);
@@ -2002,11 +2016,13 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         .blue_mask_size = framebuffer->blue_mask_size,
         .blue_mask_shift = framebuffer->blue_mask_shift
     };
+    gpu_set_firmware_framebuffer_active(false);
     if (!graphics_init(&surface)) {
         serial_write("DESKTOP: framebuffer validation failed; keeping serial console\r\n");
         return false;
     }
 
+    gpu_set_firmware_framebuffer_active(true);
     screen_width = graphics_width();
     screen_height = graphics_height();
     active_view = installer_session_mode ? DESKTOP_INSTALLER : DESKTOP_HOME;

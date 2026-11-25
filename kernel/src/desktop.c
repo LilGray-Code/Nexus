@@ -654,11 +654,18 @@ static void desktop_open_app(size_t app_index) {
 
 static void desktop_draw_taskbar(uint64_t bottom_bar) {
     const uint64_t y = screen_height - bottom_bar;
-    graphics_fill_rect(0U, y, screen_width, bottom_bar,
-        desktop_theme_is_light() ? 232U : 10U,
-        desktop_theme_is_light() ? 238U : 16U,
-        desktop_theme_is_light() ? 246U : 31U);
-    desktop_draw_accent(0U, y, screen_width, 2U);
+    graphics_gradient_rect(0U, y, screen_width, bottom_bar, false,
+        desktop_theme_is_light() ? 244U : 17U,
+        desktop_theme_is_light() ? 247U : 29U,
+        desktop_theme_is_light() ? 253U : 49U,
+        desktop_theme_is_light() ? 226U : 9U,
+        desktop_theme_is_light() ? 234U : 19U,
+        desktop_theme_is_light() ? 245U : 35U);
+    graphics_fill_rect(0U, y, screen_width, 1U,
+                       desktop_theme_is_light() ? 255U : 76U,
+                       desktop_theme_is_light() ? 255U : 113U,
+                       desktop_theme_is_light() ? 255U : 145U);
+    desktop_draw_accent(0U, y + 1U, screen_width, 2U);
     graphics_fill_rect(0U, y + 2U, screen_width, 1U,
         desktop_theme_is_light() ? 194U : 24U,
         desktop_theme_is_light() ? 205U : 43U,
@@ -666,14 +673,22 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
 
     const uint64_t button_y = y + 7U;
     const uint64_t button_h = bottom_bar > 14U ? bottom_bar - 14U : 22U;
-    graphics_fill_rect(12U, button_y, 88U, button_h,
-        desktop_theme_is_light() ? 215U : 28U,
-        desktop_theme_is_light() ? 226U : 57U,
-        desktop_theme_is_light() ? 239U : 88U);
-    graphics_draw_rect(12U, button_y, 88U, button_h,
-        desktop_theme_is_light() ? 165U : 57U,
-        desktop_theme_is_light() ? 184U : 112U,
-        desktop_theme_is_light() ? 204U : 151U);
+    graphics_blend_round_rect(12U, button_y, 88U, button_h, 8U,
+        desktop_theme_is_light() ? 232U : 29U,
+        desktop_theme_is_light() ? 239U : 51U,
+        desktop_theme_is_light() ? 248U : 78U, 238U);
+    graphics_gradient_rect(13U, button_y + 1U, 86U,
+        button_h > 2U ? button_h - 2U : button_h, false,
+        desktop_theme_is_light() ? 247U : 49U,
+        desktop_theme_is_light() ? 250U : 91U,
+        desktop_theme_is_light() ? 255U : 124U,
+        desktop_theme_is_light() ? 213U : 25U,
+        desktop_theme_is_light() ? 225U : 45U,
+        desktop_theme_is_light() ? 239U : 73U);
+    graphics_round_rect(12U, button_y, 88U, button_h, 8U,
+        desktop_theme_is_light() ? 165U : 69U,
+        desktop_theme_is_light() ? 184U : 123U,
+        desktop_theme_is_light() ? 204U : 160U);
     desktop_draw_accent(22U, button_y + 7U, 22U, 22U);
     graphics_draw_text(27U, button_y + 14U, "N", 1U, 8U, 25U, 43U);
     graphics_draw_text(51U, button_y + button_h / 2U - 4U,
@@ -695,17 +710,29 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
-        graphics_fill_rect(x, button_y, tab_width, button_h,
-                           selected ? desktop_accent_palette[desktop_accent_index][0]
-                                    : (desktop_theme_is_light() ? 220U : 19U),
-                           selected ? desktop_accent_palette[desktop_accent_index][1]
-                                    : (desktop_theme_is_light() ? 228U : 31U),
-                           selected ? desktop_accent_palette[desktop_accent_index][2]
-                                    : (desktop_theme_is_light() ? 238U : 49U));
-        graphics_draw_rect(x, button_y, tab_width, button_h,
-                           selected ? 70U : (desktop_theme_is_light() ? 171U : 43U),
-                           selected ? 143U : (desktop_theme_is_light() ? 187U : 70U),
-                           selected ? 176U : (desktop_theme_is_light() ? 205U : 99U));
+        graphics_blend_round_rect(x, button_y, tab_width, button_h, 7U,
+            selected ? desktop_accent_palette[desktop_accent_index][0]
+                     : (desktop_theme_is_light() ? 224U : 20U),
+            selected ? desktop_accent_palette[desktop_accent_index][1]
+                     : (desktop_theme_is_light() ? 232U : 34U),
+            selected ? desktop_accent_palette[desktop_accent_index][2]
+                     : (desktop_theme_is_light() ? 242U : 54U),
+            selected ? 228U : 190U);
+        graphics_gradient_rect(x + 1U, button_y + 1U, tab_width - 2U,
+            button_h > 2U ? button_h - 2U : button_h, false,
+            selected ? desktop_accent_palette[desktop_accent_index][0] : 42U,
+            selected ? desktop_accent_palette[desktop_accent_index][1] : 60U,
+            selected ? desktop_accent_palette[desktop_accent_index][2] : 82U,
+            selected ? (uint8_t)(desktop_accent_palette[desktop_accent_index][0] / 2U)
+                     : 21U,
+            selected ? (uint8_t)(desktop_accent_palette[desktop_accent_index][1] / 2U)
+                     : 35U,
+            selected ? (uint8_t)(desktop_accent_palette[desktop_accent_index][2] / 2U)
+                     : 56U);
+        graphics_round_rect(x, button_y, tab_width, button_h, 7U,
+                            selected ? 94U : 59U,
+                            selected ? 155U : 91U,
+                            selected ? 190U : 126U);
         graphics_fill_rect(x + 8U, button_y + 9U, 5U,
                            button_h > 28U ? button_h - 18U : 10U,
                            accents[i][0], accents[i][1], accents[i][2]);

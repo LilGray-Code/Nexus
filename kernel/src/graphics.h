@@ -2,6 +2,7 @@
 #define NEXUS_GRAPHICS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 struct nexus_graphics_damage {

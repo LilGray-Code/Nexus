@@ -239,7 +239,16 @@ static void test_bounds_and_endpoint_validation(void) {
     assert(!nexus_usb_msc_read_blocks(&device,device.block_count,1U,sector));
     assert(!nexus_usb_msc_read_blocks(&device,0U,0U,sector));
     assert(!nexus_usb_msc_read_blocks(&device,0U,9U,sector));
-    assert(!nexus_usb_msc_write_blocks(&device,device.block_count-1U,2U,sector));
+    blockdev_init();
+    assert(nexus_usb_msc_register_blockdev(
+        &device,"USB0","USB-PORT-04-NX-USB-0000001"));
+    const struct nexus_block_device *registered=blockdev_at(0U);
+    assert(blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_NETWORK));
+    assert(blockdev_install_session_begin(
+        registered,"USB-PORT-04-NX-USB-0000001","ERASE"));
+    assert(!blockdev_install_write(
+        registered,device.block_count-1U,2U,sector));
+    blockdev_install_session_end();
 }
 
 static void test_transport_failure_poisoning(void) {
@@ -251,6 +260,16 @@ static void test_transport_failure_poisoning(void) {
     uint8_t sector[512];
     assert(!nexus_usb_msc_read_blocks(&device,0U,1U,sector));
     assert(nexus_usb_msc_ready(&device));
+}
+
+static void test_blockdev_registration_requires_open_provenance(void) {
+    struct mock_usb mock={0};
+    struct nexus_usb_msc_device device;
+    init_device(&mock,&device);
+    blockdev_init();
+    assert(blockdev_set_boot_media_external(NEXUS_BOOT_SOURCE_NETWORK));
+    assert(!nexus_usb_msc_register_blockdev(
+        &device,"USB0","USB-PORT-04-NX-USB-0000001"));
 }
 
 static void test_configuration_descriptor_parser(void) {

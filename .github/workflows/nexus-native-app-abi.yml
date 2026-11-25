@@ -10,6 +10,8 @@ on:
       - "kernel/src/usermode.c"
       - "kernel/src/usermode.h"
       - "kernel/src/interrupts.c"
+      - "kernel/src/elf64.c"
+      - "kernel/src/process.c"
       - "kernel/src/syscall.h"
       - "kernel/include/nexus/**"
       - "kernel/tests/graphics_blit_test.c"
@@ -44,10 +46,15 @@ jobs:
       - name: Check public ABI structure layouts
         run: |
           cc -std=gnu11 -Wall -Wextra -Werror -Ikernel/include \
-            -fsyntax-only kernel/tests/app_abi_layout_test.c
-      - name: Compile native SDK example
+            kernel/tests/app_abi_layout_test.c -o /tmp/nexus-app-abi-layout
+          /tmp/nexus-app-abi-layout
+      - name: Link a static native app and verify ELF contract
         run: |
-          cc -std=gnu11 -O2 -Wall -Wextra -Werror -ffreestanding \
-            -fno-stack-protector -fno-pic -fno-pie -mno-red-zone \
-            -Ikernel/include -c sdk/examples/kinetic_demo.c \
-            -o /tmp/nexus-kinetic-demo.o
+          make -C sdk CROSS_COMPILE=
+          readelf -h sdk/build/kinetic_demo.elf | grep -q 'Class:.*ELF64'
+          readelf -h sdk/build/kinetic_demo.elf | grep -q 'Type:.*EXEC'
+          readelf -h sdk/build/kinetic_demo.elf | grep -q 'Machine:.*X86-64'
+          if readelf -lW sdk/build/kinetic_demo.elf | grep -Eq 'INTERP|DYNAMIC|TLS'; then
+            echo "SDK app unexpectedly needs a dynamic loader or TLS"
+            exit 1
+          fi

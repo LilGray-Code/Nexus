@@ -1,4 +1,5 @@
 #include "package.h"
+#include "process.h"
 #include "elf64.h"
 #include "sha256.h"
 #include "vfs.h"
@@ -24,6 +25,7 @@ static struct mock_file files[MOCK_FILES];
 static bool apps_directory;
 static bool mock_writable = true;
 static char fail_write_path[32];
+static char launched_path[32];
 
 static struct mock_file *mock_find(const char *path) {
     for (size_t i = 0U; i < MOCK_FILES; ++i)
@@ -110,6 +112,11 @@ bool vfs_read(struct nexus_vfs_file *file, void *buffer,
 
 void vfs_close(struct nexus_vfs_file *file) {
     if (file != NULL) *file = (struct nexus_vfs_file){0};
+}
+
+bool process_execute_root_file(const char *name, struct nexus_process_result *result, enum nexus_process_error *error) {
+    if (name == NULL || result == NULL || error == NULL || strlen(name) >= sizeof(launched_path)) return false;
+    strcpy(launched_path, name); result->pid = 7U; result->exit_status = 42U; *error = NEXUS_PROCESS_ERROR_NONE; return true;
 }
 
 /* ELF loading is separately tested; this harness isolates package plumbing. */

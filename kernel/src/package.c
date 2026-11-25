@@ -1,4 +1,5 @@
 #include "package.h"
+#include "process.h"
 
 #include "elf64.h"
 #include "nxfs.h"
@@ -583,4 +584,15 @@ bool nexus_package_uninstall(const char *id,
     /* Remove the visibility record first; leftover payload is then an orphan. */
     if (!vfs_remove_root_path(receipt)) return false;
     return vfs_remove_root_path(installed.executable_path);
+}
+
+bool nexus_package_launch(const char *id, nexus_package_signature_verifier verifier, void *verifier_context, uint64_t *exit_status) {
+    if (exit_status != NULL) *exit_status = UINT64_MAX;
+    struct nexus_package_install_result installed;
+    if (!nexus_package_is_installed(id, verifier, verifier_context, &installed)) return false;
+    struct nexus_process_result process_result = {0};
+    enum nexus_process_error process_error = NEXUS_PROCESS_ERROR_NONE;
+    if (!process_execute_root_file(installed.executable_path, &process_result, &process_error)) return false;
+    if (exit_status != NULL) *exit_status = process_result.exit_status;
+    return true;
 }

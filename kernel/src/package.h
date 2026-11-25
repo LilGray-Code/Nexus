@@ -74,6 +74,7 @@ bool nexus_package_is_installed(const char *id,
                                 nexus_package_signature_verifier verifier,
                                 void *verifier_context,
                                 struct nexus_package_install_result *result);
+bool nexus_package_launch(const char *id, nexus_package_signature_verifier verifier, void *verifier_context, uint64_t *exit_status);
 enum nexus_package_error nexus_package_last_error(void);
 bool nexus_package_uninstall(const char *id,
                              nexus_package_signature_verifier verifier,

@@ -74,6 +74,7 @@ static bool append_binding(const struct registered_driver *driver,
     b->slot = device->slot;
     b->function = device->function;
     b->interface_number = device->interface_number;
+    b->segment_group = device->segment_group;
     const size_t index = bindings_used - 1U;
     binding_devices[index] = *device;
     binding_driver_indices[index] = (size_t)(driver - drivers);
@@ -143,6 +144,7 @@ bool nexus_driver_manager_probe_pci_device(
         .programming_interface = device->programming_interface,
         .bus_number = device->bus, .slot = device->slot,
         .function = device->function, .interface_number = 0U,
+        .segment_group = device->segment_group,
         .native_device = device
     };
     return nexus_driver_manager_probe_device(&generic);
@@ -162,7 +164,8 @@ bool nexus_driver_manager_remove_device(
             bound->bus_number != device->bus_number ||
             bound->slot != device->slot ||
             bound->function != device->function ||
-            bound->interface_number != device->interface_number)
+            bound->interface_number != device->interface_number ||
+            bound->segment_group != device->segment_group)
             continue;
         const size_t driver_index = binding_driver_indices[i];
         if (driver_index < drivers_used && drivers[driver_index].remove != NULL)

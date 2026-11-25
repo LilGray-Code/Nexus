@@ -27,6 +27,7 @@ struct nexus_driver_device {
     uint8_t class_code, subclass, programming_interface;
     uint8_t bus_number, slot, function;
     uint16_t interface_number;
+    uint16_t segment_group;
     const void *native_device;
 };
 struct nexus_driver_match {
@@ -55,6 +56,7 @@ struct nexus_driver_binding_info {
     uint8_t class_code, subclass, programming_interface;
     uint8_t bus_number, slot, function;
     uint16_t interface_number;
+    uint16_t segment_group;
 };
 void nexus_driver_manager_init(void);
 bool nexus_driver_manager_register(

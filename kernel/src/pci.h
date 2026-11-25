@@ -8,6 +8,7 @@
 #define NEXUS_PCI_BAR_COUNT 6U
 
 struct nexus_pci_device {
+    uint16_t segment_group;
     uint8_t bus;
     uint8_t slot;
     uint8_t function;
@@ -56,11 +57,11 @@ bool pci_enable_memory_bus_master(const struct nexus_pci_device *device);
 /* Enable legacy I/O decoding and PCI bus mastering without W1C status writes. */
 bool pci_enable_io_bus_master(const struct nexus_pci_device *device);
 /* Read PCI configuration bytes/words/dwords without writing device state. */
-bool pci_read_config8(const struct nexus_pci_device *device, uint8_t offset,
+bool pci_read_config8(const struct nexus_pci_device *device, uint16_t offset,
                       uint8_t *value);
-bool pci_read_config16(const struct nexus_pci_device *device, uint8_t offset,
+bool pci_read_config16(const struct nexus_pci_device *device, uint16_t offset,
                        uint16_t *value);
-bool pci_read_config32(const struct nexus_pci_device *device, uint8_t offset,
+bool pci_read_config32(const struct nexus_pci_device *device, uint16_t offset,
                        uint32_t *value);
 
 #endif

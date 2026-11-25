@@ -90,6 +90,19 @@ struct acpi_root_info {
     bool xsdt;
 };
 
+struct acpi_mcfg_header {
+    struct acpi_sdt_header header;
+    uint64_t reserved;
+} __attribute__((packed));
+
+struct acpi_mcfg_allocation {
+    uint64_t base_address;
+    uint16_t segment_group;
+    uint8_t start_bus;
+    uint8_t end_bus;
+    uint32_t reserved;
+} __attribute__((packed));
+
 static struct nexus_acpi_topology topology;
 static bool topology_valid;
 
@@ -313,6 +326,83 @@ static bool find_and_parse_madt(const struct acpi_root_info *root) {
     return false;
 }
 
+
+static bool parse_mcfg(const struct acpi_sdt_header *header) {
+    if (!validate_sdt(header, "MCFG") ||
+        header->length < sizeof(struct acpi_mcfg_header)) return false;
+
+    const struct acpi_mcfg_header *mcfg =
+        (const struct acpi_mcfg_header *)header;
+    if (mcfg->reserved != 0U) return false;
+
+    const uint32_t payload_length =
+        header->length - (uint32_t)sizeof(struct acpi_mcfg_header);
+    if ((payload_length % sizeof(struct acpi_mcfg_allocation)) != 0U)
+        return false;
+
+    const uint32_t count =
+        payload_length / (uint32_t)sizeof(struct acpi_mcfg_allocation);
+    if (count > NEXUS_ACPI_MAX_MCFG_REGIONS) return false;
+
+    const struct acpi_mcfg_allocation *entries =
+        (const struct acpi_mcfg_allocation *)(
+            (const uint8_t *)header + sizeof(struct acpi_mcfg_header));
+    for (uint32_t i = 0U; i < count; ++i) {
+        const struct acpi_mcfg_allocation *entry = &entries[i];
+        if (entry->reserved != 0U || entry->base_address == 0U ||
+            (entry->base_address & 0xFFFFFU) != 0U ||
+            entry->start_bus > entry->end_bus) return false;
+
+        const uint64_t bus_count =
+            (uint64_t)entry->end_bus - entry->start_bus + 1U;
+        const uint64_t window_bytes = bus_count << 20;
+        if (entry->base_address > UINT64_MAX - window_bytes) return false;
+
+        for (uint32_t previous = 0U; previous < i; ++previous) {
+            const struct acpi_mcfg_allocation *other = &entries[previous];
+            if (other->segment_group == entry->segment_group &&
+                entry->start_bus <= other->end_bus &&
+                other->start_bus <= entry->end_bus) return false;
+        }
+
+        topology.mcfg_regions[i] = (struct nexus_acpi_mcfg_region){
+            .base_address = entry->base_address,
+            .segment_group = entry->segment_group,
+            .start_bus = entry->start_bus,
+            .end_bus = entry->end_bus
+        };
+    }
+    topology.mcfg_region_count = count;
+    return true;
+}
+
+static bool find_and_parse_mcfg(const struct acpi_root_info *root) {
+    if (root == NULL || root->header == NULL) return false;
+
+    const uint8_t *cursor =
+        (const uint8_t *)root->header + sizeof(struct acpi_sdt_header);
+    const uint8_t *end =
+        (const uint8_t *)root->header + root->header->length;
+    const size_t pointer_size = root->xsdt ? sizeof(uint64_t) : sizeof(uint32_t);
+
+    while (cursor < end) {
+        uint64_t physical = 0U;
+        if ((size_t)(end - cursor) < pointer_size) return false;
+        if (root->xsdt) {
+            const uint64_t *item = (const uint64_t *)cursor;
+            physical = *item;
+        } else {
+            const uint32_t *item = (const uint32_t *)cursor;
+            physical = *item;
+        }
+        const struct acpi_sdt_header *table = physical_table(physical);
+        if (table != NULL && signature_equals(table->signature, "MCFG", 4U))
+            return parse_mcfg(table);
+        cursor += pointer_size;
+    }
+    return false;
+}
+
 bool acpi_init(const void *rsdp_address) {
     topology_valid = false;
     topology.local_apic_physical_address = 0;
@@ -320,6 +410,9 @@ bool acpi_init(const void *rsdp_address) {
     topology.enabled_processor_count = 0;
     topology.ioapic_count = 0;
     topology.iso_count = 0;
+    topology.mcfg_region_count = 0U;
+    for (size_t i = 0U; i < NEXUS_ACPI_MAX_MCFG_REGIONS; ++i)
+        topology.mcfg_regions[i] = (struct nexus_acpi_mcfg_region){0};
 
     const struct acpi_rsdp_v1 *rsdp = NULL;
     const struct acpi_rsdp_v2 *rsdp2 = NULL;
@@ -337,6 +430,14 @@ bool acpi_init(const void *rsdp_address) {
     if (!find_and_parse_madt(&root)) {
         serial_write("ACPI: no valid MADT/APIC table found\r\n");
         return false;
+    }
+
+    /* MCFG is optional: legacy PCI configuration remains available when the
+       firmware does not expose PCIe enhanced configuration windows. */
+    if (find_and_parse_mcfg(&root) && topology.mcfg_region_count != 0U) {
+        serial_write("ACPI: validated PCIe MCFG regions: ");
+        serial_write_hex(topology.mcfg_region_count);
+        serial_write("\r\n");
     }
 
     topology_valid = topology.local_apic_physical_address != 0;
@@ -361,4 +462,17 @@ bool acpi_init(const void *rsdp_address) {
 
 const struct nexus_acpi_topology *acpi_get_topology(void) {
     return topology_valid ? &topology : NULL;
+}
+
+const struct nexus_acpi_mcfg_region *acpi_find_mcfg_region(
+    uint16_t segment_group, uint8_t bus) {
+    if (!topology_valid) return NULL;
+    for (uint32_t i = 0U; i < topology.mcfg_region_count; ++i) {
+        const struct nexus_acpi_mcfg_region *region =
+            &topology.mcfg_regions[i];
+        if (region->segment_group == segment_group &&
+            bus >= region->start_bus && bus <= region->end_bus)
+            return region;
+    }
+    return NULL;
 }

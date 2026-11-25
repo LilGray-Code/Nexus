@@ -85,22 +85,33 @@ bool paging_nx_enabled(void) {
     return nx_enabled;
 }
 
-/*
- * Add a dedicated high-half alias for one MMIO page. The direct-map offset
- * is not assumed to cover device memory. We create a fresh top-level slot,
- * allocate intermediate page tables from the bootstrap allocator, map the
- * leaf as PWT+PCD (uncacheable), and invalidate the new virtual address.
- *
- * Both four-level and five-level paging are handled according to CR4.LA57.
- */
-bool paging_map_mmio_page(uint64_t physical_address,
-                          volatile uint32_t **virtual_address) {
-    if (virtual_address == NULL) return false;
-    *virtual_address = NULL;
-    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U)
-        return false;
+#define MMIO_MAPPING_CACHE_SIZE 4096U
+#define MMIO_MAPPING_MAX_PAGES 1048576ULL
 
-    const uint64_t physical_page = physical_address & PAGE_ADDRESS_MASK;
+struct mmio_mapping {
+    uint64_t physical_page;
+    uintptr_t virtual_address;
+};
+
+static struct mmio_mapping mmio_mappings[MMIO_MAPPING_CACHE_SIZE];
+static bool mmio_window_initialized;
+static uint64_t mmio_window_base;
+static uint64_t mmio_window_next_page;
+static unsigned int mmio_window_levels;
+static unsigned int mmio_window_root_index;
+static volatile uint64_t *mmio_window_root;
+
+static void mmio_rollback_tables(volatile uint64_t **entries,
+                                 const uint64_t *pages, size_t count) {
+    while (count != 0U) {
+        --count;
+        *entries[count] = 0U;
+        (void)memory_free_page(pages[count]);
+    }
+}
+
+static bool mmio_window_init(void) {
+    if (mmio_window_initialized) return true;
     uint64_t cr3, cr4;
     __asm__ volatile ("mov %%cr3, %0" : "=r"(cr3));
     __asm__ volatile ("mov %%cr4, %0" : "=r"(cr4));
@@ -111,48 +122,111 @@ bool paging_map_mmio_page(uint64_t physical_address,
         (volatile uint64_t *)memory_phys_to_virt(root_physical);
     if (root == NULL) return false;
 
-    /* Keep the new mapping outside the usual HHDM and kernel PML4/PML5 slots. */
-    unsigned int root_index = 256;
-    while (root_index < 511 && (root[root_index] & PAGE_PRESENT) != 0) {
+    unsigned int root_index = 256U;
+    while (root_index < 511U && (root[root_index] & PAGE_PRESENT) != 0U)
         ++root_index;
-    }
-    if (root_index >= 511) return false;
+    if (root_index >= 511U) return false;
 
-    const uint64_t virtual_base = levels == 5U
+    mmio_window_levels = levels;
+    mmio_window_root_index = root_index;
+    mmio_window_root = root;
+    mmio_window_base = levels == 5U
         ? (0xFF00000000000000ULL | ((uint64_t)root_index << 48))
         : (0xFFFF000000000000ULL | ((uint64_t)root_index << 39));
+    mmio_window_next_page = 0U;
+    for (size_t i = 0U; i < MMIO_MAPPING_CACHE_SIZE; ++i)
+        mmio_mappings[i].physical_page = UINT64_MAX;
+    mmio_window_initialized = true;
+    return true;
+}
 
-    volatile uint64_t *parent = root;
+bool paging_map_mmio_page(uint64_t physical_address,
+                          volatile uint32_t **virtual_address) {
+    if (virtual_address == NULL) return false;
+    *virtual_address = NULL;
+    if ((physical_address & ~(PAGE_ADDRESS_MASK | 0xFFFULL)) != 0U ||
+        !mmio_window_init()) return false;
+
+    const uint64_t physical_page = physical_address & PAGE_ADDRESS_MASK;
+    size_t cache_slot = (size_t)((physical_page >> 12) &
+                                 (MMIO_MAPPING_CACHE_SIZE - 1U));
+    bool cache_slot_found = false;
+    for (size_t probe = 0U; probe < MMIO_MAPPING_CACHE_SIZE; ++probe) {
+        const size_t index =
+            (cache_slot + probe) & (MMIO_MAPPING_CACHE_SIZE - 1U);
+        if (mmio_mappings[index].physical_page == physical_page) {
+            *virtual_address =
+                (volatile uint32_t *)mmio_mappings[index].virtual_address;
+            return true;
+        }
+        if (mmio_mappings[index].physical_page == UINT64_MAX) {
+            cache_slot = index;
+            cache_slot_found = true;
+            break;
+        }
+    }
+    if (!cache_slot_found ||
+        mmio_window_next_page >= MMIO_MAPPING_MAX_PAGES) return false;
+
+    const uintptr_t mapped_address = (uintptr_t)(
+        mmio_window_base + (mmio_window_next_page << 12));
+    volatile uint64_t *parent = mmio_window_root;
     volatile uint64_t *created_entries[4];
     uint64_t created_pages[4];
     size_t created_count = 0U;
-    for (unsigned int level = levels; level > 1U; --level) {
-        uint64_t next_physical;
-        volatile uint64_t *next_table;
-        const unsigned int parent_index =
-            (level == levels) ? root_index : 0U;
-        if (!allocate_table(&next_physical, &next_table)) {
-            while (created_count != 0U) {
-                --created_count;
-                *created_entries[created_count] = 0U;
-                (void)memory_free_page(created_pages[created_count]);
-            }
-            return false;
-        }
 
-        created_entries[created_count] = &parent[parent_index];
-        created_pages[created_count] = next_physical;
-        ++created_count;
-        parent[parent_index] = (next_physical & PAGE_ADDRESS_MASK) |
-                               PAGE_PRESENT | PAGE_WRITABLE;
-        parent = next_table;
+    for (unsigned int level = mmio_window_levels; level > 1U; --level) {
+        const unsigned int shift = 12U + 9U * (level - 1U);
+        const unsigned int index = level == mmio_window_levels
+            ? mmio_window_root_index
+            : (unsigned int)(((uint64_t)mapped_address >> shift) & 0x1FFU);
+        uint64_t entry = parent[index];
+        if ((entry & PAGE_PRESENT) == 0U) {
+            uint64_t next_physical = 0U;
+            volatile uint64_t *next_table = NULL;
+            if (!allocate_table(&next_physical, &next_table)) {
+                mmio_rollback_tables(created_entries, created_pages,
+                                     created_count);
+                return false;
+            }
+            created_entries[created_count] = &parent[index];
+            created_pages[created_count] = next_physical;
+            ++created_count;
+            entry = (next_physical & PAGE_ADDRESS_MASK) |
+                    PAGE_PRESENT | PAGE_WRITABLE;
+            parent[index] = entry;
+            parent = next_table;
+        } else {
+            if ((entry & PAGE_LARGE) != 0U) {
+                mmio_rollback_tables(created_entries, created_pages,
+                                     created_count);
+                return false;
+            }
+            parent = (volatile uint64_t *)memory_phys_to_virt(
+                entry & PAGE_ADDRESS_MASK);
+            if (parent == NULL) {
+                mmio_rollback_tables(created_entries, created_pages,
+                                     created_count);
+                return false;
+            }
+        }
     }
 
-    parent[0] = physical_page | PAGE_PRESENT | PAGE_WRITABLE |
-                PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE;
+    const unsigned int leaf_index =
+        (unsigned int)(((uint64_t)mapped_address >> 12) & 0x1FFU);
+    if ((parent[leaf_index] & PAGE_PRESENT) != 0U) {
+        mmio_rollback_tables(created_entries, created_pages, created_count);
+        return false;
+    }
+    parent[leaf_index] = physical_page | PAGE_PRESENT | PAGE_WRITABLE |
+                         PAGE_WRITE_THROUGH | PAGE_CACHE_DISABLE;
+    __asm__ volatile ("invlpg (%0)"
+                      : : "r"(mapped_address) : "memory");
 
-    __asm__ volatile ("invlpg (%0)" : : "r"((uintptr_t)virtual_base) : "memory");
-    *virtual_address = (volatile uint32_t *)(uintptr_t)virtual_base;
+    mmio_mappings[cache_slot].physical_page = physical_page;
+    mmio_mappings[cache_slot].virtual_address = mapped_address;
+    ++mmio_window_next_page;
+    *virtual_address = (volatile uint32_t *)mapped_address;
     return true;
 }
 

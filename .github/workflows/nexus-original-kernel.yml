@@ -140,8 +140,8 @@ jobs:
 
       - name: Test firmware inventory and SMBIOS checksum handling
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
-            -Ikernel/src kernel/src/firmware.c kernel/tests/firmware_test.c \\
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/firmware.c kernel/tests/firmware_test.c \
             -o /tmp/nexus-firmware-test
           /tmp/nexus-firmware-test
 

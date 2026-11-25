@@ -91,6 +91,14 @@ int main(int argc, char **argv) {
     };
     struct nexus_tls_client client = {0};
 
+    /* Reject malformed trust data before the one-time trust cache is set. */
+    static const unsigned char invalid_pem[] = "not a certificate";
+    const int rejected = nexus_tls_client_init(
+        &client, "localhost", invalid_pem, sizeof(invalid_pem), &io);
+    assert(rejected != 0);
+    assert(!client.initialized);
+    nexus_tls_client_free(&client);
+
     const int initialized = nexus_tls_client_init(
         &client, "localhost", pem, pem_length, &io);
     assert(initialized == 0);
@@ -105,11 +113,20 @@ int main(int argc, char **argv) {
     assert(!nexus_tls_client_is_verified(&client));
     nexus_tls_client_free(&client);
     assert(!client.initialized);
+    const size_t heap_after_first_connection = nexus_tls_heap_free_bytes();
 
-    static const unsigned char invalid_pem[] = "not a certificate";
-    const int rejected = nexus_tls_client_init(
+    /* A second connection reuses the already parsed immutable trust store. */
+    struct nexus_tls_client second = {0};
+    assert(nexus_tls_client_init(
+        &second, "localhost", pem, pem_length, &io) == 0);
+    assert(second.initialized);
+    nexus_tls_client_free(&second);
+    assert(nexus_tls_heap_free_bytes() >= heap_after_first_connection);
+
+    /* Replacing roots in the same boot is intentionally rejected. */
+    const int changed = nexus_tls_client_init(
         &client, "localhost", invalid_pem, sizeof(invalid_pem), &io);
-    assert(rejected != 0);
+    assert(changed == NEXUS_TLS_ERR_TRUST_STORE_MISMATCH);
     assert(!client.initialized);
     nexus_tls_client_free(&client);
 

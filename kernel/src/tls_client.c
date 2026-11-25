@@ -2,6 +2,7 @@
 
 #include "mbedtls_heap.h"
 #include "mbedtls_time.h"
+#include "sha256.h"
 
 #include "psa/crypto.h"
 
@@ -53,9 +54,62 @@ void nexus_tls_client_free(struct nexus_tls_client *client) {
     }
     if (client->config_initialized)
         mbedtls_ssl_config_free(&client->config);
-    if (client->trust_initialized)
-        mbedtls_x509_crt_free(&client->trust);
     secure_zero(client, sizeof(*client));
+}
+
+/*
+ * Mbed TLS 4 imports certificate public keys into the PSA subsystem. Keep
+ * the parsed immutable root store for the lifetime of the kernel instead of
+ * repeatedly importing hundreds of roots on every HTTPS connection. This
+ * also means a changed custom NEXUS.CRT bundle requires a reboot to take
+ * effect; it can never silently replace active trust anchors.
+ */
+static mbedtls_x509_crt tls_trust_store;
+static uint8_t tls_trust_store_digest[NEXUS_SHA256_SIZE];
+static bool tls_trust_store_initialized;
+static bool tls_trust_store_loading;
+
+static bool tls_digest_equal(const uint8_t left[NEXUS_SHA256_SIZE],
+                             const uint8_t right[NEXUS_SHA256_SIZE]) {
+    uint8_t difference = 0U;
+    for (size_t i = 0U; i < NEXUS_SHA256_SIZE; ++i)
+        difference |= (uint8_t)(left[i] ^ right[i]);
+    return difference == 0U;
+}
+
+static int tls_trust_store_ensure(const unsigned char *ca_pem,
+                                  size_t ca_pem_length) {
+    uint8_t digest[NEXUS_SHA256_SIZE];
+    nexus_sha256(ca_pem, ca_pem_length, digest);
+
+    if (tls_trust_store_initialized) {
+        const bool matches = tls_digest_equal(
+            digest, tls_trust_store_digest);
+        secure_zero(digest, sizeof(digest));
+        return matches ? 0 : NEXUS_TLS_ERR_TRUST_STORE_MISMATCH;
+    }
+    if (tls_trust_store_loading) {
+        secure_zero(digest, sizeof(digest));
+        return NEXUS_TLS_ERR_TRUST_STORE_BUSY;
+    }
+
+    tls_trust_store_loading = true;
+    mbedtls_x509_crt_init(&tls_trust_store);
+    const int result = mbedtls_x509_crt_parse(
+        &tls_trust_store, ca_pem, ca_pem_length);
+    if (result != 0) {
+        mbedtls_x509_crt_free(&tls_trust_store);
+        secure_zero(digest, sizeof(digest));
+        tls_trust_store_loading = false;
+        return result;
+    }
+
+    for (size_t i = 0U; i < NEXUS_SHA256_SIZE; ++i)
+        tls_trust_store_digest[i] = digest[i];
+    secure_zero(digest, sizeof(digest));
+    tls_trust_store_initialized = true;
+    tls_trust_store_loading = false;
+    return 0;
 }
 
 int nexus_tls_client_init(struct nexus_tls_client *client,
@@ -82,22 +136,17 @@ int nexus_tls_client_init(struct nexus_tls_client *client,
     if (psa_crypto_init() != PSA_SUCCESS)
         return NEXUS_TLS_ERR_PSA_UNAVAILABLE;
 
+    const int trust_result =
+        tls_trust_store_ensure(ca_pem, ca_pem_length);
+    if (trust_result != 0) return trust_result;
+
     client->io = *io;
     mbedtls_ssl_init(&client->ssl);
     client->ssl_initialized = true;
     mbedtls_ssl_config_init(&client->config);
     client->config_initialized = true;
-    mbedtls_x509_crt_init(&client->trust);
-    client->trust_initialized = true;
 
-    int result = mbedtls_x509_crt_parse(
-        &client->trust, ca_pem, ca_pem_length);
-    if (result != 0) {
-        nexus_tls_client_free(client);
-        return result;
-    }
-
-    result = mbedtls_ssl_config_defaults(
+    int result = mbedtls_ssl_config_defaults(
         &client->config, MBEDTLS_SSL_IS_CLIENT,
         MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
     if (result != 0) {
@@ -106,7 +155,7 @@ int nexus_tls_client_init(struct nexus_tls_client *client,
     }
 
     mbedtls_ssl_conf_authmode(&client->config, MBEDTLS_SSL_VERIFY_REQUIRED);
-    mbedtls_ssl_conf_ca_chain(&client->config, &client->trust, NULL);
+    mbedtls_ssl_conf_ca_chain(&client->config, &tls_trust_store, NULL);
     mbedtls_ssl_conf_min_tls_version(
         &client->config, MBEDTLS_SSL_VERSION_TLS1_3);
     mbedtls_ssl_conf_max_tls_version(

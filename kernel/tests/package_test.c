@@ -123,6 +123,18 @@ bool nexus_elf64_parse(const void *bytes, size_t length,
     return true;
 }
 
+static const char *find_bytes(const uint8_t *data, size_t length,
+                                const char *needle) {
+    const size_t needle_length = strlen(needle);
+    if (data == NULL || needle_length == 0U || needle_length > length)
+        return NULL;
+    for (size_t start = 0U; start + needle_length <= length; ++start) {
+        if (memcmp(data + start, needle, needle_length) == 0)
+            return (const char *)(const void *)(data + start);
+    }
+    return NULL;
+}
+
 static void to_hex(const uint8_t *bytes, size_t length, char *output) {
     static const char digits[] = "0123456789abcdef";
     for (size_t i = 0U; i < length; ++i) {
@@ -209,7 +221,7 @@ int main(void) {
     assert(!nexus_package_verify(package, package_length, NULL, NULL, NULL));
 
     memcpy(corrupted, package, package_length);
-    const char *arch = strstr((const char *)corrupted, "ARCH=x86_64");
+    const char *arch = find_bytes(corrupted, package_length, "ARCH=x86_64");
     assert(arch != NULL);
     ((char *)arch)[5] = 'a';
     assert(!nexus_package_parse(corrupted, package_length, NULL));

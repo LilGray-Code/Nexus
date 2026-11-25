@@ -575,6 +575,24 @@ bool nexus_elf64_load(const void *file, size_t file_size,
         }
     }
 
+    /* Apply only validated, symbol-free R_X86_64_RELATIVE relocations. */
+    for (uint32_t i = 0U; i < image.relocation_count; ++i) {
+        const uint64_t relocation_offset = image.relocation_file_offset +
+            (uint64_t)i * ELF64_RELA_ENTRY_SIZE;
+        const struct elf64_rela_entry *rela =
+            (const struct elf64_rela_entry *)(const void *)(
+                bytes + relocation_offset);
+        if (rela->offset > UINT64_MAX - image.load_bias) goto load_failed;
+        const uint64_t target = image.load_bias + rela->offset;
+        uint64_t relocated_value = 0U;
+        if (!elf64_add_signed(image.load_bias, rela->addend,
+                              &relocated_value) ||
+            !paging_copy_to_address_space(new_root, target,
+                &relocated_value, sizeof(relocated_value))) {
+            goto load_failed;
+        }
+    }
+
     uint64_t stack_physical;
     if (!allocate_zeroed_user_page(new_root, ELF64_STACK_PAGE, true, false,
                                    &stack_physical)) {

@@ -93,13 +93,13 @@ static bool filename_from_url(const char *url, char *candidate,
 static bool content_type_is(const char *actual, const char *expected) {
     if (actual == NULL || expected == NULL) return false;
     size_t i = 0U;
-    while (expected[i] != '\\0') {
-        if (actual[i] == '\\0' || lower_ascii(actual[i]) != expected[i])
+    while (expected[i] != '\0') {
+        if (actual[i] == '\0' || lower_ascii(actual[i]) != expected[i])
             return false;
         ++i;
     }
-    return actual[i] == '\\0' || actual[i] == ';' ||
-           actual[i] == ' ' || actual[i] == '\\t';
+    return actual[i] == '\0' || actual[i] == ';' ||
+           actual[i] == ' ' || actual[i] == '\t';
 }
 
 static const char *default_extension(const char *content_type) {

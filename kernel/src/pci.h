@@ -50,6 +50,8 @@ bool pci_decode_bar(const struct nexus_pci_device *device, uint8_t index,
 
 /* Enable memory decoding and bus mastering using a 16-bit command write. */
 bool pci_enable_memory_bus_master(const struct nexus_pci_device *device);
+/* Enable legacy I/O decoding and PCI bus mastering without W1C status writes. */
+bool pci_enable_io_bus_master(const struct nexus_pci_device *device);
 /* Read PCI configuration bytes/words/dwords without writing device state. */
 bool pci_read_config8(const struct nexus_pci_device *device, uint8_t offset,
                       uint8_t *value);

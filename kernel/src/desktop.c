@@ -111,13 +111,14 @@ static void desktop_virtio_recover_firmware_framebuffer(void) {
 
     desktop_virtio_gpu_active = false;
     gpu_set_virtio_display_active(false);
-    gpu_set_firmware_framebuffer_active(true);
+    gpu_set_firmware_framebuffer_active(false);
     (void)nexus_display_register_topology_backend(NULL, NULL);
     desktop_render_surface = desktop_firmware_surface;
     if (!graphics_init(&desktop_firmware_surface)) {
         serial_write("DESKTOP: VirtIO scanout recovery failed; firmware framebuffer is unavailable\r\n");
         return;
     }
+    gpu_set_firmware_framebuffer_active(true);
 
     const struct nexus_display_info *display = nexus_display_get_info();
     if (display != NULL) {

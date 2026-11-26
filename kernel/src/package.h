@@ -55,7 +55,8 @@ struct nexus_package_install_result {
     char id[NEXUS_PACKAGE_ID_MAX + 1U];
     char version[NEXUS_PACKAGE_VERSION_MAX + 1U];
     char executable_path[32];
-    uint32_t permissions;
+    uint32_t requested_permissions;
+    uint32_t granted_permissions;
 };
 
 /* Parse a complete package. This does not authenticate it. */
@@ -82,6 +83,10 @@ bool nexus_package_is_installed(const char *id,
                                 struct nexus_package_install_result *result);
 bool nexus_package_launch(const char *id, nexus_package_signature_verifier verifier, void *verifier_context, uint64_t *exit_status);
 enum nexus_package_error nexus_package_last_error(void);
+/* User approval can grant only a subset of the signed manifest request. */
+bool nexus_package_set_permissions(
+    const char *id, uint32_t granted_permissions,
+    nexus_package_signature_verifier verifier, void *verifier_context);
 bool nexus_package_uninstall(const char *id,
                              nexus_package_signature_verifier verifier,
                              void *verifier_context);

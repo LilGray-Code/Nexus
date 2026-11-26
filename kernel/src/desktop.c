@@ -100,6 +100,12 @@ static bool store_installed[NEXUS_STORE_MAX_APPS];
 static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
 static uint64_t screen_height;
+static struct nexus_graphics_surface desktop_firmware_surface;
+static struct nexus_graphics_surface desktop_render_surface;
+static bool desktop_virtio_gpu_active;
+static bool desktop_ready;
+static bool installer_session_mode;
+
 static void desktop_virtio_recover_firmware_framebuffer(void) {
     if (!desktop_virtio_gpu_active || virtio_gpu_active()) return;
 
@@ -156,11 +162,6 @@ static const struct nexus_display_topology_backend
         .set_primary_monitor = desktop_virtio_set_primary
     };
 
-static struct nexus_graphics_surface desktop_firmware_surface;
-static struct nexus_graphics_surface desktop_render_surface;
-static bool desktop_virtio_gpu_active;
-static bool desktop_ready;
-static bool installer_session_mode;
 static bool start_menu_open;
 static char start_menu_query[32];
 static size_t start_menu_query_length;

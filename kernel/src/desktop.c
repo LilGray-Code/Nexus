@@ -1193,13 +1193,10 @@ static void draw_shell(void) {
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
 
     if (installer_session_mode) {
-        /* No workspace wallpaper or OS taskbar in the install environment. */
-        for (uint64_t y = 0U; y < height; ++y) {
-            const uint8_t red = (uint8_t)(5U + y * 5U / height);
-            const uint8_t green = (uint8_t)(11U + y * 10U / height);
-            const uint8_t blue = (uint8_t)(24U + y * 22U / height);
-            graphics_fill_rect(0U, y, width, 1U, red, green, blue);
-        }
+        /* The dedicated installer uses one smooth, single-pass gradient. */
+        graphics_fill_gradient(0U, 0U, width, height,
+            5U, 11U, 24U, 8U, 17U, 34U,
+            10U, 21U, 46U, 14U, 29U, 56U);
         uint64_t radius = height / 3U;
         if (radius > 240U) radius = 240U;
         graphics_blend_circle(width * 4U / 5U, height / 4U,
@@ -1207,31 +1204,19 @@ static void draw_shell(void) {
         graphics_blend_circle(width / 5U, height * 4U / 5U,
             (uint32_t)(radius / 2U), 117U, 136U, 244U, 20U);
     } else {
-        for (uint64_t y = 0; y < height; ++y) {
-            const uint8_t red = desktop_theme_is_light()
-                ? (uint8_t)(244U - (y * 12U / height))
-                : (uint8_t)(5U + (y * 8U / height));
-            const uint8_t green = desktop_theme_is_light()
-                ? (uint8_t)(247U - (y * 10U / height))
-                : (uint8_t)(11U + (y * 18U / height));
-            const uint8_t blue = desktop_theme_is_light()
-                ? (uint8_t)(252U - (y * 7U / height))
-                : (uint8_t)(25U + (y * 34U / height));
-            graphics_fill_rect(0U, y, width, 1U, red, green, blue);
+        /* Four-corner interpolation replaces several overlapping full-screen
+         * fills with one high-quality software pass on the active display surface.
+         */
+        if (desktop_theme_is_light()) {
+            graphics_fill_gradient(0U, 0U, width, height,
+                244U, 247U, 252U, 230U, 238U, 247U,
+                232U, 237U, 245U, 220U, 229U, 241U);
+        } else {
+            graphics_fill_gradient(0U, 0U, width, height,
+                5U, 11U, 25U, 12U, 35U, 63U,
+                13U, 29U, 59U, 14U, 38U, 68U);
         }
-        /* Layered geometric wallpaper: deliberately native framebuffer artwork. */
-        graphics_fill_rect(width / 2U, 0U, width / 2U, height,
-            desktop_theme_is_light() ? 238U : 9U,
-            desktop_theme_is_light() ? 244U : 26U,
-            desktop_theme_is_light() ? 250U : 49U);
-        graphics_fill_rect(width * 3U / 5U, 0U, width / 3U, height,
-            desktop_theme_is_light() ? 234U : 10U,
-            desktop_theme_is_light() ? 241U : 31U,
-            desktop_theme_is_light() ? 249U : 58U);
-        graphics_fill_rect(width * 4U / 5U, 0U, width / 5U, height,
-            desktop_theme_is_light() ? 230U : 12U,
-            desktop_theme_is_light() ? 238U : 35U,
-            desktop_theme_is_light() ? 247U : 63U);
+        /* Layered accent glows add depth without repeated full-screen fills. */
         /* Subtle layered accent glows add depth while remaining software-rendered. */
         uint64_t glow_radius = height / 4U;
         if (glow_radius > 220U) glow_radius = 220U;

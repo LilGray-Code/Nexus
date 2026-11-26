@@ -68,6 +68,7 @@ struct nexus_cpu_capabilities {
 
 #define NEXUS_ENOENT         2LL
 #define NEXUS_EIO            5LL
+#define NEXUS_EACCES        13LL
 #define NEXUS_EBADF          9LL
 #define NEXUS_EFAULT        14LL
 #define NEXUS_ENODEV        19LL

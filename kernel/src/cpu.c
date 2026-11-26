@@ -362,7 +362,8 @@ bool nexus_cpu_init(void) {
     }
     if ((cpu_info.vendor_kind == NEXUS_CPU_VENDOR_AMD ||
          cpu_info.vendor_kind == NEXUS_CPU_VENDOR_HYGON) &&
-        cpu_info.logical_processors_per_core > 1U &&
+        cpu_info.core_id_valid && cpu_info.node_id_valid &&
+        cpu_info.logical_processors_per_core != 0U &&
         cpu_info.physical_cores_per_package != 0U &&
         (uint32_t)cpu_info.physical_cores_per_package <=
             UINT16_MAX / cpu_info.logical_processors_per_core) {

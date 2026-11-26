@@ -42,9 +42,15 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   path. Every submit requests a fence and waits for the matching completion
   response. The driver also supports a bounded set of 64 host-side 3D
   resources using RESOURCE_CREATE_3D, context attach/detach, and RESOURCE_UNREF,
-  with tracked handles and cleanup retries. These resources are not yet exposed
-  as guest-mapped VRAM and are not used as render targets by the desktop. This
-  proves only context/queue/resource protocol operations, not successful 3D
+  with tracked handles and cleanup retries. The driver also queries the
+  VirtIO-GPU display-info table (up to 16 virtual scanouts), prefers an enabled
+  output matching the firmware surface size, and selects an enabled fallback
+  output when the exact mode is unavailable. The desktop still binds one
+  scanout and does not yet provide independent per-monitor framebuffers,
+  hotplug mode management, HDR, VRR, or hardware composition. These resources
+  are not yet exposed as guest-mapped VRAM and are not used as render targets
+  by the desktop. This proves only context/queue/resource protocol operations,
+  not successful 3D
   drawing: the kernel still does not compile shaders, execute a draw workload,
   or present GPU-rendered frames. The 2D/3D acceleration flags therefore remain
   false. There is no Vulkan ICD, OpenGL/Mesa Gallium frontend,

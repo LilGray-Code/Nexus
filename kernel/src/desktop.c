@@ -64,7 +64,16 @@ enum desktop_view {
 };
 
 static enum desktop_view active_view = DESKTOP_HOME;
-enum desktop_settings_page {\n    SETTINGS_PERSONAL = 0,\n    SETTINGS_DISPLAY,\n    SETTINGS_INPUT,\n    SETTINGS_ACCESSIBILITY,\n    SETTINGS_SYSTEM,\n    SETTINGS_DEVICES,\n    SETTINGS_PAGE_COUNT\n};\nstatic enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
+enum desktop_settings_page {
+    SETTINGS_PERSONAL = 0,
+    SETTINGS_DISPLAY,
+    SETTINGS_INPUT,
+    SETTINGS_ACCESSIBILITY,
+    SETTINGS_SYSTEM,
+    SETTINGS_DEVICES,
+    SETTINGS_PAGE_COUNT
+};
+static enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
 #define DESKTOP_STORE_VISIBLE_ROWS 8U
 static size_t store_selected_index;
 static size_t store_first_index;
@@ -449,10 +458,10 @@ static void desktop_preferences_save(void) {
     desktop_preferences_persistent =
         desktop_preferences_saved && vfs_nxfs_writable();
     serial_write(desktop_preferences_persistent
-        ? "DESKTOP: system settings saved to persistent NXFS\\r\\n"
+        ? "DESKTOP: system settings saved to persistent NXFS\r\n"
         : (desktop_preferences_saved
-            ? "DESKTOP: system settings saved to volatile RAM only\\r\\n"
-            : "DESKTOP: system settings save unavailable\\r\\n"));
+            ? "DESKTOP: system settings saved to volatile RAM only\r\n"
+            : "DESKTOP: system settings save unavailable\r\n"));
 }
 
 static void desktop_preferences_load(void) {
@@ -493,14 +502,14 @@ static void desktop_preferences_load(void) {
         }
     }
     if (!valid) {
-        serial_write("DESKTOP: ignored invalid or unsupported system settings record\\r\\n");
+        serial_write("DESKTOP: ignored invalid or unsupported system settings record\r\n");
         desktop_settings_apply();
         return;
     }
     desktop_preferences_saved = true;
     desktop_preferences_persistent = from_nxfs;
     desktop_settings_apply();
-    serial_write("DESKTOP: system settings loaded from volume root\\r\\n");
+    serial_write("DESKTOP: system settings loaded from volume root\r\n");
 }
 
 static void desktop_draw_accent(uint64_t x, uint64_t y,
@@ -2278,7 +2287,7 @@ static void draw_shell(void) {
                 char label[8] = {
                     (char)('0' + speeds[i] / 100U),
                     (char)('0' + (speeds[i] / 10U) % 10U),
-                    (char)('0' + speeds[i] % 10U), '%', '\\0'
+                    (char)('0' + speeds[i] % 10U), '%', '\0'
                 };
                 desktop_settings_draw_button(text_x + (uint64_t)i * 70U,
                     content_y + 83U, 64U, 30U, label,
@@ -2350,7 +2359,7 @@ static void draw_shell(void) {
                 char label[8] = {
                     (char)('0' + volumes[i] / 100U),
                     (char)('0' + (volumes[i] / 10U) % 10U),
-                    (char)('0' + volumes[i] % 10U), '%', '\\0'
+                    (char)('0' + volumes[i] % 10U), '%', '\0'
                 };
                 desktop_settings_draw_button(text_x + (uint64_t)i * 82U,
                     content_y + 83U, 74U, 30U, label,

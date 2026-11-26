@@ -82,10 +82,39 @@ static void test_intellimouse_wheel_and_explorer_buttons(void) {
     assert(event.mouse_wheel == 0);
 }
 
+static void test_shared_input_queue_burst_and_recovery(void) {
+    struct nexus_input_event event = {0};
+    assert(input_dropped_event_count() == 0U);
+
+    /* A 256-slot ring deliberately keeps one slot empty to distinguish full. */
+    for (uint32_t i = 0U; i < NEXUS_INPUT_EVENT_QUEUE_SIZE - 1U; ++i)
+        input_test_keyboard_scancode(0x1EU);
+    assert(input_dropped_event_count() == 0U);
+
+    /* A full queue drops only the newest event and records the loss. */
+    input_test_keyboard_scancode(0x30U);
+    assert(input_dropped_event_count() == 1U);
+
+    size_t delivered = 0U;
+    while (input_pop_event(&event)) {
+        assert(event.type == NEXUS_INPUT_KEYBOARD);
+        assert(event.scancode == 0x1EU);
+        ++delivered;
+    }
+    assert(delivered == NEXUS_INPUT_EVENT_QUEUE_SIZE - 1U);
+    assert(input_dropped_event_count() == 1U);
+
+    /* Once drained, the same ring accepts new events again. */
+    input_test_keyboard_scancode(0x2EU);
+    expect_key(0x2EU);
+    assert(input_dropped_event_count() == 1U);
+}
+
 int main(void) {
     test_extended_keys_and_right_modifiers();
     test_print_screen_fake_shift_and_pause_sequence();
     test_intellimouse_wheel_and_explorer_buttons();
+    test_shared_input_queue_burst_and_recovery();
     puts("NEXUS PS/2 EXTENDED KEYBOARD AND MOUSE TESTS PASSED");
     return 0;
 }

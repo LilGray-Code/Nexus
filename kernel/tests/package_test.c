@@ -308,6 +308,12 @@ int main(void) {
     assert(nexus_package_set_permissions(
         "DEMO", NEXUS_APP_PERMISSION_FILE_READ |
                 NEXUS_APP_PERMISSION_DISPLAY, mock_ed25519_verify, NULL));
+    const struct mock_file *permission_record = mock_find("APPS/DEMO.NPA");
+    assert(permission_record != NULL);
+    printf("NEXUS TEST PERMISSION RECORD (%zu bytes):\\n",
+           permission_record->size);
+    (void)fwrite(permission_record->data, 1U, permission_record->size, stdout);
+    (void)fflush(stdout);
     assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                       NULL, &installed));
     assert(installed.granted_permissions ==

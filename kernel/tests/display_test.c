@@ -227,6 +227,7 @@ int main(void) {
     assert(!nexus_display_set_primary_monitor(1U));
     assert(!nexus_display_set_primary_monitor(99U));
     assert(!nexus_display_topology_available());
+    assert(!nexus_display_primary_selection_available());
     assert(!nexus_display_set_topology(NEXUS_DISPLAY_TOPOLOGY_MIRRORED));
 
     struct fake_backend fake = {
@@ -249,6 +250,7 @@ int main(void) {
     };
     assert(nexus_display_register_topology_backend(&topology_backend, &fake));
     assert(nexus_display_topology_available());
+    assert(nexus_display_primary_selection_available());
     assert(nexus_display_get_info()->topology ==
            NEXUS_DISPLAY_TOPOLOGY_EXTENDED);
     assert(nexus_display_set_topology(NEXUS_DISPLAY_TOPOLOGY_MIRRORED));
@@ -329,6 +331,7 @@ int main(void) {
     assert(!info->mode_set_available);
     assert(nexus_display_monitor_at(0U)->primary);
     assert(!nexus_display_topology_available());
+    assert(!nexus_display_primary_selection_available());
     assert(!nexus_display_set_primary_monitor(0U));
     assert(!nexus_display_apply_mode(mode_1600));
 

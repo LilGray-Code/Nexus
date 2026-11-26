@@ -241,6 +241,12 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                 syscall_frame_trace("return", mutable_frame);
                 return;
 
+            case NEXUS_SYS_APP_PERMISSIONS:
+                mutable_frame->rax =
+                    (uint64_t)usermode_sys_app_permissions();
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
             case NEXUS_SYS_INPUT_POLL:
                 mutable_frame->rax = (uint64_t)usermode_sys_input_poll(
                     frame->rdi);

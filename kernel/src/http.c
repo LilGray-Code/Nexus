@@ -110,6 +110,132 @@ static bool parse_chunked_body(const uint8_t *wire, size_t wire_length,
     }
 }
 
+bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
+                               size_t *header_length,
+                               struct nexus_http_response *response) {
+    if (wire == NULL || header_length == NULL || response == NULL ||
+        wire_length < 12U) return false;
+    size_t header_end = 0U;
+    bool found_separator = false;
+    for (size_t i = 0U; i + 3U < wire_length; ++i) {
+        if (wire[i] == '\\r' && wire[i + 1U] == '\\n' &&
+            wire[i + 2U] == '\\r' && wire[i + 3U] == '\\n') {
+            header_end = i;
+            found_separator = true;
+            break;
+        }
+    }
+    if (!found_separator) return false;
+
+    size_t status_line_end = 0U;
+    if (!find_crlf(wire, header_end + 2U, 0U, &status_line_end) ||
+        status_line_end < 12U ||
+        (!bytes_equal_ci(wire, 8U, "HTTP/1.0") &&
+         !bytes_equal_ci(wire, 8U, "HTTP/1.1")) ||
+        wire[8] != ' ' || wire[9] < '0' || wire[9] > '9' ||
+        wire[10] < '0' || wire[10] > '9' ||
+        wire[11] < '0' || wire[11] > '9' ||
+        (status_line_end > 12U && wire[12] != ' ')) return false;
+
+    bool have_length = false;
+    bool have_transfer_encoding = false;
+    bool have_location = false;
+    bool have_content_type = false;
+    bool have_content_disposition = false;
+    size_t declared_length = 0U;
+    char location[NEXUS_HTTP_LOCATION_MAX + 1U] = {0};
+    char content_type[NEXUS_HTTP_CONTENT_TYPE_MAX + 1U] = {0};
+    char content_disposition[NEXUS_HTTP_DISPOSITION_MAX + 1U] = {0};
+    size_t cursor = status_line_end + 2U;
+    while (cursor < header_end) {
+        size_t line_end = 0U;
+        if (!find_crlf(wire, header_end + 2U, cursor, &line_end) ||
+            line_end <= cursor) return false;
+        size_t colon = cursor;
+        while (colon < line_end && wire[colon] != ':') ++colon;
+        if (colon == cursor || colon == line_end) return false;
+        for (size_t i = cursor; i < colon; ++i)
+            if (wire[i] <= 0x20U || wire[i] >= 0x7FU) return false;
+
+        size_t value_start = colon + 1U;
+        size_t value_end = line_end;
+        while (value_start < value_end &&
+               (wire[value_start] == ' ' || wire[value_start] == '\\t'))
+            ++value_start;
+        while (value_end > value_start &&
+               (wire[value_end - 1U] == ' ' ||
+                wire[value_end - 1U] == '\\t')) --value_end;
+        const size_t value_length = value_end - value_start;
+
+        if (bytes_equal_ci(wire + cursor, colon - cursor, "Content-Length")) {
+            size_t parsed_length = 0U;
+            if (!parse_content_length(wire + value_start, value_length,
+                                      &parsed_length)) return false;
+            if (have_length && parsed_length != declared_length) return false;
+            declared_length = parsed_length;
+            have_length = true;
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Transfer-Encoding")) {
+            if (have_transfer_encoding ||
+                !bytes_equal_ci(wire + value_start, value_length, "chunked"))
+                return false;
+            have_transfer_encoding = true;
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor, "Location")) {
+            if (have_location || value_length == 0U ||
+                value_length > NEXUS_HTTP_LOCATION_MAX) return false;
+            for (size_t i = 0U; i < value_length; ++i) {
+                const uint8_t ch = wire[value_start + i];
+                if (ch <= 0x20U || ch >= 0x7FU) return false;
+                location[i] = (char)ch;
+            }
+            location[value_length] = '\\0';
+            have_location = true;
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Content-Type")) {
+            if (have_content_type || value_length == 0U ||
+                value_length > NEXUS_HTTP_CONTENT_TYPE_MAX) return false;
+            for (size_t i = 0U; i < value_length; ++i) {
+                const uint8_t ch = wire[value_start + i];
+                if (ch < 0x20U || ch >= 0x7FU) return false;
+                content_type[i] = (char)ch;
+            }
+            content_type[value_length] = '\\0';
+            have_content_type = true;
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Content-Disposition")) {
+            if (have_content_disposition || value_length == 0U ||
+                value_length > NEXUS_HTTP_DISPOSITION_MAX) return false;
+            for (size_t i = 0U; i < value_length; ++i) {
+                const uint8_t ch = wire[value_start + i];
+                if (ch < 0x20U || ch >= 0x7FU) return false;
+                content_disposition[i] = (char)ch;
+            }
+            content_disposition[value_length] = '\\0';
+            have_content_disposition = true;
+        }
+        cursor = line_end + 2U;
+    }
+    if (have_length && have_transfer_encoding) return false;
+
+    response->status_code = (uint16_t)(
+        (wire[9] - '0') * 100U + (wire[10] - '0') * 10U + (wire[11] - '0'));
+    response->body_length = 0U;
+    response->content_length = declared_length;
+    response->chunked = have_transfer_encoding;
+    response->has_content_length = have_length;
+    response->has_location = have_location;
+    response->has_content_type = have_content_type;
+    response->has_content_disposition = have_content_disposition;
+    for (size_t i = 0U; i < sizeof(response->location); ++i)
+        response->location[i] = location[i];
+    for (size_t i = 0U; i < sizeof(response->content_type); ++i)
+        response->content_type[i] = content_type[i];
+    for (size_t i = 0U; i < sizeof(response->content_disposition); ++i)
+        response->content_disposition[i] = content_disposition[i];
+    *header_length = header_end + 4U;
+    return true;
+}
+
 bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
                                 uint8_t *body, size_t body_capacity,
                                 struct nexus_http_response *response) {
@@ -242,6 +368,7 @@ bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
 
     response->status_code = status_code;
     response->body_length = body_length;
+    response->content_length = have_length ? declared_length : body_length;
     response->chunked = have_transfer_encoding;
     response->has_content_length = have_length;
     response->has_location = have_location;

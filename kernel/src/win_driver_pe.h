@@ -23,6 +23,11 @@ struct nexus_win_pe_info {
                        [NEXUS_WIN_PE_MODULE_NAME_MAX];
     bool is_dll;
     bool nx_compatible;
+    bool imports_ndis;
+    bool imports_wdf;
+    bool imports_net_adapter_cx;
+    bool imports_windows_kernel;
+    bool imports_hal;
 };
 
 /* Inspects, but never maps or executes, a PE32+ AMD64 Windows image.

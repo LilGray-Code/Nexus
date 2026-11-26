@@ -46,6 +46,14 @@ Do not describe Nexus as Windows/Chrome-equivalent or claim all Wi-Fi hardware w
 - No plaintext retry after TLS failure.
 - Fragmented records, partial reads/writes, EOF, timeout, reset, large responses and repeated connect/close cycles.
 
+## Windows driver package import (initial compatibility layer)
+
+Nexus includes a bounded Windows INF model-section reader for PCI and USB hardware IDs. It can compare an installed adapter's vendor/device IDs, PCI subsystem IDs and revision against an INF package, then report the matching model description and install section. The reader treats INF text as untrusted metadata: it does not execute INF directives, copy arbitrary files, load PE images, or grant kernel privileges. Long lines and oversized output fields are rejected.
+
+The next user-facing step is a driver-package assistant that accepts a vendor-supplied driver archive, inventories its INF and firmware files, verifies hashes/signatures where applicable, and displays exact adapter matches before installation. Windows catalog signatures and package provenance must be verified; an INF match alone is not proof that a driver is safe or compatible.
+
+Actual Windows Wi-Fi driver execution requires a separate, isolated NDIS compatibility subsystem: PE/COFF loading, Windows kernel API/IRQL/timer/work-item/DMA abstractions, NDIS miniport lifecycle and packet APIs, synchronization semantics, firmware loading, power management, and a stable Nexus network-device adapter. It must not run arbitrary Windows kernel code in the Nexus kernel. Start with a restricted, isolated driver host and a small, explicitly supported NDIS API surface; unsupported imports must fail closed. Do not advertise generic Windows .sys support until physical adapters pass the full test matrix.
+
 ## Wi-Fi architecture and compatibility
 
 Wi-Fi is a hardware enablement program, not one generic driver. Maintain a public compatibility matrix keyed by PCI/USB vendor and device IDs, revision, firmware filename/version, bands, security modes and physical test status.

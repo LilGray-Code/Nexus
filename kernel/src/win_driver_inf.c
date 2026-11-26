@@ -124,17 +124,12 @@ static bool match_id(const char *id, size_t n,
 static bool is_model_section(const char *name) {
     static const char models[] = "models";
     if (name == NULL) return false;
-    for (size_t i = 0U; name[i] != '\0'; ++i) {
-        size_t j = 0U;
-        while (models[j] != '\0' && name[i + j] != '\0' &&
-               lower_ascii(name[i + j]) == models[j]) ++j;
-        if (models[j] == '\0') return true;
-        if (name[i] == '.' && name[i + 1U] != '\0' &&
-            name[i + 2U] != '\0' && lower_ascii(name[i + 1U]) == 'n' &&
-            lower_ascii(name[i + 2U]) == 't') return true;
-    }
-    return false;
+    size_t i = 0U;
+    while (models[i] != '\0' && name[i] != '\0' &&
+           lower_ascii(name[i]) == models[i]) ++i;
+    return models[i] == '\0' && (name[i] == '\0' || name[i] == '.');
 }
+
 
 bool nexus_win_inf_find_match(const char *text, size_t length,
                               const struct nexus_win_device_id *device,

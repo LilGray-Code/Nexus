@@ -29,6 +29,52 @@ static uint64_t free_requests;
 static uint64_t free_failures;
 static uint64_t pages_freed_total;
 
+/*
+ * The bootstrap allocator is shared by every online CPU. A ticket lock makes
+ * allocation/free/accounting operations atomic and gives waiters FIFO order.
+ * Local interrupts are disabled before taking the ticket so an IRQ on the
+ * owning CPU cannot recursively enter the allocator and deadlock that CPU.
+ *
+ * This lock is deliberately allocator-local; general kernel spinlocks belong
+ * in the architecture synchronization layer once other shared subsystems
+ * adopt the same IRQ-save contract.
+ */
+static volatile uint32_t memory_lock_next_ticket;
+static volatile uint32_t memory_lock_serving_ticket;
+
+static bool memory_lock_acquire(void) {
+#ifdef NEXUS_MEMORY_HOST_TEST
+    const bool restore_interrupts = false;
+#else
+    uint64_t flags;
+    __asm__ volatile ("pushfq; popq %0" : "=r"(flags));
+    __asm__ volatile ("cli" : : : "memory");
+    const bool restore_interrupts = (flags & (1ULL << 9)) != 0U;
+#endif
+    const uint32_t ticket =
+        __atomic_fetch_add(&memory_lock_next_ticket, 1U, __ATOMIC_RELAXED);
+    while (__atomic_load_n(&memory_lock_serving_ticket, __ATOMIC_ACQUIRE)
+           != ticket) {
+        __asm__ volatile ("pause" ::: "memory");
+    }
+    return restore_interrupts;
+}
+
+static void memory_lock_release(bool restore_interrupts) {
+    const uint32_t serving =
+        __atomic_load_n(&memory_lock_serving_ticket, __ATOMIC_RELAXED);
+    __atomic_store_n(&memory_lock_serving_ticket, serving + 1U,
+                     __ATOMIC_RELEASE);
+#ifndef NEXUS_MEMORY_HOST_TEST
+    if (restore_interrupts)
+        __asm__ volatile ("sti" : : : "memory");
+#else
+    (void)restore_interrupts;
+#endif
+}
+
+static bool memory_allocator_validate_unlocked(void);
+
 static void saturating_add_u64(uint64_t *value, uint64_t amount) {
     if (UINT64_MAX - *value < amount) *value = UINT64_MAX;
     else *value += amount;
@@ -63,7 +109,7 @@ static bool add_overflow_u64(uint64_t a, uint64_t b, uint64_t *result) {
     return *result < a;
 }
 
-bool memory_init(const struct limine_memmap_response *map,
+static bool memory_init_unlocked(const struct limine_memmap_response *map,
                  const struct limine_hhdm_response *hhdm) {
     usable_region_count = 0;
     current_region = 0;
@@ -159,10 +205,10 @@ bool memory_init(const struct limine_memmap_response *map,
     }
 
     initialized = usable_region_count != 0U;
-    return initialized && memory_allocator_validate();
+    return initialized && memory_allocator_validate_unlocked();
 }
 
-bool memory_alloc_page(uint64_t *physical_address) {
+static bool memory_alloc_page_unlocked(uint64_t *physical_address) {
     note_allocation_request();
     if (!initialized || physical_address == NULL) {
         note_allocation_failure();
@@ -203,7 +249,7 @@ bool memory_alloc_page(uint64_t *physical_address) {
  * page-sized only: callers that need multiple contiguous pages must request
  * and validate each run through a future contiguous allocator.
  */
-bool memory_alloc_dma_page(uint64_t max_address_exclusive,
+static bool memory_alloc_dma_page_unlocked(uint64_t max_address_exclusive,
                            uint64_t *physical_address) {
     note_allocation_request();
     if (!initialized || physical_address == NULL ||
@@ -255,7 +301,7 @@ bool memory_alloc_dma_page(uint64_t max_address_exclusive,
  * uses a bounded LIFO free list; it rejects unaligned, foreign, and duplicate
  * frees. SMP synchronization and a larger bitmap allocator are future work.
  */
-bool memory_free_page(uint64_t physical_address) {
+static bool memory_free_page_unlocked(uint64_t physical_address) {
     note_free_request();
     if (!initialized ||
         (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
@@ -300,7 +346,7 @@ bool memory_free_page(uint64_t physical_address) {
  * guest-memory entry. The early allocator is single-CPU and bump-pointer
  * based, so the run is never assembled from unrelated freed pages.
  */
-bool memory_alloc_contiguous_pages(uint64_t page_count,
+static bool memory_alloc_contiguous_pages_unlocked(uint64_t page_count,
                                    uint64_t max_address_exclusive,
                                    uint64_t *physical_address) {
     note_allocation_request();
@@ -335,7 +381,7 @@ bool memory_alloc_contiguous_pages(uint64_t page_count,
  * Return a contiguous run to the bounded early free list. Validate the whole
  * run before mutating allocator state, so failure never leaves a partial free.
  */
-bool memory_free_contiguous_pages(uint64_t physical_address,
+static bool memory_free_contiguous_pages_unlocked(uint64_t physical_address,
                                   uint64_t page_count) {
     note_free_request();
     if (!initialized || page_count == 0U ||
@@ -385,7 +431,7 @@ bool memory_free_contiguous_pages(uint64_t physical_address,
     return true;
 }
 
-bool memory_page_is_allocated(uint64_t physical_address) {
+static bool memory_page_is_allocated_unlocked(uint64_t physical_address) {
     if (!initialized ||
         (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U) return false;
 
@@ -408,7 +454,7 @@ bool memory_page_is_allocated(uint64_t physical_address) {
     return true;
 }
 
-bool memory_allocator_validate(void) {
+static bool memory_allocator_validate_unlocked(void) {
     if (!initialized || usable_region_count == 0U ||
         usable_region_count > MEMORY_MAX_REGIONS ||
         freed_page_count > MEMORY_MAX_FREED_PAGES) return false;
@@ -516,18 +562,18 @@ bool memory_allocator_selftest(void) {
            after.normal_free_bytes <= after.normal_total_bytes;
 }
 
-void *memory_phys_to_virt(uint64_t physical_address) {
+static void *memory_phys_to_virt_unlocked(uint64_t physical_address) {
     if (!initialized || physical_address > UINTPTR_MAX - direct_map_offset) {
         return NULL;
     }
     return (void *)(uintptr_t)(direct_map_offset + physical_address);
 }
 
-uint64_t memory_total_bytes(void) {
+static uint64_t memory_total_bytes_unlocked(void) {
     return total_bytes;
 }
 
-uint64_t memory_free_bytes(void) {
+static uint64_t memory_free_bytes_unlocked(void) {
     return free_bytes;
 }
 
@@ -553,7 +599,7 @@ static void memory_stats_add_range(uint64_t start, uint64_t end,
         saturating_add_u64(normal_bytes, end - start);
 }
 
-bool memory_get_allocator_stats(struct memory_allocator_stats *stats) {
+static bool memory_get_allocator_stats_unlocked(struct memory_allocator_stats *stats) {
     if (!initialized || stats == NULL) return false;
 
     uint64_t largest_extent = 0U;
@@ -598,3 +644,101 @@ bool memory_get_allocator_stats(struct memory_allocator_stats *stats) {
     return true;
 }
 
+
+
+/*
+ * Public allocator entry points take the SMP-safe ticket lock. Internal
+ * helpers above intentionally remain unlocked so initialization and compound
+ * validation can operate under one lock without recursive acquisition.
+ */
+bool memory_init(const struct limine_memmap_response *map,
+                 const struct limine_hhdm_response *hhdm) {
+    const bool restore = memory_lock_acquire();
+    const bool result = memory_init_unlocked(map, hhdm);
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_alloc_page(uint64_t *physical_address) {
+    const bool restore = memory_lock_acquire();
+    const bool result = memory_alloc_page_unlocked(physical_address);
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_alloc_dma_page(uint64_t max_address_exclusive,
+                           uint64_t *physical_address) {
+    const bool restore = memory_lock_acquire();
+    const bool result =
+        memory_alloc_dma_page_unlocked(max_address_exclusive, physical_address);
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_free_page(uint64_t physical_address) {
+    const bool restore = memory_lock_acquire();
+    const bool result = memory_free_page_unlocked(physical_address);
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_alloc_contiguous_pages(uint64_t page_count,
+                                   uint64_t max_address_exclusive,
+                                   uint64_t *physical_address) {
+    const bool restore = memory_lock_acquire();
+    const bool result = memory_alloc_contiguous_pages_unlocked(
+        page_count, max_address_exclusive, physical_address);
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_free_contiguous_pages(uint64_t physical_address,
+                                  uint64_t page_count) {
+    const bool restore = memory_lock_acquire();
+    const bool result =
+        memory_free_contiguous_pages_unlocked(physical_address, page_count);
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_page_is_allocated(uint64_t physical_address) {
+    const bool restore = memory_lock_acquire();
+    const bool result = memory_page_is_allocated_unlocked(physical_address);
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_allocator_validate(void) {
+    const bool restore = memory_lock_acquire();
+    const bool result = memory_allocator_validate_unlocked();
+    memory_lock_release(restore);
+    return result;
+}
+
+void *memory_phys_to_virt(uint64_t physical_address) {
+    const bool restore = memory_lock_acquire();
+    void *result = memory_phys_to_virt_unlocked(physical_address);
+    memory_lock_release(restore);
+    return result;
+}
+
+uint64_t memory_total_bytes(void) {
+    const bool restore = memory_lock_acquire();
+    const uint64_t result = memory_total_bytes_unlocked();
+    memory_lock_release(restore);
+    return result;
+}
+
+uint64_t memory_free_bytes(void) {
+    const bool restore = memory_lock_acquire();
+    const uint64_t result = memory_free_bytes_unlocked();
+    memory_lock_release(restore);
+    return result;
+}
+
+bool memory_get_allocator_stats(struct memory_allocator_stats *stats) {
+    const bool restore = memory_lock_acquire();
+    const bool result = memory_get_allocator_stats_unlocked(stats);
+    memory_lock_release(restore);
+    return result;
+}

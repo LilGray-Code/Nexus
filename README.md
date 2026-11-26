@@ -21,13 +21,22 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   placement, Win+E for Files, Win+I for
   Settings, Win+D for Home, and Ctrl+Esc or the Windows key for Start. The Start
   launcher supports typed app search, Up/Down selection, and Enter to launch.
-  The shell also supports live Dark/Light appearance, four accent palettes, and
-  mouse-selectable Settings controls. Theme/accent preferences use a versioned,
-  checksum-validated `NEXUS.CFG` in the root of the NXFS Data volume. Settings
-  or Files performs the existing explicit storage discovery before loading
-  preferences; no user disk scan was added to boot. When a writable NXFS Data
-  volume is unavailable, preferences fall back to volatile RAM and do not
-  survive reboot. The current shell still presents one foreground application
+  The shell also includes a six-section Settings application: Personalization
+  (dark/light theme, eight accent palettes, four wallpaper presets), Display
+  (firmware-selected resolution readout, 80–120% UI scaling, pointer size),
+  Input (mouse speed, scroll speed, handedness), Accessibility (high contrast,
+  larger text and pointer), System (AC'97 master volume when supported, network
+  status, memory and uptime), and Devices (detected hardware and driver state).
+  Theme, wallpaper, UI scaling, mouse controls, accessibility, and volume
+  preferences use a versioned, checksum-validated `NEXUS.CFG` record in the
+  root of the NXFS Data volume. Settings or Files performs the existing explicit
+  storage discovery before loading preferences; no user disk scan was added to
+  boot. When a writable NXFS Data volume is unavailable, preferences fall back
+  to volatile RAM and do not survive reboot. Resolution changes are not exposed
+  because a general display-mode-setting driver is not yet implemented. Audio
+  volume reaches supported AC'97 codecs; otherwise the preference is saved for
+  a future compatible audio device. The current shell still presents one
+  foreground application
   view at a time. Taskbar switching and minimizing remember each app view's
   last window size, position, snap, and maximize state; closing discards that
   saved placement. This makes window navigation more consistent but is not

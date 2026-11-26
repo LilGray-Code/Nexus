@@ -434,7 +434,7 @@ jobs:
           grep -q "NEXUS AHCI PORT DISCOVERY READY" uefi-serial.log
           grep -q "AHCI: connected ports:" uefi-serial.log
           grep -q "AHCI: ports implemented:" uefi-serial.log
-          grep -q "NEXUS K2 COOPERATIVE THREAD SCHEDULER READY" uefi-serial.log
+          grep -q "NEXUS K2 MULTITASKING SCHEDULER READY" uefi-serial.log
           grep -q "NEXUS INSTALLER SESSION READY" uefi-serial.log
           grep -q "NEXUS INSTALLER WRITE GATE ENABLED" uefi-serial.log
           grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" uefi-serial.log
@@ -646,7 +646,7 @@ jobs:
           grep -q "NEXUS IOAPIC PROBE READY" bios-serial.log
           grep -q "NEXUS STORAGE DISCOVERY READY" bios-serial.log
           grep -q "STORAGE: controller " bios-serial.log
-          grep -q "NEXUS K2 COOPERATIVE THREAD SCHEDULER READY" bios-serial.log
+          grep -q "NEXUS K2 MULTITASKING SCHEDULER READY" bios-serial.log
           grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" bios-serial.log
 

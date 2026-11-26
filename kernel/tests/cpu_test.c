@@ -4,7 +4,69 @@
 #include <stdio.h>
 #include <string.h>
 
+static void test_amd_extended_topology_decoder(void) {
+    struct nexus_cpu_local_topology topology = {
+        .vendor = NEXUS_CPU_VENDOR_UNKNOWN,
+        .core_type = NEXUS_CPU_CORE_TYPE_UNKNOWN,
+        .logical_processors_per_core = 1U
+    };
+    const uint32_t topology_feature = 1U << 22;
+    const uint32_t extended_apic_id = 0xFEDCBA98U;
+    const uint32_t core_id = 0x35U;
+    const uint32_t threads_per_core_minus_one = 1U;
+    const uint32_t node_id = 7U;
+    const uint32_t nodes_per_processor = 2U;
+    const uint32_t topology_ebx =
+        core_id | (threads_per_core_minus_one << 8);
+    const uint32_t topology_ecx =
+        node_id | (nodes_per_processor << 8);
+
+    assert(nexus_cpu_decode_amd_topology(
+        NEXUS_CPU_VENDOR_AMD, 0x8000001EU, topology_feature,
+        extended_apic_id, topology_ebx, topology_ecx, &topology));
+    assert(topology.vendor == NEXUS_CPU_VENDOR_AMD);
+    assert(topology.topology_extensions_supported);
+    assert(topology.apic_id_valid && topology.apic_id == extended_apic_id);
+    assert(topology.core_id_valid && topology.core_id == core_id);
+    assert(topology.node_id_valid && topology.node_id == node_id);
+    assert(topology.nodes_per_processor_raw == nodes_per_processor);
+    assert(topology.logical_processors_per_core == 2U);
+
+    topology = (struct nexus_cpu_local_topology){
+        .vendor = NEXUS_CPU_VENDOR_UNKNOWN,
+        .logical_processors_per_core = 1U
+    };
+    assert(nexus_cpu_decode_amd_topology(
+        NEXUS_CPU_VENDOR_HYGON, 0x8000001EU, topology_feature,
+        extended_apic_id, topology_ebx, topology_ecx, &topology));
+    assert(topology.vendor == NEXUS_CPU_VENDOR_HYGON);
+    assert(topology.core_id == core_id && topology.node_id == node_id);
+
+    topology = (struct nexus_cpu_local_topology){
+        .vendor = NEXUS_CPU_VENDOR_UNKNOWN,
+        .logical_processors_per_core = 1U
+    };
+    assert(!nexus_cpu_decode_amd_topology(
+        NEXUS_CPU_VENDOR_INTEL, 0x8000001EU, topology_feature,
+        extended_apic_id, topology_ebx, topology_ecx, &topology));
+    assert(!nexus_cpu_decode_amd_topology(
+        NEXUS_CPU_VENDOR_AMD, 0x8000001DU, topology_feature,
+        extended_apic_id, topology_ebx, topology_ecx, &topology));
+    assert(!nexus_cpu_decode_amd_topology(
+        NEXUS_CPU_VENDOR_AMD, 0x8000001EU, 0U,
+        extended_apic_id, topology_ebx, topology_ecx, &topology));
+
+    /* A raw ThreadsPerCore value of 255 encodes 256 logical threads and
+     * cannot be represented by this kernel's uint8_t inventory field.
+     */
+    assert(!nexus_cpu_decode_amd_topology(
+        NEXUS_CPU_VENDOR_AMD, 0x8000001EU, topology_feature,
+        extended_apic_id, core_id | (0xFFU << 8), topology_ecx,
+        &topology));
+}
+
 int main(void) {
+    test_amd_extended_topology_decoder();
     assert(nexus_cpu_init());
     const struct nexus_cpu_info *info = nexus_cpu_get_info();
     assert(info != NULL);

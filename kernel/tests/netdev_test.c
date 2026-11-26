@@ -11,6 +11,7 @@ struct fake_adapter {
     unsigned sends;
     unsigned receives;
     size_t capacity_seen;
+    uint32_t speed_mbps;
 };
 
 static bool fake_send(void *context, const void *frame, size_t length) {
@@ -25,6 +26,11 @@ static bool fake_link_up(void *context) {
     const struct fake_adapter *adapter =
         (const struct fake_adapter *)context;
     return adapter != NULL && adapter->link;
+}
+
+static uint32_t fake_link_speed(void *context) {
+    const struct fake_adapter *adapter = context;
+    return adapter != NULL && adapter->link ? adapter->speed_mbps : 0U;
 }
 
 static bool fake_receive(void *context, void *buffer, size_t capacity,
@@ -50,7 +56,8 @@ int main(void) {
     static const struct nexus_netdev_ops ops = {
         .send_frame = fake_send,
         .receive_frame = fake_receive,
-        .link_up = fake_link_up
+        .link_up = fake_link_up,
+        .link_speed_mbps = fake_link_speed
     };
     struct fake_adapter ethernet = {0};
     struct fake_adapter wireless = {0};
@@ -90,29 +97,52 @@ int main(void) {
                             ethernet_mac, 128U, &ops, &wireless));
 
     wireless.link = true;
+    wireless.speed_mbps = 433U;
+    ethernet.speed_mbps = 1000U;
     assert(netdev_register("wlan0", NEXUS_NETDEV_MEDIUM_WIFI,
                            wireless_mac, 128U, &ops, &wireless));
     assert(netdev_count() == 2U);
     assert(netdev_link_up());
     assert(netdev_get_info(&info));
     assert(info.name[0] == 'w' && info.link_up);
+    assert(info.active && !info.preferred);
+    assert(info.link_speed_mbps == 433U);
     assert(info.medium == NEXUS_NETDEV_MEDIUM_WIFI);
     assert(info.mac[1] == wireless_mac[1]);
     assert(netdev_get_info_at(0U, &info));
-    assert(info.name[0] == 'e' && !info.link_up);
+    assert(info.name[0] == 'e' && !info.link_up && !info.active);
+    assert(info.link_speed_mbps == 0U);
     assert(info.medium == NEXUS_NETDEV_MEDIUM_ETHERNET);
     assert(!netdev_get_info_at(2U, &info));
 
     assert(netdev_send_frame(frame, NEXUS_NETDEV_MIN_FRAME));
     assert(wireless.sends == 1U && ethernet.sends == 0U);
+    assert(netdev_get_info(&info));
+    assert(info.tx_frames == 1U && info.tx_bytes == NEXUS_NETDEV_MIN_FRAME);
     assert(netdev_receive_frame(frame, sizeof(frame), &length));
     assert(length == 64U && wireless.receives == 1U);
+    assert(netdev_get_info(&info));
+    assert(info.rx_frames == 1U && info.rx_bytes == 64U);
     assert(wireless.capacity_seen == 128U);
 
     wireless.oversized_receive = true;
     length = 99U;
     assert(!netdev_receive_frame(frame, sizeof(frame), &length));
     assert(length == 0U);
+    assert(netdev_get_info(&info));
+    assert(info.rx_errors == 1U);
+
+    /* Explicit adapter selection is preferred when its link returns. */
+    ethernet.link = true;
+    assert(netdev_select_device(0U));
+    assert(netdev_active_index() == 0U);
+    assert(netdev_get_info(&info) && info.preferred && info.active);
+    ethernet.link = false;
+    assert(netdev_active_index() == 1U); /* Automatic failover. */
+    ethernet.link = true;
+    assert(netdev_active_index() == 0U); /* Preferred link is restored. */
+    netdev_use_automatic_device();
+    assert(netdev_active_index() == 0U);
 
     wireless.link = false;
     ethernet.link = true;
@@ -121,5 +151,16 @@ int main(void) {
     assert(info.name[0] == 'e' && info.link_up);
     assert(netdev_send_frame(frame, NEXUS_NETDEV_MIN_FRAME));
     assert(ethernet.sends == 1U);
+
+    /* No linked NIC must produce a hard failure, not a stale-device send. */
+    ethernet.link = false;
+    assert(!netdev_link_up());
+    assert(netdev_active_index() == NEXUS_NETDEV_MAX_DEVICES);
+    assert(!netdev_get_info(&info));
+    assert(!netdev_send_frame(frame, NEXUS_NETDEV_MIN_FRAME));
+    length = 99U;
+    assert(!netdev_receive_frame(frame, sizeof(frame), &length));
+    assert(length == 0U);
+    assert(ethernet.sends == 1U && wireless.sends == 1U);
     return 0;
 }

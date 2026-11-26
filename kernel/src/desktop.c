@@ -961,6 +961,8 @@ static void desktop_transition_view(enum desktop_view view,
         scan_files_once();
         desktop_preferences_load();
     } else if (view == DESKTOP_INSTALLER) {
+        /* Present every detected drive immediately; do not hide the target list. */
+        installer_drive_dropdown_open = true;
         installer_refresh_plan();
         installer_log_selected_target();
     }
@@ -1585,7 +1587,7 @@ static void draw_shell(void) {
                                       "CONTINUE", false, false);
             }
             graphics_draw_text(text_x, text_y + 348U,
-                               "CLICK THE TARGET FIELD TO VIEW ALL DRIVES  |  UP/DOWN SELECT",
+                               "CHOOSE A DRIVE FROM THE OPEN LIST  |  UP/DOWN + ENTER",
                                1U, 170U, 191U, 211U);
             graphics_draw_text(text_x, text_y + 370U,
                                "Your existing disks are not changed during this preview.",
@@ -2599,7 +2601,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     browser_search_result_count = 0U;
     installer_firmware = NEXUS_FIRMWARE_UEFI;
     installer_selected_device = 0U;
-    installer_drive_dropdown_open = false;
+    /* Show all detected installation targets on first entry. */
+    installer_drive_dropdown_open = true;
     installer_ui_state = INSTALLER_UI_SELECT;
     installer_input_length = 0U;
     installer_input[0] = '\0';
@@ -6419,7 +6422,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         refresh_files_listing();
     }
     if (next_view == DESKTOP_INSTALLER) {
-        installer_drive_dropdown_open = false;
+        installer_drive_dropdown_open = true;
         installer_refresh_plan();
         const struct nexus_block_device *target =
             blockdev_at(installer_selected_device);

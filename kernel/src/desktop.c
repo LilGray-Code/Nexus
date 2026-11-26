@@ -2907,6 +2907,12 @@ static void draw_shell(void) {
                     hardware_append_text(line, sizeof(line), &used, number);
                     hardware_append_text(line, sizeof(line), &used, " MBPS");
                 }
+                hardware_append_text(line, sizeof(line), &used, " TX");
+                format_u64(adapter.tx_frames, number);
+                hardware_append_text(line, sizeof(line), &used, number);
+                hardware_append_text(line, sizeof(line), &used, " RX");
+                format_u64(adapter.rx_frames, number);
+                hardware_append_text(line, sizeof(line), &used, number);
                 graphics_draw_text(text_x + 4U, content_y + 69U +
                     (uint64_t)i * 15U, line, 1U,
                     adapter.link_up ? 239U : 171U,

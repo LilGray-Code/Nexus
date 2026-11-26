@@ -211,6 +211,7 @@ static volatile uint8_t *command_memory;
 static bool virgl_feature_negotiated;
 static bool virgl_context_created;
 static bool virgl_command_submission_ready;
+static bool virgl_smoke_test_in_progress;
 static uint32_t virgl_capset_id;
 static uint32_t virgl_capset_max_version;
 static uint32_t virgl_capset_max_size;
@@ -456,6 +457,7 @@ static bool gpu_virgl_start(void) {
         (transport.features & ((uint64_t)1U << VIRTIO_GPU_F_VIRGL)) != 0U;
     virgl_context_created = false;
     virgl_command_submission_ready = false;
+    virgl_smoke_test_in_progress = false;
     virgl_capset_id = 0U;
     virgl_capset_max_version = 0U;
     virgl_capset_max_size = 0U;
@@ -485,7 +487,11 @@ static bool gpu_virgl_start(void) {
      * completion without claiming that a rendering workload was executed.
      */
     const uint32_t virgl_nop = 0U;
-    if (!virtio_gpu_3d_submit(&virgl_nop, sizeof(virgl_nop), NULL)) {
+    virgl_smoke_test_in_progress = true;
+    const bool smoke_test_ok =
+        virtio_gpu_3d_submit(&virgl_nop, sizeof(virgl_nop), NULL);
+    virgl_smoke_test_in_progress = false;
+    if (!smoke_test_ok) {
         gpu_virgl_destroy_context();
         serial_write("VIRTIO GPU: Virgl command/fence smoke test failed\r\n");
         return false;
@@ -749,14 +755,17 @@ bool virtio_gpu_present(void) {
 
 bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
                           uint64_t *completed_fence) {
-    if (!active || !virgl_context_created || stream == NULL ||
-        stream_length == 0U || (stream_length & 3U) != 0U ||
+    if (!active || !virgl_context_created ||
+        (!virgl_command_submission_ready && !virgl_smoke_test_in_progress) ||
+        stream == NULL || stream_length == 0U || (stream_length & 3U) != 0U ||
         stream_length > VIRTIO_GPU_COMMAND_BYTES -
                         sizeof(struct virtio_gpu_submit_3d) ||
         command_memory == NULL) return false;
 
     gpu_command_queue_lock();
-    if (!active || !virgl_context_created || virgl_next_fence == UINT64_MAX) {
+    if (!active || !virgl_context_created ||
+        (!virgl_command_submission_ready && !virgl_smoke_test_in_progress) ||
+        virgl_next_fence == UINT64_MAX) {
         gpu_command_queue_unlock();
         return false;
     }
@@ -790,6 +799,8 @@ bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
         response_length < sizeof(struct virtio_gpu_header)) {
         if (virgl_failed_submissions != UINT32_MAX)
             ++virgl_failed_submissions;
+        virgl_command_submission_ready = false;
+        gpu_set_virtio_3d_submission_ready(false, 0U);
         gpu_command_queue_unlock();
         return false;
     }
@@ -809,6 +820,8 @@ bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
         serial_write("/");
         serial_write_hex(response_fence);
         serial_write("\r\n");
+        virgl_command_submission_ready = false;
+        gpu_set_virtio_3d_submission_ready(false, 0U);
         gpu_command_queue_unlock();
         return false;
     }
@@ -840,6 +853,7 @@ bool virtio_gpu_3d_resource_create(
     uint32_t *resource_id) {
     if (description == NULL || resource_id == NULL ||
         !active || !virgl_context_created ||
+        !virgl_command_submission_ready ||
         description->width == 0U || description->height == 0U ||
         description->depth == 0U || description->array_size == 0U ||
         description->width > VIRTIO_GPU_MAX_3D_DIMENSION ||

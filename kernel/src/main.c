@@ -609,33 +609,33 @@ void kmain(void) {
     }
 
     /*
-     * Fill the remaining thread slots, let those workers exit, then create
-     * another worker. Finished slots must be reusable across scheduler runs.
+     * Exercise the full sixteen-thread capacity, reject overflow, then prove
+     * completed slots can be reused without growing the scheduler table.
      */
     for (uint32_t i = 0U; i < NEXUS_SCHEDULER_MAX_THREADS; ++i) {
         if (!scheduler_create_thread(scheduler_recycle_worker, NULL)) {
-            serial_write("ERROR: scheduler could not fill all thread slots\\r\\n");
+            serial_write("ERROR: scheduler could not fill all thread slots\r\n");
             halt_forever();
         }
     }
     if (scheduler_create_thread(scheduler_recycle_worker, NULL)) {
-        serial_write("ERROR: scheduler accepted a thread beyond its capacity\\r\\n");
+        serial_write("ERROR: scheduler accepted a thread beyond its capacity\r\n");
         halt_forever();
     }
     scheduler_wait();
-    serial_write("K2: all sixteen worker slots completed\\r\\n");
+    serial_write("K2: all sixteen worker slots completed\r\n");
     if (scheduler_recycle_count != NEXUS_SCHEDULER_MAX_THREADS ||
         !scheduler_create_thread(scheduler_recycle_worker, NULL)) {
-        serial_write("ERROR: scheduler failed to recycle finished thread slots\\r\\n");
+        serial_write("ERROR: scheduler failed to recycle finished thread slots\r\n");
         halt_forever();
     }
     scheduler_wait();
-    serial_write("K2: recycled worker finished\\r\\n");
+    serial_write("K2: recycled worker finished\r\n");
     if (scheduler_recycle_count != NEXUS_SCHEDULER_MAX_THREADS + 1U) {
-        serial_write("ERROR: scheduler recycled-thread self-test failed\\r\\n");
+        serial_write("ERROR: scheduler recycled-thread self-test failed\r\n");
         halt_forever();
     }
-    serial_write("K2: cooperative scheduling and thread-slot recycling passed\\r\\n");
+    serial_write("K2: cooperative scheduling and thread-slot recycling passed\r\n");
 
     /*
      * Verify timer-driven switching between CPU-bound kernel threads without

@@ -87,6 +87,19 @@ static uint32_t pack_rgb(uint8_t red, uint8_t green, uint8_t blue) {
     return r | g | b;
 }
 
+static uint8_t graphics_lerp_channel(uint8_t first, uint8_t last,
+                                          uint64_t position,
+                                          uint64_t extent) {
+    if (extent <= 1U || position == 0U) return first;
+    if (position >= extent - 1U) return last;
+    const uint64_t denominator = extent - 1U;
+    const uint64_t inverse = denominator - position;
+    const uint64_t value = (uint64_t)first * inverse +
+                           (uint64_t)last * position +
+                           denominator / 2U;
+    return (uint8_t)(value / denominator);
+}
+
 bool graphics_init(const struct nexus_graphics_surface *surface) {
     initialized = false;
     if (surface == NULL || surface->address == NULL ||
@@ -134,6 +147,52 @@ bool graphics_take_damage(struct nexus_graphics_damage *damage) {
     pending_damage = (struct nexus_graphics_damage){0};
     pending_damage_valid = false;
     return true;
+}
+
+void graphics_fill_gradient(
+    uint64_t x, uint64_t y, uint64_t width, uint64_t height,
+    uint8_t top_left_red, uint8_t top_left_green, uint8_t top_left_blue,
+    uint8_t top_right_red, uint8_t top_right_green, uint8_t top_right_blue,
+    uint8_t bottom_left_red, uint8_t bottom_left_green, uint8_t bottom_left_blue,
+    uint8_t bottom_right_red, uint8_t bottom_right_green,
+    uint8_t bottom_right_blue) {
+    if (!initialized || width == 0U || height == 0U ||
+        x >= active_surface.width || y >= active_surface.height) return;
+
+    const uint64_t gradient_width = width;
+    const uint64_t gradient_height = height;
+    if (width > active_surface.width - x)
+        width = active_surface.width - x;
+    if (height > active_surface.height - y)
+        height = active_surface.height - y;
+    graphics_mark_damage(x, y, width, height);
+
+    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+    for (uint64_t row = 0U; row < height; ++row) {
+        const uint8_t left_red = graphics_lerp_channel(
+            top_left_red, bottom_left_red, row, gradient_height);
+        const uint8_t left_green = graphics_lerp_channel(
+            top_left_green, bottom_left_green, row, gradient_height);
+        const uint8_t left_blue = graphics_lerp_channel(
+            top_left_blue, bottom_left_blue, row, gradient_height);
+        const uint8_t right_red = graphics_lerp_channel(
+            top_right_red, bottom_right_red, row, gradient_height);
+        const uint8_t right_green = graphics_lerp_channel(
+            top_right_green, bottom_right_green, row, gradient_height);
+        const uint8_t right_blue = graphics_lerp_channel(
+            top_right_blue, bottom_right_blue, row, gradient_height);
+        volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
+            (base + (y + row) * active_surface.pitch + x * 4U);
+        for (uint64_t column = 0U; column < width; ++column) {
+            pixels[column] = pack_rgb(
+                graphics_lerp_channel(left_red, right_red, column,
+                                      gradient_width),
+                graphics_lerp_channel(left_green, right_green, column,
+                                      gradient_width),
+                graphics_lerp_channel(left_blue, right_blue, column,
+                                      gradient_width));
+        }
+    }
 }
 
 uint64_t graphics_pitch(void) {

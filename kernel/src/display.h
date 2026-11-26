@@ -120,6 +120,9 @@ struct nexus_display_mode_backend {
                         const struct nexus_display_mode *mode);
     bool (*supports_hdr)(void *context,
                          const struct nexus_display_mode *mode);
+};
+
+struct nexus_display_topology_backend {
     bool (*set_topology)(void *context,
                          enum nexus_display_topology topology);
     bool (*set_primary_monitor)(void *context, uint32_t monitor_id);
@@ -140,6 +143,8 @@ bool nexus_display_set_primary_monitor(uint32_t id);
 /* Extended/mirror layouts require a backend capable of programming all outputs. */
 bool nexus_display_set_topology(enum nexus_display_topology topology);
 bool nexus_display_topology_available(void);
+bool nexus_display_register_topology_backend(
+    const struct nexus_display_topology_backend *backend, void *context);
 
 /* Rotation is applied in the software framebuffer renderer. */
 bool nexus_display_set_rotation(enum nexus_display_rotation rotation);

@@ -1,6 +1,8 @@
 .section .text
 .extern exception_dispatch
 .extern interrupt_dispatch
+.extern usermode_exception_recovered
+.extern nexus_user_return
 
 .macro ISR_NO_ERROR number
     .global isr\number
@@ -116,6 +118,11 @@ exception_common:
     movq %rsp, %r12
     andq $-16, %rsp
     call exception_dispatch
+    cmpb $0, usermode_exception_recovered(%rip)
+    je 1f
+    movb $0, usermode_exception_recovered(%rip)
+    jmp nexus_user_return
+1:
     movq %r12, %rsp
 
     popq %r15

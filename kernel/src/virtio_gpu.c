@@ -1275,23 +1275,38 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
             ? 0U : original_scanout_x[i];
         const uint32_t y = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
             ? 0U : original_scanout_y[i];
-        const uint32_t width = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
-            ? (uint32_t)width_pixels : scanout->width;
-        const uint32_t height = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
-            ? (uint32_t)height_pixels : scanout->height;
+        /* Mirroring uses the same upper-left source origin on each output,
+         * but retains that output's own native scanout rectangle.
+         */
+        const uint32_t width = scanout->width;
+        const uint32_t height = scanout->height;
         if (width == 0U || height == 0U ||
             (uint64_t)x + width > width_pixels ||
             (uint64_t)y + height > height_pixels ||
             !gpu_set_scanout_rectangle(i, x, y, width, height)) {
-            /* Restore every output already changed by this transaction. */
-            for (uint32_t j = 0U; j < i; ++j) {
+            /* A lost error reply is ambiguous: restore the failed output
+             * too, because it may have accepted SET_SCANOUT before timing out.
+             */
+            bool rollback_ok = true;
+            for (uint32_t j = 0U; j <= i; ++j) {
                 if (!previous[j].enabled) continue;
-                (void)gpu_set_scanout_rectangle(
-                    j, previous[j].x, previous[j].y,
-                    previous_rect_width[j], previous_rect_height[j]);
+                if (!gpu_set_scanout_rectangle(
+                        j, previous[j].x, previous[j].y,
+                        previous_rect_width[j], previous_rect_height[j]))
+                    rollback_ok = false;
             }
             for (uint32_t j = 0U; j < display_inventory.scanout_count; ++j)
                 display_inventory.scanouts[j] = previous[j];
+            for (uint32_t j = 0U; j < display_inventory.scanout_count; ++j) {
+                current_scanout_rect_width[j] = previous_rect_width[j];
+                current_scanout_rect_height[j] = previous_rect_height[j];
+            }
+            if (!rollback_ok) {
+                serial_write("VIRTIO GPU: scanout topology rollback failed; disabling display command path\r\n");
+                display_inventory.valid = false;
+                active = false;
+                virtio_pci_fail(&transport);
+            }
             return false;
         }
         display_inventory.scanouts[i].x = x;

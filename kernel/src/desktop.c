@@ -6564,7 +6564,28 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     }
                 }
             } else if (settings_page == SETTINGS_DISPLAY) {
-                if (py >= content_y + 227U && py < content_y + 254U &&
+                if (py >= content_y + 96U && py < content_y + 128U &&
+                    px >= sx + 300U) {
+                    const uint64_t row = (py - (content_y + 96U)) / 16U;
+                    uint32_t visible_row = 0U;
+                    const struct nexus_display_info *display =
+                        nexus_display_get_info();
+                    if (display != NULL) {
+                        for (uint32_t i = 0U;
+                             i < display->monitor_count && visible_row <= row;
+                             ++i) {
+                            const struct nexus_display_monitor *monitor =
+                                &display->monitors[i];
+                            if (!monitor->present) continue;
+                            if (visible_row == row) {
+                                (void)nexus_display_set_primary_monitor(
+                                    monitor->id);
+                                break;
+                            }
+                            ++visible_row;
+                        }
+                    }
+                } else if (py >= content_y + 227U && py < content_y + 254U &&
                     px >= sx) {
                     static const uint8_t scales[5] = {
                         80U, 90U, 100U, 110U, 120U

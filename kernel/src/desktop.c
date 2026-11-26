@@ -2486,7 +2486,23 @@ static void draw_shell(void) {
                 graphics_draw_text(text_x, content_y + 383U, layout,
                                    1U, 171U, 191U, 211U);
             }
-            graphics_draw_text(text_x, content_y + 402U,
+            if (nexus_display_topology_available()) {
+                desktop_settings_draw_button(text_x, content_y + 402U,
+                    88U, 27U, "EXTENDED",
+                    display != NULL &&
+                    display->topology == NEXUS_DISPLAY_TOPOLOGY_EXTENDED);
+                desktop_settings_draw_button(text_x + 96U, content_y + 402U,
+                    88U, 27U, "MIRROR",
+                    display != NULL &&
+                    display->topology == NEXUS_DISPLAY_TOPOLOGY_MIRRORED);
+                graphics_draw_text(text_x + 210U, content_y + 410U,
+                    "CHANGE OUTPUT LAYOUT", 1U, 171U, 191U, 211U);
+            } else {
+                graphics_draw_text(text_x, content_y + 402U,
+                    "LAYOUT CONTROL UNAVAILABLE ON THIS DISPLAY BACKEND",
+                    1U, 171U, 191U, 211U);
+            }
+            graphics_draw_text(text_x, content_y + 432U,
                 gpu_render_path_name(), 1U, 108U, 216U, 229U);
         } else if (settings_page == SETTINGS_INPUT) {
             desktop_settings_draw_heading(text_x, content_y,
@@ -6605,6 +6621,16 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             (void)nexus_display_set_color_temperature(
                                 color_temperatures[col]);
                     }
+                } else if (py >= content_y + 402U &&
+                           py < content_y + 429U && px >= sx &&
+                           nexus_display_topology_available()) {
+                    const uint64_t relative_x = px - sx;
+                    if (relative_x < 88U)
+                        (void)nexus_display_set_topology(
+                            NEXUS_DISPLAY_TOPOLOGY_EXTENDED);
+                    else if (relative_x >= 96U && relative_x < 184U)
+                        (void)nexus_display_set_topology(
+                            NEXUS_DISPLAY_TOPOLOGY_MIRRORED);
                 }
             } else if (settings_page == SETTINGS_INPUT) {
                 if (py >= content_y + 83U && py < content_y + 113U &&

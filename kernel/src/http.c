@@ -110,6 +110,81 @@ static bool parse_chunked_body(const uint8_t *wire, size_t wire_length,
     }
 }
 
+
+static int http_base64_value(uint8_t ch) {
+    if (ch >= 'A' && ch <= 'Z') return (int)(ch - 'A');
+    if (ch >= 'a' && ch <= 'z') return (int)(ch - 'a') + 26;
+    if (ch >= '0' && ch <= '9') return (int)(ch - '0') + 52;
+    if (ch == '+') return 62;
+    if (ch == '/') return 63;
+    return -1;
+}
+
+/* RFC 9530 Content-Digest sha-256 byte-sequence or the common legacy
+ * Digest: sha-256=<base64> form. A SHA-256 value is exactly 32 octets.
+ */
+static bool http_parse_sha256_base64(
+    const uint8_t *value, size_t length, uint8_t output[32]) {
+    if (value == NULL || output == NULL || length != 44U ||
+        value[43] != '=') return false;
+    size_t produced = 0U;
+    for (size_t offset = 0U; offset < length; offset += 4U) {
+        const int a = http_base64_value(value[offset]);
+        const int b = http_base64_value(value[offset + 1U]);
+        const int d = http_base64_value(value[offset + 2U]);
+        const bool final = offset == 40U;
+        if (a < 0 || b < 0 || d < 0) return false;
+        if (!final) {
+            const int e = http_base64_value(value[offset + 3U]);
+            if (e < 0) return false;
+            output[produced++] = (uint8_t)((a << 2) | (b >> 4));
+            output[produced++] = (uint8_t)((b << 4) | (d >> 2));
+            output[produced++] = (uint8_t)((d << 6) | e);
+        } else {
+            if (value[offset + 3U] != '=' || (d & 0x03) != 0)
+                return false;
+            output[produced++] = (uint8_t)((a << 2) | (b >> 4));
+            output[produced++] = (uint8_t)((b << 4) | (d >> 2));
+        }
+    }
+    return produced == 32U;
+}
+
+static bool http_parse_sha256_hex(
+    const uint8_t *value, size_t length, uint8_t output[32]) {
+    if (value == NULL || output == NULL || length != 64U) return false;
+    for (size_t i = 0U; i < 32U; ++i) {
+        const uint8_t high_ch = value[i * 2U];
+        const uint8_t low_ch = value[i * 2U + 1U];
+        const int high = high_ch >= '0' && high_ch <= '9'
+            ? (int)(high_ch - '0')
+            : (high_ch >= 'a' && high_ch <= 'f'
+                ? (int)(high_ch - 'a') + 10
+                : (high_ch >= 'A' && high_ch <= 'F'
+                    ? (int)(high_ch - 'A') + 10 : -1));
+        const int low = low_ch >= '0' && low_ch <= '9'
+            ? (int)(low_ch - '0')
+            : (low_ch >= 'a' && low_ch <= 'f'
+                ? (int)(low_ch - 'a') + 10
+                : (low_ch >= 'A' && low_ch <= 'F'
+                    ? (int)(low_ch - 'A') + 10 : -1));
+        if (high < 0 || low < 0) return false;
+        output[i] = (uint8_t)((high << 4) | low);
+    }
+    return true;
+}
+
+static bool http_parse_content_digest(
+    const uint8_t *value, size_t length, uint8_t output[32]) {
+    static const char prefix[] = "sha-256=:";
+    static const char suffix = ':';
+    if (value == NULL || length != sizeof(prefix) - 1U + 45U ||
+        !bytes_equal_ci(value, sizeof(prefix) - 1U, prefix) ||
+        value[length - 1U] != (uint8_t)suffix) return false;
+    return http_parse_sha256_base64(
+        value + sizeof(prefix) - 1U, 44U, output);
+}
+
 bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
                                size_t *header_length,
                                struct nexus_http_response *response) {
@@ -142,6 +217,8 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
     bool have_location = false;
     bool have_content_type = false;
     bool have_content_disposition = false;
+    bool have_sha256_digest = false;
+    uint8_t sha256_digest[32] = {0U};
     size_t declared_length = 0U;
     char location[NEXUS_HTTP_LOCATION_MAX + 1U] = {0};
     char content_type[NEXUS_HTTP_CONTENT_TYPE_MAX + 1U] = {0};
@@ -212,6 +289,40 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
             }
             content_disposition[value_length] = '\0';
             have_content_disposition = true;
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Content-Digest")) {
+            static const char prefix[] = "sha-256=:";
+            size_t algorithm = 0U;
+            while (algorithm + sizeof(prefix) - 1U <= value_length &&
+                   !bytes_equal_ci(wire + value_start + algorithm,
+                                   sizeof(prefix) - 1U, prefix))
+                ++algorithm;
+            if (algorithm + sizeof(prefix) - 1U <= value_length) {
+                if (have_sha256_digest ||
+                    !http_parse_content_digest(
+                        wire + value_start + algorithm,
+                        value_length - algorithm, sha256_digest)) return false;
+                have_sha256_digest = true;
+            }
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "Digest")) {
+            static const char prefix[] = "sha-256=";
+            if (value_length >= sizeof(prefix) - 1U &&
+                bytes_equal_ci(wire + value_start,
+                               sizeof(prefix) - 1U, prefix)) {
+                if (have_sha256_digest ||
+                    !http_parse_sha256_base64(
+                        wire + value_start + sizeof(prefix) - 1U,
+                        value_length - (sizeof(prefix) - 1U),
+                        sha256_digest)) return false;
+                have_sha256_digest = true;
+            }
+        } else if (bytes_equal_ci(wire + cursor, colon - cursor,
+                                  "X-Checksum-Sha256")) {
+            if (have_sha256_digest ||
+                !http_parse_sha256_hex(wire + value_start, value_length,
+                                       sha256_digest)) return false;
+            have_sha256_digest = true;
         }
         cursor = line_end + 2U;
     }
@@ -226,6 +337,9 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
     response->has_location = have_location;
     response->has_content_type = have_content_type;
     response->has_content_disposition = have_content_disposition;
+    response->has_sha256_digest = have_sha256_digest;
+    for (size_t i = 0U; i < sizeof(response->sha256_digest); ++i)
+        response->sha256_digest[i] = sha256_digest[i];
     for (size_t i = 0U; i < sizeof(response->location); ++i)
         response->location[i] = location[i];
     for (size_t i = 0U; i < sizeof(response->content_type); ++i)

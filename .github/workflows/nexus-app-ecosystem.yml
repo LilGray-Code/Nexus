@@ -1,0 +1,49 @@
+name: Nexus Application Ecosystem Tests
+
+on:
+  push:
+    branches:
+      - nexus-application-ecosystem
+    paths:
+      - "kernel/src/app_repository.c"
+      - "kernel/src/app_repository.h"
+      - "kernel/src/download_manager.c"
+      - "kernel/src/download_manager.h"
+      - "kernel/tests/app_repository_test.c"
+      - "kernel/tests/download_manager_test.c"
+      - ".github/workflows/nexus-app-ecosystem.yml"
+  pull_request:
+    branches:
+      - nexus-pc-gaming-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  app-ecosystem:
+    name: Signed repository, dependency and large-download tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Compile signed repository and dependency tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/app_repository.c kernel/src/sha256.c \
+            kernel/tests/app_repository_test.c \
+            -o /tmp/nexus-app-repository-test
+
+      - name: Run metadata, signature, search and dependency tests
+        run: /tmp/nexus-app-repository-test
+
+      - name: Compile streaming download manager tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/download_manager.c kernel/src/sha256.c \
+            kernel/tests/download_manager_test.c \
+            -o /tmp/nexus-download-manager-test
+
+      - name: Run large transfer, pause, resume, retry and integrity tests
+        run: /tmp/nexus-download-manager-test

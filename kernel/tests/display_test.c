@@ -217,8 +217,8 @@ int main(void) {
     assert(!nexus_display_set_topology(NEXUS_DISPLAY_TOPOLOGY_MIRRORED));
 
     struct fake_backend fake = {
-        .current_width = 1024U,
-        .current_height = 768U,
+        .current_width = 1920U,
+        .current_height = 1080U,
         .fail_width = 1280U
     };
     const struct nexus_display_mode_backend backend = {
@@ -249,6 +249,9 @@ int main(void) {
     fake.fail_topology = false;
     assert(nexus_display_set_primary_monitor(1U));
     assert(fake.primary_monitor_id == 1U);
+    assert(nexus_display_get_info()->current_width == 1920U);
+    assert(nexus_display_get_info()->current_height == 1080U);
+    assert(nexus_display_get_info()->current_refresh_hz == 60U);
     assert(nexus_display_monitor_at(0U)->primary == false);
     assert(nexus_display_monitor_at(1U)->primary);
     fake.fail_primary = true;

@@ -33,5 +33,7 @@ int64_t nexus_printf(const char *format, ...);
 int64_t nexus_read_file(const char *path, void *buffer, size_t capacity,
                         size_t *bytes_read);
 int64_t nexus_write_file(const char *path, const void *buffer, size_t length);
+/* Returns the package-granted capability bitmask for this process. */
+uint32_t nexus_get_permissions(void);
 
 #endif

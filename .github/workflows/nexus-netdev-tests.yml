@@ -7,7 +7,11 @@ on:
     paths:
       - "kernel/src/netdev.c"
       - "kernel/src/netdev.h"
+      - "kernel/src/e1000.c"
+      - "kernel/src/net.c"
+      - "kernel/src/net.h"
       - "kernel/tests/netdev_test.c"
+      - "kernel/tests/net_tcp_test.c"
       - ".github/workflows/nexus-netdev-tests.yml"
   pull_request:
     branches:

@@ -33,6 +33,13 @@ uint64_t graphics_pitch(void);
 bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
                             uint64_t height, const uint32_t *pixels,
                             size_t stride_pixels);
+/* Single-pass four-corner RGB gradient, clipped to the active framebuffer. */
+void graphics_fill_gradient(
+    uint64_t x, uint64_t y, uint64_t width, uint64_t height,
+    uint8_t top_left_red, uint8_t top_left_green, uint8_t top_left_blue,
+    uint8_t top_right_red, uint8_t top_right_green, uint8_t top_right_blue,
+    uint8_t bottom_left_red, uint8_t bottom_left_green, uint8_t bottom_left_blue,
+    uint8_t bottom_right_red, uint8_t bottom_right_green, uint8_t bottom_right_blue);
 void graphics_clear(uint8_t red, uint8_t green, uint8_t blue);
 void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,

@@ -233,13 +233,17 @@ bool nexus_driver_manager_probe_device(
     if (device == NULL || device->bus < NEXUS_DRIVER_BUS_PCI ||
         device->bus > NEXUS_DRIVER_BUS_USB) return false;
     const size_t prior = find_pnp_device(device);
+    const enum nexus_pnp_device_state prior_state =
+        prior == pnp_devices_used ? NEXUS_PNP_DEVICE_DISCOVERED
+                                  : pnp_devices[prior].info.state;
     const size_t record = remember_device(device);
     if (record == pnp_devices_used) return false;
     if (prior != pnp_devices_used) {
         if (pnp_devices[record].info.state == NEXUS_PNP_DEVICE_ACTIVE)
             return true;
-        /* Failed/unsupported records are retried only through rescan(). */
-        return false;
+        if (prior_state != NEXUS_PNP_DEVICE_REMOVED)
+            return false;
+        /* A genuinely reattached device gets a fresh probe attempt. */
     }
     return probe_record(record);
 }

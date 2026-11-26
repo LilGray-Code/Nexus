@@ -29,7 +29,11 @@ Spotify. It also does not currently support arbitrary Windows PE executables.
 A Store label saying that a website shortcut is installed must never be
 interpreted as the native client being installed or runnable.
 
-The browser currently buffers verified HTTPS downloads up to 4 MiB per file. New NXFS Data volumes support 4 MiB files; existing 1 MiB NXFS volumes remain readable and writable at their original limit. Formatting a Data volume smaller than the new-format geometry falls back to the legacy 1 MiB limit. The signed native package parser accepts payloads up to 4 MiB, but Store-to-package installation still requires a production pinned-key publisher verifier and download-to-install transaction.
+The browser keeps ordinary page rendering in a bounded 4 MiB response buffer, but binary HTTPS attachments use a separate streaming path and can be written directly to persistent Nexus Data in bounded-memory chunks up to 256 MiB per file. Both Content-Length and HTTP/1.1 chunked transfer bodies are supported; chunk framing, trailer termination, early EOF and volume capacity are checked before the NXFS metadata entry is committed. Interrupted transfers leave no completed file entry. This is not a general streaming JavaScript download API: it handles browser attachment responses only.
+
+New NXFS volumes select the largest supported fixed per-file slot tier that fits their partition (4, 8, 16, 32, 64, 128 or 256 MiB). Existing 4 MiB and 1 MiB NXFS superblocks remain readable and writable with their original limits. The actual mounted volume limit is enforced even when the browser's global streaming ceiling is higher. The signed native package parser remains limited to 4 MiB, and Store-to-package installation still requires a production pinned-key publisher verifier and a download-to-install transaction.
+
+Nexus Browser still does not include a JavaScript engine, standards-complete DOM/CSS layout, WebAssembly, WebGL/WebGPU, or the browser APIs expected by modern web applications. Sites that require those capabilities will not behave like they do in Chrome.
 
 The early native userland can load a constrained static x86-64 ELF executable,
 but the system does not yet provide a full POSIX runtime, dynamic linker,

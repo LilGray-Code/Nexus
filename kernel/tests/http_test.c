@@ -142,11 +142,11 @@ static void test_content_disposition_metadata(void) {
 
 static void test_header_only_parse_for_streaming(void) {
     static const uint8_t header[] =
-        "HTTP/1.1 200 OK\\r\\n"
-        "Content-Length: 268435456\\r\\n"
-        "Content-Type: application/zip\\r\\n"
-        "Content-Disposition: attachment; filename=large.zip\\r\\n"
-        "Connection: close\\r\\n\\r\\n";
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Length: 268435456\r\n"
+        "Content-Type: application/zip\r\n"
+        "Content-Disposition: attachment; filename=large.zip\r\n"
+        "Connection: close\r\n\r\n";
     size_t header_length = 0U;
     struct nexus_http_response response = {0};
     assert(nexus_http_decode_headers(header, sizeof(header) - 1U,
@@ -162,8 +162,8 @@ static void test_header_only_parse_for_streaming(void) {
     assert(response.body_length == 0U);
 
     static const uint8_t conflicting[] =
-        "HTTP/1.1 200 OK\\r\\nContent-Length: 1\\r\\n"
-        "Transfer-Encoding: chunked\\r\\n\\r\\n";
+        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\n"
+        "Transfer-Encoding: chunked\r\n\r\n";
     assert(!nexus_http_decode_headers(conflicting, sizeof(conflicting) - 1U,
                                       &header_length, &response));
 }

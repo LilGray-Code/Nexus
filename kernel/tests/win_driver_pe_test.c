@@ -51,6 +51,7 @@ static void make_valid_driver(void) {
     put32(section + 12U, 0x1000U);
     put32(section + 16U, 0x600U);
     put32(section + 20U, 0x200U);
+    put32(section + 36U, 0x20000000U);
 
     put32(0x300U, 0x1140U);
     put32(0x30CU, 0x1130U);
@@ -133,6 +134,24 @@ static void test_relocation_validation_and_type_reporting(void) {
     assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
 }
 
+
+static void test_rejects_overlapping_sections_and_bad_entrypoint(void) {
+    make_valid_driver();
+    struct nexus_win_pe_info info;
+    put16(0x86U, 2U);
+    const size_t second = 0x1B0U;
+    memcpy(image + second, ".data", 5U);
+    put32(second + 8U, 0x200U);
+    put32(second + 12U, 0x1000U);
+    put32(second + 16U, 0x200U);
+    put32(second + 20U, 0x400U);
+    assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
+
+    make_valid_driver();
+    put32(0x188U + 36U, 0U);
+    assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
+}
+
 static void test_valid_image_without_imports(void) {
     make_valid_driver();
     put32(0x110U, 0U);
@@ -147,6 +166,7 @@ int main(void) {
     test_rejects_bad_headers();
     test_rejects_bad_imports();
     test_relocation_validation_and_type_reporting();
+    test_rejects_overlapping_sections_and_bad_entrypoint();
     test_valid_image_without_imports();
     puts("NEXUS WINDOWS PE DRIVER INSPECTION TESTS PASSED");
     return 0;

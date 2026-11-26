@@ -2458,13 +2458,13 @@ static void draw_shell(void) {
                 "ROTATION, BRIGHTNESS AND NIGHT LIGHT ARE SOFTWARE EFFECTS.",
                 1U, 171U, 191U, 211U);
             if (display != NULL) {
-                graphics_draw_text(text_x, content_y + 383U,
-                    nexus_display_topology_available()
-                        ? "MULTI-DISPLAY LAYOUT BACKEND AVAILABLE"
-                        : "MULTI-DISPLAY: DETECTED OUTPUTS; LAYOUT BACKEND UNAVAILABLE",
-                    1U, nexus_display_topology_available() ? 108U : 231U,
-                    nexus_display_topology_available() ? 216U : 183U,
-                    nexus_display_topology_available() ? 229U : 127U);
+                const char *layout = display->monitor_count > 1U
+                    ? (display->topology == NEXUS_DISPLAY_TOPOLOGY_MIRRORED
+                        ? "CURRENT LAYOUT: MIRRORED"
+                        : "CURRENT LAYOUT: EXTENDED")
+                    : "CURRENT LAYOUT: ONE ACTIVE DISPLAY";
+                graphics_draw_text(text_x, content_y + 383U, layout,
+                                   1U, 171U, 191U, 211U);
             }
             graphics_draw_text(text_x, content_y + 402U,
                 gpu_render_path_name(), 1U, 108U, 216U, 229U);
@@ -3183,7 +3183,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
                 const int32_t desktop_y = scanout->y <= INT32_MAX
                     ? (int32_t)scanout->y : 0;
                 (void)nexus_display_add_monitor(
-                    i, scanout->enabled, desktop_x, desktop_y,
+                    i, have_edid || scanout->enabled,
+                    scanout->enabled, desktop_x, desktop_y,
                     scanout->width, scanout->height,
                     have_edid ? edid : NULL,
                     have_edid ? edid_length : 0U);

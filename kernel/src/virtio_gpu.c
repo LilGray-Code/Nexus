@@ -1256,6 +1256,53 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
         (topology != NEXUS_VIRTIO_GPU_TOPOLOGY_EXTENDED &&
          topology != NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED)) return false;
 
+    uint32_t mirror_width = UINT32_MAX;
+    uint32_t mirror_height = UINT32_MAX;
+    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
+        const struct nexus_virtio_gpu_scanout_info *scanout =
+            &display_inventory.scanouts[i];
+        if (!scanout->enabled || scanout->width == 0U ||
+            scanout->height == 0U) continue;
+        if (scanout->width < mirror_width) mirror_width = scanout->width;
+        if (scanout->height < mirror_height) mirror_height = scanout->height;
+    }
+    if (topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED &&
+        (mirror_width == UINT32_MAX || mirror_height == UINT32_MAX ||
+         mirror_width == 0U || mirror_height == 0U)) return false;
+
+    /* Do not claim "extended" if the host's saved output rectangles overlap.
+     * The backing resource was sized from these positions during startup, so
+     * inventing new coordinates here would exceed its allocated extent.
+     */
+    if (topology == NEXUS_VIRTIO_GPU_TOPOLOGY_EXTENDED) {
+        for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
+            const struct nexus_virtio_gpu_scanout_info *a =
+                &display_inventory.scanouts[i];
+            if (!a->enabled || a->width == 0U || a->height == 0U) continue;
+            for (uint32_t j = i + 1U;
+                 j < display_inventory.scanout_count; ++j) {
+                const struct nexus_virtio_gpu_scanout_info *b =
+                    &display_inventory.scanouts[j];
+                if (!b->enabled || b->width == 0U || b->height == 0U)
+                    continue;
+                const uint64_t ar = (uint64_t)original_scanout_x[i] +
+                                    a->width;
+                const uint64_t ab = (uint64_t)original_scanout_y[i] +
+                                    a->height;
+                const uint64_t br = (uint64_t)original_scanout_x[j] +
+                                    b->width;
+                const uint64_t bb = (uint64_t)original_scanout_y[j] +
+                                    b->height;
+                const bool overlap =
+                    original_scanout_x[i] < br &&
+                    original_scanout_x[j] < ar &&
+                    original_scanout_y[i] < bb &&
+                    original_scanout_y[j] < ab;
+                if (overlap) return false;
+            }
+        }
+    }
+
     struct nexus_virtio_gpu_scanout_info previous[
         NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
     uint32_t previous_rect_width[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
@@ -1269,35 +1316,37 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
     for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
         const struct nexus_virtio_gpu_scanout_info *scanout =
             &display_inventory.scanouts[i];
-        if (!scanout->enabled) continue;
+        if (!scanout->enabled || scanout->width == 0U ||
+            scanout->height == 0U) continue;
 
         const uint32_t x = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
             ? 0U : original_scanout_x[i];
         const uint32_t y = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
             ? 0U : original_scanout_y[i];
-        /* Mirroring uses the same upper-left source origin on each output,
-         * but retains that output's own native scanout rectangle.
-         */
-        const uint32_t width = scanout->width;
-        const uint32_t height = scanout->height;
+        const uint32_t width =
+            topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
+                ? mirror_width : scanout->width;
+        const uint32_t height =
+            topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
+                ? mirror_height : scanout->height;
         if (width == 0U || height == 0U ||
             (uint64_t)x + width > width_pixels ||
             (uint64_t)y + height > height_pixels ||
             !gpu_set_scanout_rectangle(i, x, y, width, height)) {
-            /* A lost error reply is ambiguous: restore the failed output
-             * too, because it may have accepted SET_SCANOUT before timing out.
+            /* A lost error reply is ambiguous: restore the failed output too,
+             * because it may have accepted SET_SCANOUT before timing out.
              */
             bool rollback_ok = true;
             for (uint32_t j = 0U; j <= i; ++j) {
-                if (!previous[j].enabled) continue;
+                if (!previous[j].enabled || previous_rect_width[j] == 0U ||
+                    previous_rect_height[j] == 0U) continue;
                 if (!gpu_set_scanout_rectangle(
                         j, previous[j].x, previous[j].y,
                         previous_rect_width[j], previous_rect_height[j]))
                     rollback_ok = false;
             }
-            for (uint32_t j = 0U; j < display_inventory.scanout_count; ++j)
-                display_inventory.scanouts[j] = previous[j];
             for (uint32_t j = 0U; j < display_inventory.scanout_count; ++j) {
+                display_inventory.scanouts[j] = previous[j];
                 current_scanout_rect_width[j] = previous_rect_width[j];
                 current_scanout_rect_height[j] = previous_rect_height[j];
             }

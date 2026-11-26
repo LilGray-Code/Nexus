@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include "usb_hid.h"
 
+/* 256 slots (255 usable) shared by PS/2 and USB keyboard/mouse producers. */
+#define NEXUS_INPUT_EVENT_QUEUE_SIZE 256U
+
 enum nexus_input_event_type {
     NEXUS_INPUT_KEYBOARD = 1,
     NEXUS_INPUT_MOUSE = 2
@@ -26,6 +29,8 @@ void input_keyboard_interrupt(void);
 void input_mouse_interrupt(void);
 /* Called by the boot CPU while draining the single-producer input queue. */
 bool input_pop_event(struct nexus_input_event *event);
+/* Number of input events dropped because the shared ring was full. */
+uint32_t input_dropped_event_count(void);
 void input_usb_keyboard_report_state(struct nexus_usb_keyboard_state *state,
                                      const uint8_t report[8]);
 void input_usb_keyboard_report(const uint8_t report[8]);

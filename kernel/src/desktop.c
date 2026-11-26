@@ -3242,7 +3242,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
                          &desktop_firmware_surface,
                          &desktop_render_surface);
     if (desktop_virtio_gpu_active) {
-        struct nexus_virtio_gpu_display_info discovered;
+        struct nexus_virtio_gpu_display_info discovered = {0};
         if (virtio_gpu_display_get_info(&discovered)) {
             for (uint32_t i = 0U; i < discovered.scanout_count; ++i) {
                 const struct nexus_virtio_gpu_scanout_info *scanout =

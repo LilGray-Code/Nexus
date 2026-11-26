@@ -61,8 +61,8 @@ static uint16_t hex_value(const char *p, size_t n) {
 }
 
 static bool find_hex(const char *p, size_t n, const char *marker,
-                     size_t digits, uint16_t *value) {
-    const size_t m = 4U;
+                     size_t marker_length, size_t digits, uint16_t *value) {
+    const size_t m = marker_length;
     for (size_t i = 0U; i + m + digits <= n; ++i) {
         if ((i == 0U || p[i - 1U] == '&' || p[i - 1U] == '\\') &&
             equal_ci(p + i, marker, m)) {
@@ -79,20 +79,20 @@ static bool match_id(const char *id, size_t n,
     uint16_t vendor, product;
     if (d->bus == NEXUS_WIN_DEVICE_PCI) {
         if (n < 8U || !equal_ci(id, "PCI\\VEN_", 8U) ||
-            !find_hex(id, n, "VEN_", 4U, &vendor) ||
-            !find_hex(id, n, "DEV_", 4U, &product) ||
+            !find_hex(id, n, "VEN_", 4U, 4U, &vendor) ||
+            !find_hex(id, n, "DEV_", 4U, 4U, &product) ||
             vendor != d->vendor_id || product != d->device_id) return false;
     } else if (d->bus == NEXUS_WIN_DEVICE_USB) {
         if (n < 8U || !equal_ci(id, "USB\\VID_", 8U) ||
-            !find_hex(id, n, "VID_", 4U, &vendor) ||
-            !find_hex(id, n, "PID_", 4U, &product) ||
+            !find_hex(id, n, "VID_", 4U, 4U, &vendor) ||
+            !find_hex(id, n, "PID_", 4U, 4U, &product) ||
             vendor != d->vendor_id || product != d->device_id) return false;
     } else return false;
 
     *specificity = 1U;
     if (d->bus == NEXUS_WIN_DEVICE_PCI) {
         uint16_t subsystem;
-        if (find_hex(id, n, "SUBS", 8U, &subsystem)) {
+        if (find_hex(id, n, "SUBSYS_", 7U, 8U, &subsystem)) {
             const uint16_t sub_device = (uint16_t)(subsystem >> 16);
             const uint16_t sub_vendor = subsystem;
             if (sub_device != d->subsystem_device_id ||
@@ -100,7 +100,7 @@ static bool match_id(const char *id, size_t n,
             *specificity = 2U;
         }
         uint16_t revision;
-        if (find_hex(id, n, "REV_", 2U, &revision)) {
+        if (find_hex(id, n, "REV_", 4U, 2U, &revision)) {
             if ((uint8_t)revision != d->revision_id) return false;
             *specificity = 3U;
         }

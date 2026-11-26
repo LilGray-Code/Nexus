@@ -55,20 +55,6 @@ static void write_le16(uint8_t *bytes, uint16_t value) {
     bytes[1] = (uint8_t)(value >> 8);
 }
 
-static uint16_t read_le16(const uint8_t *bytes) {
-    return (uint16_t)bytes[0] | ((uint16_t)bytes[1] << 8);
-}
-
-static void write_le64(uint8_t *bytes, uint64_t value) {
-    write_le32(bytes, (uint32_t)value);
-    write_le32(bytes + 4U, (uint32_t)(value >> 32));
-}
-
-static uint64_t read_le64(const uint8_t *bytes) {
-    return (uint64_t)read_le32(bytes) |
-           ((uint64_t)read_le32(bytes + 4U) << 32);
-}
-
 void nexus_gaming_query_system(
     struct nexus_gaming_system_capabilities *capabilities) {
     if (capabilities == NULL) return;
@@ -100,7 +86,7 @@ void nexus_gaming_query_system(
     if (runtime.vulkan_available)
         capabilities->available |= NEXUS_GAME_CAP_VULKAN;
     if (runtime.video_decode_available)
-        capabilities->available |= NEXUS_GAME_CAP_GPU_FENCE_SYNC;
+        capabilities->available |= NEXUS_GAME_CAP_VIDEO_DECODE;
     /*
      * Intentionally do not infer Linux ABI, glibc, dynamic linking, Steam,
      * Wine/Proton, sockets, OpenGL, Vulkan, DXVK or VKD3D from PCI inventory.

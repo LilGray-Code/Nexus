@@ -6441,6 +6441,20 @@ void desktop_handle_input(const struct nexus_input_event *event) {
 }
 
 
+static bool desktop_output_contains(const char *output, size_t length,
+                                      const char *needle) {
+    if (output == NULL || needle == NULL) return false;
+    size_t needle_length = 0U;
+    while (needle[needle_length] != '\\0') ++needle_length;
+    if (needle_length == 0U || needle_length > length) return false;
+    for (size_t offset = 0U; offset <= length - needle_length; ++offset) {
+        size_t i = 0U;
+        while (i < needle_length && output[offset + i] == needle[i]) ++i;
+        if (i == needle_length) return true;
+    }
+    return false;
+}
+
 enum nexus_desktop_process_test_result
 desktop_run_process_selftest(void) {
     if (!vfs_root_mounted()) scan_files_once();
@@ -6460,7 +6474,7 @@ desktop_run_process_selftest(void) {
 
     static const char expected_output[] =
         "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=0023";
-    char captured_output[sizeof(expected_output)] = {0};
+    char captured_output[NEXUS_USERMODE_OUTPUT_MAX] = {0};
     bool output_truncated = false;
     const size_t output_length = usermode_console_output_copy(
         captured_output, sizeof(captured_output), &output_truncated);
@@ -6472,10 +6486,22 @@ desktop_run_process_selftest(void) {
     bool output_matches =
         output_length >= sizeof(expected_output) - 1U &&
         !output_truncated;
-    for (size_t i = 0U; i < output_length && output_matches; ++i) {
+    for (size_t i = 0U;
+         i < sizeof(expected_output) - 1U && output_matches; ++i) {
         if (captured_output[i] != expected_output[i])
             output_matches = false;
     }
+    output_matches = output_matches &&
+        desktop_output_contains(captured_output, output_length,
+                                "NEXUS CPU CAPABILITY QUERY READY") &&
+        (desktop_output_contains(captured_output, output_length,
+                                 "NEXUS AVX2 USER SIMD READY") ||
+         desktop_output_contains(captured_output, output_length,
+                                 "NEXUS SCALAR USER SIMD FALLBACK READY")) &&
+        (desktop_output_contains(captured_output, output_length,
+                                 "NEXUS SMP NATIVE APP CAPABILITY READY") ||
+         desktop_output_contains(captured_output, output_length,
+                                 "NEXUS SMP SINGLE-CORE MODE"));
 
     serial_write("DESKTOP: HELLO.ELF exit status=");
     serial_write_hex(result.exit_status);

@@ -775,6 +775,15 @@ bool virtio_gpu_3d_resource_create(
         return false;
     }
 
+    tracked_resources[free_slot] = (struct virtio_gpu_tracked_resource){
+        .allocated = true,
+        .attached = false,
+        .resource_id = id
+    };
+    ++tracked_resource_count;
+    if (tracked_resource_total_created != UINT32_MAX)
+        ++tracked_resource_total_created;
+
     const struct virtio_gpu_ctx_resource attach = {
         .header = {
             .type = VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE,
@@ -787,19 +796,15 @@ bool virtio_gpu_3d_resource_create(
         .padding = 0U
     };
     if (!submit_command(&attach, sizeof(attach))) {
-        (void)gpu_resource_unref(id);
+        if (gpu_resource_unref(id)) {
+            tracked_resources[free_slot] =
+                (struct virtio_gpu_tracked_resource){0};
+            --tracked_resource_count;
+        }
         gpu_resource_table_unlock();
         return false;
     }
-
-    tracked_resources[free_slot] = (struct virtio_gpu_tracked_resource){
-        .allocated = true,
-        .attached = true,
-        .resource_id = id
-    };
-    ++tracked_resource_count;
-    if (tracked_resource_total_created != UINT32_MAX)
-        ++tracked_resource_total_created;
+    tracked_resources[free_slot].attached = true;
     *resource_id = id;
     gpu_resource_table_unlock();
     return true;

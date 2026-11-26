@@ -120,6 +120,8 @@ struct nexus_display_mode_backend {
                         const struct nexus_display_mode *mode);
     bool (*supports_hdr)(void *context,
                          const struct nexus_display_mode *mode);
+    bool (*set_topology)(void *context,
+                         enum nexus_display_topology topology);
 };
 
 bool nexus_display_init(const struct limine_framebuffer *framebuffer);

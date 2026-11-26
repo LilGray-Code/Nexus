@@ -17,7 +17,14 @@
 #define VIRTIO_GPU_RESOURCE_ID 1U
 #define VIRTIO_GPU_SCANOUT_ID 0U
 #define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM 2U
+#define VIRTIO_GPU_FEATURE_EDID (1U << 1)
 #define VIRTIO_GPU_CMD_GET_DISPLAY_INFO 0x0100U
+#define VIRTIO_GPU_CMD_GET_EDID 0x010AU
+#define VIRTIO_GPU_RESP_OK_EDID 0x1104U
+#define VIRTIO_GPU_EDID_MAX_BYTES 1024U
+#define VIRTIO_GPU_EDID_HEADER_BYTES 28U
+#define VIRTIO_GPU_EDID_RESPONSE_BYTES \
+    (VIRTIO_GPU_EDID_HEADER_BYTES + VIRTIO_GPU_EDID_MAX_BYTES)
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D 0x0101U
 #define VIRTIO_GPU_CMD_SET_SCANOUT 0x0103U
 #define VIRTIO_GPU_CMD_RESOURCE_FLUSH 0x0104U
@@ -42,6 +49,11 @@ struct virtio_gpu_rectangle {
     uint32_t y;
     uint32_t width;
     uint32_t height;
+} __attribute__((packed));
+
+struct virtio_gpu_get_edid {
+    struct virtio_gpu_header header;
+    uint32_t scanout_id;
 } __attribute__((packed));
 
 struct virtio_gpu_create_2d {
@@ -254,7 +266,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
         return false;
     }
 
-    if (!virtio_pci_open(pci, 0U, 0U, &transport)) {
+    if (!virtio_pci_open(pci, 0U, VIRTIO_GPU_FEATURE_EDID, &transport)) {
         serial_write("VIRTIO GPU: modern PCI capability negotiation unavailable\r\n");
         return false;
     }
@@ -382,6 +394,44 @@ bool virtio_gpu_scanout_info(
         !display_info.scanouts[scanout_id].enabled) return false;
     *info = display_info.scanouts[scanout_id];
     return true;
+}
+
+bool virtio_gpu_edid_info(
+    uint32_t scanout_id, struct nexus_edid_info *info) {
+    if (!active || info == NULL ||
+        (transport.features & VIRTIO_GPU_FEATURE_EDID) == 0U ||
+        scanout_id >= NEXUS_VIRTIO_GPU_MAX_SCANOUTS ||
+        !display_info.scanouts[scanout_id].enabled) return false;
+
+    const struct virtio_gpu_get_edid request = {
+        .header = make_header(VIRTIO_GPU_CMD_GET_EDID),
+        .scanout_id = scanout_id
+    };
+    if (!submit_command_expect(
+            &request, sizeof(request), VIRTIO_GPU_RESP_OK_EDID,
+            VIRTIO_GPU_EDID_RESPONSE_BYTES,
+            VIRTIO_GPU_EDID_HEADER_BYTES)) return false;
+
+    const uint32_t edid_size = read_le32(
+        command_memory + VIRTIO_GPU_RESPONSE_OFFSET + 24U);
+    if (edid_size < NEXUS_EDID_BLOCK_SIZE ||
+        edid_size > VIRTIO_GPU_EDID_MAX_BYTES ||
+        edid_size > UINT32_MAX - VIRTIO_GPU_EDID_HEADER_BYTES)
+        return false;
+
+    const uint32_t response_length = read_le32(
+        command_memory + VIRTIO_GPU_RESPONSE_OFFSET + 0U) ==
+        VIRTIO_GPU_RESP_OK_EDID
+        ? edid_size + VIRTIO_GPU_EDID_HEADER_BYTES : 0U;
+    if (response_length > VIRTIO_GPU_EDID_RESPONSE_BYTES)
+        return false;
+
+    uint8_t edid[VIRTIO_GPU_EDID_MAX_BYTES];
+    const volatile uint8_t *source =
+        command_memory + VIRTIO_GPU_RESPONSE_OFFSET +
+        VIRTIO_GPU_EDID_HEADER_BYTES;
+    for (uint32_t i = 0U; i < edid_size; ++i) edid[i] = source[i];
+    return nexus_edid_parse(edid, edid_size, info);
 }
 
 void virtio_gpu_stop(void) {

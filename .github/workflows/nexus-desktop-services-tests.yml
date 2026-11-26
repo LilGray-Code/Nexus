@@ -1,0 +1,36 @@
+name: Nexus desktop services regression tests
+
+on:
+  push:
+    branches:
+      - nexus-modern-desktop-environment
+    paths:
+      - "kernel/src/desktop_services.c"
+      - "kernel/src/desktop_services.h"
+      - "kernel/tests/desktop_services_test.c"
+      - ".github/workflows/nexus-desktop-services-tests.yml"
+  pull_request:
+    branches:
+      - nexus-internet-environment
+      - nexus-original-kernel-roadmap
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-services-host-tests:
+    name: Workspaces, windows, notifications, clipboard and search
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Compile fixed-capacity desktop services with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/desktop_services.c \
+            kernel/tests/desktop_services_test.c \
+            -o /tmp/nexus-desktop-services-test
+
+      - name: Run desktop services regression tests
+        run: /tmp/nexus-desktop-services-test

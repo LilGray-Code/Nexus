@@ -1,13 +1,13 @@
 # Nexus Application Ecosystem
 
-**Branch:** \`nexus-application-ecosystem\`  
+**Branch:** `nexus-application-ecosystem`  
 **Purpose:** Turn the existing shortcut catalog and single-package installer into a repository-aware, dependency-aware native application foundation.
 
 ## Delivered in this increment
 
 ### Signed repository metadata
 
-\`kernel/src/app_repository.c\` and \`app_repository.h\` define a canonical, signed Nexus application repository format. Each entry contains:
+`kernel/src/app_repository.c` and `app_repository.h` define a canonical, signed Nexus application repository format. Each entry contains:
 
 - Stable package ID and semantic version.
 - Application name, publisher, category and description.
@@ -30,7 +30,7 @@ The adapter depends on the TLS-enabled kernel build and usable network/CA initia
 
 ### Large streaming downloads
 
-\`kernel/src/download_manager.c\` adds a single-transfer NXFS streaming manager. It:
+`kernel/src/download_manager.c` adds a single-transfer NXFS streaming manager. It:
 
 - Writes 4 KiB chunks directly to the transactional NXFS writer.
 - Supports downloads up to the mounted NXFS per-file limit (currently up to 256 MiB), subject to available disk space.
@@ -41,32 +41,44 @@ The adapter depends on the TLS-enabled kernel build and usable network/CA initia
 - Discards partial data on cancellation, transfer errors, size mismatch or digest failure.
 - Publishes the final file only after the complete payload digest matches.
 
-The manager deliberately permits one active download because the current NXFS transactional writer and TCP/TLS transport are single-session resources. The transport is injected through a small source interface. The transport implementation must use authenticated HTTPS, validate the certificate chain and return the exact response body; the test source is synthetic and does not provide network access.
+The manager deliberately permits one active download because the current NXFS transactional writer and TCP/TLS transport are single-session resources. The HTTPS adapter uses the built-in CA roots and verified TLS 1.3 transport. CI uses mock TLS and synthetic payloads; no real public repository service or production package-signing key has been provisioned.
+
+### Native install, update, launch and removal orchestration
+
+`kernel/src/app_manager.c` connects the authenticated repository, the real HTTPS source and the existing signed `.NPK` installer. Its caller-owned manager:
+- Searches the authenticated repository and resolves the root app plus missing or outdated dependencies in dependency-first order.
+- Downloads each package through verified HTTPS and NXFS streaming, checks the complete package SHA-256 against the signed repository record, then verifies the package signature, ID and version before installation.
+- Stages the package outside the kernel stack in bounded contiguous physical pages, reads it in 4 KiB VFS chunks, scrubs the staging buffer and releases the pages after installation.
+- Supports pause/resume on a live connection, retry from byte zero after a network failure, cancellation, app launch, and uninstall refusal when a currently catalogued installed app depends on the target.
+- Rolls back newly installed dependencies if a later install step fails; it does not remove software that was installed before this operation.
+
+**Important limits:** this manager only installs packages the current native installer can install: a maximum 4 MiB payload plus the header, and the ELF payload must fit the current 1 MiB process-image limit. Large downloads can be staged by the general downloader, but this manager intentionally refuses to treat large blobs as runnable native apps. Package updates are individually atomic; a multi-app dependency transaction does not yet retain prior-version backups, so an earlier dependency update can remain applied if a later package fails. Removal dependency checks use the current signed repository catalogue; there is not yet a durable reverse-dependency database covering packages removed from that catalogue.
+
+The app-manager host tests use mock package/storage/memory/download services and a deterministic test-only catalog/package verifier. They validate dependency installation order, existing app updates, launch/remove routing, dependency-protected removal, pause/resume, retry and rollback of newly installed dependencies. These tests verify orchestration contracts, not execution of third-party binaries on a booted Nexus system.
 
 ### Existing native package lifecycle
 
-Nexus already has a separate signed \`.NPK\` package lifecycle in \`package.c\`: signature/hash verification, static ELF validation, install, version replacement, launch and uninstall. It is not yet connected to the new repository planner and download manager. Its package parser still caps payloads at 4 MiB; the current process loader is more restrictive (1 MiB maximum image). The download manager can stage larger files but that does not make them installable or launchable as native apps.
+Nexus's signed `.NPK` lifecycle remains the low-level install engine: it validates the signature and payload digest, checks static ELF structure, commits the executable before the signed receipt, supports version replacement, and validates the installed payload before launch/removal. The app manager now calls those APIs after repository and payload checks. The signature-verifier callback must still be backed by a real production Ed25519 implementation and pinned key policy before any public repository can be trusted.
 
 ## Explicit unsupported formats and runtimes
 
 - **Flatpak:** Not supported yet. It needs OCI/OSTree content, sandboxing, portals, namespaces, cgroups/resource controls, mount integration and a compatible Linux userspace/runtime.
 - **AppImage:** Not supported yet. It needs a compatible FUSE or extraction/runtime path and a broader Linux userspace ABI. Nexus cannot execute an AppImage as if it were a native Nexus ELF.
 - **Windows applications:** Not supported yet. There is no Wine/Proton, Windows syscall/NT runtime, PE loader for general applications, Windows graphics translation or Direct3D runtime.
-- **Linux packages:** The current \`.NPK\` format installs only Nexus static x86-64 ELF executables. It is not a Debian, RPM, Arch, APK or generic Linux package manager.
+- **Linux packages:** The current `.NPK` format installs only Nexus static x86-64 ELF executables. It is not a Debian, RPM, Arch, APK or generic Linux package manager.
 - **Dynamic/shared applications:** Not supported by the current application loader. General dynamic linking, shared libraries, runtime service dependencies and multi-process lifecycle are still missing.
 
 Do not label any of these formats installable until their actual runtimes, security boundaries and lifecycle tests exist.
 
 ## Required next integration milestones
 
-1. Add a production Ed25519 implementation and pinned key rotation policy; reject all unknown signing keys.
-2. Implement an authenticated HTTPS source adapter over \`net_https\`, including bounded HTTP headers, Content-Length validation, redirect policy, and exact body framing. Do not weaken TLS verification.
-3. Connect the signed repository parser, downloader and package verifier into a transaction: download to a staging file, verify repository digest, verify package signature and package digest, install dependencies first, commit the app receipt last, and roll back only packages newly installed by that transaction.
-4. Add a durable installed-package database with dependency references, launch metadata, safe uninstall protection and recovery after interrupted updates.
-5. Raise the native process image limit only after replacing the fixed 1 MiB loader buffer with a bounded, memory-accounted allocation model. Add streaming ELF validation and loader tests before increasing the limit.
-6. Wire repository search, categories, screenshots, versions, ratings, installed/update states, download controls and error details into the desktop Store UI.
-7. Add desktop launchers and shortcuts tied to installed package receipts; remove them atomically on uninstall.
-8. Add AppImage, Flatpak and Windows compatibility only after their required execution and isolation runtimes are present.
+1. Add a production Ed25519 verifier/keyring, pinned repository keys and a safe key-rotation policy. Until then the manager fails closed unless the caller supplies a trusted verifier.
+2. Publish and operate a signed repository endpoint with metadata, package signing, screenshot assets and a release/rollback process.
+3. Add a durable installed-app/dependency database, reverse-dependency records independent of the current catalogue, and power-loss recovery for multi-package operations.
+4. Wire the repository metadata, installed/update state, download progress, pause/resume/retry, errors, screenshots and ratings into the graphical desktop Store.
+5. Generate and remove real desktop shortcuts/launcher entries from verified package receipts.
+6. Expand the static ELF loader beyond its current 1 MiB image bound only after implementing memory-accounted process images, robust reclamation and larger-file validation.
+7. Add AppImage, Flatpak and Windows compatibility only after their actual execution and isolation runtimes exist.
 
 ## Security rules
 

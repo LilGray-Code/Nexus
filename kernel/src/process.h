@@ -7,6 +7,7 @@
 
 #define NEXUS_PROCESS_MAX 4U
 #define NEXUS_PROCESS_NAME_MAX 16U
+#define NEXUS_PROCESS_MAX_IMAGE_BYTES (1024U * 1024U)
 
 enum nexus_process_state {
     NEXUS_PROCESS_FREE = 0,

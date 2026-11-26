@@ -22,7 +22,7 @@
 #define VIRTIO_GPU_CMD_GET_EDID 0x010AU
 #define VIRTIO_GPU_RESP_OK_EDID 0x1104U
 #define VIRTIO_GPU_EDID_MAX_BYTES 1024U
-#define VIRTIO_GPU_EDID_HEADER_BYTES 28U
+#define VIRTIO_GPU_EDID_HEADER_BYTES 32U
 #define VIRTIO_GPU_EDID_RESPONSE_BYTES \
     (VIRTIO_GPU_EDID_HEADER_BYTES + VIRTIO_GPU_EDID_MAX_BYTES)
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D 0x0101U
@@ -54,6 +54,7 @@ struct virtio_gpu_rectangle {
 struct virtio_gpu_get_edid {
     struct virtio_gpu_header header;
     uint32_t scanout_id;
+    uint32_t padding;
 } __attribute__((packed));
 
 struct virtio_gpu_create_2d {
@@ -138,7 +139,8 @@ static struct virtio_gpu_header make_header(uint32_t type) {
 
 static bool submit_command_expect(
     const void *command, size_t command_length, uint32_t expected_response,
-    uint32_t response_capacity, uint32_t minimum_response_length) {
+    uint32_t response_capacity, uint32_t minimum_response_length,
+    uint32_t *actual_response_length) {
     if (!active || command == NULL || command_length == 0U ||
         command_length > VIRTIO_GPU_COMMAND_BYTES ||
         command_memory == NULL || response_capacity == 0U ||
@@ -174,13 +176,15 @@ static bool submit_command_expect(
         serial_write("\r\n");
         return false;
     }
+    if (actual_response_length != NULL)
+        *actual_response_length = response_length;
     return true;
 }
 
 static bool submit_command(const void *command, size_t command_length) {
     return submit_command_expect(
         command, command_length, VIRTIO_GPU_RESP_OK_NODATA,
-        64U, sizeof(struct virtio_gpu_header));
+        64U, sizeof(struct virtio_gpu_header), NULL);
 }
 
 static bool query_display_info(void) {
@@ -190,7 +194,7 @@ static bool query_display_info(void) {
             &request, sizeof(request),
             NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE,
             NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE_SIZE,
-            NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE_SIZE)) return false;
+            NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE_SIZE, NULL)) return false;
 
     uint8_t response[NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE_SIZE];
     const volatile uint8_t *source =
@@ -405,25 +409,22 @@ bool virtio_gpu_edid_info(
 
     const struct virtio_gpu_get_edid request = {
         .header = make_header(VIRTIO_GPU_CMD_GET_EDID),
-        .scanout_id = scanout_id
+        .scanout_id = scanout_id,
+        .padding = 0U
     };
+    uint32_t actual_response_length = 0U;
     if (!submit_command_expect(
             &request, sizeof(request), VIRTIO_GPU_RESP_OK_EDID,
             VIRTIO_GPU_EDID_RESPONSE_BYTES,
-            VIRTIO_GPU_EDID_HEADER_BYTES)) return false;
+            VIRTIO_GPU_EDID_HEADER_BYTES, &actual_response_length))
+        return false;
 
     const uint32_t edid_size = read_le32(
         command_memory + VIRTIO_GPU_RESPONSE_OFFSET + 24U);
     if (edid_size < NEXUS_EDID_BLOCK_SIZE ||
         edid_size > VIRTIO_GPU_EDID_MAX_BYTES ||
-        edid_size > UINT32_MAX - VIRTIO_GPU_EDID_HEADER_BYTES)
-        return false;
-
-    const uint32_t response_length = read_le32(
-        command_memory + VIRTIO_GPU_RESPONSE_OFFSET + 0U) ==
-        VIRTIO_GPU_RESP_OK_EDID
-        ? edid_size + VIRTIO_GPU_EDID_HEADER_BYTES : 0U;
-    if (response_length > VIRTIO_GPU_EDID_RESPONSE_BYTES)
+        edid_size > UINT32_MAX - VIRTIO_GPU_EDID_HEADER_BYTES ||
+        actual_response_length < VIRTIO_GPU_EDID_HEADER_BYTES + edid_size)
         return false;
 
     uint8_t edid[VIRTIO_GPU_EDID_MAX_BYTES];

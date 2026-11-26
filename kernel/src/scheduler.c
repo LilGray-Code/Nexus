@@ -155,11 +155,15 @@ static struct nexus_thread *next_runnable_thread(
 
     for (size_t step = 1U; step <= total_slots; ++step) {
         const size_t index = (current_index + step) % total_slots;
-        if (index == 0U) return &main_thread;
+        if (index == 0U) {
+            if (main_thread.state == NEXUS_THREAD_RUNNABLE)
+                return &main_thread;
+            continue;
+        }
         struct nexus_thread *candidate = &threads[index - 1U];
         if (candidate->state == NEXUS_THREAD_RUNNABLE) return candidate;
     }
-    return &main_thread;
+    return NULL;
 }
 
 void scheduler_start(void) {
@@ -197,7 +201,7 @@ void scheduler_yield(void) {
     }
 
     struct nexus_thread *next = next_runnable_thread(old);
-    if (next == old) {
+    if (next == NULL || next == old) {
         restore_interrupt_state(restore_if);
         return;
     }
@@ -226,9 +230,10 @@ void scheduler_timer_tick(uint64_t now) {
 }
 
 /*
- * Put the current kernel worker to sleep until a timer deadline. The main
- * boot thread is intentionally not blockable yet: it also serves as the
- * scheduler's idle thread until a dedicated per-CPU idle context exists.
+ * Put the current scheduler thread to sleep until a timer deadline.
+ * When no thread is runnable, the blocked caller idles with STI;HLT on its
+ * own stack. Timer IRQs wake expired threads; no separate idle stack is
+ * required for this single-BSP scheduler stage.
  */
 bool scheduler_sleep_ticks(uint64_t ticks) {
     if (ticks == 0U) return true;
@@ -239,7 +244,7 @@ bool scheduler_sleep_ticks(uint64_t ticks) {
 
     struct nexus_thread *old = current_thread;
     const uint64_t now = timer_ticks();
-    if (!scheduler_started || old == NULL || old == &main_thread ||
+    if (!scheduler_started || old == NULL ||
         old->state != NEXUS_THREAD_RUNNABLE ||
         UINT64_MAX - now < ticks) {
         restore_interrupt_state(restore_if);
@@ -248,9 +253,18 @@ bool scheduler_sleep_ticks(uint64_t ticks) {
 
     old->wake_tick = now + ticks;
     old->state = NEXUS_THREAD_SLEEPING;
-    scheduler_yield();
+    while (old->state == NEXUS_THREAD_SLEEPING) {
+        scheduler_yield();
+        if (old->state == NEXUS_THREAD_SLEEPING) {
+            /*
+             * STI immediately followed by HLT is atomic with respect to a
+             * pending maskable IRQ, so a timer cannot be lost between the
+             * deadline check and entering the idle wait.
+             */
+            __asm__ volatile ("sti; hlt; cli" : : : "memory");
+        }
+    }
 
-    /* scheduler_yield resumes here only after this worker is scheduled again. */
     restore_interrupt_state(restore_if);
     return old->state == NEXUS_THREAD_RUNNABLE;
 }
@@ -296,10 +310,17 @@ static void scheduler_thread_exit(void) {
     __asm__ volatile ("cli" : : : "memory");
     old->state = NEXUS_THREAD_FINISHED;
 
-    struct nexus_thread *next = next_runnable_thread(old);
-    current_thread = next;
-    arch_context_switch(&old->saved_stack, next->saved_stack);
-
-    /* Finished thread stacks are never scheduled again. */
-    for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
+    /*
+     * A final worker can exit while every other worker and the BSP main
+     * context is sleeping. Keep the finished stack as a temporary idle
+     * context until a timer makes some other context runnable.
+     */
+    for (;;) {
+        struct nexus_thread *next = next_runnable_thread(old);
+        if (next != NULL) {
+            current_thread = next;
+            arch_context_switch(&old->saved_stack, next->saved_stack);
+        }
+        __asm__ volatile ("sti; hlt; cli" : : : "memory");
+    }
 }

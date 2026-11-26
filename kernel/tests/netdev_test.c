@@ -156,7 +156,8 @@ int main(void) {
     ethernet.link = false;
     assert(!netdev_link_up());
     assert(netdev_active_index() == NEXUS_NETDEV_MAX_DEVICES);
-    assert(!netdev_get_info(&info));
+    assert(netdev_get_info(&info));
+    assert(!info.link_up && !info.active);
     assert(!netdev_send_frame(frame, NEXUS_NETDEV_MIN_FRAME));
     length = 99U;
     assert(!netdev_receive_frame(frame, sizeof(frame), &length));

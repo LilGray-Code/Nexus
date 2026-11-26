@@ -16,6 +16,8 @@ on:
       - "kernel/src/smp.h"
       - "kernel/src/gpu.c"
       - "kernel/src/gpu.h"
+      - "kernel/src/virtio_gpu.c"
+      - "kernel/src/virtio_gpu.h"
       - "kernel/tests/cpu_test.c"
       - "kernel/tests/gpu_test.c"
       - "kernel/src/memory.c"

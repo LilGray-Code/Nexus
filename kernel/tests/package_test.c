@@ -340,7 +340,7 @@ int main(void) {
     /* Same version with different bytes is never silently overwritten. */
     reset_mock();
     package_length = build_package(package, sizeof(package), "1.0.0",
-                                   first_payload);
+                                   first_payload, 0U, true);
     assert(nexus_package_install(package, package_length,
                                  mock_ed25519_verify, NULL, NULL));
     const uint8_t conflicting_payload[4] = {'B', 'A', 'D', '!'};

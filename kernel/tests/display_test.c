@@ -210,7 +210,7 @@ int main(void) {
     assert(nexus_display_monitor_at(1U) != NULL);
     assert(nexus_display_monitor_at(1U)->edid_valid);
     assert(nexus_display_monitor_at(1U)->dpi_x != 0U);
-    assert(nexus_display_monitor_at(1U)->current_refresh_hz == 60U);
+    assert(nexus_display_monitor_at(1U)->matching_edid_refresh_hz == 60U);
     assert(!nexus_display_set_primary_monitor(1U));
     assert(!nexus_display_set_primary_monitor(99U));
     assert(!nexus_display_topology_available());
@@ -315,6 +315,6 @@ int main(void) {
     info = nexus_display_get_info();
     assert(info->mode_count == 1U);
     assert(info->modes[0].current_boot_mode);
-    assert(info->current_refresh_hz == 0U);
+    assert(info->matching_edid_refresh_hz == 0U);
     return 0;
 }

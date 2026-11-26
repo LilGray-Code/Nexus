@@ -65,6 +65,23 @@ static struct nexus_process *find_available_slot(void) {
     return NULL;
 }
 
+/*
+ * PID zero is reserved. PIDs are monotonic until wrap, but wrap must never
+ * alias a still-live process record. At most NEXUS_PROCESS_MAX identifiers
+ * can be occupied, so checking MAX+1 candidates is sufficient.
+ */
+static bool allocate_pid(uint32_t *pid) {
+    if (pid == NULL) return false;
+    for (size_t attempt = 0U; attempt <= NEXUS_PROCESS_MAX; ++attempt) {
+        uint32_t candidate = next_pid++;
+        if (next_pid == 0U) next_pid = 1U;
+        if (candidate == 0U || find_process(candidate) != NULL) continue;
+        *pid = candidate;
+        return true;
+    }
+    return false;
+}
+
 static bool has_available_slot(void) {
     for (size_t i = 0; i < NEXUS_PROCESS_MAX; ++i) {
         if (processes[i].state == NEXUS_PROCESS_FREE ||
@@ -119,12 +136,13 @@ bool process_spawn_elf(const char *name, const void *image, size_t image_size,
         return false;
     }
 
-    process->pid = next_pid++;
-    if (next_pid == 0U) next_pid = 1U;
-    if (process->pid == 0U) {
-        process->pid = next_pid++;
-        if (next_pid == 0U) next_pid = 1U;
+    uint32_t allocated_pid = 0U;
+    if (!allocate_pid(&allocated_pid)) {
+        (void)paging_destroy_user_address_space(address_space);
+        clear_slot(process);
+        return false;
     }
+    process->pid = allocated_pid;
 
     process->state = NEXUS_PROCESS_READY;
     process->address_space = address_space;

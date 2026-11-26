@@ -39,6 +39,8 @@
 #define VIRTIO_GPU_FLAG_FENCE (1U << 0)
 #define VIRTIO_GPU_CAPSET_VIRGL 1U
 #define VIRTIO_GPU_CAPSET_VIRGL2 2U
+#define VIRTIO_GPU_CAPSET_GFXSTREAM 3U
+#define VIRTIO_GPU_CAPSET_VENUS 4U
 #define VIRTIO_GPU_CONTEXT_ID 1U
 #define VIRTIO_GPU_MAX_3D_RESOURCES 64U
 #define VIRTIO_GPU_MAX_3D_DIMENSION 16384U
@@ -218,6 +220,12 @@ static bool virgl_smoke_test_in_progress;
 static uint32_t virgl_capset_id;
 static uint32_t virgl_capset_max_version;
 static uint32_t virgl_capset_max_size;
+static bool gfxstream_capset_available;
+static uint32_t gfxstream_capset_max_version;
+static uint32_t gfxstream_capset_max_size;
+static bool venus_capset_available;
+static uint32_t venus_capset_max_version;
+static uint32_t venus_capset_max_size;
 static uint64_t virgl_next_fence;
 static uint64_t virgl_last_submitted_fence;
 static uint64_t virgl_last_completed_fence;
@@ -428,9 +436,21 @@ static bool gpu_virgl_query_capset(void) {
         const bool context_init_supported =
             (transport.features & ((uint64_t)1U <<
                                    (32U + VIRTIO_GPU_F_CONTEXT_INIT))) != 0U;
-        if ((id != VIRTIO_GPU_CAPSET_VIRGL &&
-             id != VIRTIO_GPU_CAPSET_VIRGL2) || version == 0U || size == 0U)
+        if (version == 0U || size == 0U) continue;
+        if (id == VIRTIO_GPU_CAPSET_GFXSTREAM) {
+            gfxstream_capset_available = true;
+            gfxstream_capset_max_version = version;
+            gfxstream_capset_max_size = size;
             continue;
+        }
+        if (id == VIRTIO_GPU_CAPSET_VENUS) {
+            venus_capset_available = true;
+            venus_capset_max_version = version;
+            venus_capset_max_size = size;
+            continue;
+        }
+        if (id != VIRTIO_GPU_CAPSET_VIRGL &&
+            id != VIRTIO_GPU_CAPSET_VIRGL2) continue;
         /* Without CONTEXT_INIT, the host chooses its default context type.
          * Do not advertise an explicitly discovered VIRGL2 capset as the
          * selected context unless the guest can request that capset.
@@ -499,6 +519,12 @@ static bool gpu_virgl_start(void) {
     virgl_capset_id = 0U;
     virgl_capset_max_version = 0U;
     virgl_capset_max_size = 0U;
+    gfxstream_capset_available = false;
+    gfxstream_capset_max_version = 0U;
+    gfxstream_capset_max_size = 0U;
+    venus_capset_available = false;
+    venus_capset_max_version = 0U;
+    venus_capset_max_size = 0U;
     virgl_next_fence = 1U;
     virgl_last_submitted_fence = 0U;
     virgl_last_completed_fence = 0U;
@@ -1090,6 +1116,12 @@ bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info) {
         .capset_id = virgl_capset_id,
         .capset_max_version = virgl_capset_max_version,
         .capset_max_size = virgl_capset_max_size,
+        .gfxstream_capset_available = gfxstream_capset_available,
+        .gfxstream_capset_max_version = gfxstream_capset_max_version,
+        .gfxstream_capset_max_size = gfxstream_capset_max_size,
+        .venus_capset_available = venus_capset_available,
+        .venus_capset_max_version = venus_capset_max_version,
+        .venus_capset_max_size = venus_capset_max_size,
         .last_submitted_fence = virgl_last_submitted_fence,
         .last_completed_fence = virgl_last_completed_fence,
         .failed_submissions = virgl_failed_submissions,

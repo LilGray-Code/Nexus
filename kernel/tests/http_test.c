@@ -140,6 +140,50 @@ static void test_content_disposition_metadata(void) {
 }
 
 
+static void test_incremental_chunked_decoder(void) {
+    static const uint8_t wire[] =
+        "4;name=value\\r\\nWiki\\r\\n"
+        "5\\r\\npedia\\r\\n"
+        "0\\r\\nX-Trace: ok\\r\\n\\r\\n";
+    struct nexus_http_chunked_decoder decoder;
+    nexus_http_chunked_decoder_init(&decoder, 64U);
+    uint8_t output[3] = {0U};
+    char decoded[16] = {0};
+    size_t decoded_length = 0U;
+    size_t offset = 0U;
+    bool complete = false;
+    while (!complete) {
+        const size_t fragment = sizeof(wire) - 1U - offset > 2U
+            ? 2U : sizeof(wire) - 1U - offset;
+        size_t used = 0U, produced = 0U;
+        assert(nexus_http_chunked_decoder_feed(
+            &decoder, wire + offset, fragment, &used,
+            output, sizeof(output), &produced, &complete));
+        offset += used;
+        assert(decoded_length + produced <= sizeof(decoded));
+        memcpy(decoded + decoded_length, output, produced);
+        decoded_length += produced;
+        assert(used != 0U || produced != 0U || complete);
+    }
+    assert(offset == sizeof(wire) - 1U);
+    assert(decoded_length == 9U);
+    assert(memcmp(decoded, "Wikipedia", 9U) == 0);
+    assert(decoder.decoded_bytes == 9U);
+
+    static const uint8_t oversized[] = "9\\r\\n123456789\\r\\n0\\r\\n\\r\\n";
+    nexus_http_chunked_decoder_init(&decoder, 8U);
+    size_t used = 0U, produced = 0U;
+    assert(!nexus_http_chunked_decoder_feed(
+        &decoder, oversized, sizeof(oversized) - 1U, &used,
+        output, sizeof(output), &produced, &complete));
+
+    static const uint8_t malformed[] = "3\\r\\nabcXX0\\r\\n\\r\\n";
+    nexus_http_chunked_decoder_init(&decoder, 64U);
+    assert(!nexus_http_chunked_decoder_feed(
+        &decoder, malformed, sizeof(malformed) - 1U, &used,
+        output, sizeof(output), &produced, &complete));
+}
+
 static void test_header_only_parse_for_streaming(void) {
     static const uint8_t header[] =
         "HTTP/1.1 200 OK\r\n"
@@ -177,5 +221,6 @@ int main(void) {
     test_redirect_and_content_type_metadata();
     test_content_disposition_metadata();
     test_header_only_parse_for_streaming();
+    test_incremental_chunked_decoder();
     return 0;
 }

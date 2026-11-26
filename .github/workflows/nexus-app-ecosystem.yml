@@ -71,7 +71,7 @@ jobs:
       - name: Compile native app install transaction tests
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/app_manager.c kernel/src/app_repository.c \
+            -Ikernel/src -Ikernel/include kernel/src/app_manager.c kernel/src/app_repository.c \
             kernel/src/sha256.c kernel/tests/app_manager_test.c \
             -o /tmp/nexus-app-manager-test
 

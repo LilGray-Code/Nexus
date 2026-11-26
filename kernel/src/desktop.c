@@ -2342,13 +2342,27 @@ static void draw_shell(void) {
                     const struct nexus_display_monitor *monitor =
                         &display->monitors[i];
                     if (!monitor->present) continue;
-                    const char *name = monitor->monitor_name_valid
-                        ? monitor->monitor_name
-                        : (monitor->edid_valid
-                            ? "EDID NAME NOT PROVIDED" : "EDID UNAVAILABLE");
+                    size_t used = 0U;
+                    line[0] = '\0';
+                    hardware_append_text(line, sizeof(line), &used,
+                        monitor->monitor_name_valid ? monitor->monitor_name :
+                        (monitor->edid_valid
+                            ? "EDID NAME NOT PROVIDED" : "EDID UNAVAILABLE"));
+                    if (monitor->primary)
+                        hardware_append_text(line, sizeof(line), &used,
+                                             " [PRIMARY]");
+                    if (monitor->dpi_x != 0U && monitor->dpi_y != 0U) {
+                        hardware_append_text(line, sizeof(line), &used, " ");
+                        format_u64(monitor->dpi_x, number);
+                        hardware_append_text(line, sizeof(line), &used, number);
+                        hardware_append_text(line, sizeof(line), &used, "X");
+                        format_u64(monitor->dpi_y, number);
+                        hardware_append_text(line, sizeof(line), &used, number);
+                        hardware_append_text(line, sizeof(line), &used, " DPI");
+                    }
                     graphics_draw_text(text_x + 300U,
                         content_y + 96U + (uint64_t)monitor_lines * 16U,
-                        name, 1U, 171U, 191U, 211U);
+                        line, 1U, 171U, 191U, 211U);
                     ++monitor_lines;
                 }
 

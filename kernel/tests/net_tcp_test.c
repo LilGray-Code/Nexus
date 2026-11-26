@@ -390,6 +390,23 @@ static void test_dhcp_lease_renew_rebind_and_expiry(void) {
     assert(equal_bytes(ciaddr, assigned_ip, 4U));
     assert(flags == 0U);
 
+    /* A different server cannot replace the active lease during T1 renewal. */
+    reply_length = dhcp_test_make_reply(
+        reply, 5U, server_new_ip, server_new_ip, 900U, 450U, 800U, true);
+    const uint8_t gateway_before[4] = {
+        gateway_ipv4[0], gateway_ipv4[1], gateway_ipv4[2], gateway_ipv4[3]
+    };
+    const uint8_t dns_before[4] = {
+        dns_ipv4[0], dns_ipv4[1], dns_ipv4[2], dns_ipv4[3]
+    };
+    receive_dhcp(reply, reply_length, server_new_ip);
+    assert(dhcp_state == NET_DHCP_RENEWING);
+    assert(equal_bytes(network.ipv4, assigned_ip, 4U));
+    assert(equal_bytes(dhcp_server_ipv4, server_ip, 4U));
+    assert(equal_bytes(gateway_ipv4, gateway_before, 4U));
+    assert(equal_bytes(dns_ipv4, dns_before, 4U));
+    assert(dhcp_lease_seconds == 120U);
+
     /* T2 switches to broadcast rebinding while retaining the leased address. */
     fake_ticks = dhcp_rebind_tick - 1U;
     const unsigned before_rebind = dhcp_request_count;

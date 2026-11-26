@@ -177,6 +177,13 @@ static void test_reject_bad_status_length_framing_and_tls(void) {
                          &context));
 
     reset();
+    fake_content_length = 11U;
+    make_response();
+    assert(nexus_download_https_context_init(&context, 10U));
+    assert(!source->open("https://repo.example/demo.nup", &session,
+                         &context));
+
+    reset();
     fake_chunked = true;
     make_response();
     assert(nexus_download_https_context_init(&context, 10U));

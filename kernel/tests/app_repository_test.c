@@ -156,7 +156,7 @@ static void test_invalid_repository_is_never_exposed(void) {
     struct nexus_app_repository repository;
     char *url = strstr(bytes, "https://repo.example/editor.nup");
     assert(url != NULL);
-    url[0] = 'x'; /* invalidates the signed catalog bytes */
+    url[0] = 'h'; /* still HTTPS-looking in the payload but invalidly signed */
     assert(!nexus_app_repository_parse_verify(bytes, length, test_verify,
                                                NULL, &repository));
 

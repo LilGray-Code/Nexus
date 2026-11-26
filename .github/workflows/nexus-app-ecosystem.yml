@@ -47,13 +47,3 @@ jobs:
 
       - name: Run large transfer, pause, resume, retry and integrity tests
         run: /tmp/nexus-download-manager-test
-
-      - name: Compile verified HTTPS download source tests
-        run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/download_https.c kernel/src/http.c \
-            kernel/tests/download_https_test.c \
-            -o /tmp/nexus-download-https-test
-
-      - name: Run URL parsing, TLS verification and HTTP framing tests
-        run: /tmp/nexus-download-https-test

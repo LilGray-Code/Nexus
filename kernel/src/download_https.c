@@ -129,10 +129,13 @@ static bool read_headers(struct nexus_download_https_context *context,
             if (nexus_http_decode_headers(context->pending, used,
                                           &header_length, response)) {
                 if (header_length > used) return false;
-                context->pending_offset = header_length;
                 context->pending_length = used - header_length;
                 if (context->pending_length > context->expected_size)
                     return false;
+                /* Compact any body bytes that arrived with the HTTP headers. */
+                for (size_t i = 0U; i < context->pending_length; ++i)
+                    context->pending[i] = context->pending[header_length + i];
+                context->pending_offset = 0U;
                 return true;
             }
             /* Fail early if the header terminator has arrived but is invalid. */

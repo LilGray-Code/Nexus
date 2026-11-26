@@ -135,6 +135,25 @@ static volatile uint32_t scheduler_preempt_a_started;
 static volatile uint32_t scheduler_preempt_b_started;
 static volatile uint32_t scheduler_preempt_a_observed_b;
 static volatile uint32_t scheduler_preempt_b_observed_a;
+static volatile uint32_t scheduler_sleep_worker_started;
+static volatile uint32_t scheduler_sleep_observer_ran;
+static volatile uint32_t scheduler_sleep_worker_result;
+static volatile uint64_t scheduler_sleep_elapsed;
+
+static void scheduler_sleep_worker(void *argument) {
+    (void)argument;
+    const uint64_t start = timer_ticks();
+    scheduler_sleep_worker_started = 1U;
+    scheduler_sleep_worker_result =
+        scheduler_sleep_ticks(3U) ? 1U : 2U;
+    scheduler_sleep_elapsed = timer_ticks() - start;
+}
+
+static void scheduler_sleep_observer(void *argument) {
+    (void)argument;
+    scheduler_sleep_observer_ran =
+        scheduler_sleep_worker_started != 0U ? 1U : 2U;
+}
 
 static void scheduler_preempt_worker_a(void *argument) {
     (void)argument;
@@ -636,6 +655,31 @@ void kmain(void) {
         halt_forever();
     }
     serial_write("K2: cooperative scheduling and thread-slot recycling passed\r\n");
+
+    /*
+     * Timed sleeps should yield the CPU, allow another worker to run, and
+     * resume only after the PIT deadline has elapsed. The BSP main thread is
+     * retained as the non-blockable idle context at this stage.
+     */
+    scheduler_sleep_worker_started = 0U;
+    scheduler_sleep_observer_ran = 0U;
+    scheduler_sleep_worker_result = 0U;
+    scheduler_sleep_elapsed = 0U;
+    if (scheduler_sleep_ticks(1U) ||
+        !scheduler_create_thread(scheduler_sleep_worker, NULL) ||
+        !scheduler_create_thread(scheduler_sleep_observer, NULL)) {
+        serial_write("ERROR: scheduler timed-sleep setup failed\r\n");
+        halt_forever();
+    }
+    scheduler_wait();
+    if (scheduler_sleep_worker_started == 0U ||
+        scheduler_sleep_observer_ran != 1U ||
+        scheduler_sleep_worker_result != 1U ||
+        scheduler_sleep_elapsed < 3U) {
+        serial_write("ERROR: timer-driven scheduler sleep/wakeup test failed\r\n");
+        halt_forever();
+    }
+    serial_write("K2: timed worker sleep, wakeup and CPU yielding passed\r\n");
 
     /*
      * Verify timer-driven switching between CPU-bound kernel threads without

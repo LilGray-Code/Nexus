@@ -2779,6 +2779,29 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         ? "DESKTOP: VirtIO GPU 2D backend initialized\\r\\n"
         : "DESKTOP: using firmware framebuffer backend\\r\\n");
     if (desktop_virtio_gpu_active) {
+        struct nexus_edid_info monitor_edid;
+        if (virtio_gpu_edid_info(0U, &monitor_edid)) {
+            serial_write("DESKTOP: monitor EDID detailed timings=");
+            serial_write_hex(monitor_edid.mode_count);
+            if (monitor_edid.preferred_mode_index >= 0 &&
+                (uint8_t)monitor_edid.preferred_mode_index <
+                    monitor_edid.mode_count) {
+                const struct nexus_display_mode *preferred =
+                    &monitor_edid.modes[(uint8_t)monitor_edid.preferred_mode_index];
+                serial_write(" preferred=");
+                serial_write_hex(preferred->width);
+                serial_write("x");
+                serial_write_hex(preferred->height);
+                serial_write("@");
+                serial_write_hex(preferred->refresh_millihz);
+                serial_write("mHz");
+            }
+            serial_write("\\r\\n");
+        } else {
+            serial_write("DESKTOP: monitor EDID unavailable; keeping boot display mode\\r\\n");
+        }
+    }
+    if (desktop_virtio_gpu_active) {
         surface = desktop_render_surface;
         gpu_set_virtio_display_active(true);
         gpu_set_virtio_display_outputs(virtio_gpu_scanout_count());

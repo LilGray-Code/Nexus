@@ -112,8 +112,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   upper-left mirror rectangle, and it rejects an extended-layout request when
   the saved host rectangles overlap or exceed the allocated framebuffer.
   Layout changes are applied output-by-output with rollback; if rollback
-  itself fails, the VirtIO display path is disabled and the desktop attempts
-  to recover onto the firmware framebuffer. Primary-monitor selection updates
+  itself fails, the VirtIO display path is disabled and the desktop recovers
+  onto the original Limine firmware framebuffer. Recovery also restores the
+  display model's original firmware monitor, active dimensions and EDID, and
+  the Display page identifies that firmware fallback state. Primary-monitor selection updates
   Nexus's logical primary/selected scanout, but independent per-monitor taskbar
   placement, separate framebuffers, and hotplug event recovery are not yet
   implemented. Other display backends expose topology controls only when they

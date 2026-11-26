@@ -6500,7 +6500,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     }
                 }
             } else if (settings_page == SETTINGS_DISPLAY) {
-                if (py >= content_y + 292U && py < content_y + 322U &&
+                if (py >= content_y + 227U && py < content_y + 254U &&
                     px >= sx) {
                     static const uint8_t scales[5] = {
                         80U, 90U, 100U, 110U, 120U
@@ -6509,64 +6509,54 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     if (col < 5U && (px - sx) % 68U < 62U &&
                         desktop_settings.ui_scale_percent != scales[col]) {
                         desktop_settings.ui_scale_percent = scales[col];
-                        changed = true;
-                    }
-                } else if (py >= content_y + 349U &&
-                           py < content_y + 379U && px >= sx) {
-                    const uint64_t col = (px - sx) / 104U;
-                    if (col < 3U && (px - sx) % 104U < 96U) {
-                        const uint8_t cursor = (uint8_t)(col + 1U);
-                        if (desktop_settings.cursor_size != cursor) {
-                            desktop_settings.cursor_size = cursor;
-                            changed = true;
-                        }
-                    }
-                } else if (py >= content_y + 450U &&
-                           py < content_y + 478U && px >= sx) {
-                    static const uint8_t display_scales[5] = {
-                        80U, 90U, 100U, 110U, 120U
-                    };
-                    const uint64_t col = (px - sx) / 68U;
-                    if (col < 5U && (px - sx) % 68U < 62U &&
-                        nexus_display_set_scale_percent(display_scales[col])) {
+                        (void)nexus_display_set_scale_percent(scales[col]);
                         screen_width = graphics_width();
                         screen_height = graphics_height();
-                        if ((uint64_t)pointer_x >= screen_width)
+                        if (screen_width != 0U &&
+                            (uint64_t)pointer_x >= screen_width)
                             pointer_x = (int64_t)(screen_width - 1U);
-                        if ((uint64_t)pointer_y >= screen_height)
+                        if (screen_height != 0U &&
+                            (uint64_t)pointer_y >= screen_height)
                             pointer_y = (int64_t)(screen_height - 1U);
+                        changed = true;
                     }
-                } else if (py >= content_y + 500U &&
-                           py < content_y + 528U && px >= sx) {
+                } else if (py >= content_y + 278U &&
+                           py < content_y + 305U && px >= sx) {
                     const uint64_t col = (px - sx) / 72U;
                     if (col < 4U && (px - sx) % 72U < 66U &&
                         nexus_display_set_rotation(
                             (enum nexus_display_rotation)col)) {
                         screen_width = graphics_width();
                         screen_height = graphics_height();
-                        if ((uint64_t)pointer_x >= screen_width)
+                        if (screen_width != 0U &&
+                            (uint64_t)pointer_x >= screen_width)
                             pointer_x = (int64_t)(screen_width - 1U);
-                        if ((uint64_t)pointer_y >= screen_height)
+                        if (screen_height != 0U &&
+                            (uint64_t)pointer_y >= screen_height)
                             pointer_y = (int64_t)(screen_height - 1U);
                     }
-                } else if (py >= content_y + 550U &&
-                           py < content_y + 578U && px >= sx) {
-                    static const uint8_t brightness_levels[3] = {
-                        50U, 75U, 100U
-                    };
-                    const uint64_t col = (px - sx) / 82U;
-                    if (col < 3U && (px - sx) % 82U < 76U)
-                        (void)nexus_display_set_brightness_percent(
-                            brightness_levels[col]);
-                } else if (py >= content_y + 600U &&
-                           py < content_y + 628U && px >= sx) {
-                    static const uint16_t color_temperatures[3] = {
-                        6500U, 4500U, 3000U
-                    };
-                    const uint64_t col = (px - sx) / 82U;
-                    if (col < 3U && (px - sx) % 82U < 76U)
-                        (void)nexus_display_set_color_temperature(
-                            color_temperatures[col]);
+                } else if (py >= content_y + 329U &&
+                           py < content_y + 356U && px >= sx) {
+                    const uint64_t relative_x = px - sx;
+                    if (relative_x < 3U * 82U) {
+                        static const uint8_t brightness_levels[3] = {
+                            50U, 75U, 100U
+                        };
+                        const uint64_t col = relative_x / 82U;
+                        if (col < 3U && relative_x % 82U < 76U)
+                            (void)nexus_display_set_brightness_percent(
+                                brightness_levels[col]);
+                    } else if (relative_x >= 330U &&
+                               relative_x < 330U + 3U * 82U) {
+                        static const uint16_t color_temperatures[3] = {
+                            6500U, 4500U, 3000U
+                        };
+                        const uint64_t col = (relative_x - 330U) / 82U;
+                        if (col < 3U &&
+                            (relative_x - 330U) % 82U < 76U)
+                            (void)nexus_display_set_color_temperature(
+                                color_temperatures[col]);
+                    }
                 }
             } else if (settings_page == SETTINGS_INPUT) {
                 if (py >= content_y + 83U && py < content_y + 113U &&

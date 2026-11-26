@@ -79,9 +79,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   launcher supports typed app search, Up/Down selection, and Enter to launch.
   The shell includes a twelve-category Settings application with a five-tab
   viewport and previous/next navigation: Personalization (dark/light theme,
-  eight accent palettes, four wallpaper presets), Display (active framebuffer,
-  EDID monitor name and detailed timings, firmware mode inventory, 80–120%
-  text sizing, pointer size, and truthful HDR/modeset capability status), Input
+  eight accent palettes, four wallpaper presets), Display (active logical
+  resolution, reported refresh, EDID and firmware mode inventory, up to 16
+  VirtIO scanout monitor records, EDID names/DPI, 80–120% logical display
+  scaling, software rotation, software brightness/night-light, and truthful
+  HDR/modeset status), Input
   (mouse speed, scroll speed, handedness), Accessibility (high contrast,
   larger text and pointer), System (AC'97 master volume when supported, network
   status, memory and uptime), Devices (detected hardware and driver state),
@@ -89,12 +91,32 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   Storage (block-device inventory), Power (platform power capability status),
   Security (runtime trust and protection status), Applications (native app and
   catalog status), and About (CPU, framebuffer, memory, uptime and renderer).
-  Display discovery validates bootloader-provided EDID checksums, reads monitor
-  names and detailed timings, derives advertised refresh rates, inventories
-  firmware-listed modes, and recognizes CTA HDR static-metadata advertisements.
-  This is capability discovery only: no general GPU mode-setting driver or HDR
-  output/color pipeline is shipped. Resolution and refresh-rate changes remain
-  disabled until a driver registers safe test/apply/restore callbacks.
+  Display discovery requests Limine framebuffer protocol revision 2, validates
+  the boot framebuffer EDID checksum, and records the firmware's upright
+  rotation metadata and video-mode list. EDID mode enumeration includes
+  established timings, standard timings, detailed timings, and CTA extension
+  detailed timings; rates are derived from pixel clocks and totals when
+  available. EDID physical size is used to estimate monitor DPI. When a VirtIO
+  GPU advertises the EDID feature, Nexus also retrieves and validates EDID per
+  scanout, retaining monitor names, DPI estimates, HDR metadata, position,
+  dimensions, and connection/enabled state for up to 16 virtual outputs.
+  The software framebuffer renderer supports 0/90/180/270-degree rotation,
+  logical 50–200% display scaling, brightness reduction, and color-temperature
+  filtering. These are software transforms: brightness does not control a
+  panel's backlight, night light is not a hardware gamma LUT, and these effects
+  do not imply HDR output. The currently active desktop still renders into one
+  framebuffer/scanout; it does not provide independent monitor framebuffers,
+  hotplug recovery, extended-desktop composition, or mirroring. Primary-output
+  and topology changes require a real registered display backend and are
+  rejected when that backend is absent.
+  Mode changes use a test, set, verify, and restore contract. A failed set or
+  post-set verification triggers a restore of the last known-good mode and
+  verification of that restoration; failed recovery disables further mode
+  changes and reports the failure stage. This safety path is covered by fake
+  backend regression tests, but no production GPU modeset backend is shipped,
+  so resolution/refresh switching remains unavailable. EDID HDR static
+  metadata is discovery only; there is no HDR desktop color pipeline or HDR
+  scanout implementation.
   Theme, wallpaper, text sizing, mouse controls, accessibility, and volume
   preferences use a versioned, checksum-validated `NEXUS.CFG` record in the
   root of the NXFS Data volume. Settings or Files performs the existing explicit

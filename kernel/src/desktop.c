@@ -6676,9 +6676,13 @@ static void desktop_network_clear_passphrase(void) {
 static bool desktop_network_connect_selected(void) {
     struct nexus_wifi_network selected;
     if (!wifi_scan_result_at(network_selected_wifi_index, &selected)) {
-        network_ui_status[0] = '\0';
-        hardware_append_text(network_ui_status, sizeof(network_ui_status),
-                             NULL, "Select a visible Wi-Fi network first.");
+        const char *message = "Select a visible Wi-Fi network first.";
+        size_t i = 0U;
+        while (i < sizeof(network_ui_status) - 1U && message[i] != '\0') {
+            network_ui_status[i] = message[i];
+            ++i;
+        }
+        network_ui_status[i] = '\0';
         return false;
     }
     if (!wifi_security_supported(selected.security)) {

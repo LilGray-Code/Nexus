@@ -16,13 +16,19 @@
 #define XHCI_RING_USABLE        255U
 #define XHCI_MAX_MMIO_PAGES     12U
 #define XHCI_MAX_PORTS          32U
-#define XHCI_MAX_KEYBOARDS       4U
-#define XHCI_MAX_MICE            4U
-#define XHCI_MAX_GAMEPADS        4U
+#define XHCI_MAX_KEYBOARDS      32U
+#define XHCI_MAX_MICE           32U
+#define XHCI_MAX_GAMEPADS      32U
 #define XHCI_MAX_SCRATCHPADS    512U
 #define XHCI_POLL_LIMIT         5000000U
 #define XHCI_COMMAND_TIMEOUT    5000000U
 #define XHCI_TRANSFER_TIMEOUT   5000000U
+_Static_assert(XHCI_MAX_KEYBOARDS == XHCI_MAX_PORTS,
+               "keyboard slots must cover every supported xHCI root port");
+_Static_assert(XHCI_MAX_MICE == XHCI_MAX_PORTS,
+               "mouse slots must cover every supported xHCI root port");
+_Static_assert(XHCI_MAX_GAMEPADS == XHCI_MAX_PORTS,
+               "gamepad slots must cover every supported xHCI root port");
 
 #define XHCI_TRB_TYPE(v)        ((uint32_t)(v) << 10)
 #define XHCI_TRB_CYCLE          (1U << 0)

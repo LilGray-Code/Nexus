@@ -28,6 +28,9 @@ static int64_t test_syscall(uint64_t number, uint64_t arg1,
     switch (number) {
         case NEXUS_SYS_ABI_VERSION:
             return (int64_t)NEXUS_SYSCALL_ABI_VERSION;
+        case NEXUS_SYS_APP_PERMISSIONS:
+            return (int64_t)(NEXUS_APP_PERMISSION_FILE_READ |
+                             NEXUS_APP_PERMISSION_DISPLAY);
         case NEXUS_SYS_CPU_INFO: {
             struct nexus_cpu_capabilities *info =
                 (struct nexus_cpu_capabilities *)(uintptr_t)arg1;
@@ -115,6 +118,11 @@ static int64_t test_syscall(uint64_t number, uint64_t arg1,
 int64_t nexus_test_syscall3(uint64_t number, uint64_t arg1,
                             uint64_t arg2, uint64_t arg3) {
     return test_syscall(number, arg1, arg2, arg3);
+}
+
+static void test_runtime_permissions_query(void) {
+    assert(nexus_get_permissions() ==
+           (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
 }
 
 static void test_runtime_cpu_query_and_bulk_memory(void) {
@@ -236,6 +244,7 @@ static void test_partial_console_writes_and_errors(void) {
 
 int main(void) {
     assert(nexus_abi_version() == NEXUS_SYSCALL_ABI_VERSION);
+    test_runtime_permissions_query();
     test_runtime_cpu_query_and_bulk_memory();
     test_string_and_memory_helpers();
     test_bounded_file_read_and_overflow();

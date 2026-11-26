@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "nexus/app.h"
+
 #define NEXUS_PACKAGE_ABI_VERSION 1U
 #define NEXUS_PACKAGE_MAX_PAYLOAD (4U * 1024U * 1024U)
 #define NEXUS_PACKAGE_HEADER_MAX 512U
@@ -29,6 +31,7 @@ struct nexus_package_manifest {
     char key_id[NEXUS_PACKAGE_KEY_ID_MAX + 1U];
     uint32_t abi_version;
     uint32_t payload_size;
+    uint32_t permissions;
     size_t signed_message_size;
     size_t header_size;
     size_t payload_offset;
@@ -52,6 +55,8 @@ struct nexus_package_install_result {
     char id[NEXUS_PACKAGE_ID_MAX + 1U];
     char version[NEXUS_PACKAGE_VERSION_MAX + 1U];
     char executable_path[32];
+    uint32_t requested_permissions;
+    uint32_t granted_permissions;
 };
 
 /* Parse a complete package. This does not authenticate it. */
@@ -63,7 +68,10 @@ bool nexus_package_verify(const void *package_bytes, size_t package_length,
                           void *verifier_context,
                           struct nexus_package_manifest *manifest);
 /*
- * Install one static ELF64 app into the writable NXFS Data volume.
+ * Install one static ELF64 app into the writable NXFS Data volume. Signed
+ * PERMISSIONS= metadata lists the publisher's requested capabilities; a
+ * separate local approval record grants a subset at launch. Legacy packages
+ * and packages without a local approval record receive no optional caps.
  * The signed .NPK receipt is committed only after the executable is present.
  */
 bool nexus_package_install(const void *package_bytes, size_t package_length,
@@ -76,6 +84,10 @@ bool nexus_package_is_installed(const char *id,
                                 struct nexus_package_install_result *result);
 bool nexus_package_launch(const char *id, nexus_package_signature_verifier verifier, void *verifier_context, uint64_t *exit_status);
 enum nexus_package_error nexus_package_last_error(void);
+/* User approval can grant only a subset of the signed manifest request. */
+bool nexus_package_set_permissions(
+    const char *id, uint32_t granted_permissions,
+    nexus_package_signature_verifier verifier, void *verifier_context);
 bool nexus_package_uninstall(const char *id,
                              nexus_package_signature_verifier verifier,
                              void *verifier_context);

@@ -7,11 +7,26 @@
 
 #define NEXUS_USERMODE_OUTPUT_MAX 256U
 
+struct nexus_usermode_fault_info {
+    bool faulted;
+    uint64_t vector;
+    uint64_t error_code;
+    uint64_t instruction_pointer;
+};
+
 /* Allocate an isolated low user mapping and run the ring-3 exit self-test. */
 bool usermode_run_selftest(void);
 bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
                       uint64_t stack_pointer, uint64_t kernel_stack_top,
-                      uint64_t *exit_status);
+                      uint32_t permissions, uint64_t *exit_status);
+uint32_t usermode_current_permissions(void);
+int64_t usermode_sys_app_permissions(void);
+bool usermode_is_active(void);
+bool usermode_report_exception(uint64_t vector, uint64_t error_code,
+                               uint64_t instruction_pointer);
+bool usermode_get_fault_info(struct nexus_usermode_fault_info *info);
+/* Set by a recoverable ring-3 exception; consumed by exception_common. */
+extern volatile bool usermode_exception_recovered;
 bool usermode_sys_write(uint64_t user_address, uint64_t length);
 /* Copy the most recent native process's bounded write(1, ...) output. */
 size_t usermode_console_output_copy(char *destination, size_t capacity,

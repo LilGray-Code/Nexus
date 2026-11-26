@@ -1,8 +1,9 @@
 # Nexus native application SDK (early ABI)
 
-This directory contains the first freestanding C SDK for native Nexus
-applications. It targets the original x86-64 kernel's static ELF64 loader and
-the initial `int 0x80` syscall ABI.
+This directory contains Nexus's early freestanding C SDK for native x86-64
+applications. It targets the ABI-major-version-1 `int 0x80` syscall interface,
+the private user address-space loader and the small `libnexus.a` runtime.
+This is a Nexus-specific ABI, not Linux or POSIX.
 
 ## Build
 
@@ -31,10 +32,13 @@ boot-test image.
 | `nexus_close(fd)` | 5 | Close a descriptor |
 | `nexus_file_write(path, buffer, length)` | 6 | Write through the current VFS policy |
 | `nexus_abi_version()` | 7 | Query the kernel syscall ABI version |
+| `nexus_get_permissions()` | 16 | Query the optional capabilities granted to this app |
 
 Arguments use RDI/RSI/RDX, the syscall number and result use RAX, and errors
-are returned as negative errno values. The ABI version is currently 1; native
-programs should query `nexus_abi_version()` before using other wrappers. The
+are returned as negative errno values. The ABI major version is currently 1;
+native programs should query `nexus_abi_version()` before using other wrappers.
+The permission query is additive in ABI v1 and reports optional capabilities
+approved for the running package. The
 kernel validates user-memory ranges before copying. File names are simple
 volume-local names; the early interface does not support path separators or
 directory descriptors.
@@ -69,13 +73,17 @@ At runtime, `HELLO.OUT` is persistent on a writable NXFS data volume and
 volatile when only the RAM overlay is available; read-only FAT32 is never
 written.
 
-This is an early runtime, not libc or POSIX. The process loader accepts static
-x86-64 ET_EXEC ELF files only: no PIE, dynamic linker, shared libraries, TLS,
-or Windows PE/COFF. The current process image limit is 128 KiB, process names
-are limited to 15 characters, and the initial descriptor table and user
-console are bootstrap facilities. Programs run synchronously and the shell
-resumes only after process exit. There is no heap allocator, full libc/POSIX formatted stdio,
-directory descriptor API, process-spawn API, GUI SDK, or background scheduler.
+This is an early runtime, not libc or POSIX. The loader accepts x86-64 static
+ET_EXEC files and a constrained static PIE ET_DYN form with relative
+relocations only. It rejects PT_INTERP, external DT_NEEDED libraries and ELF
+TLS; there is no general dynamic linker or shared-library loader. The process
+image input limit is 4 MiB and process names are limited to 15 characters.
+
+Programs run synchronously in the foreground; the process table is bounded
+lifecycle bookkeeping, not a general concurrent application scheduler. The
+SDK exposes limited console, file, input, display/framebuffer, audio, gamepad
+and CPU APIs, but no full windowing toolkit, libc/POSIX environment,
+directory-descriptor API, process-spawn service, or application heap.
 
 ## Bounded formatted output
 
@@ -101,3 +109,23 @@ The freestanding runtime selects AVX2 bulk copy/fill routines for requests of
 256 bytes or larger when the kernel's CPU-capability syscall confirms AVX2
 and active OS-managed YMM state. Older CPUs and failed capability queries use
 the scalar fallback. Applications can query the same feature record directly.
+
+
+## Permissions and package policy
+
+A signed `.NPK` manifest can request a `PERMISSIONS=` capability mask. The
+request is not automatic consent: a separate local `.NPA` record stores the
+approved subset, missing approval means no optional capabilities, and package
+updates revoke old approvals. The kernel checks file read/write, input,
+display, audio and gamepad capabilities at syscall boundaries.
+`nexus_get_permissions()` returns the granted mask.
+
+The package backend can record and apply explicit approvals, but a complete
+graphical permission prompt and a tamper-resistant protected settings store
+are not yet available. Signature verification is a required callback; the
+current host tests use a mock verifier. A production pinned Ed25519 keyring,
+key rotation/revocation policy and end-to-end release signing pipeline remain
+unfinished.
+
+See [Application platform status](../docs/architecture/APPLICATION-PLATFORM.md)
+for the exact compatibility boundary and roadmap.

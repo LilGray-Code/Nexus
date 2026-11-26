@@ -23,11 +23,16 @@ on:
       - "kernel/src/fpu.h"
       - "kernel/src/main.c"
       - "kernel/src/usermode.S"
+      - "kernel/src/isr.S"
       - "kernel/src/graphics.h"
       - "kernel/src/usermode.c"
       - "kernel/src/usermode.h"
       - "kernel/src/interrupts.c"
       - "kernel/src/elf64.c"
+      - "userland/include/nexus/syscall.h"
+      - "userland/include/nexus/runtime.h"
+      - "userland/src/runtime.c"
+      - "userland/tests/runtime_test.c"
       - "kernel/tests/ac97_format_test.c"
       - "kernel/src/ac97_format.c"
       - "kernel/src/ac97.h"
@@ -37,6 +42,7 @@ on:
       - "kernel/src/paging.h"
       - "kernel/src/paging.c"
       - "kernel/src/process.c"
+      - "kernel/src/process.h"
       - "kernel/src/syscall.h"
       - "kernel/include/nexus/**"
       - "kernel/tests/graphics_blit_test.c"
@@ -63,6 +69,7 @@ on:
       - "kernel/src/fpu.h"
       - "kernel/src/main.c"
       - "kernel/src/usermode.S"
+      - "kernel/src/isr.S"
       - "kernel/src/graphics.h"
       - "kernel/src/usermode.c"
       - "kernel/src/usermode.h"
@@ -93,6 +100,7 @@ jobs:
           done
           cc $flags -c kernel/src/catalog.c -o /tmp/nexus-catalog.o
           cc -m64 -c kernel/src/usermode.S -o /tmp/nexus-usermode-entry.o
+          cc -m64 -c kernel/src/isr.S -o /tmp/nexus-isr-entry.o
 
       - name: Test ELF64 static PIE parsing and relocation loading
         run: |
@@ -147,13 +155,15 @@ jobs:
           fi
       - name: Test signed package parsing and transactional install
         run: |
-          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/include -Ikernel/src \
             kernel/src/package.c kernel/src/sha256.c \
             kernel/tests/package_test.c -o /tmp/nexus-package-test
           /tmp/nexus-package-test
       - name: Test signed catalog verification and HTTPS restrictions
         run: |
-          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/include -Ikernel/src \
             kernel/src/catalog.c kernel/src/sha256.c \
             kernel/tests/catalog_test.c -o /tmp/nexus-catalog-test
           /tmp/nexus-catalog-test

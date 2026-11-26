@@ -337,3 +337,8 @@ int64_t nexus_write_file(const char *path, const void *buffer, size_t length) {
         return -NEXUS_EINVAL;
     return nexus_file_write(path, buffer, length);
 }
+
+uint32_t nexus_get_permissions(void) {
+    return (uint32_t)nexus_syscall3(
+        NEXUS_SYS_APP_PERMISSIONS, 0U, 0U, 0U);
+}

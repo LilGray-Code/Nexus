@@ -26,6 +26,7 @@ static bool apps_directory;
 static bool mock_writable = true;
 static char fail_write_path[32];
 static char launched_path[32];
+static uint32_t launched_permissions;
 
 static struct mock_file *mock_find(const char *path) {
     for (size_t i = 0U; i < MOCK_FILES; ++i)
@@ -114,9 +115,17 @@ void vfs_close(struct nexus_vfs_file *file) {
     if (file != NULL) *file = (struct nexus_vfs_file){0};
 }
 
-bool process_execute_root_file(const char *name, struct nexus_process_result *result, enum nexus_process_error *error) {
-    if (name == NULL || result == NULL || error == NULL || strlen(name) >= sizeof(launched_path)) return false;
-    strcpy(launched_path, name); result->pid = 7U; result->exit_status = 42U; *error = NEXUS_PROCESS_ERROR_NONE; return true;
+bool process_execute_root_file_with_permissions(
+    const char *name, uint32_t permissions,
+    struct nexus_process_result *result, enum nexus_process_error *error) {
+    if (name == NULL || result == NULL || error == NULL ||
+        strlen(name) >= sizeof(launched_path)) return false;
+    strcpy(launched_path, name);
+    launched_permissions = permissions;
+    result->pid = 7U;
+    result->exit_status = 42U;
+    *error = NEXUS_PROCESS_ERROR_NONE;
+    return true;
 }
 
 /* ELF loading is separately tested; this harness isolates package plumbing. */
@@ -168,17 +177,26 @@ static bool mock_ed25519_verify(
 }
 
 static size_t build_package(uint8_t *output, size_t capacity,
-                            const char *version, const uint8_t payload[4]) {
+                            const char *version, const uint8_t payload[4],
+                            uint32_t permissions, bool include_permissions) {
     char digest_hex[65];
     uint8_t digest[32];
     nexus_sha256(payload, 4U, digest);
     to_hex(digest, sizeof(digest), digest_hex);
 
     char prefix[256];
-    const int prefix_length = snprintf(prefix, sizeof(prefix),
-        "NEXUS-PACKAGE/1\nID=DEMO\nVERSION=%s\nARCH=x86_64\nABI=1\n"
-        "ENTRY=APP.ELF\nSIZE=4\nSHA256=%s\nKEY=test-key\n",
-        version, digest_hex);
+    int prefix_length;
+    if (include_permissions) {
+        prefix_length = snprintf(prefix, sizeof(prefix),
+            "NEXUS-PACKAGE/1\nID=DEMO\nVERSION=%s\nARCH=x86_64\nABI=1\n"
+            "ENTRY=APP.ELF\nSIZE=4\nSHA256=%s\nPERMISSIONS=%u\nKEY=test-key\n",
+            version, digest_hex, permissions);
+    } else {
+        prefix_length = snprintf(prefix, sizeof(prefix),
+            "NEXUS-PACKAGE/1\nID=DEMO\nVERSION=%s\nARCH=x86_64\nABI=1\n"
+            "ENTRY=APP.ELF\nSIZE=4\nSHA256=%s\nKEY=test-key\n",
+            version, digest_hex);
+    }
     assert(prefix_length > 0 && (size_t)prefix_length < sizeof(prefix));
 
     uint8_t signature[64];
@@ -208,14 +226,17 @@ _Static_assert(NEXUS_PACKAGE_MAX_PAYLOAD == (4U * 1024U * 1024U),
 int main(void) {
     uint8_t package[512];
     const uint8_t first_payload[4] = {'E', 'L', 'F', '!'};
-    size_t package_length = build_package(package, sizeof(package),
-                                          "1.0.0", first_payload);
+    size_t package_length = build_package(package, sizeof(package), "1.0.0", first_payload,
+                                          NEXUS_APP_PERMISSION_FILE_READ |
+                                          NEXUS_APP_PERMISSION_DISPLAY, true);
     struct nexus_package_manifest manifest;
     assert(nexus_package_parse(package, package_length, &manifest));
     assert(strcmp(manifest.id, "DEMO") == 0);
     assert(strcmp(manifest.version, "1.0.0") == 0);
     assert(manifest.abi_version == NEXUS_PACKAGE_ABI_VERSION);
     assert(manifest.payload_size == sizeof(first_payload));
+    assert(manifest.permissions ==
+           (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
     assert(nexus_package_verify(package, package_length,
                                 mock_ed25519_verify, NULL, &manifest));
 
@@ -229,6 +250,24 @@ int main(void) {
     assert(!nexus_package_verify(corrupted, package_length,
                                  mock_ed25519_verify, NULL, NULL));
     assert(!nexus_package_verify(package, package_length, NULL, NULL, NULL));
+
+    /* Older signed v1 packages omit PERMISSIONS and default to no privileges. */
+    package_length = build_package(package, sizeof(package), "1.0.0",
+                                   first_payload, 0U, false);
+    assert(nexus_package_parse(package, package_length, &manifest));
+    assert(manifest.permissions == 0U);
+    assert(nexus_package_verify(package, package_length,
+                                mock_ed25519_verify, NULL, &manifest));
+
+    /* Unknown capability bits are rejected rather than ignored. */
+    package_length = build_package(package, sizeof(package), "1.0.0",
+                                   first_payload,
+                                   NEXUS_APP_PERMISSION_ALL << 1U, true);
+    assert(!nexus_package_parse(package, package_length, &manifest));
+    package_length = build_package(package, sizeof(package), "1.0.0",
+                                   first_payload,
+                                   NEXUS_APP_PERMISSION_FILE_READ |
+                                   NEXUS_APP_PERMISSION_DISPLAY, true);
 
     memcpy(corrupted, package, package_length);
     const char *arch = find_bytes(corrupted, package_length, "ARCH=x86_64");
@@ -257,16 +296,31 @@ int main(void) {
     installed_image->data[3] ^= 1U;
     assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                       NULL, &installed));
+    assert(installed.requested_permissions ==
+           (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
+    assert(installed.granted_permissions == 0U);
     uint64_t exit_status = UINT64_MAX;
     assert(nexus_package_launch("DEMO", mock_ed25519_verify, NULL, &exit_status));
     assert(strcmp(launched_path, "APPS/DEMO-1.0.0.ELF") == 0);
-    assert(exit_status == 42U);
+    assert(exit_status == 42U && launched_permissions == 0U);
+    assert(!nexus_package_set_permissions(
+        "DEMO", NEXUS_APP_PERMISSION_ALL, mock_ed25519_verify, NULL));
+    assert(nexus_package_set_permissions(
+        "DEMO", NEXUS_APP_PERMISSION_FILE_READ |
+                NEXUS_APP_PERMISSION_DISPLAY, mock_ed25519_verify, NULL));
+    assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
+                                      NULL, &installed));
+    assert(installed.granted_permissions ==
+           (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
+    assert(nexus_package_launch("DEMO", mock_ed25519_verify, NULL, &exit_status));
+    assert(launched_permissions ==
+           (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
     assert(!nexus_package_launch("DEMO", NULL, NULL, &exit_status));
 
     /* An update stages the new image, commits its receipt, then reclaims old. */
     const uint8_t second_payload[4] = {'E', 'L', 'F', '?'};
-    package_length = build_package(package, sizeof(package), "1.0.1",
-                                   second_payload);
+    package_length = build_package(package, sizeof(package), "1.0.1", second_payload,
+                                   NEXUS_APP_PERMISSION_FILE_READ, true);
     if (!nexus_package_install(package, package_length,
                                mock_ed25519_verify, NULL, &installed)) {
         fprintf(stderr, "package update failed with error %d\\n",
@@ -274,20 +328,23 @@ int main(void) {
         assert(false);
     }
     assert(strcmp(installed.version, "1.0.1") == 0);
+    assert(installed.requested_permissions == NEXUS_APP_PERMISSION_FILE_READ);
+    assert(installed.granted_permissions == 0U);
     assert(mock_find("APPS/DEMO-1.0.1.ELF") != NULL);
     assert(mock_find("APPS/DEMO-1.0.0.ELF") == NULL);
     assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                       NULL, &installed));
     assert(nexus_package_uninstall("DEMO", mock_ed25519_verify, NULL));
     assert(mock_find("APPS/DEMO.NPK") == NULL);
+    assert(mock_find("APPS/DEMO.NPA") == NULL);
     assert(mock_find("APPS/DEMO-1.0.1.ELF") == NULL);
     assert(!nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                        NULL, NULL));
 
     /* Failed receipt commit rolls back a newly-created executable file. */
     reset_mock();
-    package_length = build_package(package, sizeof(package), "1.0.0",
-                                   first_payload);
+    package_length = build_package(package, sizeof(package), "1.0.0", first_payload,
+                                   0U, true);
     strcpy(fail_write_path, "APPS/DEMO.NPK");
     assert(!nexus_package_install(package, package_length,
                                  mock_ed25519_verify, NULL, NULL));
@@ -297,12 +354,12 @@ int main(void) {
     /* Same version with different bytes is never silently overwritten. */
     reset_mock();
     package_length = build_package(package, sizeof(package), "1.0.0",
-                                   first_payload);
+                                   first_payload, 0U, true);
     assert(nexus_package_install(package, package_length,
                                  mock_ed25519_verify, NULL, NULL));
     const uint8_t conflicting_payload[4] = {'B', 'A', 'D', '!'};
-    package_length = build_package(package, sizeof(package), "1.0.0",
-                                   conflicting_payload);
+    package_length = build_package(package, sizeof(package), "1.0.0", conflicting_payload,
+                                   0U, true);
     assert(!nexus_package_install(package, package_length,
                                   mock_ed25519_verify, NULL, NULL));
 

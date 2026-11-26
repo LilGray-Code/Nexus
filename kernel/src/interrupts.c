@@ -139,8 +139,30 @@ static void syscall_frame_trace(const char *phase,
 #else
 #define syscall_frame_trace(phase, frame) ((void)0)
 #endif
-__attribute__((noreturn))
 void exception_dispatch(const struct interrupt_frame *frame) {
+    /* User applications can fail independently. Double fault, NMI and
+     * machine-check remain fatal because recovery is not safe for them.
+     */
+    if (frame->vector != 2U && frame->vector != 8U &&
+        frame->vector != 18U && (frame->code_segment & 3U) == 3U &&
+        usermode_is_active() &&
+        usermode_report_exception(frame->vector, frame->error_code,
+                                  frame->instruction_pointer)) {
+        serial_write("\\r\\nNEXUS APPLICATION CRASH: vector=");
+        serial_write_hex(frame->vector);
+        serial_write(" error=");
+        serial_write_hex(frame->error_code);
+        serial_write(" ip=");
+        serial_write_hex(frame->instruction_pointer);
+        serial_write("\\r\\n");
+        /* exception_common consumes this flag and jumps, rather than iretq,
+         * to the same ring-0 trampoline used by SYS_EXIT. A same-CPL IRETQ
+         * would not pop the privilege-transition RSP/SS slots.
+         */
+        usermode_exception_recovered = true;
+        return;
+    }
+
     uint16_t current_cs = 0U;
     uint16_t current_ss = 0U;
     __asm__ volatile ("mov %%cs, %0" : "=r"(current_cs));
@@ -238,6 +260,12 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
 
             case NEXUS_SYS_ABI_VERSION:
                 mutable_frame->rax = NEXUS_SYSCALL_ABI_VERSION;
+                syscall_frame_trace("return", mutable_frame);
+                return;
+
+            case NEXUS_SYS_APP_PERMISSIONS:
+                mutable_frame->rax =
+                    (uint64_t)usermode_sys_app_permissions();
                 syscall_frame_trace("return", mutable_frame);
                 return;
 

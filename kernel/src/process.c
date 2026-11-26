@@ -4,12 +4,13 @@
 #include "paging.h"
 #include "usermode.h"
 #include "vfs.h"
+#include "nexus/app.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
 #define PROCESS_KERNEL_STACK_SIZE 16384U
-#define PROCESS_MAX_IMAGE_SIZE (1024U * 1024U)
+#define PROCESS_MAX_IMAGE_SIZE (4U * 1024U * 1024U)
 
 struct nexus_process {
     uint32_t pid;
@@ -18,6 +19,11 @@ struct nexus_process {
     uint64_t entry_point;
     uint64_t stack_pointer;
     uint64_t exit_status;
+    uint32_t permissions;
+    bool crashed;
+    uint64_t fault_vector;
+    uint64_t fault_error_code;
+    uint64_t fault_instruction_pointer;
     char name[NEXUS_PROCESS_NAME_MAX];
     uint8_t kernel_stack[PROCESS_KERNEL_STACK_SIZE]
         __attribute__((aligned(16)));
@@ -41,6 +47,11 @@ static void clear_slot(struct nexus_process *process) {
     process->entry_point = 0U;
     process->stack_pointer = 0U;
     process->exit_status = UINT64_MAX;
+    process->permissions = 0U;
+    process->crashed = false;
+    process->fault_vector = 0U;
+    process->fault_error_code = 0U;
+    process->fault_instruction_pointer = 0U;
     process->name[0] = '\0';
 }
 
@@ -118,10 +129,12 @@ void process_init(void) {
     next_pid = 1U;
 }
 
-bool process_spawn_elf(const char *name, const void *image, size_t image_size,
-                       uint32_t *pid) {
+bool process_spawn_elf_with_permissions(
+    const char *name, const void *image, size_t image_size,
+    uint32_t permissions, uint32_t *pid) {
     if (image == NULL || image_size == 0U ||
-        image_size > PROCESS_MAX_IMAGE_SIZE || pid == NULL) return false;
+        image_size > PROCESS_MAX_IMAGE_SIZE || pid == NULL ||
+        (permissions & ~NEXUS_APP_PERMISSION_ALL) != 0U) return false;
 
     char process_name[NEXUS_PROCESS_NAME_MAX];
     if (!copy_process_name(process_name, name)) return false;
@@ -154,11 +167,22 @@ bool process_spawn_elf(const char *name, const void *image, size_t image_size,
     process->entry_point = entry_point;
     process->stack_pointer = stack_pointer;
     process->exit_status = UINT64_MAX;
+    process->permissions = permissions;
+    process->crashed = false;
+    process->fault_vector = 0U;
+    process->fault_error_code = 0U;
+    process->fault_instruction_pointer = 0U;
     for (size_t i = 0; i < NEXUS_PROCESS_NAME_MAX; ++i) {
         process->name[i] = process_name[i];
     }
     *pid = process->pid;
     return true;
+}
+
+bool process_spawn_elf(const char *name, const void *image, size_t image_size,
+                       uint32_t *pid) {
+    /* Direct raw-ELF execution is untrusted and starts with no optional caps. */
+    return process_spawn_elf_with_permissions(name, image, image_size, 0U, pid);
 }
 
 bool process_run(uint32_t pid, uint64_t *exit_status) {
@@ -172,14 +196,23 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
     uint64_t status = UINT64_MAX;
     const bool executed =
         usermode_execute(process->address_space, process->entry_point,
-                         process->stack_pointer, kernel_stack_top, &status);
+                         process->stack_pointer, kernel_stack_top,
+                         process->permissions, &status);
+    struct nexus_usermode_fault_info fault = {0};
+    const bool crashed = usermode_get_fault_info(&fault);
     const bool reclaimed =
         paging_destroy_user_address_space(process->address_space);
     process->address_space = 0U;
     process->exit_status = status;
+    process->crashed = crashed;
+    if (crashed) {
+        process->fault_vector = fault.vector;
+        process->fault_error_code = fault.error_code;
+        process->fault_instruction_pointer = fault.instruction_pointer;
+    }
     *exit_status = status;
 
-    if (!executed || !reclaimed) {
+    if (!executed || !reclaimed || crashed) {
         process->state = NEXUS_PROCESS_FAILED;
         return false;
     }
@@ -189,7 +222,8 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
 
 static bool process_execute_file_internal(
     const char *name, struct nexus_process_result *result,
-    enum nexus_process_error *error, bool root_scoped) {
+    enum nexus_process_error *error, bool root_scoped,
+    uint32_t permissions) {
     if (error != NULL) *error = NEXUS_PROCESS_ERROR_NONE;
     if (result == NULL || name == NULL) {
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_NOT_FOUND;
@@ -245,7 +279,8 @@ static bool process_execute_file_internal(
     }
 
     uint32_t pid = 0U;
-    const bool spawned = process_spawn_elf(name, process_image, total_read, &pid);
+    const bool spawned = process_spawn_elf_with_permissions(
+        name, process_image, total_read, permissions, &pid);
     /* The ELF loader has copied the image into its address space; erase the
      * shared staging buffer before running untrusted user code. */
     wipe_process_image();
@@ -267,13 +302,26 @@ static bool process_execute_file_internal(
 bool process_execute_file(const char *name,
                           struct nexus_process_result *result,
                           enum nexus_process_error *error) {
-    return process_execute_file_internal(name, result, error, false);
+    return process_execute_file_internal(name, result, error, false, 0U);
 }
 
 bool process_execute_root_file(const char *name,
                                struct nexus_process_result *result,
                                enum nexus_process_error *error) {
-    return process_execute_file_internal(name, result, error, true);
+    return process_execute_file_internal(
+        name, result, error, true, NEXUS_APP_PERMISSION_ALL);
+}
+
+bool process_execute_root_file_with_permissions(
+    const char *name, uint32_t permissions,
+    struct nexus_process_result *result,
+    enum nexus_process_error *error) {
+    if ((permissions & ~NEXUS_APP_PERMISSION_ALL) != 0U) {
+        if (error != NULL) *error = NEXUS_PROCESS_ERROR_EXECUTION;
+        return false;
+    }
+    return process_execute_file_internal(name, result, error, true,
+                                          permissions);
 }
 
 size_t process_count(void) {
@@ -292,6 +340,12 @@ bool process_get_info(size_t slot, struct nexus_process_info *info) {
     info->pid = processes[slot].pid;
     info->state = processes[slot].state;
     info->exit_status = processes[slot].exit_status;
+    info->permissions = processes[slot].permissions;
+    info->crashed = processes[slot].crashed;
+    info->fault_vector = processes[slot].fault_vector;
+    info->fault_error_code = processes[slot].fault_error_code;
+    info->fault_instruction_pointer =
+        processes[slot].fault_instruction_pointer;
     for (size_t i = 0; i < NEXUS_PROCESS_NAME_MAX; ++i) {
         info->name[i] = processes[slot].name[i];
     }

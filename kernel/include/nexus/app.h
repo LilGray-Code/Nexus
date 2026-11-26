@@ -29,12 +29,28 @@
 #define NEXUS_APP_SYS_GAMEPAD_POLL 13ULL
 #define NEXUS_APP_SYS_AUDIO_WRITE 14ULL
 #define NEXUS_APP_SYS_CPU_INFO 15ULL
+#define NEXUS_APP_SYS_PERMISSIONS 16ULL
+
+/* Signed per-application capability requests; all unspecified capabilities
+ * are denied. Permission bits are stable across ABI minor revisions.
+ */
+#define NEXUS_APP_PERMISSION_FILE_READ (1U << 0)
+#define NEXUS_APP_PERMISSION_FILE_WRITE (1U << 1)
+#define NEXUS_APP_PERMISSION_INPUT (1U << 2)
+#define NEXUS_APP_PERMISSION_DISPLAY (1U << 3)
+#define NEXUS_APP_PERMISSION_AUDIO (1U << 4)
+#define NEXUS_APP_PERMISSION_GAMEPAD (1U << 5)
+#define NEXUS_APP_PERMISSION_ALL (NEXUS_APP_PERMISSION_FILE_READ | \
+    NEXUS_APP_PERMISSION_FILE_WRITE | NEXUS_APP_PERMISSION_INPUT | \
+    NEXUS_APP_PERMISSION_DISPLAY | NEXUS_APP_PERMISSION_AUDIO | \
+    NEXUS_APP_PERMISSION_GAMEPAD)
 
 #define NEXUS_APP_INPUT_KEYBOARD 1U
 #define NEXUS_APP_INPUT_MOUSE 2U
 #define NEXUS_APP_PIXEL_XRGB8888 1U
 #define NEXUS_APP_FRAME_MAX_PIXELS 16384U
 #define NEXUS_APP_EIO 5LL
+#define NEXUS_APP_EACCES 13LL
 #define NEXUS_APP_EAGAIN 11LL
 #define NEXUS_APP_EFAULT 14LL
 #define NEXUS_APP_ENODEV 19LL
@@ -131,6 +147,12 @@ static inline int64_t nexus_app_syscall3(uint64_t number,
 
 static inline int64_t nexus_app_abi_version(void) {
     return nexus_app_syscall3(NEXUS_APP_SYS_ABI_VERSION, 0U, 0U, 0U);
+}
+
+/* Returns the immutable capability mask granted by the signed package. */
+static inline uint32_t nexus_app_permissions(void) {
+    return (uint32_t)nexus_app_syscall3(
+        NEXUS_APP_SYS_PERMISSIONS, 0U, 0U, 0U);
 }
 
 static inline void nexus_app_exit(uint64_t status) {

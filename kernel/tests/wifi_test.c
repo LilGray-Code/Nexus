@@ -45,7 +45,13 @@ static void mock_poll(void *context) {
 int main(void) {
     struct mock_driver mock = {0};
     const struct nexus_wifi_driver_ops ops = {
-        mock_start, mock_scan, mock_connect, mock_disconnect, mock_poll
+        .start = mock_start,
+        .scan = mock_scan,
+        .connect = mock_connect,
+        .disconnect = mock_disconnect,
+        .poll = mock_poll,
+        .supported_security_mask =
+            NEXUS_WIFI_SECURITY_MASK_OPEN | NEXUS_WIFI_SECURITY_MASK_WPA2
     };
     assert(!wifi_available());
     assert(wifi_get_state() == NEXUS_WIFI_UNAVAILABLE);
@@ -53,6 +59,9 @@ int main(void) {
     assert(wifi_register_driver(&ops, &mock));
     assert(!wifi_register_driver(&ops, &mock));
     assert(wifi_available());
+    assert(wifi_security_supported(NEXUS_WIFI_SECURITY_OPEN));
+    assert(wifi_security_supported(NEXUS_WIFI_SECURITY_WPA2_PSK));
+    assert(!wifi_security_supported(NEXUS_WIFI_SECURITY_WPA3_SAE));
     assert(wifi_get_state() == NEXUS_WIFI_READY);
     assert(wifi_start());
     assert(mock.starts == 1U);
@@ -82,14 +91,21 @@ int main(void) {
     assert(!wifi_connect(&networks[0], "short"));
     assert(!wifi_connect(&networks[1], "not-empty"));
     networks[1].security = NEXUS_WIFI_SECURITY_WPA3_SAE;
-    assert(wifi_connect(&networks[1], "s"));
-    assert(wifi_get_state() == NEXUS_WIFI_CONNECTING);
-    wifi_report_disconnected();
+    /* The beacon parser can classify SAE, but this mock driver does not
+     * advertise an SAE implementation. Fail closed before calling it.
+     */
+    assert(!wifi_connect(&networks[1], "sae-password"));
+    assert(mock.connects == 0U);
+    assert(wifi_get_state() == NEXUS_WIFI_READY);
     assert(wifi_connect(&networks[0], "correcthorsebattery"));
     assert(wifi_get_state() == NEXUS_WIFI_CONNECTING);
     wifi_report_connected();
     assert(wifi_get_state() == NEXUS_WIFI_CONNECTED);
+    assert(wifi_get_connected_network(&copied));
+    assert(copied.ssid[0] == 'N' &&
+           copied.security == NEXUS_WIFI_SECURITY_WPA2_PSK);
     wifi_disconnect();
+    assert(!wifi_get_connected_network(&copied));
     assert(mock.disconnects == 1U);
     assert(wifi_get_state() == NEXUS_WIFI_READY);
 
@@ -109,6 +125,8 @@ int main(void) {
     mock.connect_inline = true;
     assert(wifi_connect(&open_network, NULL));
     assert(wifi_get_state() == NEXUS_WIFI_CONNECTED);
+    assert(wifi_get_connected_network(&copied));
+    assert(copied.security == NEXUS_WIFI_SECURITY_OPEN);
     mock.connect_inline = false;
     wifi_disconnect();
 

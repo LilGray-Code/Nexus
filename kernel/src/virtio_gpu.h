@@ -82,6 +82,10 @@ bool virtio_gpu_display_get_info(
 bool virtio_gpu_display_get_edid(uint32_t scanout_id,
                                  uint8_t *edid, size_t edid_capacity,
                                  size_t *edid_length);
+#define NEXUS_VIRTIO_GPU_TOPOLOGY_EXTENDED 0U
+#define NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED 1U
+bool virtio_gpu_display_set_topology(uint32_t topology);
+bool virtio_gpu_display_set_primary(uint32_t scanout_id);
 bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info);
 /* Allocate a host-side Virgl resource and attach it to the active context. */
 bool virtio_gpu_3d_resource_create(

@@ -250,6 +250,19 @@ bool ac97_is_ready(void) {
     return initialized;
 }
 
+bool ac97_set_master_volume(uint8_t percent) {
+    if (!initialized || percent > 100U) return false;
+    const uint16_t port = (uint16_t)(mixer_base + AC97_MIXER_MASTER_VOLUME);
+    if (percent == 0U) {
+        io_out16(port, 0x8000U);
+        return true;
+    }
+    const uint16_t attenuation = (uint16_t)(
+        ((uint32_t)(100U - percent) * 31U + 50U) / 100U);
+    io_out16(port, (uint16_t)((attenuation << 8) | attenuation));
+    return true;
+}
+
 void ac97_poll(void) {
     if (!initialized || !playback_active) return;
     const uint16_t status_port = (uint16_t)(

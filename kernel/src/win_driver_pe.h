@@ -8,6 +8,8 @@
 #define NEXUS_WIN_PE_MAX_SECTIONS 96U
 #define NEXUS_WIN_PE_MAX_IMPORT_MODULES 16U
 #define NEXUS_WIN_PE_MODULE_NAME_MAX 64U
+#define NEXUS_WIN_PE_MAX_NDIS_IMPORTS 64U
+#define NEXUS_WIN_PE_SYMBOL_NAME_MAX 64U
 
 struct nexus_win_pe_info {
     uint16_t machine;
@@ -21,6 +23,11 @@ struct nexus_win_pe_info {
     uint32_t import_symbol_count;
     char import_modules[NEXUS_WIN_PE_MAX_IMPORT_MODULES]
                        [NEXUS_WIN_PE_MODULE_NAME_MAX];
+    char ndis_import_names[NEXUS_WIN_PE_MAX_NDIS_IMPORTS]
+                          [NEXUS_WIN_PE_SYMBOL_NAME_MAX];
+    uint32_t ndis_import_count;
+    bool ndis_imports_truncated;
+    bool ndis_v6_miniport;
     bool is_dll;
     bool nx_compatible;
     bool imports_ndis;

@@ -725,7 +725,11 @@ void kmain(void) {
             serial_write("ERROR: allocator invariants failed after SMP stress\r\n");
             halt_forever();
         }
-        serial_write("NEXUS SMP-SAFE PHYSICAL PAGE ALLOCATOR VERIFIED\r\n");
+        serial_write("NEXUS PAGE ALLOCATOR PARALLEL TEST PASSED; CPUs=");
+        serial_write_hex(nexus_smp_online_cpu_count());
+        serial_write(" pages=");
+        serial_write_hex(NEXUS_SMP_ALLOCATOR_TEST_ITEMS);
+        serial_write("\r\n");
     }
 
     scheduler_init();

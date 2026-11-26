@@ -1,5 +1,7 @@
 #include "scheduler.h"
 
+#include "timer.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -7,11 +9,19 @@
 #define NEXUS_THREAD_STACK_SIZE 16384U
 #define RFLAGS_INTERRUPT_ENABLE (1ULL << 9)
 
+enum nexus_thread_state {
+    NEXUS_THREAD_UNUSED = 0,
+    NEXUS_THREAD_RUNNABLE,
+    NEXUS_THREAD_SLEEPING,
+    NEXUS_THREAD_FINISHED
+};
+
 struct nexus_thread {
     uintptr_t saved_stack;
     nexus_thread_entry_t entry;
     void *argument;
-    bool finished;
+    enum nexus_thread_state state;
+    uint64_t wake_tick;
     bool saved_interrupts_enabled;
     uint8_t stack[NEXUS_THREAD_STACK_SIZE] __attribute__((aligned(16)));
 };
@@ -61,14 +71,16 @@ void scheduler_init(void) {
     main_thread.saved_stack = 0U;
     main_thread.entry = NULL;
     main_thread.argument = NULL;
-    main_thread.finished = false;
+    main_thread.state = NEXUS_THREAD_RUNNABLE;
+    main_thread.wake_tick = 0U;
     main_thread.saved_interrupts_enabled = false;
 
     for (size_t i = 0; i < NEXUS_MAX_THREADS; ++i) {
         threads[i].saved_stack = 0U;
         threads[i].entry = NULL;
         threads[i].argument = NULL;
-        threads[i].finished = true;
+        threads[i].state = NEXUS_THREAD_UNUSED;
+        threads[i].wake_tick = 0U;
         threads[i].saved_interrupts_enabled = false;
     }
 
@@ -85,7 +97,8 @@ bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
     __asm__ volatile ("cli" : : : "memory");
     size_t slot = NEXUS_MAX_THREADS;
     for (size_t i = 0U; i < thread_count; ++i) {
-        if (threads[i].finished) {
+        if (threads[i].state == NEXUS_THREAD_FINISHED ||
+            threads[i].state == NEXUS_THREAD_UNUSED) {
             slot = i;
             break;
         }
@@ -103,7 +116,8 @@ bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
     thread->saved_stack = 0U;
     thread->entry = entry;
     thread->argument = argument;
-    thread->finished = false;
+    thread->state = NEXUS_THREAD_RUNNABLE;
+    thread->wake_tick = 0U;
     thread->saved_interrupts_enabled = true;
 
     uintptr_t stack_top =
@@ -143,7 +157,7 @@ static struct nexus_thread *next_runnable_thread(
         const size_t index = (current_index + step) % total_slots;
         if (index == 0U) return &main_thread;
         struct nexus_thread *candidate = &threads[index - 1U];
-        if (!candidate->finished) return candidate;
+        if (candidate->state == NEXUS_THREAD_RUNNABLE) return candidate;
     }
     return &main_thread;
 }
@@ -196,6 +210,51 @@ void scheduler_yield(void) {
     restore_interrupt_state(old->saved_interrupts_enabled);
 }
 
+/*
+ * Called from the timer interrupt after the global tick is advanced. Only
+ * sleeping threads are inspected here; context switching remains in the
+ * existing IRQ-exit preemption point or an explicit scheduler safe point.
+ */
+void scheduler_timer_tick(uint64_t now) {
+    for (size_t i = 0U; i < thread_count; ++i) {
+        struct nexus_thread *thread = &threads[i];
+        if (thread->state == NEXUS_THREAD_SLEEPING &&
+            now >= thread->wake_tick) {
+            thread->state = NEXUS_THREAD_RUNNABLE;
+        }
+    }
+}
+
+/*
+ * Put the current kernel worker to sleep until a timer deadline. The main
+ * boot thread is intentionally not blockable yet: it also serves as the
+ * scheduler's idle thread until a dedicated per-CPU idle context exists.
+ */
+bool scheduler_sleep_ticks(uint64_t ticks) {
+    if (ticks == 0U) return true;
+
+    const bool restore_if =
+        (interrupt_flags() & RFLAGS_INTERRUPT_ENABLE) != 0U;
+    __asm__ volatile ("cli" : : : "memory");
+
+    struct nexus_thread *old = current_thread;
+    const uint64_t now = timer_ticks();
+    if (!scheduler_started || old == NULL || old == &main_thread ||
+        old->state != NEXUS_THREAD_RUNNABLE ||
+        UINT64_MAX - now < ticks) {
+        restore_interrupt_state(restore_if);
+        return false;
+    }
+
+    old->wake_tick = now + ticks;
+    old->state = NEXUS_THREAD_SLEEPING;
+    scheduler_yield();
+
+    /* scheduler_yield resumes here only after this worker is scheduled again. */
+    restore_interrupt_state(restore_if);
+    return old->state == NEXUS_THREAD_RUNNABLE;
+}
+
 void scheduler_set_preemption_enabled(bool enabled) {
     const bool restore_if =
         (interrupt_flags() & RFLAGS_INTERRUPT_ENABLE) != 0U;
@@ -215,7 +274,8 @@ void scheduler_wait(void) {
     for (;;) {
         bool runnable = false;
         for (size_t i = 0U; i < thread_count; ++i) {
-            if (!threads[i].finished) {
+            if (threads[i].state == NEXUS_THREAD_RUNNABLE ||
+                threads[i].state == NEXUS_THREAD_SLEEPING) {
                 runnable = true;
                 break;
             }
@@ -234,7 +294,7 @@ __attribute__((noreturn))
 static void scheduler_thread_exit(void) {
     struct nexus_thread *old = current_thread;
     __asm__ volatile ("cli" : : : "memory");
-    old->finished = true;
+    old->state = NEXUS_THREAD_FINISHED;
 
     struct nexus_thread *next = next_runnable_thread(old);
     current_thread = next;

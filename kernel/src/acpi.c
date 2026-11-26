@@ -85,6 +85,19 @@ struct acpi_madt_x2apic {
     uint32_t processor_uid;
 } __attribute__((packed));
 
+struct acpi_hpet_table {
+    struct acpi_sdt_header header;
+    uint32_t event_timer_block_id;
+    uint8_t address_space_id;
+    uint8_t register_bit_width;
+    uint8_t register_bit_offset;
+    uint8_t access_size;
+    uint64_t address;
+    uint8_t hpet_number;
+    uint16_t minimum_tick;
+    uint8_t page_protection;
+} __attribute__((packed));
+
 struct acpi_root_info {
     const struct acpi_sdt_header *header;
     bool xsdt;
@@ -403,6 +416,60 @@ static bool find_and_parse_mcfg(const struct acpi_root_info *root) {
     return false;
 }
 
+static bool parse_hpet(const struct acpi_sdt_header *header) {
+    if (!validate_sdt(header, "HPET") ||
+        header->length < sizeof(struct acpi_hpet_table)) return false;
+
+    const struct acpi_hpet_table *hpet =
+        (const struct acpi_hpet_table *)header;
+    /* This first implementation exposes only the architecturally common
+     * system-memory, 64-bit HPET register block. It does not map or program
+     * the timer until the dedicated HPET driver is initialized.
+     */
+    if (hpet->address_space_id != NEXUS_ACPI_HPET_ADDRESS_SPACE_SYSTEM_MEMORY ||
+        hpet->register_bit_width != 64U ||
+        hpet->register_bit_offset != 0U ||
+        (hpet->access_size != 0U && hpet->access_size != 4U) ||
+        hpet->address == 0U || (hpet->address & 7U) != 0U ||
+        hpet->minimum_tick == 0U || hpet->page_protection > 3U) {
+        return false;
+    }
+
+    topology.hpet_present = true;
+    topology.hpet_physical_address = hpet->address;
+    topology.hpet_minimum_tick = hpet->minimum_tick;
+    topology.hpet_number = hpet->hpet_number;
+    topology.hpet_page_protection = hpet->page_protection;
+    return true;
+}
+
+static bool find_and_parse_hpet(const struct acpi_root_info *root) {
+    if (root == NULL || root->header == NULL) return false;
+
+    const uint8_t *cursor =
+        (const uint8_t *)root->header + sizeof(struct acpi_sdt_header);
+    const uint8_t *end =
+        (const uint8_t *)root->header + root->header->length;
+    const size_t pointer_size = root->xsdt ? sizeof(uint64_t) : sizeof(uint32_t);
+
+    while (cursor < end) {
+        uint64_t physical = 0U;
+        if ((size_t)(end - cursor) < pointer_size) return false;
+        if (root->xsdt) {
+            const uint64_t *item = (const uint64_t *)cursor;
+            physical = *item;
+        } else {
+            const uint32_t *item = (const uint32_t *)cursor;
+            physical = *item;
+        }
+        const struct acpi_sdt_header *table = physical_table(physical);
+        if (table != NULL && signature_equals(table->signature, "HPET", 4U))
+            return parse_hpet(table);
+        cursor += pointer_size;
+    }
+    return false;
+}
+
 bool acpi_init(const void *rsdp_address) {
     topology_valid = false;
     topology.local_apic_physical_address = 0;
@@ -411,6 +478,11 @@ bool acpi_init(const void *rsdp_address) {
     topology.ioapic_count = 0;
     topology.iso_count = 0;
     topology.mcfg_region_count = 0U;
+    topology.hpet_present = false;
+    topology.hpet_physical_address = 0U;
+    topology.hpet_minimum_tick = 0U;
+    topology.hpet_number = 0U;
+    topology.hpet_page_protection = 0U;
     for (size_t i = 0U; i < NEXUS_ACPI_MAX_MCFG_REGIONS; ++i)
         topology.mcfg_regions[i] = (struct nexus_acpi_mcfg_region){0};
 
@@ -430,6 +502,15 @@ bool acpi_init(const void *rsdp_address) {
     if (!find_and_parse_madt(&root)) {
         serial_write("ACPI: no valid MADT/APIC table found\r\n");
         return false;
+    }
+
+    /* HPET is optional. Discovery is read-only; the PIT remains the active
+       clock source until a separately tested HPET driver takes ownership.
+     */
+    if (find_and_parse_hpet(&root)) {
+        serial_write("ACPI: validated HPET system-memory block at ");
+        serial_write_hex(topology.hpet_physical_address);
+        serial_write("\\r\\n");
     }
 
     /* MCFG is optional: legacy PCI configuration remains available when the

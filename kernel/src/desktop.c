@@ -524,14 +524,6 @@ static void desktop_cycle_accent(void) {
     desktop_preferences_save();
 }
 
-static const char *desktop_settings_page_title(enum desktop_settings_page page) {
-    static const char *const titles[SETTINGS_PAGE_COUNT] = {
-        "PERSONALIZATION", "DISPLAY", "INPUT", "ACCESSIBILITY",
-        "SYSTEM", "DEVICES"
-    };
-    return page < SETTINGS_PAGE_COUNT ? titles[page] : "SETTINGS";
-}
-
 static void desktop_settings_draw_button(uint64_t x, uint64_t y,
                                          uint64_t width, uint64_t height,
                                          const char *label, bool selected) {
@@ -2248,10 +2240,13 @@ static void draw_shell(void) {
                                1U, 142U, 174U, 199U);
             static const uint8_t scales[5] = {80U, 90U, 100U, 110U, 120U};
             for (size_t i = 0U; i < 5U; ++i) {
-                char label[8] = {'0','0','0','%', '\\0'};
-                label[0] = (char)('0' + scales[i] / 100U);
-                label[1] = (char)('0' + (scales[i] / 10U) % 10U);
-                label[2] = (char)('0' + scales[i] % 10U);
+                char label[8] = {' ', ' ', ' ', '%', '\0'};
+                uint8_t digits = scales[i];
+                size_t digit = 3U;
+                do {
+                    label[--digit] = (char)('0' + digits % 10U);
+                    digits = (uint8_t)(digits / 10U);
+                } while (digits != 0U && digit != 0U);
                 desktop_settings_draw_button(text_x + (uint64_t)i * 68U,
                     content_y + 145U, 62U, 30U, label,
                     desktop_settings.ui_scale_percent == scales[i]);
@@ -2292,13 +2287,10 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 140U, "SCROLL SPEED",
                                1U, 142U, 174U, 199U);
             for (uint8_t i = 1U; i <= 5U; ++i) {
-                char label[8] = {'S','L','O','W',' ','\0','\0','\0'};
-                if (i == 1U) label[0] = '1';
-                else {
-                    label[0] = 'S'; label[1] = 'P'; label[2] = 'E';
-                    label[3] = 'E'; label[4] = 'D';
-                    label[5] = (char)('0' + i); label[6] = '\\0';
-                }
+                static const char *const labels[5] = {
+                    "SLOW", "LOW", "MED", "FAST", "MAX"
+                };
+                const char *label = labels[i - 1U];
                 desktop_settings_draw_button(text_x + (uint64_t)(i - 1U) * 82U,
                     content_y + 157U, 74U, 30U, label,
                     desktop_settings.scroll_speed == i);
@@ -2872,7 +2864,8 @@ static void draw_pointer(void) {
     const uint64_t x = (uint64_t)pointer_x;
     const uint64_t y = (uint64_t)pointer_y;
     const uint64_t scale = desktop_settings.cursor_size;
-    const uint8_t outline = desktop_settings.high_contrast ? 255U : 6U;
+    const uint8_t outline = desktop_settings.high_contrast
+        ? (desktop_theme_is_light() ? 0U : 255U) : 6U;
     graphics_fill_rect(x, y, 3U * scale, 18U * scale,
                        outline, outline, outline);
     graphics_fill_rect(x + scale, y + scale, 2U * scale, 15U * scale,

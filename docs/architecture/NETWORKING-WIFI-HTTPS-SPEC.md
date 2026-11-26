@@ -109,3 +109,6 @@ A bootable ISO, successful QEMU boot, raw HTTP request or visible browser window
 ### Combined Windows driver package assessment
 
 The metadata assessment API combines the hardware-ID match from the INF with inspection of the supplied AMD64 PE32+ `.sys` image. It reports the matched model/install section, whether the PE image is structurally valid, and the resulting NDIS/framework compatibility profile. A package whose INF matches but whose `.sys` is malformed is reported as a matched package with an invalid binary, rather than being silently treated as supported. This API does not process INF installation directives, catalog signatures, firmware, or execute the driver.
+
+
+The PCI wireless inventory now exposes a per-adapter package assessment entry point. It builds the hardware identity from the discovered PCI function and feeds that identity, the Windows INF, and its candidate `.sys` image into the combined assessor. This connects package inspection to the actual enumerated adapter; it still does not bind the adapter or activate the driver.

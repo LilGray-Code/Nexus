@@ -18,6 +18,9 @@ on:
       - "kernel/src/gpu.h"
       - "kernel/src/virtio_gpu.c"
       - "kernel/src/virtio_gpu.h"
+      - "kernel/src/virgl_protocol.c"
+      - "kernel/src/virgl_protocol.h"
+      - "kernel/tests/virgl_protocol_test.c"
       - "kernel/tests/cpu_test.c"
       - "kernel/tests/gpu_test.c"
       - "kernel/src/memory.c"
@@ -73,6 +76,14 @@ jobs:
             -Ikernel/src kernel/src/gpu.c kernel/tests/gpu_test.c \
             -o /tmp/nexus-gpu-test
           /tmp/nexus-gpu-test
+
+      - name: Test Virgl 3D command stream encoding
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/virgl_protocol.c \
+            kernel/tests/virgl_protocol_test.c \
+            -o /tmp/nexus-virgl-protocol-test
+          /tmp/nexus-virgl-protocol-test
 
       - name: Stress the SMP-safe physical page allocator
         run: |

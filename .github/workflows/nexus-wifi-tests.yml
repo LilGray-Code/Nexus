@@ -10,6 +10,8 @@ on:
       - "kernel/src/wifi.h"
       - "kernel/src/wifi_80211.c"
       - "kernel/src/wifi_80211.h"
+      - "kernel/src/win_driver_inf.c"
+      - "kernel/src/win_driver_inf.h"
       - "kernel/tests/wifi_test.c"
       - "kernel/tests/wifi_80211_test.c"
       - "kernel/tests/win_driver_inf_test.c"

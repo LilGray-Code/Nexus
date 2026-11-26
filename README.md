@@ -40,11 +40,14 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   capset, the driver now negotiates optional VIRGL/CONTEXT_INIT features,
   creates a Virgl context, and exposes a bounded 64 KiB command-stream submit
   path. Every submit requests a fence and waits for the matching completion
-  response. Boot sends a Virgl NOP as a command-channel smoke test. This proves
-  only context creation and command/fence transport, not successful 3D drawing:
-  the kernel still does not create render targets, compile shaders, execute a
-  draw workload, or present GPU-rendered frames. The 2D/3D acceleration flags
-  therefore remain false. There is no Vulkan ICD, OpenGL/Mesa Gallium frontend,
+  response. The driver also supports a bounded set of 64 host-side 3D
+  resources using RESOURCE_CREATE_3D, context attach/detach, and RESOURCE_UNREF,
+  with tracked handles and cleanup retries. These resources are not yet exposed
+  as guest-mapped VRAM and are not used as render targets by the desktop. This
+  proves only context/queue/resource protocol operations, not successful 3D
+  drawing: the kernel still does not compile shaders, execute a draw workload,
+  or present GPU-rendered frames. The 2D/3D acceleration flags therefore remain
+  false. There is no Vulkan ICD, OpenGL/Mesa Gallium frontend,
   shader compiler, userspace graphics ABI, asynchronous GPU scheduler, or
   general GPU memory manager yet; Venus/Vulkan capsets are not exposed as a
   working Vulkan implementation.

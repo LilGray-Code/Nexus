@@ -122,6 +122,7 @@ struct nexus_display_mode_backend {
                          const struct nexus_display_mode *mode);
     bool (*set_topology)(void *context,
                          enum nexus_display_topology topology);
+    bool (*set_primary_monitor)(void *context, uint32_t monitor_id);
 };
 
 bool nexus_display_init(const struct limine_framebuffer *framebuffer);

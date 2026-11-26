@@ -10,7 +10,9 @@ static const char inf[] =
     "Signature=\"$Windows NT$\"\r\n"
     "[Manufacturer]\r\n"
     "%Maker%=Models,NTamd64\r\n"
-    "[Intel.NTamd64.10.0]\r\n"
+    "[Install.NT]\r\n"
+    "%Wrong%=WrongInstall, PCI\\VEN_8086&DEV_2723\r\n"
+    "[Models.NTamd64.10.0]\r\n"
     "%Wireless%=Install, PCI\\VEN_8086&DEV_2723, PCI\\VEN_8086&DEV_2723&SUBSYS_00248086&REV_01\r\n"
     "%USBWifi%=UsbInstall, USB\\VID_0BDA&PID_C820\r\n"
     "[Install]\r\n"
@@ -30,7 +32,7 @@ static void test_pci_best_exact_match(void) {
     assert(strcmp(match.install_section, "Install") == 0);
     assert(strstr(match.hardware_id, "SUBSYS_00248086") != NULL);
     assert(match.specificity == 3U);
-    assert(match.line_number == 7U);
+    assert(match.line_number == 9U);
 }
 
 static void test_pci_wrong_subsystem_rejected(void) {

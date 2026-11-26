@@ -630,8 +630,8 @@ int64_t usermode_sys_framebuffer_blit(uint64_t user_request) {
 }
 
 int64_t usermode_sys_sleep_ticks(uint64_t ticks) {
-    /* At 100 Hz, 500 ticks caps one sleep request at five seconds. */
-    if (ticks > 500U) return -NEXUS_EINVAL;
+    /* Keep the syscall limit synchronized with the public native SDK ABI. */
+    if (ticks > NEXUS_APP_MAX_SLEEP_TICKS) return -NEXUS_EINVAL;
     if (ticks == 0U) return 0;
 
     /*

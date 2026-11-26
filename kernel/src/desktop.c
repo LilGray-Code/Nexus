@@ -100,6 +100,26 @@ static bool store_installed[NEXUS_STORE_MAX_APPS];
 static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
 static uint64_t screen_height;
+static bool desktop_virtio_set_topology(
+    void *context, enum nexus_display_topology topology) {
+    (void)context;
+    return virtio_gpu_display_set_topology(
+        topology == NEXUS_DISPLAY_TOPOLOGY_MIRRORED
+            ? NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
+            : NEXUS_VIRTIO_GPU_TOPOLOGY_EXTENDED);
+}
+
+static bool desktop_virtio_set_primary(void *context, uint32_t monitor_id) {
+    (void)context;
+    return virtio_gpu_display_set_primary(monitor_id);
+}
+
+static const struct nexus_display_topology_backend
+    desktop_virtio_topology_backend = {
+        .set_topology = desktop_virtio_set_topology,
+        .set_primary_monitor = desktop_virtio_set_primary
+    };
+
 static struct nexus_graphics_surface desktop_firmware_surface;
 static struct nexus_graphics_surface desktop_render_surface;
 static bool desktop_virtio_gpu_active;
@@ -3190,6 +3210,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
                     have_edid ? edid_length : 0U);
             }
         }
+        (void)nexus_display_register_topology_backend(
+            &desktop_virtio_topology_backend, NULL);
     }
     serial_write(desktop_virtio_gpu_active
         ? "DESKTOP: VirtIO GPU 2D backend initialized\\r\\n"

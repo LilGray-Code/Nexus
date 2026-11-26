@@ -44,6 +44,14 @@ static void test_intel_adapter_and_cpu_fallback(void) {
     assert(info->firmware_framebuffer_active);
     assert(strcmp(gpu_render_path_name(),
                   "GPU: FIRMWARE SCANOUT / CPU RASTER") == 0);
+    struct nexus_gpu_runtime_capabilities runtime;
+    gpu_get_runtime_capabilities(&runtime);
+    assert(runtime.firmware_scanout_active);
+    assert(!runtime.virtio_scanout_active);
+    assert(!runtime.hardware_2d_rendering);
+    assert(!runtime.hardware_3d_rendering);
+    assert(!runtime.opengl_available);
+    assert(!runtime.vulkan_available);
 }
 
 static void test_nvidia_and_virtio_adapter_names(void) {
@@ -66,6 +74,19 @@ static void test_nvidia_and_virtio_adapter_names(void) {
     devices[0].device_id = 0x1050U;
     assert(gpu_init());
     assert(gpu_primary_info()->vendor == NEXUS_GPU_VENDOR_VIRTIO);
+    assert(!gpu_hardware_acceleration_available());
+    gpu_set_virtio_display_active(true);
+    gpu_set_virtio_display_outputs(2U);
+    struct nexus_gpu_runtime_capabilities virtio_runtime;
+    gpu_get_runtime_capabilities(&virtio_runtime);
+    assert(virtio_runtime.virtio_scanout_active);
+    assert(virtio_runtime.virtio_scanout_count == 2U);
+    assert(!virtio_runtime.hardware_2d_rendering);
+    assert(!virtio_runtime.hardware_3d_rendering);
+    assert(!virtio_runtime.opengl_available);
+    assert(!virtio_runtime.vulkan_available);
+    assert(!gpu_hardware_acceleration_available());
+    gpu_set_virtio_display_active(false);
     assert(!gpu_hardware_acceleration_available());
     device_count = 0U;
     assert(!gpu_init());

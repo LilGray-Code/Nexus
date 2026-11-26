@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #define NEXUS_GPU_MAX_ADAPTERS 16U
+#define NEXUS_GPU_BAR_COUNT 6U
 
 enum nexus_gpu_family {
     NEXUS_GPU_FAMILY_UNKNOWN = 0,
@@ -52,7 +53,7 @@ struct nexus_gpu_info {
     uint8_t memory_bar_count;
     bool has_64bit_memory_bar;
     bool has_prefetchable_memory_bar;
-    struct nexus_gpu_bar_info bars[NEXUS_GPU_MAX_ADAPTERS > 0U ? 6U : 6U];
+    struct nexus_gpu_bar_info bars[NEXUS_GPU_BAR_COUNT];
     uint16_t vendor_id;
     uint16_t device_id;
     uint16_t subsystem_vendor_id;

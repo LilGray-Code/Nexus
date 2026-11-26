@@ -204,7 +204,7 @@ static void smp_ap_entry(struct limine_mp_info *info) {
     }
 
     cpu_core_type[slot] = (uint8_t)nexus_cpu_get_local_core_type();
-    cpu_online[slot] = 1U;
+    __atomic_store_n(&cpu_online[slot], 1U, __ATOMIC_RELEASE);
     __atomic_add_fetch(&online_cpu_count, 1U, __ATOMIC_RELEASE);
     for (;;) {
         __asm__ volatile ("sti; hlt; cli" : : : "memory");

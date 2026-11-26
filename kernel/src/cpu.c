@@ -336,6 +336,30 @@ bool nexus_cpu_init(void) {
     return true;
 }
 
+enum nexus_cpu_core_type nexus_cpu_get_local_core_type(void) {
+    uint32_t maximum = 0U;
+    uint32_t ebx = 0U, ecx = 0U, edx = 0U;
+    cpuid(0U, 0U, &maximum, &ebx, &ecx, &edx);
+    if (maximum < 0x1AU) return NEXUS_CPU_CORE_TYPE_UNKNOWN;
+
+    char vendor[13] = {0};
+    append_register_bytes(vendor, 0U, ebx);
+    append_register_bytes(vendor, 4U, edx);
+    append_register_bytes(vendor, 8U, ecx);
+    vendor[12] = '\0';
+    if (identify_cpu_vendor(vendor) != NEXUS_CPU_VENDOR_INTEL)
+        return NEXUS_CPU_CORE_TYPE_UNKNOWN;
+
+    uint32_t core_eax = 0U;
+    cpuid(0x1AU, 0U, &core_eax, NULL, NULL, NULL);
+    const uint8_t core_type = (uint8_t)(core_eax >> 24);
+    if (core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE ||
+        core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY) {
+        return (enum nexus_cpu_core_type)core_type;
+    }
+    return NEXUS_CPU_CORE_TYPE_UNKNOWN;
+}
+
 enum nexus_cpu_vendor nexus_cpu_get_vendor(void) {
     return cpu_info.vendor_kind;
 }

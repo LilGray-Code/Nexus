@@ -12,6 +12,9 @@ static struct nexus_display_info *edid_target;
 static struct nexus_display_mode_backend display_backend;
 static void *display_backend_context;
 static bool display_backend_registered;
+static struct nexus_display_topology_backend topology_backend;
+static void *topology_backend_context;
+static bool topology_backend_registered;
 
 static bool edid_header_valid(const uint8_t *edid) {
     static const uint8_t header[8] = {
@@ -403,6 +406,9 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     display_backend = (struct nexus_display_mode_backend){0};
     display_backend_context = NULL;
     display_backend_registered = false;
+    topology_backend = (struct nexus_display_topology_backend){0};
+    topology_backend_context = NULL;
+    topology_backend_registered = false;
 
     if (framebuffer == NULL || framebuffer->address == NULL ||
         framebuffer->width == 0U || framebuffer->height == 0U ||
@@ -578,9 +584,9 @@ bool nexus_display_set_primary_monitor(uint32_t id) {
         if (monitor->id == id && monitor->connected && monitor->enabled)
             found = true;
     }
-    if (!found || !display_backend_registered ||
-        display_backend.set_primary_monitor == NULL ||
-        !display_backend.set_primary_monitor(display_backend_context, id))
+    if (!found || !topology_backend_registered ||
+        topology_backend.set_primary_monitor == NULL ||
+        !topology_backend.set_primary_monitor(topology_backend_context, id))
         return false;
     display_info.primary_monitor_id = id;
     for (uint32_t i = 0U; i < display_info.monitor_count; ++i)
@@ -589,10 +595,30 @@ bool nexus_display_set_primary_monitor(uint32_t id) {
     return true;
 }
 
+bool nexus_display_register_topology_backend(
+    const struct nexus_display_topology_backend *backend, void *context) {
+    if (backend == NULL ||
+        (backend->set_topology == NULL &&
+         backend->set_primary_monitor == NULL)) {
+        topology_backend = (struct nexus_display_topology_backend){0};
+        topology_backend_context = NULL;
+        topology_backend_registered = false;
+        return false;
+    }
+    topology_backend = *backend;
+    topology_backend_context = context;
+    topology_backend_registered = true;
+    return true;
+}
+
 bool nexus_display_topology_available(void) {
-    return display_info.initialized && display_info.monitor_count > 1U &&
-           display_backend_registered &&
-           display_backend.set_topology != NULL;
+    if (!display_info.initialized || !topology_backend_registered ||
+        topology_backend.set_topology == NULL) return false;
+    uint32_t active_monitors = 0U;
+    for (uint32_t i = 0U; i < display_info.monitor_count; ++i)
+        if (display_info.monitors[i].connected &&
+            display_info.monitors[i].enabled) ++active_monitors;
+    return active_monitors > 1U;
 }
 
 bool nexus_display_set_topology(enum nexus_display_topology topology) {
@@ -600,7 +626,7 @@ bool nexus_display_set_topology(enum nexus_display_topology topology) {
         (topology != NEXUS_DISPLAY_TOPOLOGY_EXTENDED &&
          topology != NEXUS_DISPLAY_TOPOLOGY_MIRRORED) ||
         !nexus_display_topology_available()) return false;
-    if (!display_backend.set_topology(display_backend_context, topology))
+    if (!topology_backend.set_topology(topology_backend_context, topology))
         return false;
     display_info.topology = topology;
     return true;

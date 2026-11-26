@@ -113,12 +113,28 @@ exception_common:
     pushq %r14
     pushq %r15
     movq %rsp, %rdi
+    movq %rsp, %r12
     andq $-16, %rsp
     call exception_dispatch
-1:
-    cli
-    hlt
-    jmp 1b
+    movq %r12, %rsp
+
+    popq %r15
+    popq %r14
+    popq %r13
+    popq %r12
+    popq %r11
+    popq %r10
+    popq %r9
+    popq %r8
+    popq %rdi
+    popq %rsi
+    popq %rbp
+    popq %rdx
+    popq %rcx
+    popq %rbx
+    popq %rax
+    addq $16, %rsp
+    iretq
 
 .type interrupt_common, @function
 interrupt_common:

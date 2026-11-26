@@ -29,6 +29,7 @@ struct ramfs_entry {
 };
 
 static struct ramfs_entry ramfs[NEXUS_VFS_RAM_MAX_FILES];
+static bool vfs_stream_active;
 
 static char ascii_upper(char value) {
     if (value >= 'a' && value <= 'z')
@@ -555,7 +556,35 @@ bool vfs_save_ram_file_to_nxfs(const char *name) {
  * fall through to FAT32 and never disguise a failed writable-NXFS write as a
  * successful RAM-only write.
  */
+bool vfs_stream_write_begin(const char *name, uint32_t expected_length) {
+    char path[NEXUS_VFS_NAME_MAX];
+    if (vfs_stream_active || name == NULL ||
+        directory_backend == VFS_DIRECTORY_FAT32 ||
+        !nxfs_root_mounted || !nxfs_is_writable() ||
+        !vfs_nxfs_compose_path(name, path) ||
+        !nxfs_write_file_begin(path, expected_length)) return false;
+    vfs_stream_active = true;
+    return true;
+}
+
+bool vfs_stream_write_append(const void *data, size_t length) {
+    return vfs_stream_active && nxfs_write_file_append(data, length);
+}
+
+bool vfs_stream_write_finish(void) {
+    if (!vfs_stream_active) return false;
+    vfs_stream_active = false;
+    return nxfs_write_file_finish();
+}
+
+void vfs_stream_write_abort(void) {
+    if (!vfs_stream_active) return;
+    vfs_stream_active = false;
+    nxfs_write_file_abort();
+}
+
 bool vfs_write_file(const char *name, const void *data, size_t length) {
+    if (vfs_stream_active) return false;
     if (name == NULL || (length != 0U && data == NULL) ||
         directory_backend == VFS_DIRECTORY_FAT32) return false;
     if (nxfs_root_mounted && nxfs_is_writable()) {

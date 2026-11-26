@@ -66,6 +66,19 @@ enum nexus_cpu_feature {
     NEXUS_CPU_FEATURE_AVX512VNNI= 1ULL << 42
 };
 
+struct nexus_cpu_local_topology {
+    enum nexus_cpu_vendor vendor;
+    enum nexus_cpu_core_type core_type;
+    uint32_t apic_id;
+    uint32_t core_id;
+    uint32_t node_id;
+    uint8_t logical_processors_per_core;
+    bool apic_id_valid;
+    bool core_id_valid;
+    bool node_id_valid;
+    bool topology_extensions_supported;
+};
+
 struct nexus_cpu_info {
     bool cpuid_available;
     enum nexus_cpu_vendor vendor_kind;
@@ -79,6 +92,15 @@ struct nexus_cpu_info {
     uint32_t stepping;
     uint16_t logical_processors_per_package;
     uint16_t physical_cores_per_package;
+    uint8_t logical_processors_per_core;
+    uint32_t local_apic_id;
+    uint32_t core_id;
+    uint32_t node_id;
+    bool apic_id_valid;
+    bool core_id_valid;
+    bool node_id_valid;
+    bool topology_extensions_supported;
+    uint8_t amd_nodes_per_processor_raw;
     uint8_t physical_address_bits;
     uint8_t virtual_address_bits;
     uint64_t features;
@@ -102,6 +124,8 @@ struct nexus_cpu_info {
 bool nexus_cpu_init(void);
 enum nexus_cpu_vendor nexus_cpu_get_vendor(void);
 /* Query the executing logical core without altering the BSP capability snapshot. */
+/* Query CPUID topology for the executing logical CPU (BSP or AP). */
+bool nexus_cpu_get_local_topology(struct nexus_cpu_local_topology *topology);
 enum nexus_cpu_core_type nexus_cpu_get_local_core_type(void);
 const char *nexus_cpu_vendor_name(void);
 bool nexus_cpu_is_intel(void);

@@ -1359,6 +1359,10 @@ static void network_handle_link_change(bool link_up) {
 void net_poll(void) {
     if (!network.ready) return;
     const bool link_up = netdev_link_up();
+    if (!link_up) {
+        network_handle_link_change(false);
+        return;
+    }
     struct nexus_netdev_info device_info;
     if (!netdev_get_info(&device_info)) return;
     if (!equal_bytes(device_info.mac, network.mac, sizeof(network.mac)) ||
@@ -1424,8 +1428,10 @@ bool net_get_info(struct nexus_net_info *info) {
     info->dns_manual_override = dns_manual_override;
     info->dhcp_lease_seconds = dhcp_lease_seconds;
     info->dhcp_lease_remaining_seconds = 0U;
-    if (dhcp_state == NET_DHCP_BOUND && dhcp_lease_seconds != 0U &&
-        dhcp_lease_start_tick != 0U) {
+    if ((dhcp_state == NET_DHCP_BOUND ||
+         dhcp_state == NET_DHCP_RENEWING ||
+         dhcp_state == NET_DHCP_REBINDING) &&
+        dhcp_lease_seconds != 0U) {
         const uint64_t elapsed = timer_ticks() - dhcp_lease_start_tick;
         const uint64_t total = dhcp_seconds_to_ticks(dhcp_lease_seconds);
         if (elapsed < total)

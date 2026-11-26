@@ -57,6 +57,8 @@ static union nexus_heap_block *heap_find_payload(const void *pointer) {
     return NULL;
 }
 
+static void heap_merge_next(union nexus_heap_block *block);
+
 static void heap_split(union nexus_heap_block *block, size_t wanted) {
     const size_t header_size = sizeof(union nexus_heap_block);
     const size_t alignment = heap_alignment();
@@ -75,6 +77,7 @@ static void heap_split(union nexus_heap_block *block, size_t wanted) {
         remainder->fields.next->fields.previous = remainder;
     block->fields.next = remainder;
     block->fields.size = wanted;
+    heap_merge_next(remainder);
 }
 
 static void heap_merge_next(union nexus_heap_block *block) {

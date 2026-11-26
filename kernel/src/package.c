@@ -823,18 +823,18 @@ bool nexus_package_uninstall(const char *id,
         receipt[out++] = PACKAGE_RECEIPT_SUFFIX[i];
     receipt[out] = '\0';
 
-    /* If approval cleanup fails, retain the receipt; otherwise an orphan
-     * local grant could be revived by reinstalling this exact package later.
+    /* Persist a zero grant before removing the signed receipt. Even if the
+     * final sidecar deletion fails, reinstalling this exact build remains
+     * least-privileged rather than reviving an old approval.
      */
+    if (!nexus_package_set_permissions(id, 0U, verifier, verifier_context))
+        return false;
     char permission_path[32];
-    if (!make_permission_path(id, permission_path)) return false;
-    struct nexus_vfs_file grant_file;
-    if (vfs_open_root_readonly_path(permission_path, &grant_file)) {
-        vfs_close(&grant_file);
-        if (!vfs_remove_root_path(permission_path)) return false;
-    }
-    if (!vfs_remove_root_path(receipt)) return false;
-    return vfs_remove_root_path(installed.executable_path);
+    if (!make_permission_path(id, permission_path) ||
+        !vfs_remove_root_path(receipt)) return false;
+    if (!vfs_remove_root_path(installed.executable_path)) return false;
+    (void)vfs_remove_root_path(permission_path);
+    return true;
 }
 
 bool nexus_package_launch(const char *id, nexus_package_signature_verifier verifier, void *verifier_context, uint64_t *exit_status) {

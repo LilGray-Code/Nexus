@@ -139,6 +139,12 @@ static volatile uint32_t scheduler_sleep_worker_started;
 static volatile uint32_t scheduler_sleep_observer_ran;
 static volatile uint32_t scheduler_sleep_worker_result;
 static volatile uint64_t scheduler_sleep_elapsed;
+static volatile uint32_t scheduler_user_sleep_worker_ran;
+
+static void scheduler_user_sleep_worker(void *argument) {
+    (void)argument;
+    scheduler_user_sleep_worker_ran = 1U;
+}
 
 static void scheduler_sleep_worker(void *argument) {
     (void)argument;
@@ -731,10 +737,18 @@ void kmain(void) {
     if (!nexus_service_manager_start("process.runtime")) {
         serial_write("ERROR: native process runtime service failed\r\n"); halt_forever();
     }
-    if (!usermode_run_selftest()) {
-        serial_write("ERROR: CPL3 user-mode self-test failed\r\n");
+    scheduler_user_sleep_worker_ran = 0U;
+    if (!scheduler_create_thread(scheduler_user_sleep_worker, NULL)) {
+        serial_write("ERROR: unable to create user-sleep scheduling worker\r\n");
         halt_forever();
     }
+    if (!usermode_run_selftest() ||
+        scheduler_user_sleep_worker_ran != 1U) {
+        serial_write("ERROR: CPL3 sleep syscall did not yield to a kernel worker\r\n");
+        halt_forever();
+    }
+    serial_write("NEXUS USER SLEEP SYSCALL SCHEDULER INTEGRATION READY\r\n");
+    scheduler_wait();
 #ifdef NEXUS_STORAGE_SELFTEST
     const enum nexus_desktop_process_test_result file_test =
         desktop_run_process_selftest();

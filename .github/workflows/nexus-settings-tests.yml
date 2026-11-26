@@ -10,6 +10,9 @@ on:
       - "kernel/src/display.c"
       - "kernel/src/display.h"
       - "kernel/src/desktop.c"
+      - "kernel/src/memory.c"
+      - "kernel/src/memory.h"
+      - "kernel/tests/memory_smp_test.c"
       - "kernel/src/main.c"
       - "kernel/Makefile"
       - "kernel/tests/settings_test.c"
@@ -46,6 +49,15 @@ jobs:
             -Ikernel/include -Ikernel/src kernel/src/display.c \
             kernel/tests/display_test.c -o /tmp/nexus-display-test
           /tmp/nexus-display-test
+
+      - name: Stress the SMP-safe physical page allocator
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -DNEXUS_MEMORY_HOST_TEST -pthread \
+            -Ikernel/include -Ikernel/src \
+            kernel/src/memory.c kernel/tests/memory_smp_test.c \
+            -o /tmp/nexus-memory-smp-test
+          /tmp/nexus-memory-smp-test
 
       - name: Build the freestanding Nexus kernel
         run: make -C kernel

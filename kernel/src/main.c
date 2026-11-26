@@ -731,7 +731,7 @@ void kmain(void) {
         serial_write("AUDIO: service unavailable; continuing without audio\r\n");
     if (!nexus_service_manager_start("desktop"))
         serial_write("WARNING: desktop service did not initialize\r\n");
-    serial_write("NEXUS K2 COOPERATIVE THREAD SCHEDULER READY\r\n");
+    serial_write("NEXUS K2 MULTITASKING SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");
     if (!nexus_service_manager_start("process.runtime")) {

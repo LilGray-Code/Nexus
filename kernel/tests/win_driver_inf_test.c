@@ -10,7 +10,7 @@ static const char inf[] =
     "Signature=\"$Windows NT$\"\r\n"
     "[Manufacturer]\r\n"
     "%Maker%=Models,NTamd64\r\n"
-    "[Models.NTamd64]\r\n"
+    "[Intel.NTamd64.10.0]\r\n"
     "%Wireless%=Install, PCI\\VEN_8086&DEV_2723, PCI\\VEN_8086&DEV_2723&SUBSYS_00248086&REV_01\r\n"
     "%USBWifi%=UsbInstall, USB\\VID_0BDA&PID_C820\r\n"
     "[Install]\r\n"

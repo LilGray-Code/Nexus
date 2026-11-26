@@ -3630,9 +3630,7 @@ static void browser_save_current_download(void) {
     const uint32_t data_file_limit = nxfs_get_max_file_bytes();
     if (vfs_nxfs_writable() && data_file_limit != 0U &&
         browser_download_length > data_file_limit) {
-        browser_set_status(data_file_limit == NEXUS_NXFS_LEGACY_FILE_BYTES
-            ? "This existing Data volume supports files up to 1 MiB; downloads above that need a newly formatted larger Data volume"
-            : "This Data volume cannot fit the selected download");
+        browser_set_status("The mounted Data volume has a smaller per-file limit; use a larger Data volume for this download");
         return;
     }
 
@@ -4517,7 +4515,7 @@ browser_retry:
     if (use_https) {
         receive_ok = browser_https_receive_response(
             &https, response, NEXUS_BROWSER_RESPONSE_CAPACITY,
-            &response_length, body, NEXUS_NXFS_MAX_FILE_BYTES,
+            &response_length, body, NEXUS_BROWSER_BODY_CAPACITY,
             &parsed, &orderly_eof, &receive_error,
             &download_streamed);
         if (search_request && !receive_ok) {
@@ -4581,7 +4579,7 @@ browser_retry:
         return;
     }
     if (!nexus_http_decode_response(response, response_length, body,
-                                    NEXUS_NXFS_MAX_FILE_BYTES, &parsed)) {
+                                    NEXUS_BROWSER_BODY_CAPACITY, &parsed)) {
         if (browser_search_fallback(
                 search_request, &search_use_bing,
                 &search_fallback_attempted)) goto browser_retry;
@@ -4671,7 +4669,7 @@ browser_retry:
     }
 
     if (!search_request && use_https && parsed.body_length != 0U &&
-        parsed.body_length <= NEXUS_NXFS_MAX_FILE_BYTES &&
+        parsed.body_length <= NEXUS_BROWSER_BODY_CAPACITY &&
         nexus_download_filename(browser_address,
             parsed.has_content_disposition ? parsed.content_disposition : NULL,
             parsed.has_content_type ? parsed.content_type : NULL,

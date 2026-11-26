@@ -692,6 +692,33 @@ void kmain(void) {
         }
         serial_write("NEXUS SMP PARALLEL WORK TEST READY\r\n");
 
+        uint32_t performance_cores = 0U;
+        uint32_t efficiency_cores = 0U;
+        uint32_t unclassified_cores = 0U;
+        for (uint32_t cpu_slot = 0U;
+             cpu_slot < nexus_smp_online_cpu_count(); ++cpu_slot) {
+            struct nexus_smp_cpu_info cpu_topology;
+            if (!nexus_smp_cpu_info_at(cpu_slot, &cpu_topology) ||
+                !cpu_topology.online) {
+                serial_write("ERROR: online CPU topology record is unavailable\r\n");
+                halt_forever();
+            }
+            if (cpu_topology.core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE)
+                ++performance_cores;
+            else if (cpu_topology.core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY)
+                ++efficiency_cores;
+            else
+                ++unclassified_cores;
+        }
+        serial_write("SMP core inventory P/E/other=");
+        serial_write_hex(performance_cores);
+        serial_write("/");
+        serial_write_hex(efficiency_cores);
+        serial_write("/");
+        serial_write_hex(unclassified_cores);
+        serial_write("\r\n");
+
+
         struct smp_allocator_test_context allocator_context = {
             .pages = smp_allocator_test_pages,
             .results = smp_allocator_test_results

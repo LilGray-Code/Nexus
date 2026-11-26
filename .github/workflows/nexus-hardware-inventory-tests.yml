@@ -9,6 +9,7 @@ on:
       - "kernel/src/gpu.*"
       - "kernel/src/pci.*"
       - "kernel/src/wifi_pci.*"
+      - "kernel/src/win_driver_inf.*"
       - "kernel/tests/cpu_test.c"
       - "kernel/tests/gpu_test.c"
       - "kernel/tests/wifi_pci_test.c"
@@ -42,7 +43,8 @@ jobs:
       - name: Test PCI wireless inventory
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
-            -Ikernel/src kernel/src/wifi_pci.c kernel/tests/wifi_pci_test.c \
+            -Ikernel/src kernel/src/wifi_pci.c kernel/src/win_driver_inf.c \\
+            kernel/tests/wifi_pci_test.c \\
             -o /tmp/nexus-wifi-pci-test
           /tmp/nexus-wifi-pci-test
       - name: Test graphics damage tracking

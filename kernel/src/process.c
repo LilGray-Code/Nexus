@@ -20,6 +20,10 @@ struct nexus_process {
     uint64_t stack_pointer;
     uint64_t exit_status;
     uint32_t permissions;
+    bool crashed;
+    uint64_t fault_vector;
+    uint64_t fault_error_code;
+    uint64_t fault_instruction_pointer;
     char name[NEXUS_PROCESS_NAME_MAX];
     uint8_t kernel_stack[PROCESS_KERNEL_STACK_SIZE]
         __attribute__((aligned(16)));
@@ -44,6 +48,10 @@ static void clear_slot(struct nexus_process *process) {
     process->stack_pointer = 0U;
     process->exit_status = UINT64_MAX;
     process->permissions = 0U;
+    process->crashed = false;
+    process->fault_vector = 0U;
+    process->fault_error_code = 0U;
+    process->fault_instruction_pointer = 0U;
     process->name[0] = '\0';
 }
 
@@ -160,6 +168,10 @@ bool process_spawn_elf_with_permissions(
     process->stack_pointer = stack_pointer;
     process->exit_status = UINT64_MAX;
     process->permissions = permissions;
+    process->crashed = false;
+    process->fault_vector = 0U;
+    process->fault_error_code = 0U;
+    process->fault_instruction_pointer = 0U;
     for (size_t i = 0; i < NEXUS_PROCESS_NAME_MAX; ++i) {
         process->name[i] = process_name[i];
     }
@@ -186,13 +198,21 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
         usermode_execute(process->address_space, process->entry_point,
                          process->stack_pointer, kernel_stack_top,
                          process->permissions, &status);
+    struct nexus_usermode_fault_info fault = {0};
+    const bool crashed = usermode_get_fault_info(&fault);
     const bool reclaimed =
         paging_destroy_user_address_space(process->address_space);
     process->address_space = 0U;
     process->exit_status = status;
+    process->crashed = crashed;
+    if (crashed) {
+        process->fault_vector = fault.vector;
+        process->fault_error_code = fault.error_code;
+        process->fault_instruction_pointer = fault.instruction_pointer;
+    }
     *exit_status = status;
 
-    if (!executed || !reclaimed) {
+    if (!executed || !reclaimed || crashed) {
         process->state = NEXUS_PROCESS_FAILED;
         return false;
     }
@@ -321,6 +341,11 @@ bool process_get_info(size_t slot, struct nexus_process_info *info) {
     info->state = processes[slot].state;
     info->exit_status = processes[slot].exit_status;
     info->permissions = processes[slot].permissions;
+    info->crashed = processes[slot].crashed;
+    info->fault_vector = processes[slot].fault_vector;
+    info->fault_error_code = processes[slot].fault_error_code;
+    info->fault_instruction_pointer =
+        processes[slot].fault_instruction_pointer;
     for (size_t i = 0; i < NEXUS_PROCESS_NAME_MAX; ++i) {
         info->name[i] = processes[slot].name[i];
     }

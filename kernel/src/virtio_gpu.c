@@ -437,8 +437,7 @@ static bool gpu_virgl_query_capset(void) {
         const uint32_t version = read_le32(response + 28U);
         const uint32_t size = read_le32(response + 32U);
         const bool context_init_supported =
-            (transport.features & ((uint64_t)1U <<
-                                   (32U + VIRTIO_GPU_F_CONTEXT_INIT))) != 0U;
+            (transport.features & ((uint64_t)1U << VIRTIO_GPU_F_CONTEXT_INIT)) != 0U;
         if (version == 0U || size == 0U) continue;
         if (id == VIRTIO_GPU_CAPSET_GFXSTREAM) {
             gfxstream_capset_available = true;
@@ -478,8 +477,7 @@ static bool gpu_virgl_create_context(void) {
         .header = make_header(VIRTIO_GPU_CMD_CTX_CREATE),
         .name_length = (uint32_t)(sizeof(name) - 1U),
         .context_init =
-            (transport.features & ((uint64_t)1U <<
-                                   (32U + VIRTIO_GPU_F_CONTEXT_INIT))) != 0U
+            (transport.features & ((uint64_t)1U << VIRTIO_GPU_F_CONTEXT_INIT)) != 0U
             ? virgl_capset_id : 0U
     };
     create.header.context_id = VIRTIO_GPU_CONTEXT_ID;

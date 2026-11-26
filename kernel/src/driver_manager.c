@@ -232,8 +232,15 @@ bool nexus_driver_manager_probe_device(
     const struct nexus_driver_device *device) {
     if (device == NULL || device->bus < NEXUS_DRIVER_BUS_PCI ||
         device->bus > NEXUS_DRIVER_BUS_USB) return false;
+    const size_t prior = find_pnp_device(device);
     const size_t record = remember_device(device);
     if (record == pnp_devices_used) return false;
+    if (prior != pnp_devices_used) {
+        if (pnp_devices[record].info.state == NEXUS_PNP_DEVICE_ACTIVE)
+            return true;
+        /* Failed/unsupported records are retried only through rescan(). */
+        return false;
+    }
     return probe_record(record);
 }
 
@@ -279,8 +286,8 @@ size_t nexus_driver_manager_discover_pci_devices(void) {
             .native_device = device
         };
         const size_t prior = find_pnp_device(&generic);
-        const bool active = nexus_driver_manager_discover_device(&generic);
-        if (prior != pnp_devices_used || active ||
+        (void)nexus_driver_manager_discover_device(&generic);
+        if (prior == pnp_devices_used &&
             find_pnp_device(&generic) != pnp_devices_used) ++discovered;
     }
     return discovered;

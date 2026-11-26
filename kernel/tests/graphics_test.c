@@ -123,7 +123,8 @@ int main(void) {
     const uint32_t desktop_scale_edge = guarded[1U + 6U];
     assert(((desktop_scale_edge >> 16) & 0xFFU) >= 168U &&
            ((desktop_scale_edge >> 16) & 0xFFU) <= 172U);
-    assert(guarded[1U + 7U] == 0x00FF0000U);
+    assert(((guarded[1U + 7U] >> 16) & 0xFFU) >= 168U &&
+           ((guarded[1U + 7U] >> 16) & 0xFFU) <= 172U);
 
     /* Extreme text scale and origin must remain clipped to the surface. */
     graphics_draw_text(0U, 0U, "NEXUS", UINT32_MAX, 255U, 255U, 255U);

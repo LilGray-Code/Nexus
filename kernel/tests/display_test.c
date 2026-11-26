@@ -162,7 +162,7 @@ int main(void) {
     assert(fake.current_width == 1920U);
 
     /* A partially applied mode failure must restore the previous mode. */
-    assert(!nexus_display_apply_mode(1U));
+    assert(!nexus_display_apply_mode(2U));
     info = nexus_display_get_info();
     assert(info->current_width == 1920U);
     assert(fake.current_width == 1920U);

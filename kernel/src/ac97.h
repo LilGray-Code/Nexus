@@ -33,6 +33,8 @@ bool nexus_ac97_build_bdl_entry(uint64_t buffer_physical,
 
 bool ac97_init(void);
 bool ac97_is_ready(void);
+/* Set codec master output volume from 0 (mute) to 100 (maximum). */
+bool ac97_set_master_volume(uint8_t percent);
 void ac97_poll(void);
 enum nexus_ac97_submit_result ac97_write_pcm_s16_stereo_48k(
     const int16_t *interleaved_samples, uint32_t sample_frames);

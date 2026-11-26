@@ -2,9 +2,12 @@
 #define NEXUS_WIFI_PCI_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define NEXUS_WIFI_PCI_MAX_CANDIDATES 16U
+
+struct nexus_win_inf_match;
 
 struct nexus_wifi_pci_candidate {
     uint8_t bus;
@@ -22,5 +25,10 @@ struct nexus_wifi_pci_candidate {
 bool wifi_pci_discover(void);
 uint32_t wifi_pci_candidate_count(void);
 const struct nexus_wifi_pci_candidate *wifi_pci_candidate_at(uint32_t index);
+
+/* Match an adapter against a Windows INF package without loading its .sys. */
+bool wifi_pci_match_windows_inf(uint32_t candidate_index,
+                                const char *inf_text, size_t text_length,
+                                struct nexus_win_inf_match *match);
 
 #endif

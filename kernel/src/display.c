@@ -304,22 +304,23 @@ static uint32_t timing_refresh_for_mode(uint64_t width, uint64_t height) {
 }
 
 static void add_current_mode(void) {
+    const uint32_t refresh = timing_refresh_for_mode(
+        display_info.current_width, display_info.current_height);
     for (uint32_t i = 0U; i < display_info.mode_count; ++i) {
         struct nexus_display_mode *mode = &display_info.modes[i];
-        if (mode->width == display_info.current_width &&
-            mode->height == display_info.current_height &&
-            mode->bits_per_pixel == display_info.current_bits_per_pixel) {
-            mode->current_boot_mode = true;
-            if (mode->refresh_hz == 0U)
-                mode->refresh_hz = timing_refresh_for_mode(mode->width, mode->height);
-            display_info.current_refresh_hz = mode->refresh_hz;
-            return;
-        }
+        if (mode->width != display_info.current_width ||
+            mode->height != display_info.current_height ||
+            mode->bits_per_pixel != display_info.current_bits_per_pixel ||
+            (refresh != 0U && mode->refresh_hz != 0U &&
+             mode->refresh_hz != refresh)) continue;
+        mode->current_boot_mode = true;
+        if (mode->refresh_hz == 0U) mode->refresh_hz = refresh;
+        display_info.current_refresh_hz =
+            refresh != 0U ? refresh : mode->refresh_hz;
+        return;
     }
 
     if (display_info.mode_count >= NEXUS_DISPLAY_MAX_MODES) return;
-    const uint32_t refresh = timing_refresh_for_mode(
-        display_info.current_width, display_info.current_height);
     display_info.modes[display_info.mode_count++] =
         (struct nexus_display_mode){
             .width = display_info.current_width,

@@ -1,4 +1,5 @@
 #include "display.h"
+#include "graphics.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -8,8 +9,11 @@ struct fake_backend {
     uint64_t current_width;
     uint64_t current_height;
     uint64_t fail_width;
+    uint64_t fail_verify_width;
+    bool fail_restore;
     unsigned test_calls;
     unsigned set_calls;
+    unsigned verify_calls;
     unsigned restore_calls;
 };
 
@@ -32,10 +36,19 @@ static bool fake_set(void *context, const struct nexus_display_mode *mode) {
 static bool fake_restore(void *context, const struct nexus_display_mode *mode) {
     struct fake_backend *backend = context;
     ++backend->restore_calls;
-    if (mode == NULL) return false;
+    if (mode == NULL || backend->fail_restore) return false;
     backend->current_width = mode->width;
     backend->current_height = mode->height;
     return true;
+}
+
+static bool fake_verify(void *context,
+                        const struct nexus_display_mode *mode) {
+    struct fake_backend *backend = context;
+    ++backend->verify_calls;
+    return mode != NULL && mode->width != backend->fail_verify_width &&
+           mode->width == backend->current_width &&
+           mode->height == backend->current_height;
 }
 
 static bool fake_hdr(void *context, const struct nexus_display_mode *mode) {
@@ -139,18 +152,53 @@ int main(void) {
     assert(nexus_display_hdr_monitor_supported());
     assert(!nexus_display_hdr_output_available());
     assert(info->firmware_mode_count == 2U);
-    assert(info->mode_count == 3U); /* Two advertised plus active boot mode. */
+    assert(info->mode_count == 3U); /* Two firmware modes plus active boot mode. */
+    assert(info->modes[0].refresh_hz == 60U);
+    assert(info->modes[0].edid_timing);
     assert(!info->mode_set_available);
+
+    struct nexus_graphics_surface surface = {
+        .address = framebuffer, .width = 1024U, .height = 768U,
+        .pitch = 1024U * 4U, .bits_per_pixel = 32U,
+        .red_mask_size = 8U, .red_mask_shift = 16U,
+        .green_mask_size = 8U, .green_mask_shift = 8U,
+        .blue_mask_size = 8U, .blue_mask_shift = 0U
+    };
+    assert(graphics_init(&surface));
+    assert(graphics_width() == 1024U && graphics_height() == 768U);
+    assert(nexus_display_set_rotation(NEXUS_DISPLAY_ROTATE_90));
+    assert(graphics_width() == 768U && graphics_height() == 1024U);
+    assert(nexus_display_set_scale_percent(150U));
+    assert(graphics_width() == 512U && graphics_height() == 682U);
+    assert(nexus_display_set_color_temperature(3000U));
+    assert(nexus_display_set_brightness_percent(75U));
+    assert(nexus_display_set_scale_percent(100U));
+    assert(nexus_display_set_rotation(NEXUS_DISPLAY_ROTATE_0));
+    assert(graphics_width() == 1024U && graphics_height() == 768U);
+    assert(!nexus_display_set_scale_percent(20U));
+    assert(!nexus_display_set_color_temperature(0U));
+
+    assert(nexus_display_add_monitor(1U, true, 1024, 0,
+                                    1920U, 1080U, edid, sizeof(edid)));
+    assert(info->monitor_count == 2U);
+    assert(nexus_display_monitor_at(1U) != NULL);
+    assert(nexus_display_monitor_at(1U)->edid_valid);
+    assert(nexus_display_monitor_at(1U)->dpi_x != 0U);
+    assert(nexus_display_set_primary_monitor(1U));
+    assert(!nexus_display_set_primary_monitor(99U));
+    assert(!nexus_display_topology_available());
+    assert(!nexus_display_set_topology(NEXUS_DISPLAY_TOPOLOGY_MIRRORED));
 
     struct fake_backend fake = {
         .current_width = 1024U,
         .current_height = 768U,
-        .fail_width = 1024U
+        .fail_width = 1280U
     };
     const struct nexus_display_mode_backend backend = {
         .test_mode = fake_test,
         .set_mode = fake_set,
         .restore_mode = fake_restore,
+        .verify_mode = fake_verify,
         .supports_hdr = fake_hdr
     };
     assert(nexus_display_register_mode_backend(&backend, &fake));
@@ -160,15 +208,41 @@ int main(void) {
     assert(info->current_width == 1920U);
     assert(info->current_height == 1080U);
     assert(fake.current_width == 1920U);
+    assert(fake.verify_calls == 1U);
 
-    /* A partially applied mode failure must restore the previous mode. */
-    assert(!nexus_display_apply_mode(2U));
+    /* A set failure must restore and verify the prior mode. */
+    assert(!nexus_display_apply_mode(1U));
     info = nexus_display_get_info();
     assert(info->current_width == 1920U);
     assert(fake.current_width == 1920U);
     assert(fake.restore_calls == 1U);
+    assert(fake.verify_calls == 2U);
     assert(info->last_rollback_succeeded);
+    assert(info->last_mode_change_failed);
+    assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_SET);
     assert(info->mode_set_available);
+
+    /* A mode that fails post-set verification must also roll back. */
+    fake.fail_width = 0U;
+    fake.fail_verify_width = 1280U;
+    assert(!nexus_display_apply_mode(1U));
+    info = nexus_display_get_info();
+    assert(info->current_width == 1920U);
+    assert(fake.current_width == 1920U);
+    assert(fake.restore_calls == 2U);
+    assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_VERIFY);
+    assert(info->last_rollback_succeeded);
+
+    /* An unverified rollback disables future mode changes. */
+    fake.fail_verify_width = 0U;
+    fake.fail_width = 1280U;
+    fake.fail_restore = true;
+    assert(!nexus_display_apply_mode(1U));
+    info = nexus_display_get_info();
+    assert(!info->last_rollback_succeeded);
+    assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_ROLLBACK);
+    assert(!info->mode_set_available);
+    assert(!nexus_display_apply_mode(0U));
 
     uint8_t bad_edid[128];
     memcpy(bad_edid, edid, sizeof(bad_edid));

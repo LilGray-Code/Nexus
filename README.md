@@ -42,7 +42,16 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   path. Every submit requests a fence and waits for the matching completion
   response. The driver also supports a bounded set of 64 host-side 3D
   resources using RESOURCE_CREATE_3D, context attach/detach, and RESOURCE_UNREF,
-  with tracked handles and cleanup retries. The driver also queries the
+  with tracked handles and cleanup retries. For a tracked 2D render-target
+  resource it can encode and submit a real Virgl surface-create, framebuffer
+  bind, color-clear, unbind, and surface-destroy command stream; it increments
+  its fenced-clear counter only after the matching completion fence returns.
+  The command stream encoder has host-side layout/bounds regression coverage.
+  This is a first device-rendering workload, not an accelerated desktop: Nexus
+  does not read pixels back to verify the clear result, and a Virgl host may
+  execute through either a physical GPU or a software renderer. Consequently
+  the kernel still does not label this as verified hardware acceleration.
+  The driver also queries the
   VirtIO-GPU display-info table (up to 16 virtual scanouts), prefers an enabled
   output matching the firmware surface size, and selects an enabled fallback
   output when the exact mode is unavailable. The desktop still binds one

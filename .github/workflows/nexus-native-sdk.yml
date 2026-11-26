@@ -78,16 +78,24 @@ jobs:
               p_type, flags, offset, vaddr, _paddr, filesz, memsz, align = item
               if p_type != 1:
                   continue
-              assert flags & 1 and flags & 4
-              assert not (flags & 2), "W+X load segment is forbidden"
+              assert flags & 4, "loadable user segment must be readable"
+              assert not (flags & 2 and flags & 1), "W+X load segment is forbidden"
               assert align in (0, 1) or (align & (align - 1)) == 0
               if align > 1:
                   assert vaddr % align == offset % align
               assert offset + filesz <= len(image)
               assert memsz >= filesz
               load_segments.append(item)
-          assert len(load_segments) == 1, "sample should have one RX load segment"
-          print(f"Validated static x86-64 ELF64 sample: {len(image)} bytes")
+          assert len(load_segments) == 2, "sample must have separate RX and RW load segments"
+          rx = [seg for seg in load_segments if (seg[1] & 1) and not (seg[1] & 2)]
+          rw = [seg for seg in load_segments if (seg[1] & 2) and not (seg[1] & 1)]
+          assert len(rx) == 1 and len(rw) == 1, "expected one RX and one RW/NX segment"
+          text_seg, data_seg = rx[0], rw[0]
+          assert data_seg[3] % 4096 == 0, "RW segment must start on a 4 KiB boundary"
+          text_page_end = (text_seg[3] + text_seg[6] + 4095) & ~4095
+          assert data_seg[3] >= text_page_end, "RX and RW segments share a page"
+          assert data_seg[6] > data_seg[5], "sample must include zero-initialized writable data/BSS"
+          print(f"Validated static x86-64 ELF64 sample with RX + RW/NX segments: {len(image)} bytes")
           PY
 
       - name: Generate disposable GPT and FAT32 image with compiled app

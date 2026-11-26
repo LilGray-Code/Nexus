@@ -96,8 +96,10 @@ static void test_nvidia_and_virtio_adapter_names(void) {
     device_count = 2U;
     assert(gpu_init());
     assert(gpu_primary_info()->vendor == NEXUS_GPU_VENDOR_NVIDIA);
+    assert(gpu_primary_info()->family == NEXUS_GPU_FAMILY_NVIDIA);
     assert(gpu_adapter_count() == 2U);
     assert(gpu_adapter_at(1U)->vendor == NEXUS_GPU_VENDOR_AMD);
+    assert(gpu_adapter_at(1U)->family == NEXUS_GPU_FAMILY_AMD_RADEON);
 
     devices[0].vendor_id = 0x1AF4U;
     devices[0].device_id = 0x1050U;

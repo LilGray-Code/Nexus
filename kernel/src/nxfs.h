@@ -9,7 +9,8 @@
 #include "gpt.h"
 
 #define NEXUS_NXFS_MAX_FILES 64U
-#define NEXUS_NXFS_MAX_FILE_BYTES (1024U * 1024U)
+#define NEXUS_NXFS_MAX_FILE_BYTES (4U * 1024U * 1024U)
+#define NEXUS_NXFS_LEGACY_FILE_BYTES (1024U * 1024U)
 #define NEXUS_NXFS_NAME_MAX 32U /* 31 printable characters plus NUL */
 
 struct nexus_nxfs_entry {
@@ -40,6 +41,8 @@ bool nxfs_mount(const struct nexus_block_device *device,
 void nxfs_unmount(void);
 bool nxfs_is_mounted(void);
 bool nxfs_is_writable(void);
+/* Effective per-file limit from the mounted NXFS format (0 if unmounted). */
+uint32_t nxfs_get_max_file_bytes(void);
 size_t nxfs_entry_count(void);
 const struct nexus_nxfs_entry *nxfs_entry_at(size_t index);
 bool nxfs_read_file(const struct nexus_nxfs_entry *entry,

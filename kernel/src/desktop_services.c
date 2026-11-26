@@ -47,16 +47,6 @@ static void copy_text(char *destination, size_t capacity,
     while (++i < capacity) destination[i] = '\0';
 }
 
-static bool equal_text(const char *left, const char *right) {
-    if (left == NULL || right == NULL) return false;
-    size_t i = 0U;
-    while (left[i] != '\0' && right[i] != '\0') {
-        if (left[i] != right[i]) return false;
-        ++i;
-    }
-    return left[i] == right[i];
-}
-
 static char upper_ascii(char value) {
     return value >= 'a' && value <= 'z'
         ? (char)(value - 'a' + 'A') : value;

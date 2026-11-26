@@ -122,10 +122,15 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   post-set verification triggers a restore of the last known-good mode and
   verification of that restoration; failed recovery disables further mode
   changes and reports the failure stage. This safety path is covered by fake
-  backend regression tests, but no production GPU modeset backend is shipped,
-  so resolution/refresh switching remains unavailable. EDID HDR static
-  metadata is discovery only; there is no HDR desktop color pipeline or HDR
-  scanout implementation.
+  backend regression tests. The VirtIO backend additionally enables
+  single-output resolution changes when EDID timings exist: it accepts only
+  modes fitting the preallocated shared framebuffer and matching the selected
+  monitor's EDID refresh rate, issues SET_SCANOUT, and checks the resulting
+  dimensions with a fresh GET_DISPLAY_INFO response. This does not set or
+  verify a new refresh clock; alternative refresh-rate switching is unavailable.
+  Multi-output independent mode setting and native Intel/AMD/NVIDIA modeset
+  drivers are not implemented. EDID HDR static metadata is discovery only;
+  there is no HDR desktop color pipeline or HDR scanout implementation.
   Theme, wallpaper, text sizing, mouse controls, accessibility, and volume
   preferences use a versioned, checksum-validated `NEXUS.CFG` record in the
   root of the NXFS Data volume. Settings or Files performs the existing explicit

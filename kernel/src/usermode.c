@@ -364,7 +364,9 @@ bool usermode_run_selftest(void) {
     if (!build_test_elf(&elf_file_size)) return false;
 
     uint32_t pid = 0U;
-    if (!process_spawn_elf("BOOTTEST", usermode_test_elf, elf_file_size, &pid)) {
+    if (!process_spawn_elf_with_permissions(
+            "BOOTTEST", usermode_test_elf, elf_file_size,
+            NEXUS_APP_PERMISSION_FILE_READ, &pid)) {
         return false;
     }
 

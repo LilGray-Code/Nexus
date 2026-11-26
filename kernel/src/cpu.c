@@ -98,6 +98,8 @@ bool nexus_cpu_init(void) {
     set_feature(NEXUS_CPU_FEATURE_SSE, (edx & (1U << 25)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_SSE2, (edx & (1U << 26)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_SSE3, (ecx & (1U << 0)) != 0U);
+    set_feature(NEXUS_CPU_FEATURE_CMPXCHG16B,
+                (ecx & (1U << 13)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_PCLMUL, (ecx & (1U << 1)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_SSSE3, (ecx & (1U << 9)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_SSE41, (ecx & (1U << 19)) != 0U);

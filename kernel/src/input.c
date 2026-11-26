@@ -10,8 +10,10 @@
 #define PS2_DATA_PORT 0x60U
 #define PS2_STATUS_PORT 0x64U
 #define PS2_COMMAND_PORT 0x64U
-#define PS2_QUEUE_SIZE 64U
-#define PS2_QUEUE_MASK (PS2_QUEUE_SIZE - 1U)
+#define INPUT_EVENT_QUEUE_SIZE NEXUS_INPUT_EVENT_QUEUE_SIZE
+#define INPUT_EVENT_QUEUE_MASK (INPUT_EVENT_QUEUE_SIZE - 1U)
+_Static_assert((INPUT_EVENT_QUEUE_SIZE & INPUT_EVENT_QUEUE_MASK) == 0U,
+               "input event queue size must be a power of two");
 #define GAMEPAD_QUEUE_SIZE 16U
 #define GAMEPAD_QUEUE_MASK (GAMEPAD_QUEUE_SIZE - 1U)
 #define PS2_WAIT_LIMIT 100000U
@@ -19,12 +21,13 @@
 #define PS2_MOUSE_PACKET_STANDARD 3U
 #define PS2_MOUSE_PACKET_WHEEL    4U
 
-static struct nexus_input_event event_queue[PS2_QUEUE_SIZE];
+static struct nexus_input_event event_queue[INPUT_EVENT_QUEUE_SIZE];
 static struct nexus_usb_gamepad_event gamepad_queue[GAMEPAD_QUEUE_SIZE];
 static volatile uint8_t gamepad_head;
 static volatile uint8_t gamepad_tail;
 static volatile uint8_t event_head;
 static volatile uint8_t event_tail;
+static volatile uint32_t event_drop_count;
 static uint8_t mouse_packet[4];
 static uint8_t mouse_packet_index;
 static uint8_t mouse_packet_length = PS2_MOUSE_PACKET_STANDARD;
@@ -181,8 +184,12 @@ void input_test_keyboard_scancode(uint8_t scancode) {
 #endif
 
 static void queue_event(const struct nexus_input_event *event) {
-    const uint8_t next = (uint8_t)((event_tail + 1U) & PS2_QUEUE_MASK);
-    if (next == event_head) return; /* Drop newest event rather than overwrite. */
+    const uint8_t next = (uint8_t)((event_tail + 1U) & INPUT_EVENT_QUEUE_MASK);
+    if (next == event_head) {
+        /* Preserve queued key/button transitions and make overload observable. */
+        if (event_drop_count != UINT32_MAX) ++event_drop_count;
+        return;
+    }
     event_queue[event_tail] = *event;
     __asm__ volatile ("" : : : "memory");
     event_tail = next;
@@ -211,6 +218,7 @@ static void input_interrupt_restore(uint64_t flags) {
 bool input_init(void) {
     event_head = 0;
     event_tail = 0;
+    event_drop_count = 0U;
     gamepad_head = 0U;
     gamepad_tail = 0U;
     mouse_packet_index = 0U;
@@ -356,11 +364,15 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
     input_usb_keyboard_report_state(&default_input_keyboard_state, report);
 }
 
+uint32_t input_dropped_event_count(void) {
+    return event_drop_count;
+}
+
 bool input_pop_event(struct nexus_input_event *event) {
     if (event == NULL || event_head == event_tail) return false;
     __asm__ volatile ("" : : : "memory");
     *event = event_queue[event_head];
-    event_head = (uint8_t)((event_head + 1U) & PS2_QUEUE_MASK);
+    event_head = (uint8_t)((event_head + 1U) & INPUT_EVENT_QUEUE_MASK);
     return true;
 }
 

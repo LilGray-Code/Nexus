@@ -21,6 +21,8 @@
 #include "nxfs.h"
 
 #include "graphics.h"
+#include "settings.h"
+#include "ac97.h"
 #include "gpu.h"
 #include "cpu.h"
 #include "pci.h"
@@ -45,10 +47,10 @@
  * drawing the compact 5x7 font directly at 1x on a high-resolution display.
  * All desktop and dedicated-installer text shares this path.
  */
-#define NEXUS_DESKTOP_TEXT_SCALE_16_16 87381U
+static uint32_t desktop_text_scale_16_16 = 87381U;
 #define graphics_draw_text(x, y, text, scale, red, green, blue) \
     graphics_draw_text_aa((x), (y), (text), \
-        (uint32_t)(scale) * NEXUS_DESKTOP_TEXT_SCALE_16_16, \
+        (uint32_t)(scale) * desktop_text_scale_16_16, \
         (red), (green), (blue))
 
 enum desktop_view {
@@ -62,7 +64,7 @@ enum desktop_view {
 };
 
 static enum desktop_view active_view = DESKTOP_HOME;
-static bool settings_hardware_page;
+enum desktop_settings_page {\n    SETTINGS_PERSONAL = 0,\n    SETTINGS_DISPLAY,\n    SETTINGS_INPUT,\n    SETTINGS_ACCESSIBILITY,\n    SETTINGS_SYSTEM,\n    SETTINGS_DEVICES,\n    SETTINGS_PAGE_COUNT\n};\nstatic enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
 #define DESKTOP_STORE_VISIBLE_ROWS 8U
 static size_t store_selected_index;
 static size_t store_first_index;
@@ -105,15 +107,28 @@ enum desktop_theme_mode {
     DESKTOP_THEME_DARK = 0,
     DESKTOP_THEME_LIGHT
 };
-static enum desktop_theme_mode desktop_theme = DESKTOP_THEME_DARK;
-static uint8_t desktop_accent_index;
-static const uint8_t desktop_accent_palette[4][3] = {
-    {45U, 177U, 202U},   /* Cyan */
-    {117U, 136U, 244U}, /* Violet */
-    {82U, 198U, 155U},  /* Emerald */
-    {217U, 164U, 83U}   /* Amber */
+static struct nexus_settings desktop_settings = {
+    .theme = NEXUS_SETTINGS_THEME_DARK,
+    .accent = 0U,
+    .wallpaper = 0U,
+    .ui_scale_percent = 100U,
+    .cursor_size = 1U,
+    .mouse_sensitivity_percent = 100U,
+    .scroll_speed = 2U,
+    .volume_percent = 80U,
+    .left_handed_mouse = false,
+    .high_contrast = false
 };
-#define NEXUS_DESKTOP_PREF_BYTES 7U
+static const uint8_t desktop_accent_palette[NEXUS_SETTINGS_ACCENT_COUNT][3] = {
+    {45U, 177U, 202U},   /* Cyan */
+    {117U, 136U, 244U},  /* Violet */
+    {82U, 198U, 155U},   /* Emerald */
+    {217U, 164U, 83U},   /* Amber */
+    {225U, 103U, 137U},  /* Rose */
+    {73U, 145U, 235U},   /* Blue */
+    {166U, 201U, 95U},   /* Lime */
+    {187U, 111U, 224U}   /* Orchid */
+};
 static bool desktop_preferences_loaded;
 static bool desktop_preferences_saved;
 static bool desktop_preferences_persistent;
@@ -415,88 +430,140 @@ static void desktop_window_restore_for_view(enum desktop_view view) {
 }
 
 static bool desktop_theme_is_light(void) {
-    return desktop_theme == DESKTOP_THEME_LIGHT;
+    return desktop_settings.theme == NEXUS_SETTINGS_THEME_LIGHT;
+}
+
+static void desktop_settings_apply(void) {
+    desktop_text_scale_16_16 =
+        (87381U * desktop_settings.ui_scale_percent + 50U) / 100U;
+    if (ac97_is_ready())
+        (void)ac97_set_master_volume(desktop_settings.volume_percent);
 }
 
 static void desktop_preferences_save(void) {
-    uint8_t record[NEXUS_DESKTOP_PREF_BYTES] = {
-        'N', 'X', 'P', '1', (uint8_t)desktop_theme,
-        desktop_accent_index, 0xA7U
-    };
-    for (size_t i = 0U; i < NEXUS_DESKTOP_PREF_BYTES - 1U; ++i)
-        record[NEXUS_DESKTOP_PREF_BYTES - 1U] ^= record[i];
-
-    desktop_preferences_saved = vfs_write_root_file(
-        "NEXUS.CFG", record, sizeof(record));
+    uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
+    desktop_settings_apply();
+    desktop_preferences_saved =
+        nexus_settings_encode(&desktop_settings, record) &&
+        vfs_write_root_file("NEXUS.CFG", record, sizeof(record));
     desktop_preferences_persistent =
         desktop_preferences_saved && vfs_nxfs_writable();
     serial_write(desktop_preferences_persistent
-        ? "DESKTOP: personalization saved to persistent NXFS\r\n"
+        ? "DESKTOP: system settings saved to persistent NXFS\\r\\n"
         : (desktop_preferences_saved
-            ? "DESKTOP: personalization saved to volatile RAM only\r\n"
-            : "DESKTOP: personalization save unavailable\r\n"));
+            ? "DESKTOP: system settings saved to volatile RAM only\\r\\n"
+            : "DESKTOP: system settings save unavailable\\r\\n"));
 }
 
 static void desktop_preferences_load(void) {
     if (desktop_preferences_loaded) return;
     desktop_preferences_loaded = true;
+    nexus_settings_defaults(&desktop_settings);
 
     struct nexus_vfs_file file;
-    if (!vfs_open_root_readonly("NEXUS.CFG", &file)) return;
+    if (!vfs_open_root_readonly("NEXUS.CFG", &file)) {
+        desktop_settings_apply();
+        return;
+    }
     uint32_t size = 0U;
-    uint8_t record[NEXUS_DESKTOP_PREF_BYTES] = {0};
     size_t bytes = 0U;
-    const bool valid_size = vfs_file_size(&file, &size) &&
-                            size == sizeof(record);
-    const bool read_ok = valid_size &&
-        vfs_read(&file, record, sizeof(record), &bytes) &&
-        bytes == sizeof(record);
+    uint8_t record[NEXUS_SETTINGS_RECORD_BYTES] = {0};
+    const bool has_size = vfs_file_size(&file, &size);
+    const bool size_supported = has_size &&
+        (size == NEXUS_SETTINGS_RECORD_BYTES || size == 7U);
+    const bool read_ok = size_supported &&
+        vfs_read(&file, record, size, &bytes) && bytes == size;
     const bool from_nxfs = file.nxfs_file;
     vfs_close(&file);
-    if (!read_ok || record[0] != 'N' || record[1] != 'X' ||
-        record[2] != 'P' || record[3] != '1' ||
-        record[4] > DESKTOP_THEME_LIGHT ||
-        record[5] >= sizeof(desktop_accent_palette) /
-                         sizeof(desktop_accent_palette[0])) {
-        serial_write("DESKTOP: ignored invalid personalization record\r\n");
-        return;
-    }
-    uint8_t checksum = 0xA7U;
-    for (size_t i = 0U; i < sizeof(record) - 1U; ++i)
-        checksum ^= record[i];
-    if (checksum != record[sizeof(record) - 1U]) {
-        serial_write("DESKTOP: personalization checksum mismatch\r\n");
-        return;
-    }
 
-    desktop_theme = (enum desktop_theme_mode)record[4];
-    desktop_accent_index = record[5];
+    bool valid = false;
+    if (read_ok && size == NEXUS_SETTINGS_RECORD_BYTES) {
+        valid = nexus_settings_decode(record, sizeof(record),
+                                      &desktop_settings);
+    } else if (read_ok && size == 7U &&
+               record[0] == 'N' && record[1] == 'X' &&
+               record[2] == 'P' && record[3] == '1' &&
+               record[4] <= DESKTOP_THEME_LIGHT && record[5] < 4U) {
+        uint8_t checksum = 0xA7U;
+        for (size_t i = 0U; i < 6U; ++i) checksum ^= record[i];
+        if (checksum == record[6]) {
+            desktop_settings.theme = record[4];
+            desktop_settings.accent = record[5];
+            valid = true;
+        }
+    }
+    if (!valid) {
+        serial_write("DESKTOP: ignored invalid or unsupported system settings record\\r\\n");
+        desktop_settings_apply();
+        return;
+    }
     desktop_preferences_saved = true;
     desktop_preferences_persistent = from_nxfs;
-    serial_write("DESKTOP: personalization loaded from volume root\r\n");
+    desktop_settings_apply();
+    serial_write("DESKTOP: system settings loaded from volume root\\r\\n");
 }
-
 
 static void desktop_draw_accent(uint64_t x, uint64_t y,
                                 uint64_t width, uint64_t height) {
     graphics_fill_rect(x, y, width, height,
-        desktop_accent_palette[desktop_accent_index][0],
-        desktop_accent_palette[desktop_accent_index][1],
-        desktop_accent_palette[desktop_accent_index][2]);
+        desktop_accent_palette[desktop_settings.accent][0],
+        desktop_accent_palette[desktop_settings.accent][1],
+        desktop_accent_palette[desktop_settings.accent][2]);
 }
 
 static void desktop_toggle_theme(void) {
-    desktop_theme = desktop_theme_is_light()
+    desktop_settings.theme = desktop_theme_is_light()
         ? DESKTOP_THEME_DARK : DESKTOP_THEME_LIGHT;
     desktop_preferences_save();
 }
 
 static void desktop_cycle_accent(void) {
-    desktop_accent_index =
-        (uint8_t)((desktop_accent_index + 1U) %
-                  (sizeof(desktop_accent_palette) /
-                   sizeof(desktop_accent_palette[0])));
+    desktop_settings.accent =
+        (uint8_t)((desktop_settings.accent + 1U) %
+                  NEXUS_SETTINGS_ACCENT_COUNT);
     desktop_preferences_save();
+}
+
+static const char *desktop_settings_page_title(enum desktop_settings_page page) {
+    static const char *const titles[SETTINGS_PAGE_COUNT] = {
+        "PERSONALIZATION", "DISPLAY", "INPUT", "ACCESSIBILITY",
+        "SYSTEM", "DEVICES"
+    };
+    return page < SETTINGS_PAGE_COUNT ? titles[page] : "SETTINGS";
+}
+
+static void desktop_settings_draw_button(uint64_t x, uint64_t y,
+                                         uint64_t width, uint64_t height,
+                                         const char *label, bool selected) {
+    const bool light = desktop_theme_is_light();
+    graphics_blend_round_rect(x, y, width, height, 7U,
+        selected ? desktop_accent_palette[desktop_settings.accent][0]
+                 : (light ? 229U : 27U),
+        selected ? desktop_accent_palette[desktop_settings.accent][1]
+                 : (light ? 236U : 43U),
+        selected ? desktop_accent_palette[desktop_settings.accent][2]
+                 : (light ? 245U : 65U), 246U);
+    graphics_round_rect(x, y, width, height, 7U,
+        selected ? 255U : (light ? 178U : 63U),
+        selected ? 255U : (light ? 190U : 91U),
+        selected ? 255U : (light ? 207U : 119U));
+    graphics_draw_text(x + 9U, y + height / 2U - 4U, label, 1U,
+        selected ? 12U : (light ? 43U : 229U),
+        selected ? 31U : (light ? 59U : 240U),
+        selected ? 47U : (light ? 78U : 249U));
+}
+
+static void desktop_settings_draw_heading(uint64_t x, uint64_t y,
+                                          const char *title,
+                                          const char *subtitle) {
+    graphics_draw_text_aa(x, y, title, 131072U,
+        desktop_theme_is_light() ? 34U : 241U,
+        desktop_theme_is_light() ? 49U : 248U,
+        desktop_theme_is_light() ? 67U : 255U);
+    graphics_draw_text(x, y + 24U, subtitle, 1U,
+        desktop_theme_is_light() ? 82U : 166U,
+        desktop_theme_is_light() ? 99U : 190U,
+        desktop_theme_is_light() ? 120U : 211U);
 }
 
 static void format_u64(uint64_t value, char output[21]) {
@@ -1046,11 +1113,11 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         if (x + tab_width >= screen_width - 92U) break;
         const bool selected = active_view == desktop_view_for_app(i);
         graphics_blend_round_rect(x, button_y, tab_width, button_h, 8U,
-                           selected ? desktop_accent_palette[desktop_accent_index][0]
+                           selected ? desktop_accent_palette[desktop_settings.accent][0]
                                     : (desktop_theme_is_light() ? 220U : 19U),
-                           selected ? desktop_accent_palette[desktop_accent_index][1]
+                           selected ? desktop_accent_palette[desktop_settings.accent][1]
                                     : (desktop_theme_is_light() ? 228U : 31U),
-                           selected ? desktop_accent_palette[desktop_accent_index][2]
+                           selected ? desktop_accent_palette[desktop_settings.accent][2]
                                     : (desktop_theme_is_light() ? 238U : 49U), 238U);
         graphics_round_rect(x, button_y, tab_width, button_h, 8U,
                            selected ? 70U : (desktop_theme_is_light() ? 171U : 43U),
@@ -1161,11 +1228,11 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
         const bool selected = visible_row == start_menu_selection;
         graphics_blend_round_rect(menu_x + 8U, row_y,
                            menu_width - 16U, 28U, 7U,
-            selected ? desktop_accent_palette[desktop_accent_index][0]
+            selected ? desktop_accent_palette[desktop_settings.accent][0]
                      : (desktop_theme_is_light() ? 233U : 25U),
-            selected ? desktop_accent_palette[desktop_accent_index][1]
+            selected ? desktop_accent_palette[desktop_settings.accent][1]
                      : (desktop_theme_is_light() ? 239U : 41U),
-            selected ? desktop_accent_palette[desktop_accent_index][2]
+            selected ? desktop_accent_palette[desktop_settings.accent][2]
                      : (desktop_theme_is_light() ? 246U : 64U), 244U);
         graphics_fill_rect(menu_x + 16U, row_y + 7U,
                            14U, 14U, accents[app][0],
@@ -1225,9 +1292,9 @@ static void draw_shell(void) {
         if (glow_radius < 32U) glow_radius = 32U;
         graphics_blend_circle(width * 4U / 5U, height / 3U,
             (uint32_t)glow_radius,
-            desktop_accent_palette[desktop_accent_index][0],
-            desktop_accent_palette[desktop_accent_index][1],
-            desktop_accent_palette[desktop_accent_index][2],
+            desktop_accent_palette[desktop_settings.accent][0],
+            desktop_accent_palette[desktop_settings.accent][1],
+            desktop_accent_palette[desktop_settings.accent][2],
             desktop_theme_is_light() ? 22U : 38U);
         graphics_blend_circle(width * 3U / 5U, height * 2U / 3U,
             (uint32_t)(glow_radius / 2U),
@@ -1936,13 +2003,13 @@ static void draw_shell(void) {
             graphics_draw_rect(text_x + 312U, text_y + 297U,
                                196U, 23U,
                 files_search_focus
-                    ? desktop_accent_palette[desktop_accent_index][0]
+                    ? desktop_accent_palette[desktop_settings.accent][0]
                     : (desktop_theme_is_light() ? 170U : 63U),
                 files_search_focus
-                    ? desktop_accent_palette[desktop_accent_index][1]
+                    ? desktop_accent_palette[desktop_settings.accent][1]
                     : (desktop_theme_is_light() ? 187U : 98U),
                 files_search_focus
-                    ? desktop_accent_palette[desktop_accent_index][2]
+                    ? desktop_accent_palette[desktop_settings.accent][2]
                     : (desktop_theme_is_light() ? 206U : 130U));
             graphics_draw_text(text_x + 320U, text_y + 305U,
                 files_search_query_length != 0U
@@ -2038,9 +2105,9 @@ static void draw_shell(void) {
             settings_hardware_page ? 94U : 41U,
             settings_hardware_page ? 117U : 64U, 245U);
         graphics_round_rect(text_x + 284U, text_y - 2U, 82U, 24U, 5U,
-            desktop_accent_palette[desktop_accent_index][0],
-            desktop_accent_palette[desktop_accent_index][1],
-            desktop_accent_palette[desktop_accent_index][2]);
+            desktop_accent_palette[desktop_settings.accent][0],
+            desktop_accent_palette[desktop_settings.accent][1],
+            desktop_accent_palette[desktop_settings.accent][2]);
         graphics_draw_text(text_x + 292U, text_y + 6U, "HARDWARE",
                            1U, 239U, 247U, 255U);
         graphics_blend_round_rect(text_x + 374U, text_y - 2U, 82U, 24U, 5U,
@@ -2048,9 +2115,9 @@ static void draw_shell(void) {
             settings_hardware_page ? 41U : 94U,
             settings_hardware_page ? 64U : 117U, 245U);
         graphics_round_rect(text_x + 374U, text_y - 2U, 82U, 24U, 5U,
-            desktop_accent_palette[desktop_accent_index][0],
-            desktop_accent_palette[desktop_accent_index][1],
-            desktop_accent_palette[desktop_accent_index][2]);
+            desktop_accent_palette[desktop_settings.accent][0],
+            desktop_accent_palette[desktop_settings.accent][1],
+            desktop_accent_palette[desktop_settings.accent][2]);
         graphics_draw_text(text_x + 382U, text_y + 6U, "PERSONAL",
                            1U, 239U, 247U, 255U);
         if (settings_hardware_page) {
@@ -2101,9 +2168,9 @@ static void draw_shell(void) {
                 desktop_accent_palette[i][1],
                 desktop_accent_palette[i][2], 250U);
             graphics_round_rect(swatch_x, text_y + 104U, 62U, 25U, 6U,
-                i == desktop_accent_index ? 255U : 91U,
-                i == desktop_accent_index ? 255U : 111U,
-                i == desktop_accent_index ? 255U : 135U);
+                i == desktop_settings.accent ? 255U : 91U,
+                i == desktop_settings.accent ? 255U : 111U,
+                i == desktop_settings.accent ? 255U : 135U);
             graphics_draw_text(swatch_x + 3U, text_y + 136U,
                                accent_names[i], 1U,
                 light_theme ? 57U : 220U,
@@ -2255,13 +2322,13 @@ static void draw_shell(void) {
             const uint64_t row_y = list_y + (uint64_t)row * 40U;
             graphics_blend_round_rect(list_x, row_y, 310U, 34U, 7U,
                 i == store_selected_index
-                    ? desktop_accent_palette[desktop_accent_index][0]
+                    ? desktop_accent_palette[desktop_settings.accent][0]
                     : (desktop_theme_is_light() ? 232U : 24U),
                 i == store_selected_index
-                    ? desktop_accent_palette[desktop_accent_index][1]
+                    ? desktop_accent_palette[desktop_settings.accent][1]
                     : (desktop_theme_is_light() ? 239U : 41U),
                 i == store_selected_index
-                    ? desktop_accent_palette[desktop_accent_index][2]
+                    ? desktop_accent_palette[desktop_settings.accent][2]
                     : (desktop_theme_is_light() ? 246U : 65U), 245U);
             graphics_round_rect(list_x, row_y, 310U, 34U, 7U,
                 desktop_theme_is_light() ? 175U : 65U,
@@ -5858,13 +5925,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 (uint64_t)pointer_y < sy + 74U) {
                 if ((uint64_t)pointer_x >= sx &&
                     (uint64_t)pointer_x < sx + 116U &&
-                    desktop_theme != DESKTOP_THEME_DARK) {
-                    desktop_theme = DESKTOP_THEME_DARK;
+                    desktop_settings.theme != DESKTOP_THEME_DARK) {
+                    desktop_settings.theme = DESKTOP_THEME_DARK;
                     changed = true;
                 } else if ((uint64_t)pointer_x >= sx + 128U &&
                            (uint64_t)pointer_x < sx + 244U &&
-                           desktop_theme != DESKTOP_THEME_LIGHT) {
-                    desktop_theme = DESKTOP_THEME_LIGHT;
+                           desktop_settings.theme != DESKTOP_THEME_LIGHT) {
+                    desktop_settings.theme = DESKTOP_THEME_LIGHT;
                     changed = true;
                 }
             } else if ((uint64_t)pointer_y >= sy + 104U &&
@@ -5873,8 +5940,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     const uint64_t x = sx + (uint64_t)i * 78U;
                     if ((uint64_t)pointer_x >= x &&
                         (uint64_t)pointer_x < x + 62U &&
-                        desktop_accent_index != (uint8_t)i) {
-                        desktop_accent_index = (uint8_t)i;
+                        desktop_settings.accent != (uint8_t)i) {
+                        desktop_settings.accent = (uint8_t)i;
                         changed = true;
                         break;
                     }

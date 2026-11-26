@@ -5,6 +5,41 @@
 
 static struct nexus_cpu_info cpu_info;
 
+static enum nexus_cpu_vendor identify_cpu_vendor(const char *vendor) {
+    if (vendor == NULL) return NEXUS_CPU_VENDOR_UNKNOWN;
+    if (vendor[0] == 'G' && vendor[1] == 'e' && vendor[2] == 'n' &&
+        vendor[3] == 'u' && vendor[4] == 'i' && vendor[5] == 'n' &&
+        vendor[6] == 'e' && vendor[7] == 'I' && vendor[8] == 'n' &&
+        vendor[9] == 't' && vendor[10] == 'e' && vendor[11] == 'l')
+        return NEXUS_CPU_VENDOR_INTEL;
+    if (vendor[0] == 'A' && vendor[1] == 'u' && vendor[2] == 't' &&
+        vendor[3] == 'h' && vendor[4] == 'e' && vendor[5] == 'n' &&
+        vendor[6] == 't' && vendor[7] == 'i' && vendor[8] == 'c' &&
+        vendor[9] == 'A' && vendor[10] == 'M' && vendor[11] == 'D')
+        return NEXUS_CPU_VENDOR_AMD;
+    if (vendor[0] == 'H' && vendor[1] == 'y' && vendor[2] == 'g' &&
+        vendor[3] == 'o' && vendor[4] == 'n' && vendor[5] == 'G' &&
+        vendor[6] == 'e' && vendor[7] == 'n' && vendor[8] == 'u' &&
+        vendor[9] == 'i' && vendor[10] == 'n' && vendor[11] == 'e')
+        return NEXUS_CPU_VENDOR_HYGON;
+    if (vendor[0] == 'C' && vendor[1] == 'e' && vendor[2] == 'n' &&
+        vendor[3] == 't' && vendor[4] == 'a' && vendor[5] == 'u' &&
+        vendor[6] == 'r' && vendor[7] == 'H' && vendor[8] == 'a' &&
+        vendor[9] == 'u' && vendor[10] == 'l' && vendor[11] == 's')
+        return NEXUS_CPU_VENDOR_CENTAUR;
+    if (vendor[0] == ' ' && vendor[1] == ' ' && vendor[2] == 'S' &&
+        vendor[3] == 'h' && vendor[4] == 'a' && vendor[5] == 'n' &&
+        vendor[6] == 'g' && vendor[7] == 'h' && vendor[8] == 'a' &&
+        vendor[9] == 'i' && vendor[10] == ' ' && vendor[11] == ' ')
+        return NEXUS_CPU_VENDOR_ZHAOXIN;
+    if (vendor[0] == 'G' && vendor[1] == 'e' && vendor[2] == 'n' &&
+        vendor[3] == 'u' && vendor[4] == 'i' && vendor[5] == 'n' &&
+        vendor[6] == 'e' && vendor[7] == 'T' && vendor[8] == 'M' &&
+        vendor[9] == 'x' && vendor[10] == '8' && vendor[11] == '6')
+        return NEXUS_CPU_VENDOR_TRANSMETA;
+    return NEXUS_CPU_VENDOR_UNKNOWN;
+}
+
 static void cpuid(uint32_t leaf, uint32_t subleaf,
                   uint32_t *eax, uint32_t *ebx,
                   uint32_t *ecx, uint32_t *edx) {
@@ -74,6 +109,7 @@ bool nexus_cpu_init(void) {
     append_register_bytes(cpu_info.vendor, 4U, edx);
     append_register_bytes(cpu_info.vendor, 8U, ecx);
     cpu_info.vendor[12] = '\0';
+    cpu_info.vendor_kind = identify_cpu_vendor(cpu_info.vendor);
 
     uint32_t eax = 0U;
     cpuid(1U, 0U, &eax, &ebx, &ecx, &edx);
@@ -108,6 +144,65 @@ bool nexus_cpu_init(void) {
     set_feature(NEXUS_CPU_FEATURE_RDRAND, (ecx & (1U << 30)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_HYPERVISOR, (ecx & (1U << 31)) != 0U);
     set_feature(NEXUS_CPU_FEATURE_PCID, (ecx & (1U << 17)) != 0U);
+
+    /* CPUID.6 is a safe capability query; it does not read temperature or
+     * change power policy. Intel-specific HWP/Turbo meanings are decoded only
+     * for GenuineIntel processors.
+     */
+    if (maximum >= 6U) {
+        uint32_t power_eax = 0U, power_ebx = 0U;
+        uint32_t power_ecx = 0U, power_edx = 0U;
+        cpuid(6U, 0U, &power_eax, &power_ebx, &power_ecx, &power_edx);
+        (void)power_ebx;
+        (void)power_ecx;
+        (void)power_edx;
+        cpu_info.thermal_power_capabilities = power_eax;
+        cpu_info.digital_thermal_sensor_supported =
+            (power_eax & (1U << 0)) != 0U;
+        if (cpu_info.vendor_kind == NEXUS_CPU_VENDOR_INTEL) {
+            cpu_info.turbo_boost_supported =
+                (power_eax & (1U << 1)) != 0U;
+            cpu_info.hardware_p_states_supported =
+                (power_eax & (1U << 7)) != 0U;
+            cpu_info.hwp_notifications_supported =
+                (power_eax & (1U << 8)) != 0U;
+            cpu_info.hwp_energy_performance_supported =
+                (power_eax & (1U << 10)) != 0U;
+        }
+    }
+
+    /* Hybrid Intel processors identify the executing logical core's class
+     * through leaf 0x1A. This describes the BSP core queried during boot.
+     */
+    if (cpu_info.vendor_kind == NEXUS_CPU_VENDOR_INTEL &&
+        maximum >= 0x1AU) {
+        uint32_t core_eax = 0U;
+        cpuid(0x1AU, 0U, &core_eax, NULL, NULL, NULL);
+        const uint8_t core_type = (uint8_t)(core_eax >> 24);
+        if (core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE ||
+            core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY) {
+            cpu_info.core_type = (enum nexus_cpu_core_type)core_type;
+        }
+    }
+
+    /* Leaf 0x16 reports nominal MHz values on supporting Intel processors.
+     * Treat zero or implausible values as unavailable, never as a live clock.
+     */
+    if (cpu_info.vendor_kind == NEXUS_CPU_VENDOR_INTEL &&
+        maximum >= 0x16U) {
+        uint32_t frequency_eax = 0U, frequency_ebx = 0U;
+        uint32_t frequency_ecx = 0U;
+        cpuid(0x16U, 0U, &frequency_eax, &frequency_ebx,
+              &frequency_ecx, NULL);
+        if (frequency_eax != 0U && frequency_eax <= UINT16_MAX &&
+            frequency_ebx <= UINT16_MAX && frequency_ecx <= UINT16_MAX) {
+            cpu_info.base_frequency_mhz = (uint16_t)frequency_eax;
+            cpu_info.maximum_frequency_mhz = (uint16_t)frequency_ebx;
+            cpu_info.bus_frequency_mhz = (uint16_t)frequency_ecx;
+            cpu_info.frequency_info_valid = true;
+        }
+    }
+
 
     /* Generic discovery is safe in host tests and before CR4.OSXSAVE.
      * AVX/AVX2 become visible only after ring-0 FPU setup validates XCR0.
@@ -190,6 +285,11 @@ bool nexus_cpu_init(void) {
         cpuid(0x80000007U, 0U, NULL, NULL, NULL, &invariant_edx);
         set_feature(NEXUS_CPU_FEATURE_INVAR_TSC,
                     (invariant_edx & (1U << 8)) != 0U);
+        if (cpu_info.vendor_kind == NEXUS_CPU_VENDOR_AMD ||
+            cpu_info.vendor_kind == NEXUS_CPU_VENDOR_HYGON) {
+            cpu_info.amd_power_management_features = invariant_edx;
+        }
+
     }
     if (max_extended >= 0x80000008U) {
         uint32_t address_eax = 0U, address_ebx = 0U, address_ecx = 0U;
@@ -234,6 +334,31 @@ bool nexus_cpu_init(void) {
         }
     }
     return true;
+}
+
+enum nexus_cpu_vendor nexus_cpu_get_vendor(void) {
+    return cpu_info.vendor_kind;
+}
+
+const char *nexus_cpu_vendor_name(void) {
+    switch (cpu_info.vendor_kind) {
+        case NEXUS_CPU_VENDOR_INTEL: return "Intel";
+        case NEXUS_CPU_VENDOR_AMD: return "AMD";
+        case NEXUS_CPU_VENDOR_HYGON: return "Hygon";
+        case NEXUS_CPU_VENDOR_CENTAUR: return "Centaur/VIA";
+        case NEXUS_CPU_VENDOR_ZHAOXIN: return "Zhaoxin";
+        case NEXUS_CPU_VENDOR_TRANSMETA: return "Transmeta";
+        default: return "Unknown x86 vendor";
+    }
+}
+
+bool nexus_cpu_is_intel(void) {
+    return cpu_info.vendor_kind == NEXUS_CPU_VENDOR_INTEL;
+}
+
+bool nexus_cpu_is_amd(void) {
+    return cpu_info.vendor_kind == NEXUS_CPU_VENDOR_AMD ||
+           cpu_info.vendor_kind == NEXUS_CPU_VENDOR_HYGON;
 }
 
 const struct nexus_cpu_info *nexus_cpu_get_info(void) {

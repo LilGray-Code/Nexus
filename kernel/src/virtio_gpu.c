@@ -48,7 +48,7 @@
 #define VIRTIO_GPU_COMMAND_POOL_PAGES \
     ((VIRTIO_GPU_RESPONSE_OFFSET + 4096U + NEXUS_PAGE_SIZE - 1U) / \
      NEXUS_PAGE_SIZE)
-#define VIRTIO_GPU_MAX_CAPSET_INDICES 8U
+#define VIRTIO_GPU_MAX_CAPSET_INDICES 32U
 
 struct virtio_gpu_header {
     uint32_t type;
@@ -201,6 +201,8 @@ static uint64_t width_pixels;
 static uint64_t height_pixels;
 static uint64_t pitch_bytes;
 static uint32_t selected_scanout_id;
+static uint32_t device_scanout_count;
+static uint32_t device_capset_count;
 static struct nexus_virtio_gpu_display_info display_inventory;
 static uint64_t framebuffer_physical;
 static uint64_t framebuffer_pages;
@@ -356,6 +358,37 @@ static bool submit_command(const void *command, size_t command_length) {
     return response_length >= sizeof(struct virtio_gpu_header);
 }
 
+static void gpu_read_device_configuration(void) {
+    device_scanout_count = 0U;
+    device_capset_count = 0U;
+    volatile uint8_t *config = virtio_pci_device_config(&transport);
+    if (config == NULL || transport.device_config_length < 16U) {
+        serial_write("VIRTIO GPU: device configuration does not expose full scanout/capset counts\r\n");
+        return;
+    }
+
+    const uint32_t scanouts = read_le32(config + 8U);
+    const uint32_t capsets = read_le32(config + 12U);
+    if (scanouts == 0U || scanouts > NEXUS_VIRTIO_GPU_MAX_SCANOUTS) {
+        serial_write("VIRTIO GPU: invalid advertised scanout count=");
+        serial_write_hex(scanouts);
+        serial_write("\r\n");
+    } else {
+        device_scanout_count = scanouts;
+    }
+    if (capsets > VIRTIO_GPU_MAX_CAPSET_INDICES) {
+        serial_write("VIRTIO GPU: capset list exceeds bounded discovery limit; entries beyond limit ignored\r\n");
+        device_capset_count = VIRTIO_GPU_MAX_CAPSET_INDICES;
+    } else {
+        device_capset_count = capsets;
+    }
+    serial_write("VIRTIO GPU: advertised scanouts/capsets=");
+    serial_write_hex(device_scanout_count);
+    serial_write("/");
+    serial_write_hex(device_capset_count);
+    serial_write("\r\n");
+}
+
 static const struct nexus_pci_device *find_virtio_gpu(void) {
     for (uint32_t i = 0U; i < pci_stored_device_count(); ++i) {
         const struct nexus_pci_device *pci = pci_device_at(i);
@@ -369,7 +402,7 @@ static bool gpu_virgl_query_capset(void) {
     if (!virgl_feature_negotiated) return false;
     bool found = false;
     for (uint32_t index = 0U;
-         index < VIRTIO_GPU_MAX_CAPSET_INDICES; ++index) {
+         index < device_capset_count; ++index) {
         const struct virtio_gpu_get_capset_info request = {
             .header = make_header(VIRTIO_GPU_CMD_GET_CAPSET_INFO),
             .capset_index = index,
@@ -454,6 +487,7 @@ static void gpu_virgl_destroy_context(void) {
 
 static bool gpu_virgl_start(void) {
     virgl_feature_negotiated =
+        device_capset_count != 0U &&
         (transport.features & ((uint64_t)1U << VIRTIO_GPU_F_VIRGL)) != 0U;
     virgl_context_created = false;
     virgl_command_submission_ready = false;
@@ -466,6 +500,8 @@ static bool gpu_virgl_start(void) {
     virgl_last_completed_fence = 0U;
     virgl_failed_submissions = 0U;
     selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
+    device_scanout_count = 0U;
+    device_capset_count = 0U;
     display_inventory = (struct nexus_virtio_gpu_display_info){0};
     next_3d_resource_id = VIRTIO_GPU_RESOURCE_ID + 1U;
     tracked_resource_count = 0U;
@@ -520,13 +556,18 @@ static bool gpu_query_display_info(uint64_t preferred_width,
     }
 
     display_inventory = (struct nexus_virtio_gpu_display_info){0};
+    if (device_scanout_count == 0U) {
+        display_inventory = (struct nexus_virtio_gpu_display_info){0};
+        selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
+        return false;
+    }
     display_inventory.valid = true;
-    display_inventory.scanout_count = NEXUS_VIRTIO_GPU_MAX_SCANOUTS;
+    display_inventory.scanout_count = device_scanout_count;
     bool have_enabled = false;
     bool have_exact = false;
     uint32_t selected = VIRTIO_GPU_SCANOUT_ID;
 
-    for (uint32_t i = 0U; i < NEXUS_VIRTIO_GPU_MAX_SCANOUTS; ++i) {
+    for (uint32_t i = 0U; i < device_scanout_count; ++i) {
         const size_t offset = sizeof(struct virtio_gpu_header) +
             (size_t)i * sizeof(struct virtio_gpu_display_one);
         struct nexus_virtio_gpu_scanout_info *saved =
@@ -636,6 +677,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
         serial_write("VIRTIO GPU: modern PCI capability negotiation unavailable\r\n");
         return false;
     }
+    gpu_read_device_configuration();
     if (!virtio_pci_queue_init(&transport, &control_queue,
                                VIRTIO_GPU_QUEUE_CONTROL,
                                VIRTIO_GPU_QUEUE_SIZE)) {

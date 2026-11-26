@@ -22,6 +22,41 @@ static uint64_t free_bytes;
 static uint64_t freed_pages[MEMORY_MAX_FREED_PAGES];
 static size_t freed_page_count;
 static bool initialized;
+static uint64_t allocation_requests;
+static uint64_t allocation_failures;
+static uint64_t pages_allocated_total;
+static uint64_t free_requests;
+static uint64_t free_failures;
+static uint64_t pages_freed_total;
+
+static void saturating_add_u64(uint64_t *value, uint64_t amount) {
+    if (UINT64_MAX - *value < amount) *value = UINT64_MAX;
+    else *value += amount;
+}
+
+static void note_allocation_request(void) {
+    saturating_add_u64(&allocation_requests, 1U);
+}
+
+static void note_allocation_failure(void) {
+    saturating_add_u64(&allocation_failures, 1U);
+}
+
+static void note_allocated_pages(uint64_t pages) {
+    saturating_add_u64(&pages_allocated_total, pages);
+}
+
+static void note_free_request(void) {
+    saturating_add_u64(&free_requests, 1U);
+}
+
+static void note_free_failure(void) {
+    saturating_add_u64(&free_failures, 1U);
+}
+
+static void note_freed_pages(uint64_t pages) {
+    saturating_add_u64(&pages_freed_total, pages);
+}
 
 static bool add_overflow_u64(uint64_t a, uint64_t b, uint64_t *result) {
     *result = a + b;
@@ -35,6 +70,12 @@ bool memory_init(const struct limine_memmap_response *map,
     total_bytes = 0;
     free_bytes = 0;
     freed_page_count = 0;
+    allocation_requests = 0U;
+    allocation_failures = 0U;
+    pages_allocated_total = 0U;
+    free_requests = 0U;
+    free_failures = 0U;
+    pages_freed_total = 0U;
     initialized = false;
 
     if (map == NULL || hhdm == NULL || map->entries == NULL) return false;
@@ -122,12 +163,17 @@ bool memory_init(const struct limine_memmap_response *map,
 }
 
 bool memory_alloc_page(uint64_t *physical_address) {
-    if (!initialized || physical_address == NULL) return false;
+    note_allocation_request();
+    if (!initialized || physical_address == NULL) {
+        note_allocation_failure();
+        return false;
+    }
 
     if (freed_page_count != 0U) {
         *physical_address = freed_pages[--freed_page_count];
         if (free_bytes >= NEXUS_PAGE_SIZE) free_bytes -= NEXUS_PAGE_SIZE;
-        else free_bytes = 0;
+        else free_bytes = 0U;
+        note_allocated_pages(1U);
         return true;
     }
 
@@ -140,13 +186,15 @@ bool memory_alloc_page(uint64_t *physical_address) {
             if (free_bytes >= NEXUS_PAGE_SIZE) {
                 free_bytes -= NEXUS_PAGE_SIZE;
             } else {
-                free_bytes = 0;
+                free_bytes = 0U;
             }
+            note_allocated_pages(1U);
             return true;
         }
         ++current_region;
     }
 
+    note_allocation_failure();
     return false;
 }
 
@@ -157,8 +205,10 @@ bool memory_alloc_page(uint64_t *physical_address) {
  */
 bool memory_alloc_dma_page(uint64_t max_address_exclusive,
                            uint64_t *physical_address) {
+    note_allocation_request();
     if (!initialized || physical_address == NULL ||
         max_address_exclusive < NEXUS_PAGE_SIZE) {
+        note_allocation_failure();
         return false;
     }
 
@@ -171,12 +221,13 @@ bool memory_alloc_dma_page(uint64_t max_address_exclusive,
             freed_pages[index] = freed_pages[freed_page_count - 1U];
             --freed_page_count;
             if (free_bytes >= NEXUS_PAGE_SIZE) free_bytes -= NEXUS_PAGE_SIZE;
-            else free_bytes = 0;
+            else free_bytes = 0U;
+            note_allocated_pages(1U);
             return true;
         }
     }
 
-    for (size_t i = 0; i < usable_region_count; ++i) {
+    for (size_t i = 0U; i < usable_region_count; ++i) {
         struct memory_region *region = &usable_regions[i];
         if (region->next >= region->end) continue;
 
@@ -189,14 +240,13 @@ bool memory_alloc_dma_page(uint64_t max_address_exclusive,
 
         *physical_address = region->next;
         region->next += NEXUS_PAGE_SIZE;
-        if (free_bytes >= NEXUS_PAGE_SIZE) {
-            free_bytes -= NEXUS_PAGE_SIZE;
-        } else {
-            free_bytes = 0;
-        }
+        if (free_bytes >= NEXUS_PAGE_SIZE) free_bytes -= NEXUS_PAGE_SIZE;
+        else free_bytes = 0U;
+        note_allocated_pages(1U);
         return true;
     }
 
+    note_allocation_failure();
     return false;
 }
 
@@ -206,18 +256,23 @@ bool memory_alloc_dma_page(uint64_t max_address_exclusive,
  * frees. SMP synchronization and a larger bitmap allocator are future work.
  */
 bool memory_free_page(uint64_t physical_address) {
+    note_free_request();
     if (!initialized ||
         (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
         freed_page_count >= MEMORY_MAX_FREED_PAGES) {
+        note_free_failure();
         return false;
     }
 
-    for (size_t i = 0; i < freed_page_count; ++i) {
-        if (freed_pages[i] == physical_address) return false;
+    for (size_t i = 0U; i < freed_page_count; ++i) {
+        if (freed_pages[i] == physical_address) {
+            note_free_failure();
+            return false;
+        }
     }
 
     bool was_allocated = false;
-    for (size_t i = 0; i < usable_region_count; ++i) {
+    for (size_t i = 0U; i < usable_region_count; ++i) {
         const struct memory_region *region = &usable_regions[i];
         if (physical_address >= region->start &&
             physical_address < region->next &&
@@ -227,11 +282,15 @@ bool memory_free_page(uint64_t physical_address) {
             break;
         }
     }
-    if (!was_allocated) return false;
+    if (!was_allocated) {
+        note_free_failure();
+        return false;
+    }
 
     freed_pages[freed_page_count++] = physical_address;
     if (UINT64_MAX - free_bytes < NEXUS_PAGE_SIZE) free_bytes = UINT64_MAX;
     else free_bytes += NEXUS_PAGE_SIZE;
+    note_freed_pages(1U);
     return true;
 }
 
@@ -244,8 +303,12 @@ bool memory_free_page(uint64_t physical_address) {
 bool memory_alloc_contiguous_pages(uint64_t page_count,
                                    uint64_t max_address_exclusive,
                                    uint64_t *physical_address) {
+    note_allocation_request();
     if (!initialized || physical_address == NULL || page_count == 0U ||
-        page_count > UINT64_MAX / NEXUS_PAGE_SIZE) return false;
+        page_count > UINT64_MAX / NEXUS_PAGE_SIZE) {
+        note_allocation_failure();
+        return false;
+    }
 
     const uint64_t bytes = page_count * NEXUS_PAGE_SIZE;
     const uint64_t limit_address = max_address_exclusive == 0U
@@ -261,8 +324,10 @@ bool memory_alloc_contiguous_pages(uint64_t page_count,
         *physical_address = start;
         if (free_bytes >= bytes) free_bytes -= bytes;
         else free_bytes = 0U;
+        note_allocated_pages(page_count);
         return true;
     }
+    note_allocation_failure();
     return false;
 }
 
@@ -272,13 +337,19 @@ bool memory_alloc_contiguous_pages(uint64_t page_count,
  */
 bool memory_free_contiguous_pages(uint64_t physical_address,
                                   uint64_t page_count) {
+    note_free_request();
     if (!initialized || page_count == 0U ||
         page_count > UINT64_MAX / NEXUS_PAGE_SIZE ||
         (physical_address & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
-        page_count > MEMORY_MAX_FREED_PAGES - freed_page_count)
+        page_count > MEMORY_MAX_FREED_PAGES - freed_page_count) {
+        note_free_failure();
         return false;
+    }
     const uint64_t bytes = page_count * NEXUS_PAGE_SIZE;
-    if (physical_address > UINT64_MAX - bytes) return false;
+    if (physical_address > UINT64_MAX - bytes) {
+        note_free_failure();
+        return false;
+    }
     const uint64_t end = physical_address + bytes;
 
     bool contained = false;
@@ -290,13 +361,19 @@ bool memory_free_contiguous_pages(uint64_t physical_address,
             break;
         }
     }
-    if (!contained) return false;
+    if (!contained) {
+        note_free_failure();
+        return false;
+    }
 
     for (uint64_t page = 0U; page < page_count; ++page) {
         const uint64_t candidate =
             physical_address + page * NEXUS_PAGE_SIZE;
         for (size_t i = 0U; i < freed_page_count; ++i) {
-            if (freed_pages[i] == candidate) return false;
+            if (freed_pages[i] == candidate) {
+                note_free_failure();
+                return false;
+            }
         }
     }
     for (uint64_t page = 0U; page < page_count; ++page)
@@ -304,6 +381,7 @@ bool memory_free_contiguous_pages(uint64_t physical_address,
             physical_address + page * NEXUS_PAGE_SIZE;
     if (UINT64_MAX - free_bytes < bytes) free_bytes = UINT64_MAX;
     else free_bytes += bytes;
+    note_freed_pages(page_count);
     return true;
 }
 
@@ -428,3 +506,30 @@ uint64_t memory_total_bytes(void) {
 uint64_t memory_free_bytes(void) {
     return free_bytes;
 }
+
+bool memory_get_allocator_stats(struct memory_allocator_stats *stats) {
+    if (!initialized || stats == NULL) return false;
+
+    uint64_t largest_extent = 0U;
+    for (size_t i = 0U; i < usable_region_count; ++i) {
+        const struct memory_region *region = &usable_regions[i];
+        const uint64_t extent = region->end - region->next;
+        if (extent > largest_extent) largest_extent = extent;
+    }
+
+    stats->total_bytes = total_bytes;
+    stats->free_bytes = free_bytes;
+    stats->used_bytes = total_bytes >= free_bytes
+        ? total_bytes - free_bytes : 0U;
+    stats->largest_unallocated_extent_bytes = largest_extent;
+    stats->allocation_requests = allocation_requests;
+    stats->allocation_failures = allocation_failures;
+    stats->pages_allocated_total = pages_allocated_total;
+    stats->free_requests = free_requests;
+    stats->free_failures = free_failures;
+    stats->pages_freed_total = pages_freed_total;
+    stats->free_list_pages = (uint64_t)freed_page_count;
+    stats->region_count = (uint64_t)usable_region_count;
+    return true;
+}
+

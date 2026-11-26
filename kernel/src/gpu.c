@@ -20,6 +20,115 @@ static enum nexus_gpu_vendor identify_vendor(uint16_t vendor_id) {
     }
 }
 
+static bool device_id_in_list(uint16_t device_id,
+                               const uint16_t *ids, uint32_t count) {
+    if (ids == NULL) return false;
+    for (uint32_t i = 0U; i < count; ++i)
+        if (ids[i] == device_id) return true;
+    return false;
+}
+
+/*
+ * These are identification tables, not driver match tables. An architecture
+ * label helps diagnostics choose a future driver, but does not imply that a
+ * command processor, memory manager, or display engine is supported.
+ *
+ * Intel Arc and Xe IDs are kept to explicitly catalogued upstream/vendor
+ * hardware IDs. Unknown Intel devices remain visible as generic Intel GPUs.
+ */
+static enum nexus_gpu_family identify_family(uint16_t vendor_id,
+                                               uint16_t device_id) {
+    static const uint16_t intel_xe_lpg_ids[] = {
+        0x7D40U, 0x7D41U, 0x7D45U, 0x7D51U, 0x7D55U, 0x7D67U, 0x7DD5U
+    };
+    static const uint16_t intel_arc_alchemist_ids[] = {
+        0x5690U, 0x5691U, 0x5692U, 0x5693U, 0x5694U,
+        0x5696U, 0x5697U, 0x56A0U, 0x56A1U, 0x56A2U,
+        0x56A5U, 0x56A6U, 0x56B0U, 0x56B1U, 0x56B2U,
+        0x56B3U, 0x56BAU, 0x56BCU, 0x56BDU
+    };
+    static const uint16_t intel_arc_battlemage_ids[] = {
+        0xE20BU, 0xE20CU, 0xE211U, 0xE212U, 0xE222U, 0xE223U
+    };
+    static const uint16_t intel_xe2_ids[] = { 0x64A0U };
+    static const uint16_t intel_xe3_ids[] = {
+        0xB080U, 0xB081U, 0xB082U, 0xB083U, 0xB084U,
+        0xB085U, 0xB086U, 0xB087U, 0xB090U, 0xB0A0U
+    };
+
+    switch (vendor_id) {
+        case 0x8086U:
+            if (device_id_in_list(device_id, intel_arc_alchemist_ids,
+                                  sizeof(intel_arc_alchemist_ids) /
+                                  sizeof(intel_arc_alchemist_ids[0])))
+                return NEXUS_GPU_FAMILY_INTEL_ARC_ALCHEMIST;
+            if (device_id_in_list(device_id, intel_arc_battlemage_ids,
+                                  sizeof(intel_arc_battlemage_ids) /
+                                  sizeof(intel_arc_battlemage_ids[0])))
+                return NEXUS_GPU_FAMILY_INTEL_ARC_BATTLEMAGE;
+            if (device_id_in_list(device_id, intel_xe3_ids,
+                                  sizeof(intel_xe3_ids) /
+                                  sizeof(intel_xe3_ids[0])))
+                return NEXUS_GPU_FAMILY_INTEL_XE3;
+            if (device_id_in_list(device_id, intel_xe2_ids,
+                                  sizeof(intel_xe2_ids) /
+                                  sizeof(intel_xe2_ids[0])))
+                return NEXUS_GPU_FAMILY_INTEL_XE2;
+            if (device_id_in_list(device_id, intel_xe_lpg_ids,
+                                  sizeof(intel_xe_lpg_ids) /
+                                  sizeof(intel_xe_lpg_ids[0])))
+                return NEXUS_GPU_FAMILY_INTEL_XE_LPG;
+            return NEXUS_GPU_FAMILY_INTEL_GENERIC;
+        case 0x1002U: return NEXUS_GPU_FAMILY_AMD_RADEON;
+        case 0x10DEU: return NEXUS_GPU_FAMILY_NVIDIA;
+        case 0x1AF4U: return NEXUS_GPU_FAMILY_VIRTIO;
+        case 0x15ADU: return NEXUS_GPU_FAMILY_VMWARE;
+        case 0x1234U: return NEXUS_GPU_FAMILY_QEMU;
+        default: return NEXUS_GPU_FAMILY_UNKNOWN;
+    }
+}
+
+static const char *family_name(enum nexus_gpu_family family) {
+    switch (family) {
+        case NEXUS_GPU_FAMILY_INTEL_GENERIC: return "Intel graphics (unclassified)";
+        case NEXUS_GPU_FAMILY_INTEL_XE_LPG: return "Intel Xe-LPG";
+        case NEXUS_GPU_FAMILY_INTEL_ARC_ALCHEMIST: return "Intel Arc Alchemist (Xe-HPG)";
+        case NEXUS_GPU_FAMILY_INTEL_ARC_BATTLEMAGE: return "Intel Arc Battlemage (Xe2)";
+        case NEXUS_GPU_FAMILY_INTEL_XE2: return "Intel Xe2 integrated graphics";
+        case NEXUS_GPU_FAMILY_INTEL_XE3: return "Intel Xe3";
+        case NEXUS_GPU_FAMILY_AMD_RADEON: return "AMD Radeon (architecture unclassified)";
+        case NEXUS_GPU_FAMILY_NVIDIA: return "NVIDIA graphics (architecture unclassified)";
+        case NEXUS_GPU_FAMILY_VIRTIO: return "VirtIO GPU";
+        case NEXUS_GPU_FAMILY_VMWARE: return "VMware SVGA";
+        case NEXUS_GPU_FAMILY_QEMU: return "QEMU display adapter";
+        default: return "Unknown display family";
+    }
+}
+
+static void inventory_device_bars(const struct nexus_pci_device *device,
+                                  struct nexus_gpu_info *info) {
+    if (device == NULL || info == NULL) return;
+    for (uint8_t index = 0U; index < NEXUS_PCI_BAR_COUNT; ++index) {
+        struct nexus_pci_bar decoded;
+        if (!pci_decode_bar(device, index, &decoded) || !decoded.present)
+            continue;
+        struct nexus_gpu_bar_info *bar = &info->bars[index];
+        bar->present = decoded.present;
+        bar->assigned = decoded.assigned;
+        bar->io_space = decoded.io_space;
+        bar->is_64bit = decoded.is_64bit;
+        bar->prefetchable = decoded.prefetchable;
+        bar->base = decoded.base;
+        ++info->bar_count;
+        if (!decoded.io_space) {
+            ++info->memory_bar_count;
+            if (decoded.is_64bit) info->has_64bit_memory_bar = true;
+            if (decoded.prefetchable)
+                info->has_prefetchable_memory_bar = true;
+        }
+    }
+}
+
 static const char *vendor_name(enum nexus_gpu_vendor vendor) {
     switch (vendor) {
         case NEXUS_GPU_VENDOR_INTEL: return "INTEL GRAPHICS";
@@ -66,6 +175,9 @@ bool gpu_init(void) {
         info->slot = device->slot;
         info->function = device->function;
         info->vendor = identify_vendor(device->vendor_id);
+        info->family = identify_family(device->vendor_id, device->device_id);
+        info->family_name = family_name(info->family);
+        inventory_device_bars(device, info);
         info->name = vendor_name(info->vendor);
         info->hardware_2d_acceleration = false;
         info->hardware_3d_acceleration = false;
@@ -104,7 +216,9 @@ bool gpu_init(void) {
         const struct nexus_gpu_info *primary = &adapters[0];
         serial_write("GPU: primary display adapter detected: ");
         serial_write(primary->name);
-        serial_write(" vendor/device=");
+        serial_write(" [");
+        serial_write(primary->family_name);
+        serial_write("] vendor/device=");
         serial_write_hex(primary->vendor_id);
         serial_write("/");
         serial_write_hex(primary->device_id);

@@ -228,25 +228,49 @@ static bool make_permission_path(const char *id, char output[32]) {
     return true;
 }
 
-static bool package_write_permission_record(const char *id,
-                                            uint32_t permissions) {
-    if ((permissions & ~NEXUS_APP_PERMISSION_ALL) != 0U) return false;
+
+static bool package_digest_hex(
+    const uint8_t digest[NEXUS_PACKAGE_DIGEST_BYTES], char output[65]) {
+    if (digest == NULL || output == NULL) return false;
+    static const char digits[] = "0123456789abcdef";
+    for (size_t i = 0U; i < NEXUS_PACKAGE_DIGEST_BYTES; ++i) {
+        output[i * 2U] = digits[digest[i] >> 4];
+        output[i * 2U + 1U] = digits[digest[i] & 0x0FU];
+    }
+    output[64] = '\0';
+    return true;
+}
+
+static bool package_write_permission_record(
+    const struct nexus_package_manifest *manifest, uint32_t permissions) {
+    if (manifest == NULL || !valid_id(manifest->id) ||
+        !valid_version(manifest->version) ||
+        (permissions & ~NEXUS_APP_PERMISSION_ALL) != 0U) return false;
     char path[32];
-    uint8_t bytes[128];
-    if (!make_permission_path(id, path)) return false;
-    static const char prefix[] = "NEXUS-PACKAGE-GRANTS/1\nID=";
-    static const char middle[] = "\nPERMISSIONS=";
+    uint8_t bytes[192];
+    char digest_hex[65];
+    if (!make_permission_path(manifest->id, path) ||
+        !package_digest_hex(manifest->payload_sha256, digest_hex)) return false;
+
+    static const char prefix[] = "NEXUS-PACKAGE-GRANTS/2\nID=";
+    static const char version_prefix[] = "\nVERSION=";
+    static const char digest_prefix[] = "\nSHA256=";
+    static const char permission_prefix[] = "\nPERMISSIONS=";
     size_t used = 0U;
-    for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
-        bytes[used++] = (uint8_t)prefix[i];
-    for (size_t i = 0U; id[i] != '\0'; ++i) {
-        if (used >= sizeof(bytes)) return false;
-        bytes[used++] = (uint8_t)id[i];
-    }
-    for (size_t i = 0U; i < sizeof(middle) - 1U; ++i) {
-        if (used >= sizeof(bytes)) return false;
-        bytes[used++] = (uint8_t)middle[i];
-    }
+#define APPEND_PERMISSION_TEXT(value) do { \
+    const char *literal_ = (value); \
+    for (size_t i_ = 0U; literal_[i_] != '\0'; ++i_) { \
+        if (used >= sizeof(bytes)) return false; \
+        bytes[used++] = (uint8_t)literal_[i_]; \
+    } \
+} while (0)
+    APPEND_PERMISSION_TEXT(prefix);
+    APPEND_PERMISSION_TEXT(manifest->id);
+    APPEND_PERMISSION_TEXT(version_prefix);
+    APPEND_PERMISSION_TEXT(manifest->version);
+    APPEND_PERMISSION_TEXT(digest_prefix);
+    APPEND_PERMISSION_TEXT(digest_hex);
+    APPEND_PERMISSION_TEXT(permission_prefix);
     char reverse[10];
     size_t digits = 0U;
     uint32_t remaining = permissions;
@@ -255,24 +279,26 @@ static bool package_write_permission_record(const char *id,
         remaining /= 10U;
     } while (remaining != 0U && digits < sizeof(reverse));
     while (digits != 0U) {
-        if (used >= sizeof(bytes) - 1U) return false;
+        if (used >= sizeof(bytes)) return false;
         bytes[used++] = (uint8_t)reverse[--digits];
     }
-    bytes[used++] = '\n';
+    APPEND_PERMISSION_TEXT("\n");
+#undef APPEND_PERMISSION_TEXT
     return vfs_write_root_path(path, bytes, used);
 }
 
-static bool package_read_permission_record(const char *id,
-                                           uint32_t *permissions) {
-    if (!valid_id(id) || permissions == NULL) return false;
-    *permissions = 0U; /* Missing record means no user approval. */
+static bool package_read_permission_record(
+    const struct nexus_package_manifest *manifest, uint32_t *permissions) {
+    if (manifest == NULL || !valid_id(manifest->id) ||
+        permissions == NULL) return false;
+    *permissions = 0U; /* Missing or stale record means no user approval. */
     char path[32];
-    if (!make_permission_path(id, path)) return false;
+    if (!make_permission_path(manifest->id, path)) return false;
     struct nexus_vfs_file file;
     if (!vfs_open_root_readonly_path(path, &file)) return true;
 
     uint32_t size = 0U;
-    uint8_t bytes[128];
+    uint8_t bytes[192];
     if (!vfs_file_size(&file, &size) || size == 0U ||
         size > sizeof(bytes)) {
         vfs_close(&file);
@@ -294,307 +320,48 @@ static bool package_read_permission_record(const char *id,
     vfs_close(&file);
     if (!okay) return false;
 
-    static const char prefix[] = "NEXUS-PACKAGE-GRANTS/1\nID=";
-    static const char middle[] = "PERMISSIONS=";
-    if (total < sizeof(prefix) - 1U ||
-        !bytes_equal(bytes, prefix, sizeof(prefix) - 1U)) return false;
-    size_t cursor = sizeof(prefix) - 1U;
-    size_t id_length = 0U;
-    while (cursor + id_length < total && bytes[cursor + id_length] != '\n')
-        ++id_length;
-    size_t expected_id_length = 0U;
-    while (id[expected_id_length] != '\0') ++expected_id_length;
-    if (id_length == 0U || id_length != expected_id_length ||
-        id_length >= NEXUS_PACKAGE_ID_MAX + 1U ||
-        cursor + id_length >= total) return false;
-    for (size_t i = 0U; i < id_length; ++i)
-        if (bytes[cursor + i] != (uint8_t)id[i]) return false;
-    cursor += id_length + 1U;
-    if (cursor + sizeof(middle) - 1U > total ||
-        !bytes_equal(bytes + cursor, middle, sizeof(middle) - 1U))
-        return false;
-    cursor += sizeof(middle) - 1U;
-
-    char decimal[16];
-    size_t digits = 0U;
-    while (cursor < total && bytes[cursor] != '\n') {
-        if (digits + 1U >= sizeof(decimal)) return false;
-        decimal[digits++] = (char)bytes[cursor++];
-    }
-    if (cursor + 1U != total || digits == 0U) return false;
-    decimal[digits] = '\0';
-    return parse_permission_mask(decimal, permissions);
-}
-
-
-static bool parse_header(const void *package_bytes, size_t package_length,
-                         bool require_payload,
-                         struct nexus_package_manifest *manifest) {
-    if (package_bytes == NULL || manifest == NULL ||
-        package_length == 0U || package_length > NEXUS_NXFS_MAX_FILE_BYTES +
-            NEXUS_PACKAGE_HEADER_MAX) return false;
-    const uint8_t *bytes = (const uint8_t *)package_bytes;
-    struct nexus_package_manifest parsed = {0};
     size_t offset = 0U, start = 0U, line_length = 0U;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        line_length != sizeof(PACKAGE_MAGIC) - 1U ||
-        !bytes_equal(bytes + start, PACKAGE_MAGIC, line_length)) return false;
-
-    char temporary[32];
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        !expect_value(bytes, start, line_length, "ID=", parsed.id,
-                      sizeof(parsed.id)) || !valid_id(parsed.id)) return false;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        !expect_value(bytes, start, line_length, "VERSION=", parsed.version,
-                      sizeof(parsed.version)) ||
-        !valid_version(parsed.version)) return false;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        line_length != sizeof("ARCH=x86_64") - 1U ||
-        !bytes_equal(bytes + start, "ARCH=x86_64", line_length)) return false;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        line_length != sizeof("ABI=1") - 1U ||
-        !bytes_equal(bytes + start, "ABI=1", line_length)) return false;
-    parsed.abi_version = NEXUS_PACKAGE_ABI_VERSION;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        line_length != sizeof("ENTRY=" PACKAGE_ENTRY_NAME) - 1U ||
-        !bytes_equal(bytes + start, "ENTRY=" PACKAGE_ENTRY_NAME,
-                     line_length)) return false;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        !expect_value(bytes, start, line_length, "SIZE=", temporary,
-                      sizeof(temporary)) ||
-        !parse_decimal(temporary, NEXUS_PACKAGE_MAX_PAYLOAD,
-                       &parsed.payload_size)) return false;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        line_length != sizeof("SHA256=") - 1U +
-                       NEXUS_PACKAGE_DIGEST_BYTES * 2U ||
-        !bytes_equal(bytes + start, "SHA256=", sizeof("SHA256=") - 1U) ||
-        !decode_hex(bytes + start + sizeof("SHA256=") - 1U,
-                    line_length - (sizeof("SHA256=") - 1U),
-                    parsed.payload_sha256,
-                    sizeof(parsed.payload_sha256))) return false;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length))
+    if (!read_line(bytes, total, &offset, &start, &line_length))
         return false;
-    if (line_length >= sizeof("PERMISSIONS=") - 1U &&
-        bytes_equal(bytes + start, "PERMISSIONS=",
-                    sizeof("PERMISSIONS=") - 1U)) {
-        if (!expect_value(bytes, start, line_length, "PERMISSIONS=",
-                          temporary, sizeof(temporary)) ||
-            !parse_permission_mask(temporary, &parsed.permissions) ||
-            !read_line(bytes, package_length, &offset, &start, &line_length))
-            return false;
-    }
-    /* Old signed v1 manifests omit this line and remain least-privileged. */
-    if (!expect_value(bytes, start, line_length, "KEY=", parsed.key_id,
-                      sizeof(parsed.key_id)) || !valid_key_id(parsed.key_id))
+    static const char legacy[] = "NEXUS-PACKAGE-GRANTS/1";
+    if (line_length == sizeof(legacy) - 1U &&
+        bytes_equal(bytes + start, legacy, line_length))
+        return true; /* Discard legacy ID-only approval records. */
+    static const char version_two[] = "NEXUS-PACKAGE-GRANTS/2";
+    if (line_length != sizeof(version_two) - 1U ||
+        !bytes_equal(bytes + start, version_two, line_length)) return false;
+
+    char stored_id[NEXUS_PACKAGE_ID_MAX + 1U];
+    char stored_version[NEXUS_PACKAGE_VERSION_MAX + 1U];
+    char stored_digest[65];
+    char decimal[16];
+    uint32_t stored_permissions = 0U;
+    if (!read_line(bytes, total, &offset, &start, &line_length) ||
+        !expect_value(bytes, start, line_length, "ID=", stored_id,
+                      sizeof(stored_id)) ||
+        !read_line(bytes, total, &offset, &start, &line_length) ||
+        !expect_value(bytes, start, line_length, "VERSION=", stored_version,
+                      sizeof(stored_version)) ||
+        !read_line(bytes, total, &offset, &start, &line_length) ||
+        !expect_value(bytes, start, line_length, "SHA256=", stored_digest,
+                      sizeof(stored_digest)) ||
+        !read_line(bytes, total, &offset, &start, &line_length) ||
+        !expect_value(bytes, start, line_length, "PERMISSIONS=", decimal,
+                      sizeof(decimal)) ||
+        offset != total ||
+        !parse_permission_mask(decimal, &stored_permissions))
         return false;
 
-    size_t signature_line_start = 0U;
-    if (!read_line(bytes, package_length, &offset, &signature_line_start,
-                   &line_length) ||
-        line_length != sizeof("SIGNATURE=") - 1U +
-                       NEXUS_PACKAGE_SIGNATURE_BYTES * 2U ||
-        !bytes_equal(bytes + signature_line_start, "SIGNATURE=",
-                     sizeof("SIGNATURE=") - 1U) ||
-        !decode_hex(bytes + signature_line_start + sizeof("SIGNATURE=") - 1U,
-                    line_length - (sizeof("SIGNATURE=") - 1U),
-                    parsed.signature, sizeof(parsed.signature))) return false;
-    parsed.signed_message_size = signature_line_start;
-
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        line_length != 0U || offset > NEXUS_PACKAGE_HEADER_MAX) return false;
-    parsed.header_size = offset;
-    parsed.payload_offset = offset;
-
-    if (require_payload) {
-        if (parsed.payload_size > package_length - offset ||
-            package_length - offset != parsed.payload_size) return false;
-    } else if (package_length != offset) {
+    char expected_digest[65];
+    if (!package_digest_hex(manifest->payload_sha256, expected_digest))
         return false;
-    }
-
-    *manifest = parsed;
+    /* Approvals are bound to both the semantic version and exact executable. */
+    if (!strings_equal(stored_id, manifest->id) ||
+        !strings_equal(stored_version, manifest->version) ||
+        !strings_equal(stored_digest, expected_digest))
+        return true;
+    *permissions = stored_permissions & manifest->permissions;
     return true;
-}
-
-bool nexus_package_parse(const void *package_bytes, size_t package_length,
-                         struct nexus_package_manifest *manifest) {
-    return parse_header(package_bytes, package_length, true, manifest);
-}
-
-static bool verify_signature(const uint8_t *header,
-                             const struct nexus_package_manifest *manifest,
-                             nexus_package_signature_verifier verifier,
-                             void *context) {
-    return header != NULL && manifest != NULL && verifier != NULL &&
-        verifier(manifest->key_id, header, manifest->signed_message_size,
-                 manifest->signature, context);
-}
-
-bool nexus_package_verify(const void *package_bytes, size_t package_length,
-                          nexus_package_signature_verifier verifier,
-                          void *verifier_context,
-                          struct nexus_package_manifest *manifest) {
-    struct nexus_package_manifest parsed;
-    if (verifier == NULL ||
-        !parse_header(package_bytes, package_length, true, &parsed))
-        return false;
-    const uint8_t *bytes = (const uint8_t *)package_bytes;
-    uint8_t digest[NEXUS_PACKAGE_DIGEST_BYTES];
-    nexus_sha256(bytes + parsed.payload_offset, parsed.payload_size, digest);
-    const bool digest_matches =
-        digest_equal(digest, parsed.payload_sha256, sizeof(digest));
-    for (size_t i = 0U; i < sizeof(digest); ++i) digest[i] = 0U;
-    if (!digest_matches) return false;
-    if (!verify_signature(bytes, &parsed, verifier, verifier_context))
-        return false;
-    if (manifest != NULL) *manifest = parsed;
-    return true;
-}
-
-static bool make_paths(const struct nexus_package_manifest *manifest,
-                       char executable[32], char receipt[32]) {
-    if (manifest == NULL || !valid_id(manifest->id) ||
-        !valid_version(manifest->version)) return false;
-    for (size_t i = 0U; i < 32U; ++i) {
-        executable[i] = '\0';
-        receipt[i] = '\0';
-    }
-    size_t out = 0U;
-    const char prefix[] = "APPS/";
-    for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
-        executable[out++] = prefix[i];
-    for (size_t i = 0U; manifest->id[i] != '\0'; ++i)
-        executable[out++] = manifest->id[i];
-    executable[out++] = '-';
-    for (size_t i = 0U; manifest->version[i] != '\0'; ++i)
-        executable[out++] = manifest->version[i];
-    const char elf_suffix[] = ".ELF";
-    for (size_t i = 0U; i < sizeof(elf_suffix) - 1U; ++i)
-        executable[out++] = elf_suffix[i];
-    executable[out] = '\0';
-
-    size_t receipt_length = 0U;
-    for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
-        receipt[receipt_length++] = prefix[i];
-    for (size_t i = 0U; manifest->id[i] != '\0'; ++i)
-        receipt[receipt_length++] = manifest->id[i];
-    const char suffix[] = PACKAGE_RECEIPT_SUFFIX;
-    for (size_t i = 0U; i < sizeof(suffix) - 1U; ++i)
-        receipt[receipt_length++] = suffix[i];
-    receipt[receipt_length] = '\0';
-    return out < 32U && receipt_length < 32U;
-}
-
-static bool file_matches(const char *path, const uint8_t *data,
-                         size_t length, bool *exists) {
-    if (exists == NULL || path == NULL || (length != 0U && data == NULL))
-        return false;
-    *exists = false;
-    struct nexus_vfs_file file;
-    if (!vfs_open_root_readonly_path(path, &file)) return true;
-    *exists = true;
-    uint32_t size = 0U;
-    if (!vfs_file_size(&file, &size) || size != length) {
-        vfs_close(&file);
-        return false;
-    }
-    uint8_t buffer[NEXUS_VFS_READ_CHUNK];
-    size_t compared = 0U;
-    bool matches = true;
-    while (compared < length) {
-        size_t requested = length - compared;
-        if (requested > sizeof(buffer)) requested = sizeof(buffer);
-        size_t read = 0U;
-        if (!vfs_read(&file, buffer, requested, &read) || read != requested) {
-            matches = false;
-            break;
-        }
-        for (size_t i = 0U; i < read; ++i) {
-            if (buffer[i] != data[compared + i]) {
-                matches = false;
-                break;
-            }
-        }
-        if (!matches) break;
-        compared += read;
-    }
-    vfs_close(&file);
-    return matches;
-}
-
-static bool read_receipt(const char *receipt_path, uint8_t header[512],
-                         struct nexus_package_manifest *manifest,
-                         nexus_package_signature_verifier verifier,
-                         void *context) {
-    struct nexus_vfs_file file;
-    if (!vfs_open_root_readonly_path(receipt_path, &file)) return false;
-    uint32_t size = 0U;
-    if (!vfs_file_size(&file, &size) || size == 0U ||
-        size > NEXUS_PACKAGE_HEADER_MAX) {
-        vfs_close(&file);
-        return false;
-    }
-    size_t total = 0U;
-    while (total < size) {
-        size_t amount = size - total;
-        size_t read = 0U;
-        if (amount > NEXUS_VFS_READ_CHUNK) amount = NEXUS_VFS_READ_CHUNK;
-        if (!vfs_read(&file, header + total, amount, &read) ||
-            read != amount) {
-            vfs_close(&file);
-            return false;
-        }
-        total += read;
-    }
-    vfs_close(&file);
-    if (!parse_header(header, total, false, manifest) ||
-        !verify_signature(header, manifest, verifier, context)) return false;
-    return true;
-}
-
-static bool installed_payload_matches(
-    const char *executable_path,
-    const struct nexus_package_manifest *manifest) {
-    if (executable_path == NULL || manifest == NULL) return false;
-    struct nexus_vfs_file file;
-    if (!vfs_open_root_readonly_path(executable_path, &file)) return false;
-    uint32_t size = 0U;
-    if (!vfs_file_size(&file, &size) || size != manifest->payload_size) {
-        vfs_close(&file);
-        return false;
-    }
-    struct nexus_sha256_context hash;
-    nexus_sha256_init(&hash);
-    uint8_t buffer[NEXUS_VFS_READ_CHUNK];
-    size_t total = 0U;
-    bool okay = true;
-    while (total < size) {
-        size_t amount = size - total;
-        size_t read = 0U;
-        if (amount > sizeof(buffer)) amount = sizeof(buffer);
-        if (!vfs_read(&file, buffer, amount, &read) || read != amount) {
-            okay = false;
-            break;
-        }
-        nexus_sha256_update(&hash, buffer, read);
-        total += read;
-    }
-    vfs_close(&file);
-    if (!okay) return false;
-    uint8_t digest[NEXUS_PACKAGE_DIGEST_BYTES];
-    nexus_sha256_final(&hash, digest);
-    const bool matches =
-        digest_equal(digest, manifest->payload_sha256, sizeof(digest));
-    for (size_t i = 0U; i < sizeof(digest); ++i) digest[i] = 0U;
-    return matches;
 }
 
 bool nexus_package_is_installed(const char *id,
@@ -622,7 +389,7 @@ bool nexus_package_is_installed(const char *id,
         !installed_payload_matches(executable, &manifest)) return false;
 
     uint32_t stored_grants = 0U;
-    if (!package_read_permission_record(manifest.id, &stored_grants))
+    if (!package_read_permission_record(&manifest, &stored_grants))
         return false;
     if (result != NULL) {
         for (size_t i = 0U; i < sizeof(result->id); ++i)
@@ -732,7 +499,7 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
             result->executable_path[i] = executable[i];
         result->requested_permissions = manifest.permissions;
         uint32_t stored_grants = 0U;
-        if (!package_read_permission_record(manifest.id, &stored_grants))
+        if (!package_read_permission_record(&manifest, &stored_grants))
             return false;
         result->granted_permissions = stored_grants & manifest.permissions;
     }
@@ -766,7 +533,7 @@ bool nexus_package_set_permissions(
         !strings_equal(manifest.id, id) ||
         (granted_permissions & ~manifest.permissions) != 0U)
         return false;
-    return package_write_permission_record(id, granted_permissions);
+    return package_write_permission_record(&manifest, granted_permissions);
 }
 
 bool nexus_package_uninstall(const char *id,
@@ -786,11 +553,17 @@ bool nexus_package_uninstall(const char *id,
         receipt[out++] = PACKAGE_RECEIPT_SUFFIX[i];
     receipt[out] = '\0';
 
-    /* Remove the visibility record first; leftover payload is then an orphan. */
-    if (!vfs_remove_root_path(receipt)) return false;
+    /* Delete approval first. If cleanup fails, retain the signed receipt so
+     * an orphan approval can never be revived by a later reinstall.
+     */
     char permission_path[32];
-    if (make_permission_path(id, permission_path))
-        (void)vfs_remove_root_path(permission_path);
+    if (!make_permission_path(id, permission_path)) return false;
+    struct nexus_vfs_file grant_file;
+    if (vfs_open_root_readonly_path(permission_path, &grant_file)) {
+        vfs_close(&grant_file);
+        if (!vfs_remove_root_path(permission_path)) return false;
+    }
+    if (!vfs_remove_root_path(receipt)) return false;
     return vfs_remove_root_path(installed.executable_path);
 }
 

@@ -2245,7 +2245,7 @@ static void draw_shell(void) {
                 width_text, 1U, 239U, 247U, 255U);
             graphics_draw_text(text_x + 160U, content_y + 70U,
                 height_text, 1U, 239U, 247U, 255U);
-            graphics_draw_text(text_x, content_y + 128U, "INTERFACE SCALE",
+            graphics_draw_text(text_x, content_y + 128U, "TEXT SIZE",
                                1U, 142U, 174U, 199U);
             static const uint8_t scales[5] = {80U, 90U, 100U, 110U, 120U};
             for (size_t i = 0U; i < 5U; ++i) {

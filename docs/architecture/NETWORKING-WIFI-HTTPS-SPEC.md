@@ -104,3 +104,8 @@ Minimum browser tests include redirects, status handling, content encodings, lar
 **N5 — Broad hardware coverage:** add drivers based on demand and exact PCI/USB IDs. Gate each adapter independently; never infer support for untested devices.
 
 A bootable ISO, successful QEMU boot, raw HTTP request or visible browser window does not prove these gates have passed.
+
+
+### Combined Windows driver package assessment
+
+The metadata assessment API combines the hardware-ID match from the INF with inspection of the supplied AMD64 PE32+ `.sys` image. It reports the matched model/install section, whether the PE image is structurally valid, and the resulting NDIS/framework compatibility profile. A package whose INF matches but whose `.sys` is malformed is reported as a matched package with an invalid binary, rather than being silently treated as supported. This API does not process INF installation directives, catalog signatures, firmware, or execute the driver.

@@ -220,6 +220,11 @@ void scheduler_yield(void) {
  * existing IRQ-exit preemption point or an explicit scheduler safe point.
  */
 void scheduler_timer_tick(uint64_t now) {
+    if (main_thread.state == NEXUS_THREAD_SLEEPING &&
+        now >= main_thread.wake_tick) {
+        main_thread.state = NEXUS_THREAD_RUNNABLE;
+    }
+
     for (size_t i = 0U; i < thread_count; ++i) {
         struct nexus_thread *thread = &threads[i];
         if (thread->state == NEXUS_THREAD_SLEEPING &&

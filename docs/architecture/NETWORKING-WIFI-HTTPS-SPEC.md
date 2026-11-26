@@ -48,7 +48,7 @@ Do not describe Nexus as Windows/Chrome-equivalent or claim all Wi-Fi hardware w
 
 ## Windows PE driver package inspection
 
-Nexus now has a read-only PE32+ AMD64 inspector for Windows driver binaries. It validates DOS/PE signatures, AMD64 machine type, PE32+ optional headers, DLL characteristics, image and section bounds, alignment, import-directory termination, imported module names, and import thunk termination. The inspector reports whether the image imports NDIS, WDF, NetAdapterCx, the Windows kernel, or HAL. It never maps, relocates, resolves, or executes the image.
+Nexus now has a read-only PE32+ AMD64 inspector for Windows driver binaries. It validates DOS/PE signatures, AMD64 machine type, PE32+ optional headers, DLL characteristics, image and section bounds, alignment, import-directory termination, imported module names, import thunk termination, and base-relocation blocks. It reports DIR64 relocation support, whether the image imports NDIS, WDF, NetAdapterCx, the Windows kernel, or HAL, and records bounded NDIS API import names (including NDIS 6 miniport registration). The INF reader also accepts UTF-16LE BOM and UTF-8 BOM files, which are common Windows package encodings. It never maps, relocates, resolves, or executes the image.
 
 This enables a package assistant to distinguish legacy NDIS miniports from WDF- or NetAdapterCx-based packages and to reject malformed binaries before compatibility work begins. It does not yet prove API-level compatibility, verify Authenticode/catalog signatures, load firmware, or make any Windows driver operational. Those require separate signature verification, a PE loader with relocation and import resolution, and a sandboxed NDIS host with DMA, interrupt, IRQL, power and packet-lifecycle support.
 

@@ -2,7 +2,6 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include <string.h>
 
 int main(void) {
     struct nexus_settings settings;
@@ -32,7 +31,17 @@ int main(void) {
 
     struct nexus_settings decoded = {0};
     assert(nexus_settings_decode(record, sizeof(record), &decoded));
-    assert(memcmp(&decoded, &settings, sizeof(settings)) == 0);
+    assert(decoded.theme == settings.theme);
+    assert(decoded.accent == settings.accent);
+    assert(decoded.wallpaper == settings.wallpaper);
+    assert(decoded.ui_scale_percent == settings.ui_scale_percent);
+    assert(decoded.cursor_size == settings.cursor_size);
+    assert(decoded.mouse_sensitivity_percent ==
+           settings.mouse_sensitivity_percent);
+    assert(decoded.scroll_speed == settings.scroll_speed);
+    assert(decoded.volume_percent == settings.volume_percent);
+    assert(decoded.left_handed_mouse == settings.left_handed_mouse);
+    assert(decoded.high_contrast == settings.high_contrast);
 
     uint8_t corrupted[NEXUS_SETTINGS_RECORD_BYTES];
     memcpy(corrupted, record, sizeof(corrupted));

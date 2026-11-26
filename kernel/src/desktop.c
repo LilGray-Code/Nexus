@@ -2267,34 +2267,33 @@ static void draw_shell(void) {
                 desktop_preferences_persistent ? 181U : 130U);
         } else if (settings_page == SETTINGS_DISPLAY) {
             desktop_settings_draw_heading(text_x, content_y,
-                "DISPLAY", "Monitor data and firmware mode inventory.");
+                "DISPLAY", "Monitor data, modes and software output controls.");
             const struct nexus_display_info *display = nexus_display_get_info();
             char number[24], line[96];
             format_u64(screen_width, number);
-            graphics_draw_text(text_x, content_y + 55U, "ACTIVE RESOLUTION:",
+            graphics_draw_text(text_x, content_y + 50U, "ACTIVE:",
                                1U, 142U, 174U, 199U);
-            graphics_draw_text(text_x + 144U, content_y + 55U, number,
+            graphics_draw_text(text_x + 62U, content_y + 50U, number,
                                1U, 239U, 247U, 255U);
             format_u64(screen_height, number);
-            graphics_draw_text(text_x + 196U, content_y + 55U, "X",
+            graphics_draw_text(text_x + 154U, content_y + 50U, "X",
                                1U, 142U, 174U, 199U);
-            graphics_draw_text(text_x + 212U, content_y + 55U, number,
+            graphics_draw_text(text_x + 170U, content_y + 50U, number,
                                1U, 239U, 247U, 255U);
             if (display != NULL && display->current_refresh_hz != 0U) {
-                format_labeled_u64("CURRENT REFRESH: ",
-                    display->current_refresh_hz, line);
-                graphics_draw_text(text_x, content_y + 80U, line,
+                format_labeled_u64("REFRESH: ", display->current_refresh_hz,
+                                   line);
+                graphics_draw_text(text_x + 300U, content_y + 50U, line,
                                    1U, 171U, 191U, 211U);
             } else {
-                graphics_draw_text(text_x, content_y + 80U,
-                    "CURRENT REFRESH: NOT REPORTED",
-                    1U, 171U, 191U, 211U);
+                graphics_draw_text(text_x + 300U, content_y + 50U,
+                    "REFRESH: NOT REPORTED", 1U, 171U, 191U, 211U);
             }
 
             if (display != NULL) {
-                format_labeled_u64("FIRMWARE MODES: ",
-                    display->firmware_mode_count, line);
-                graphics_draw_text(text_x, content_y + 105U, line,
+                format_labeled_u64("AVAILABLE MODES: ",
+                    display->mode_count, line);
+                graphics_draw_text(text_x, content_y + 76U, line,
                                    1U, 142U, 174U, 199U);
                 uint32_t shown = 0U;
                 for (uint32_t i = 0U;
@@ -2314,79 +2313,17 @@ static void draw_shell(void) {
                     hardware_append_text(line, sizeof(line), &used, number);
                     hardware_append_text(line, sizeof(line), &used, " HZ");
                     graphics_draw_text(text_x + 12U,
-                        content_y + 128U + (uint64_t)shown * 19U,
+                        content_y + 96U + (uint64_t)shown * 16U,
                         line, 1U, 239U, 247U, 255U);
                     ++shown;
                 }
                 if (shown == 0U)
-                    graphics_draw_text(text_x + 12U, content_y + 128U,
-                        "NO EDID DETAILED TIMINGS REPORTED",
-                        1U, 171U, 191U, 211U);
-                if (display->monitor_name_valid) {
-                    graphics_draw_text(text_x, content_y + 173U, "MONITOR:",
-                                       1U, 142U, 174U, 199U);
-                    graphics_draw_text(text_x + 86U, content_y + 173U,
-                        display->monitor_name, 1U, 108U, 216U, 229U);
-                } else {
-                    graphics_draw_text(text_x, content_y + 173U,
-                        display->edid_valid ? "MONITOR NAME NOT PROVIDED"
-                                            : "EDID NOT AVAILABLE OR INVALID",
-                        1U, 171U, 191U, 211U);
-                }
-                graphics_draw_text(text_x, content_y + 198U,
-                    nexus_display_hdr_monitor_supported()
-                        ? "HDR MONITOR: STATIC HDR METADATA ADVERTISED"
-                        : "HDR MONITOR: NO VERIFIED STATIC HDR METADATA",
-                    1U, 171U, 191U, 211U);
-                graphics_draw_text(text_x, content_y + 221U,
-                    nexus_display_hdr_output_available()
-                        ? "HDR OUTPUT PIPELINE: DRIVER-ENABLED"
-                        : "HDR OUTPUT PIPELINE: NOT AVAILABLE",
-                    1U, nexus_display_hdr_output_available() ? 108U : 231U,
-                    nexus_display_hdr_output_available() ? 216U : 183U,
-                    nexus_display_hdr_output_available() ? 229U : 127U);
-                graphics_draw_text(text_x, content_y + 244U,
-                    display->mode_set_available
-                        ? "MODE SETTING: DRIVER BACKEND REGISTERED"
-                        : "MODE SETTING: NO GPU MODESET DRIVER REGISTERED",
-                    1U, display->mode_set_available ? 108U : 231U,
-                    display->mode_set_available ? 216U : 183U,
-                    display->mode_set_available ? 229U : 127U);
-            } else {
-                graphics_draw_text(text_x, content_y + 105U,
-                    "DISPLAY INFORMATION UNAVAILABLE",
-                    1U, 231U, 183U, 127U);
-            }
+                    graphics_draw_text(text_x + 12U, content_y + 96U,
+                        "NO EDID DETAILED TIMINGS", 1U,
+                        171U, 191U, 211U);
 
-            graphics_draw_text(text_x, content_y + 275U, "TEXT SIZE",
-                               1U, 142U, 174U, 199U);
-            static const uint8_t scales[5] = {80U, 90U, 100U, 110U, 120U};
-            for (size_t i = 0U; i < 5U; ++i) {
-                char label[8] = {' ', ' ', ' ', '%', '\0'};
-                uint8_t digits = scales[i];
-                size_t digit = 3U;
-                do {
-                    label[--digit] = (char)('0' + digits % 10U);
-                    digits = (uint8_t)(digits / 10U);
-                } while (digits != 0U && digit != 0U);
-                desktop_settings_draw_button(text_x + (uint64_t)i * 68U,
-                    content_y + 292U, 62U, 30U, label,
-                    desktop_settings.ui_scale_percent == scales[i]);
-            }
-            graphics_draw_text(text_x, content_y + 332U, "POINTER SIZE",
-                               1U, 142U, 174U, 199U);
-            for (uint8_t i = 1U; i <= 3U; ++i) {
-                const char *label = i == 1U ? "SMALL" : (i == 2U ? "NORMAL" : "LARGE");
-                desktop_settings_draw_button(text_x + (uint64_t)(i - 1U) * 104U,
-                    content_y + 349U, 96U, 30U, label,
-                    desktop_settings.cursor_size == i);
-            }
-            graphics_draw_text(text_x + 330U, content_y + 361U,
-                gpu_render_path_name(), 1U, 108U, 216U, 229U);
-            if (display != NULL) {
-                format_labeled_u64("MONITORS DETECTED: ",
-                    display->monitor_count, line);
-                graphics_draw_text(text_x, content_y + 383U, line,
+                format_labeled_u64("MONITORS: ", display->monitor_count, line);
+                graphics_draw_text(text_x + 300U, content_y + 76U, line,
                                    1U, 142U, 174U, 199U);
                 uint32_t monitor_lines = 0U;
                 for (uint32_t i = 0U;
@@ -2398,33 +2335,57 @@ static void draw_shell(void) {
                         ? monitor->monitor_name
                         : (monitor->edid_valid
                             ? "EDID NAME NOT PROVIDED" : "EDID UNAVAILABLE");
-                    graphics_draw_text(text_x + 12U,
-                        content_y + 400U + (uint64_t)monitor_lines * 16U,
+                    graphics_draw_text(text_x + 300U,
+                        content_y + 96U + (uint64_t)monitor_lines * 16U,
                         name, 1U, 171U, 191U, 211U);
                     ++monitor_lines;
                 }
+
+                graphics_draw_text(text_x, content_y + 132U,
+                    nexus_display_hdr_monitor_supported()
+                        ? "HDR MONITOR: STATIC METADATA ADVERTISED"
+                        : "HDR MONITOR: NO VERIFIED HDR METADATA",
+                    1U, 171U, 191U, 211U);
+                graphics_draw_text(text_x, content_y + 151U,
+                    nexus_display_hdr_output_available()
+                        ? "HDR OUTPUT: DRIVER PIPELINE ENABLED"
+                        : "HDR OUTPUT: NO VERIFIED HARDWARE PIPELINE",
+                    1U, 231U, 183U, 127U);
+                if (display->mode_set_available) {
+                    graphics_draw_text(text_x, content_y + 170U,
+                        "MODE SWITCH: TEST / SET / VERIFY / ROLLBACK READY",
+                        1U, 108U, 216U, 229U);
+                } else {
+                    graphics_draw_text(text_x, content_y + 170U,
+                        "MODE SWITCH: NO VERIFIED GPU MODESET BACKEND",
+                        1U, 231U, 183U, 127U);
+                }
+                if (display->last_mode_change_failed) {
+                    graphics_draw_text(text_x, content_y + 188U,
+                        display->last_rollback_succeeded
+                            ? "LAST CHANGE FAILED; PREVIOUS MODE RESTORED"
+                            : "DISPLAY RECOVERY FAILED; MODESET DISABLED",
+                        1U, 231U, 183U, 127U);
+                }
             }
 
-            graphics_draw_text(text_x, content_y + 435U,
-                "DISPLAY SCALE", 1U, 142U, 174U, 199U);
-            static const uint8_t display_scales[5] = {
-                80U, 90U, 100U, 110U, 120U
-            };
+            graphics_draw_text(text_x, content_y + 211U,
+                "DISPLAY SCALE / TEXT SIZE", 1U, 142U, 174U, 199U);
+            static const uint8_t scales[5] = {80U, 90U, 100U, 110U, 120U};
             for (size_t i = 0U; i < 5U; ++i) {
                 char label[8] = {' ', ' ', ' ', '%', '\0'};
-                uint8_t digits = display_scales[i];
+                uint8_t digits = scales[i];
                 size_t digit = 3U;
                 do {
                     label[--digit] = (char)('0' + digits % 10U);
                     digits = (uint8_t)(digits / 10U);
                 } while (digits != 0U && digit != 0U);
                 desktop_settings_draw_button(text_x + (uint64_t)i * 68U,
-                    content_y + 450U, 62U, 28U, label,
-                    display != NULL &&
-                    display->scale_percent == display_scales[i]);
+                    content_y + 227U, 62U, 27U, label,
+                    desktop_settings.ui_scale_percent == scales[i]);
             }
 
-            graphics_draw_text(text_x, content_y + 485U,
+            graphics_draw_text(text_x, content_y + 262U,
                 "SOFTWARE ROTATION", 1U, 142U, 174U, 199U);
             static const uint32_t rotations[4] = {0U, 90U, 180U, 270U};
             for (size_t i = 0U; i < 4U; ++i) {
@@ -2436,38 +2397,52 @@ static void draw_shell(void) {
                     degrees /= 10U;
                 } while (degrees != 0U && digit != 0U);
                 desktop_settings_draw_button(text_x + (uint64_t)i * 72U,
-                    content_y + 500U, 66U, 28U, label,
+                    content_y + 278U, 66U, 27U, label,
                     display != NULL &&
                     display->upright_rotation == (uint32_t)i);
             }
 
-            graphics_draw_text(text_x, content_y + 535U,
+            graphics_draw_text(text_x, content_y + 313U,
                 "SOFTWARE BRIGHTNESS", 1U, 142U, 174U, 199U);
+            graphics_draw_text(text_x + 330U, content_y + 313U,
+                "NIGHT LIGHT / COLOR TEMP", 1U, 142U, 174U, 199U);
             static const uint8_t brightness_levels[3] = {50U, 75U, 100U};
             static const char *const brightness_labels[3] = {
                 "50%", "75%", "100%"
             };
-            for (size_t i = 0U; i < 3U; ++i)
+            for (size_t i = 0U; i < 3U; ++i) {
                 desktop_settings_draw_button(text_x + (uint64_t)i * 82U,
-                    content_y + 550U, 76U, 28U, brightness_labels[i],
+                    content_y + 329U, 76U, 27U, brightness_labels[i],
                     display != NULL &&
                     display->brightness_percent == brightness_levels[i]);
-
-            graphics_draw_text(text_x, content_y + 585U,
-                "NIGHT LIGHT / COLOR TEMPERATURE", 1U,
-                142U, 174U, 199U);
+            }
             static const uint16_t color_temperatures[3] = {
                 6500U, 4500U, 3000U
             };
             static const char *const temperature_labels[3] = {
                 "6500K", "4500K", "3000K"
             };
-            for (size_t i = 0U; i < 3U; ++i)
-                desktop_settings_draw_button(text_x + (uint64_t)i * 82U,
-                    content_y + 600U, 76U, 28U, temperature_labels[i],
+            for (size_t i = 0U; i < 3U; ++i) {
+                desktop_settings_draw_button(text_x + 330U + (uint64_t)i * 82U,
+                    content_y + 329U, 76U, 27U, temperature_labels[i],
                     display != NULL &&
                     display->color_temperature_kelvin ==
                         color_temperatures[i]);
+            }
+            graphics_draw_text(text_x, content_y + 365U,
+                "ROTATION, BRIGHTNESS AND NIGHT LIGHT ARE SOFTWARE EFFECTS.",
+                1U, 171U, 191U, 211U);
+            if (display != NULL) {
+                graphics_draw_text(text_x, content_y + 383U,
+                    nexus_display_topology_available()
+                        ? "MULTI-DISPLAY LAYOUT BACKEND AVAILABLE"
+                        : "MULTI-DISPLAY: DETECTED OUTPUTS; LAYOUT BACKEND UNAVAILABLE",
+                    1U, nexus_display_topology_available() ? 108U : 231U,
+                    nexus_display_topology_available() ? 216U : 183U,
+                    nexus_display_topology_available() ? 229U : 127U);
+            }
+            graphics_draw_text(text_x, content_y + 402U,
+                gpu_render_path_name(), 1U, 108U, 216U, 229U);
         } else if (settings_page == SETTINGS_INPUT) {
             desktop_settings_draw_heading(text_x, content_y,
                 "INPUT", "Tune pointer movement and mouse behavior.");

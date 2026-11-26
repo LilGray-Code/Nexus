@@ -156,6 +156,7 @@ static uint64_t virgl_next_fence;
 static uint64_t virgl_last_submitted_fence;
 static uint64_t virgl_last_completed_fence;
 static uint32_t virgl_failed_submissions;
+static volatile uint32_t command_queue_lock;
 
 static void zero_bytes(volatile uint8_t *output, size_t length) {
     for (size_t i = 0U; i < length; ++i) output[i] = 0U;
@@ -174,6 +175,16 @@ static uint32_t read_le32(const volatile uint8_t *p) {
 static uint64_t read_le64(const volatile uint8_t *p) {
     return (uint64_t)read_le32(p) |
            ((uint64_t)read_le32(p + 4U) << 32);
+}
+
+static void gpu_command_queue_lock(void) {
+    while (__atomic_exchange_n(&command_queue_lock, 1U,
+                               __ATOMIC_ACQUIRE) != 0U)
+        __asm__ volatile ("pause" ::: "memory");
+}
+
+static void gpu_command_queue_unlock(void) {
+    __atomic_store_n(&command_queue_lock, 0U, __ATOMIC_RELEASE);
 }
 
 static struct virtio_gpu_header make_header(uint32_t type) {
@@ -195,6 +206,7 @@ static bool submit_command_raw(const void *command,
         command_memory == NULL || response_type == NULL ||
         response_length == NULL) return false;
 
+    gpu_command_queue_lock();
     zero_bytes(command_memory, command_length);
     copy_bytes(command_memory, (const uint8_t *)command, command_length);
     zero_bytes(command_memory + VIRTIO_GPU_RESPONSE_OFFSET,
@@ -213,13 +225,17 @@ static bool submit_command_raw(const void *command,
         serial_write(" used=");
         serial_write_hex(control_queue.last_used_index);
         serial_write("\r\n");
+        gpu_command_queue_unlock();
         return false;
     }
-    if (actual_response_length < sizeof(struct virtio_gpu_header))
+    if (actual_response_length < sizeof(struct virtio_gpu_header)) {
+        gpu_command_queue_unlock();
         return false;
+    }
     *response_type =
         read_le32(command_memory + VIRTIO_GPU_RESPONSE_OFFSET);
     *response_length = actual_response_length;
+    gpu_command_queue_unlock();
     return true;
 }
 
@@ -537,9 +553,13 @@ bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
         stream_length == 0U || (stream_length & 3U) != 0U ||
         stream_length > VIRTIO_GPU_COMMAND_BYTES -
                         sizeof(struct virtio_gpu_submit_3d) ||
-        command_memory == NULL || virgl_next_fence == UINT64_MAX)
-        return false;
+        command_memory == NULL) return false;
 
+    gpu_command_queue_lock();
+    if (!active || !virgl_context_created || virgl_next_fence == UINT64_MAX) {
+        gpu_command_queue_unlock();
+        return false;
+    }
     const uint64_t fence = virgl_next_fence++;
     const struct virtio_gpu_submit_3d submit = {
         .header = {
@@ -570,6 +590,7 @@ bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
         response_length < sizeof(struct virtio_gpu_header)) {
         if (virgl_failed_submissions != UINT32_MAX)
             ++virgl_failed_submissions;
+        gpu_command_queue_unlock();
         return false;
     }
 
@@ -588,11 +609,13 @@ bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
         serial_write("/");
         serial_write_hex(response_fence);
         serial_write("\r\n");
+        gpu_command_queue_unlock();
         return false;
     }
 
     virgl_last_completed_fence = response_fence;
     if (completed_fence != NULL) *completed_fence = response_fence;
+    gpu_command_queue_unlock();
     return true;
 }
 

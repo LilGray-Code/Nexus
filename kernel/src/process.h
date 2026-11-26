@@ -31,6 +31,7 @@ struct nexus_process_info {
     uint32_t pid;
     enum nexus_process_state state;
     uint64_t exit_status;
+    uint32_t permissions;
     char name[NEXUS_PROCESS_NAME_MAX];
 };
 
@@ -42,6 +43,9 @@ struct nexus_process_result {
 void process_init(void);
 bool process_spawn_elf(const char *name, const void *image, size_t image_size,
                        uint32_t *pid);
+bool process_spawn_elf_with_permissions(
+    const char *name, const void *image, size_t image_size,
+    uint32_t permissions, uint32_t *pid);
 bool process_run(uint32_t pid, uint64_t *exit_status);
 bool process_execute_file(const char *name,
                           struct nexus_process_result *result,
@@ -50,6 +54,10 @@ bool process_execute_file(const char *name,
 bool process_execute_root_file(const char *name,
                                struct nexus_process_result *result,
                                enum nexus_process_error *error);
+bool process_execute_root_file_with_permissions(
+    const char *name, uint32_t permissions,
+    struct nexus_process_result *result,
+    enum nexus_process_error *error);
 size_t process_count(void);
 bool process_get_info(size_t slot, struct nexus_process_info *info);
 bool process_reap(uint32_t pid);

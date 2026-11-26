@@ -269,9 +269,12 @@ bool nexus_cpu_init(void) {
     uint32_t max_extended = 0U;
     cpuid(0x80000000U, 0U, &max_extended, NULL, NULL, NULL);
     cpu_info.max_extended_leaf = max_extended;
+    uint32_t extended_feature_ecx = 0U;
     if (max_extended >= 0x80000001U) {
         uint32_t ext_edx = 0U;
-        cpuid(0x80000001U, 0U, NULL, NULL, NULL, &ext_edx);
+        cpuid(0x80000001U, 0U, NULL, NULL, &extended_feature_ecx, &ext_edx);
+        cpu_info.topology_extensions_supported =
+            (extended_feature_ecx & (1U << 22)) != 0U;
         set_feature(NEXUS_CPU_FEATURE_NX, (ext_edx & (1U << 20)) != 0U);
         set_feature(NEXUS_CPU_FEATURE_PAGE_1GB,
                     (ext_edx & (1U << 26)) != 0U);
@@ -333,31 +336,143 @@ bool nexus_cpu_init(void) {
             cpu_info.brand[out] = '\0';
         }
     }
+    struct nexus_cpu_local_topology local_topology;
+    if (nexus_cpu_get_local_topology(&local_topology)) {
+        cpu_info.core_type = local_topology.core_type;
+        cpu_info.local_apic_id = local_topology.apic_id;
+        cpu_info.apic_id_valid = local_topology.apic_id_valid;
+        cpu_info.logical_processors_per_core =
+            local_topology.logical_processors_per_core;
+        cpu_info.core_id = local_topology.core_id;
+        cpu_info.core_id_valid = local_topology.core_id_valid;
+        cpu_info.node_id = local_topology.node_id;
+        cpu_info.node_id_valid = local_topology.node_id_valid;
+        cpu_info.topology_extensions_supported =
+            local_topology.topology_extensions_supported;
+    }
+    if ((cpu_info.vendor_kind == NEXUS_CPU_VENDOR_AMD ||
+         cpu_info.vendor_kind == NEXUS_CPU_VENDOR_HYGON) &&
+        cpu_info.logical_processors_per_core > 1U &&
+        cpu_info.physical_cores_per_package != 0U &&
+        (uint32_t)cpu_info.physical_cores_per_package <=
+            UINT16_MAX / cpu_info.logical_processors_per_core) {
+        cpu_info.logical_processors_per_package =
+            (uint16_t)((uint32_t)cpu_info.physical_cores_per_package *
+                       cpu_info.logical_processors_per_core);
+    }
+    return true;
+}
+
+bool nexus_cpu_get_local_topology(
+    struct nexus_cpu_local_topology *topology) {
+    if (topology == NULL) return false;
+    *topology = (struct nexus_cpu_local_topology){
+        .vendor = NEXUS_CPU_VENDOR_UNKNOWN,
+        .core_type = NEXUS_CPU_CORE_TYPE_UNKNOWN,
+        .logical_processors_per_core = 1U
+    };
+
+    uint32_t maximum_basic = 0U;
+    uint32_t vendor_ebx = 0U, vendor_ecx = 0U, vendor_edx = 0U;
+    cpuid(0U, 0U, &maximum_basic, &vendor_ebx, &vendor_ecx, &vendor_edx);
+    if (maximum_basic == 0U) return false;
+
+    char vendor[13] = {0};
+    append_register_bytes(vendor, 0U, vendor_ebx);
+    append_register_bytes(vendor, 4U, vendor_edx);
+    append_register_bytes(vendor, 8U, vendor_ecx);
+    vendor[12] = '\0';
+    topology->vendor = identify_cpu_vendor(vendor);
+
+    uint32_t leaf1_ebx = 0U;
+    cpuid(1U, 0U, NULL, &leaf1_ebx, NULL, NULL);
+    topology->apic_id = (leaf1_ebx >> 24) & 0xFFU;
+    topology->apic_id_valid = true;
+
+    /* Intel hybrid P/E classification is local to the executing core. */
+    if (topology->vendor == NEXUS_CPU_VENDOR_INTEL &&
+        maximum_basic >= 0x1AU) {
+        uint32_t core_eax = 0U;
+        cpuid(0x1AU, 0U, &core_eax, NULL, NULL, NULL);
+        const uint8_t core_type = (uint8_t)(core_eax >> 24);
+        if (core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE ||
+            core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY) {
+            topology->core_type = (enum nexus_cpu_core_type)core_type;
+        }
+    }
+
+    /* Prefer the architectural Intel topology leaves for an extended APIC ID
+     * and SMT width. Leaf 1F supersedes leaf 0B when both are available.
+     */
+    if (topology->vendor == NEXUS_CPU_VENDOR_INTEL) {
+        const uint32_t leaves[2] = {0x1FU, 0x0BU};
+        for (size_t leaf_index = 0U; leaf_index < 2U; ++leaf_index) {
+            const uint32_t leaf = leaves[leaf_index];
+            if (maximum_basic < leaf) continue;
+            bool found_level = false;
+            uint32_t threads_per_core = 0U;
+            for (uint32_t subleaf = 0U; subleaf < 32U; ++subleaf) {
+                uint32_t eax = 0U, ebx = 0U, ecx = 0U, edx = 0U;
+                cpuid(leaf, subleaf, &eax, &ebx, &ecx, &edx);
+                const uint32_t level_type = (ecx >> 8) & 0xFFU;
+                const uint32_t level_count = ebx & 0xFFFFU;
+                if (level_count == 0U || level_type == 0U) break;
+                found_level = true;
+                if (level_type == 1U) threads_per_core = level_count;
+                topology->apic_id = edx;
+                topology->apic_id_valid = true;
+            }
+            if (found_level) {
+                if (threads_per_core != 0U &&
+                    threads_per_core <= UINT8_MAX) {
+                    topology->logical_processors_per_core =
+                        (uint8_t)threads_per_core;
+                }
+                break;
+            }
+        }
+    }
+
+    uint32_t maximum_extended = 0U;
+    cpuid(0x80000000U, 0U, &maximum_extended, NULL, NULL, NULL);
+    if (maximum_extended >= 0x80000001U) {
+        uint32_t extended_ecx = 0U;
+        cpuid(0x80000001U, 0U, NULL, NULL, &extended_ecx, NULL);
+        topology->topology_extensions_supported =
+            (extended_ecx & (1U << 22)) != 0U;
+
+        if ((topology->vendor == NEXUS_CPU_VENDOR_AMD ||
+             topology->vendor == NEXUS_CPU_VENDOR_HYGON) &&
+            topology->topology_extensions_supported &&
+            maximum_extended >= 0x8000001EU) {
+            uint32_t extended_apic_id = 0U, core_ebx = 0U;
+            uint32_t node_ecx = 0U;
+            cpuid(0x8000001EU, 0U, &extended_apic_id, &core_ebx,
+                  &node_ecx, NULL);
+            topology->apic_id = extended_apic_id;
+            topology->apic_id_valid = true;
+            topology->core_id = core_ebx & 0xFFU;
+            topology->core_id_valid = true;
+            topology->node_id = node_ecx & 0xFFU;
+            topology->node_id_valid = true;
+            /* Store the standardized NodesPerProcessor encoding verbatim
+             * in the caller's reserved field through cpu_info in init below.
+             */
+            const uint32_t threads_per_core =
+                ((core_ebx >> 8) & 0xFFU) + 1U;
+            if (threads_per_core <= UINT8_MAX) {
+                topology->logical_processors_per_core =
+                    (uint8_t)threads_per_core;
+            }
+        }
+    }
     return true;
 }
 
 enum nexus_cpu_core_type nexus_cpu_get_local_core_type(void) {
-    uint32_t maximum = 0U;
-    uint32_t ebx = 0U, ecx = 0U, edx = 0U;
-    cpuid(0U, 0U, &maximum, &ebx, &ecx, &edx);
-    if (maximum < 0x1AU) return NEXUS_CPU_CORE_TYPE_UNKNOWN;
-
-    char vendor[13] = {0};
-    append_register_bytes(vendor, 0U, ebx);
-    append_register_bytes(vendor, 4U, edx);
-    append_register_bytes(vendor, 8U, ecx);
-    vendor[12] = '\0';
-    if (identify_cpu_vendor(vendor) != NEXUS_CPU_VENDOR_INTEL)
-        return NEXUS_CPU_CORE_TYPE_UNKNOWN;
-
-    uint32_t core_eax = 0U;
-    cpuid(0x1AU, 0U, &core_eax, NULL, NULL, NULL);
-    const uint8_t core_type = (uint8_t)(core_eax >> 24);
-    if (core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE ||
-        core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY) {
-        return (enum nexus_cpu_core_type)core_type;
-    }
-    return NEXUS_CPU_CORE_TYPE_UNKNOWN;
+    struct nexus_cpu_local_topology topology;
+    return nexus_cpu_get_local_topology(&topology)
+        ? topology.core_type : NEXUS_CPU_CORE_TYPE_UNKNOWN;
 }
 
 enum nexus_cpu_vendor nexus_cpu_get_vendor(void) {

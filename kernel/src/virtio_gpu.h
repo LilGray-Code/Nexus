@@ -41,6 +41,20 @@ struct nexus_virtio_gpu_3d_resource_desc {
     uint32_t flags;
 };
 
+#define NEXUS_VIRTIO_GPU_MAX_SCANOUTS 16U
+struct nexus_virtio_gpu_scanout_info {
+    bool enabled;
+    uint32_t x, y, width, height;
+    uint32_t flags;
+};
+struct nexus_virtio_gpu_display_info {
+    bool valid;
+    uint32_t scanout_count;
+    uint32_t selected_scanout;
+    struct nexus_virtio_gpu_scanout_info
+        scanouts[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+};
+
 struct nexus_virtio_gpu_3d_info {
     bool virgl_feature_negotiated;
     bool context_created;
@@ -55,6 +69,8 @@ struct nexus_virtio_gpu_3d_info {
     uint32_t resources_created_total;
 };
 
+bool virtio_gpu_display_get_info(
+    struct nexus_virtio_gpu_display_info *info);
 bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info);
 /* Allocate a host-side Virgl resource and attach it to the active context. */
 bool virtio_gpu_3d_resource_create(

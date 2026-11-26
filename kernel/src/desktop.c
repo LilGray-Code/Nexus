@@ -321,10 +321,20 @@ enum desktop_panel_state {
     DESKTOP_PANEL_NONE = 0,
     DESKTOP_PANEL_QUICK_SETTINGS,
     DESKTOP_PANEL_NOTIFICATIONS,
-    DESKTOP_PANEL_CLIPBOARD
+    DESKTOP_PANEL_CLIPBOARD,
+    DESKTOP_PANEL_SEARCH
 };
 static enum desktop_panel_state desktop_panel;
 static bool desktop_services_ready;
+static char desktop_global_search_query[NEXUS_DESKTOP_SEARCH_TITLE_MAX];
+static size_t desktop_global_search_query_length;
+static struct nexus_desktop_search_item
+    desktop_global_search_items[NEXUS_DESKTOP_SEARCH_MAX_ITEMS];
+static size_t desktop_global_search_indices[NEXUS_DESKTOP_SEARCH_MAX_ITEMS];
+static uint8_t desktop_global_search_sources[NEXUS_DESKTOP_SEARCH_MAX_ITEMS];
+static size_t desktop_global_search_item_count;
+static size_t desktop_global_search_match_count;
+static size_t desktop_global_search_selected;
 static void desktop_manager_sync_active_window(void);
 static bool desktop_workspace_switch(uint8_t workspace);
 static void desktop_panel_toggle(enum desktop_panel_state panel);
@@ -1223,13 +1233,183 @@ static void desktop_panel_toggle(enum desktop_panel_state panel) {
         nexus_desktop_notification_mark_read();
 }
 
+
+static void desktop_search_copy(char *destination, size_t capacity,
+                                const char *source) {
+    if (destination == NULL || capacity == 0U) return;
+    size_t i = 0U;
+    if (source != NULL) {
+        while (i + 1U < capacity && source[i] != '\0') {
+            destination[i] = source[i];
+            ++i;
+        }
+    }
+    destination[i] = '\0';
+    while (++i < capacity) destination[i] = '\0';
+}
+
+static void desktop_global_search_rebuild(void) {
+    static const char *const app_names[DESKTOP_APP_COUNT] = {
+        "Files", "Nexus Browser", "Settings", "Terminal", "Installer",
+        "App Center"
+    };
+    static const char *const app_details[DESKTOP_APP_COUNT] = {
+        "Browse files folders and downloads", "Search the web securely",
+        "Display input accessibility and system options",
+        "Run commands and inspect system output", "Install Nexus to a drive",
+        "Browse available applications"
+    };
+    static const char *const setting_names[8] = {
+        "Display settings", "Accessibility", "Personalization",
+        "Input devices", "Audio volume", "Network status",
+        "Storage", "System information"
+    };
+    static const char *const setting_details[8] = {
+        "Resolution and interface scaling", "High contrast and cursor size",
+        "Themes accents and wallpapers", "Mouse speed and handedness",
+        "Sound and master volume", "Adapter link and DHCP lease",
+        "Mounted volumes and free space", "Memory uptime and hardware"
+    };
+
+    desktop_global_search_item_count = 0U;
+    for (size_t i = 0U; i < DESKTOP_APP_COUNT; ++i) {
+        const size_t slot = desktop_global_search_item_count++;
+        desktop_global_search_items[slot].kind = NEXUS_DESKTOP_SEARCH_APP;
+        desktop_search_copy(desktop_global_search_items[slot].title,
+            sizeof(desktop_global_search_items[slot].title), app_names[i]);
+        desktop_search_copy(desktop_global_search_items[slot].detail,
+            sizeof(desktop_global_search_items[slot].detail), app_details[i]);
+        desktop_global_search_sources[slot] = (uint8_t)i;
+    }
+    if (files_scanned) {
+        for (size_t i = 0U; i < files_listing_count &&
+             desktop_global_search_item_count <
+                NEXUS_DESKTOP_SEARCH_MAX_ITEMS - 8U; ++i) {
+            const size_t slot = desktop_global_search_item_count++;
+            desktop_global_search_items[slot].kind = NEXUS_DESKTOP_SEARCH_FILE;
+            desktop_search_copy(desktop_global_search_items[slot].title,
+                sizeof(desktop_global_search_items[slot].title),
+                files_listing[i].name);
+            desktop_search_copy(desktop_global_search_items[slot].detail,
+                sizeof(desktop_global_search_items[slot].detail),
+                files_listing[i].directory
+                    ? "Folder in current directory"
+                    : "File in current directory");
+            desktop_global_search_sources[slot] = (uint8_t)i;
+        }
+    }
+    for (size_t i = 0U; i < 8U; ++i) {
+        const size_t slot = desktop_global_search_item_count++;
+        desktop_global_search_items[slot].kind = NEXUS_DESKTOP_SEARCH_SETTING;
+        desktop_search_copy(desktop_global_search_items[slot].title,
+            sizeof(desktop_global_search_items[slot].title), setting_names[i]);
+        desktop_search_copy(desktop_global_search_items[slot].detail,
+            sizeof(desktop_global_search_items[slot].detail),
+            setting_details[i]);
+        desktop_global_search_sources[slot] = (uint8_t)i;
+    }
+    if (!nexus_desktop_search(desktop_global_search_items,
+            desktop_global_search_item_count, desktop_global_search_query,
+            desktop_global_search_indices,
+            NEXUS_DESKTOP_SEARCH_MAX_ITEMS,
+            &desktop_global_search_match_count))
+        desktop_global_search_match_count = 0U;
+    if (desktop_global_search_selected >= desktop_global_search_match_count)
+        desktop_global_search_selected = desktop_global_search_match_count == 0U
+            ? 0U : desktop_global_search_match_count - 1U;
+}
+
+static void desktop_global_search_activate(size_t result_index) {
+    if (result_index >= desktop_global_search_match_count) return;
+    const size_t item_index = desktop_global_search_indices[result_index];
+    const enum nexus_desktop_search_kind kind =
+        desktop_global_search_items[item_index].kind;
+    const uint8_t source = desktop_global_search_sources[item_index];
+    char file_name[NEXUS_VFS_NAME_MAX] = {0};
+    if (kind == NEXUS_DESKTOP_SEARCH_FILE)
+        desktop_search_copy(file_name, sizeof(file_name),
+            desktop_global_search_items[item_index].title);
+
+    desktop_panel = DESKTOP_PANEL_NONE;
+    if (kind == NEXUS_DESKTOP_SEARCH_APP) {
+        desktop_open_app(source);
+    } else if (kind == NEXUS_DESKTOP_SEARCH_SETTING) {
+        desktop_open_app(2U);
+    } else {
+        desktop_open_app(0U);
+        desktop_search_copy(files_search_query, sizeof(files_search_query),
+                            file_name);
+        files_search_query_length = 0U;
+        while (files_search_query[files_search_query_length] != '\0')
+            ++files_search_query_length;
+        files_search_rebuild();
+        files_selected_index = 0U;
+        files_listing_first_index = 0U;
+        files_search_focus = false;
+    }
+}
+
+static void desktop_global_search_open(void) {
+    if (!files_scanned) {
+        scan_files_once();
+        refresh_files_listing();
+    }
+    desktop_global_search_query[0] = '\0';
+    desktop_global_search_query_length = 0U;
+    desktop_global_search_selected = 0U;
+    desktop_global_search_rebuild();
+    desktop_panel = DESKTOP_PANEL_SEARCH;
+    start_menu_open = false;
+}
+
+static void desktop_global_search_key(uint8_t key_code) {
+    if (key_code == 0x01U) {
+        desktop_panel = DESKTOP_PANEL_NONE;
+        return;
+    }
+    if (key_code == 0x0EU) {
+        if (desktop_global_search_query_length != 0U)
+            desktop_global_search_query[
+                --desktop_global_search_query_length] = '\0';
+        desktop_global_search_selected = 0U;
+        desktop_global_search_rebuild();
+        return;
+    }
+    if (key_code == 0x48U) {
+        if (desktop_global_search_selected != 0U)
+            --desktop_global_search_selected;
+        return;
+    }
+    if (key_code == 0x50U) {
+        if (desktop_global_search_selected + 1U <
+            desktop_global_search_match_count)
+            ++desktop_global_search_selected;
+        return;
+    }
+    if (key_code == 0x1CU) {
+        desktop_global_search_activate(desktop_global_search_selected);
+        return;
+    }
+    const char value = terminal_scancode_char(key_code);
+    if (value >= 32 && value <= 126 &&
+        desktop_global_search_query_length + 1U <
+            sizeof(desktop_global_search_query)) {
+        desktop_global_search_query[desktop_global_search_query_length++] =
+            value;
+        desktop_global_search_query[desktop_global_search_query_length] = '\0';
+        desktop_global_search_selected = 0U;
+        desktop_global_search_rebuild();
+    }
+}
+
 static void desktop_panel_geometry(uint64_t bottom_bar, uint64_t *x,
                                    uint64_t *y, uint64_t *width,
                                    uint64_t *height) {
     const uint64_t w = screen_width > 340U ? 316U
         : (screen_width > 24U ? screen_width - 24U : screen_width);
     uint64_t h = desktop_panel == DESKTOP_PANEL_NOTIFICATIONS ? 250U
-        : (desktop_panel == DESKTOP_PANEL_CLIPBOARD ? 230U : 226U);
+        : (desktop_panel == DESKTOP_PANEL_CLIPBOARD ? 230U
+            : (desktop_panel == DESKTOP_PANEL_SEARCH ? 320U : 226U));
     const uint64_t available = screen_height > bottom_bar + 12U
         ? screen_height - bottom_bar - 12U : 1U;
     if (h > available) h = available;
@@ -1252,7 +1432,9 @@ static void desktop_draw_system_panel(uint64_t bottom_bar) {
     const char *heading = desktop_panel == DESKTOP_PANEL_QUICK_SETTINGS
         ? "QUICK SETTINGS"
         : (desktop_panel == DESKTOP_PANEL_NOTIFICATIONS
-            ? "NOTIFICATION CENTER" : "CLIPBOARD HISTORY");
+            ? "NOTIFICATION CENTER"
+            : (desktop_panel == DESKTOP_PANEL_SEARCH
+                ? "DESKTOP SEARCH" : "CLIPBOARD HISTORY"));
     graphics_draw_text(x + 14U, y + 17U, heading, 1U,
         light ? 38U : 238U, light ? 55U : 246U, light ? 75U : 252U);
     graphics_fill_rect(x + 12U, y + 34U, width - 24U, 1U,
@@ -1333,6 +1515,56 @@ static void desktop_draw_system_panel(uint64_t bottom_bar) {
         graphics_draw_text(x + 14U, y + height - 17U,
             "DELETE TO CLEAR NOTIFICATIONS", 1U,
             light ? 91U : 150U, light ? 108U : 180U, light ? 131U : 203U);
+    } else if (desktop_panel == DESKTOP_PANEL_SEARCH) {
+        graphics_blend_round_rect(x + 12U, y + 44U, width - 24U, 30U, 6U,
+            light ? 233U : 32U, light ? 240U : 48U,
+            light ? 248U : 68U, 246U);
+        graphics_draw_text(x + 22U, y + 55U,
+            desktop_global_search_query_length == 0U
+                ? "Apps, files and settings" : desktop_global_search_query,
+            1U, light ? 45U : 238U, light ? 62U : 246U,
+            light ? 82U : 252U);
+        if (desktop_global_search_match_count == 0U) {
+            graphics_draw_text(x + 16U, y + 102U,
+                "NO MATCHES - TRY ANOTHER SEARCH", 1U,
+                light ? 91U : 150U, light ? 108U : 180U,
+                light ? 131U : 203U);
+        } else {
+            const size_t visible = desktop_global_search_match_count < 5U
+                ? desktop_global_search_match_count : 5U;
+            size_t first = desktop_global_search_selected >= 5U
+                ? desktop_global_search_selected - 4U : 0U;
+            if (first + visible > desktop_global_search_match_count)
+                first = desktop_global_search_match_count - visible;
+            for (size_t i = 0U; i < visible; ++i) {
+                const size_t result = first + i;
+                const size_t item_index = desktop_global_search_indices[result];
+                const struct nexus_desktop_search_item *item =
+                    &desktop_global_search_items[item_index];
+                const uint64_t row_y = y + 82U + (uint64_t)i * 40U;
+                const bool selected = result == desktop_global_search_selected;
+                graphics_blend_round_rect(x + 12U, row_y, width - 24U,
+                    36U, 6U, selected
+                        ? desktop_accent_palette[desktop_settings.accent][0]
+                        : (light ? 235U : 28U),
+                    selected
+                        ? desktop_accent_palette[desktop_settings.accent][1]
+                        : (light ? 241U : 44U),
+                    selected
+                        ? desktop_accent_palette[desktop_settings.accent][2]
+                        : (light ? 247U : 63U), 242U);
+                graphics_draw_text(x + 22U, row_y + 10U, item->title, 1U,
+                    light ? 38U : 238U, light ? 55U : 246U,
+                    light ? 75U : 252U);
+                graphics_draw_text(x + 22U, row_y + 24U, item->detail, 1U,
+                    light ? 83U : 174U, light ? 100U : 194U,
+                    light ? 122U : 215U);
+            }
+        }
+        graphics_draw_text(x + 14U, y + height - 15U,
+            "UP/DOWN SELECT   ENTER OPEN   ESC CLOSE", 1U,
+            light ? 91U : 150U, light ? 108U : 180U,
+            light ? 131U : 203U);
     } else {
         const size_t count = nexus_desktop_clipboard_count();
         if (count == 0U) {
@@ -1400,6 +1632,19 @@ static void desktop_handle_system_panel_click(uint64_t bottom_bar) {
     } else if (desktop_panel == DESKTOP_PANEL_NOTIFICATIONS) {
         if (py >= y + height - 30U)
             nexus_desktop_notification_clear();
+    } else if (desktop_panel == DESKTOP_PANEL_SEARCH) {
+        if (py >= y + 82U && py < y + 82U + 5U * 40U) {
+            const size_t row = (size_t)(py - (y + 82U)) / 40U;
+            size_t first = desktop_global_search_selected >= 5U
+                ? desktop_global_search_selected - 4U : 0U;
+            if (first + 5U > desktop_global_search_match_count &&
+                desktop_global_search_match_count > 5U)
+                first = desktop_global_search_match_count - 5U;
+            desktop_global_search_selected = first + row;
+            if (desktop_global_search_selected <
+                desktop_global_search_match_count)
+                desktop_global_search_activate(desktop_global_search_selected);
+        }
     } else if (desktop_panel == DESKTOP_PANEL_CLIPBOARD) {
         if (py >= y + 44U && py < y + 44U + 5U * 31U) {
             const size_t index = (size_t)(py - (y + 44U)) / 31U;
@@ -7254,6 +7499,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (key_released) return;
 
     if (active_view != DESKTOP_INSTALLER && keyboard_windows &&
+        key_code == 0x1FU) {
+        keyboard_windows_used = true;
+        desktop_global_search_open();
+        draw_shell(); draw_pointer(); return;
+    }
+    if (active_view != DESKTOP_INSTALLER && keyboard_windows &&
         keyboard_left_control && key_code >= 0x02U && key_code <= 0x05U) {
         keyboard_windows_used = true;
         (void)desktop_workspace_switch((uint8_t)(key_code - 0x02U));
@@ -7280,6 +7531,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view != DESKTOP_INSTALLER && keyboard_left_control &&
         key_code == 0x2FU && desktop_clipboard_paste()) {
+        draw_shell(); draw_pointer(); return;
+    }
+    if (desktop_panel == DESKTOP_PANEL_SEARCH) {
+        desktop_global_search_key(key_code);
         draw_shell(); draw_pointer(); return;
     }
     if (desktop_panel != DESKTOP_PANEL_NONE && key_code == 0x53U) {

@@ -589,6 +589,12 @@ bool nexus_display_recover_firmware_mode(uint64_t width,
     display_info.current_pitch = pitch;
     display_info.current_refresh_hz = monitor_matching_refresh(
         &display_info.monitors[0]);
+    display_backend = (struct nexus_display_mode_backend){0};
+    display_backend_context = NULL;
+    display_backend_registered = false;
+    topology_backend = (struct nexus_display_topology_backend){0};
+    topology_backend_context = NULL;
+    topology_backend_registered = false;
     display_info.mode_set_available = false;
     display_info.firmware_fallback_active = true;
     display_info.topology = NEXUS_DISPLAY_TOPOLOGY_EXTENDED;

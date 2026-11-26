@@ -25,6 +25,7 @@ struct mock_disk {
     uint8_t last[EDGE_BLOCKS * 512U];
     uint8_t format_area[FORMAT_BLOCKS * 512U];
     uint64_t nxfs_base;
+    uint64_t nxfs_block_count;
     uint64_t data_base;
     uint8_t data_area[NXFS_TEST_AREA_BLOCKS * 512U];
     uint64_t recovery_base;
@@ -68,7 +69,8 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
         *base = disk->data_area + (lba - disk->data_base) * 512ULL;
         return true;
     }
-    if (disk->nxfs_base != 0U && lba >= disk->nxfs_base) {
+    if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
+        lba + count <= disk->nxfs_base + disk->nxfs_block_count) {
         const uint64_t relative = lba - disk->nxfs_base;
         uint64_t compact_lba = relative;
         if (relative >= 67U) {
@@ -500,6 +502,8 @@ int main(int argc,char **argv) {
 
     /* Format the planned Nexus System partition through the guarded NXFS path. */
     target.nxfs_base = plan.partitions[2].first_lba;
+    target.nxfs_block_count = plan.partitions[2].last_lba -
+        plan.partitions[2].first_lba + 1U;
     assert(gpt_scan_device(target_handle));
     const struct nexus_gpt_partition *system_part = gpt_partition_at(2U);
     assert(system_part != NULL);
@@ -584,6 +588,7 @@ int main(int argc,char **argv) {
     /* The data volume is independently formatted and writable while the
      * system volume remains a separate, independently mounted NXFS volume. */
     target.nxfs_base = data_part->first_lba;
+    target.nxfs_block_count = data_part->last_lba - data_part->first_lba + 1U;
     assert(nexus_installer_format_nxfs(target_handle, &identity,
         identity.stable_id, "ERASE", &data_copy));
     assert(memcmp(target.nxfs_area, "NEXUSFS1", 8U) == 0);
@@ -685,9 +690,10 @@ int main(int argc,char **argv) {
         NEXUS_FIRMWARE_DUAL, &runtime_plan));
     for (size_t i = 0U; i < runtime_plan.partition_count; ++i) {
         const struct nexus_planned_partition *part = &runtime_plan.partitions[i];
-        if (part->kind == NEXUS_PARTITION_SYSTEM)
+        if (part->kind == NEXUS_PARTITION_SYSTEM) {
             target.nxfs_base = part->first_lba;
-        else if (part->kind == NEXUS_PARTITION_DATA)
+            target.nxfs_block_count = part->last_lba - part->first_lba + 1U;
+        } else if (part->kind == NEXUS_PARTITION_DATA)
             target.data_base = part->first_lba;
         else if (part->kind == NEXUS_PARTITION_RECOVERY)
             target.recovery_base = part->first_lba;

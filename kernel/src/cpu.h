@@ -4,6 +4,22 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+enum nexus_cpu_vendor {
+    NEXUS_CPU_VENDOR_UNKNOWN = 0,
+    NEXUS_CPU_VENDOR_INTEL,
+    NEXUS_CPU_VENDOR_AMD,
+    NEXUS_CPU_VENDOR_HYGON,
+    NEXUS_CPU_VENDOR_CENTAUR,
+    NEXUS_CPU_VENDOR_ZHAOXIN,
+    NEXUS_CPU_VENDOR_TRANSMETA
+};
+
+enum nexus_cpu_core_type {
+    NEXUS_CPU_CORE_TYPE_UNKNOWN = 0,
+    NEXUS_CPU_CORE_TYPE_EFFICIENCY = 0x20,
+    NEXUS_CPU_CORE_TYPE_PERFORMANCE = 0x40
+};
+
 enum nexus_cpu_feature {
     NEXUS_CPU_FEATURE_FPU       = 1ULL << 0,
     NEXUS_CPU_FEATURE_TSC       = 1ULL << 1,
@@ -52,6 +68,8 @@ enum nexus_cpu_feature {
 
 struct nexus_cpu_info {
     bool cpuid_available;
+    enum nexus_cpu_vendor vendor_kind;
+    enum nexus_cpu_core_type core_type;
     char vendor[13];
     char brand[49];
     uint32_t max_basic_leaf;
@@ -64,10 +82,28 @@ struct nexus_cpu_info {
     uint8_t physical_address_bits;
     uint8_t virtual_address_bits;
     uint64_t features;
+    /* CPUID leaf 6: advertised thermal/power capabilities, not live readings. */
+    uint32_t thermal_power_capabilities;
+    bool digital_thermal_sensor_supported;
+    bool turbo_boost_supported;
+    bool hardware_p_states_supported;
+    bool hwp_notifications_supported;
+    bool hwp_energy_performance_supported;
+    /* Intel CPUID leaf 0x16 values; zero/invalid when unavailable. */
+    bool frequency_info_valid;
+    uint16_t base_frequency_mhz;
+    uint16_t maximum_frequency_mhz;
+    uint16_t bus_frequency_mhz;
+    /* AMD CPUID 0x80000007 EDX, retained as vendor-specific raw capability bits. */
+    uint32_t amd_power_management_features;
 };
 
 /* Runtime detection only: optional instructions are never enabled implicitly. */
 bool nexus_cpu_init(void);
+enum nexus_cpu_vendor nexus_cpu_get_vendor(void);
+const char *nexus_cpu_vendor_name(void);
+bool nexus_cpu_is_intel(void);
+bool nexus_cpu_is_amd(void);
 const struct nexus_cpu_info *nexus_cpu_get_info(void);
 bool nexus_cpu_has_feature(uint64_t feature);
 /* Publish AVX/AVX2 only after the kernel enables and verifies XCR0 state. */

@@ -1,6 +1,6 @@
 # Nexus OS Networking, HTTPS, Browser, and Wi-Fi Engineering Specification
 
-**Status:** Active implementation. Nexus has selected Ethernet drivers (Intel e1000, Realtek RTL8139 and VirtIO-net), DHCP-managed IPv4, ARP, a bounded DNS A-record resolver, a small TCP/UDP stack, a pinned Mbed TLS 4.1.2 TLS 1.3 adapter, hostname/certificate verification, and a checksum-verified Mozilla-derived root bundle. DHCP now tracks lease T1/T2/expiry and performs unicast renewal, broadcast rebinding and stale-route cleanup. Physical Wi-Fi chipset drivers, IPv6, Bluetooth, a general socket API, and a modern HTML/CSS/JavaScript browser engine remain incomplete.
+**Status:** Active implementation. Nexus has selected Ethernet drivers (Intel e1000, Realtek RTL8139 and VirtIO-net), DHCP-managed IPv4, ARP, bounded ICMPv4 echo diagnostics, a bounded DNS A-record resolver, a small TCP/UDP stack, a pinned Mbed TLS 4.1.2 TLS 1.3 adapter, hostname/certificate verification, and a checksum-verified Mozilla-derived root bundle. DHCP tracks lease T1/T2/expiry and performs unicast renewal, broadcast rebinding and stale-route cleanup. ICMP currently supports echo request/reply only; error messages and path-MTU discovery remain absent. Physical Wi-Fi chipset drivers, IPv6, Bluetooth, a general socket API, and a modern HTML/CSS/JavaScript browser engine remain incomplete.
 
 ## Verified current boundary
 

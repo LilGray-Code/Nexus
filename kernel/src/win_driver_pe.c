@@ -128,6 +128,7 @@ static bool parse_imports(const struct pe_view *view, uint32_t import_rva,
             !bounded_string(view, (uint32_t)name_offset, module,
                             NEXUS_WIN_PE_MODULE_NAME_MAX)) return false;
 
+        const bool ndis_module = module_is(module, "ndis.sys");
         const uint32_t thunk_rva = original_thunk != 0U
             ? original_thunk : first_thunk;
         bool thunk_terminated = false;
@@ -140,19 +141,44 @@ static bool parse_imports(const struct pe_view *view, uint32_t import_rva,
                                &thunk_offset)) return false;
             const uint64_t value = read64(view->bytes + thunk_offset);
             if (value == 0U) { thunk_terminated = true; break; }
+            char symbol[NEXUS_WIN_PE_SYMBOL_NAME_MAX] = {0};
+            bool symbol_fits = false;
             if ((value & (UINT64_C(1) << 63)) == 0U) {
                 if (value > UINT32_MAX) return false;
                 size_t hint_offset;
                 if (!rva_to_offset(view, (uint32_t)value, 3U,
                                    &hint_offset)) return false;
-                size_t name_at = hint_offset + 2U;
+                const size_t name_at = hint_offset + 2U;
+                size_t name_length = 0U;
                 bool found_null = false;
                 for (size_t k = name_at; k < view->size; ++k) {
                     if (view->bytes[k] == 0U) { found_null = true; break; }
                     if (view->bytes[k] < 0x20U || view->bytes[k] > 0x7EU)
                         return false;
+                    ++name_length;
                 }
                 if (!found_null) return false;
+                if (name_length < sizeof(symbol)) {
+                    for (size_t k = 0U; k < name_length; ++k)
+                        symbol[k] = (char)view->bytes[name_at + k];
+                    symbol[name_length] = '\0';
+                    symbol_fits = true;
+                }
+            }
+            if (ndis_module && symbol_fits) {
+                if (info->ndis_import_count < NEXUS_WIN_PE_MAX_NDIS_IMPORTS) {
+                    char *destination = info->ndis_import_names[info->ndis_import_count++];
+                    size_t k = 0U;
+                    while (symbol[k] != '\0') { destination[k] = symbol[k]; ++k; }
+                    destination[k] = '\0';
+                    if (module_is(symbol, "NdisMRegisterMiniportDriver"))
+                        info->ndis_v6_miniport = true;
+                } else {
+                    info->ndis_imports_truncated = true;
+                }
+            } else if (ndis_module && !symbol_fits &&
+                       (value & (UINT64_C(1) << 63)) == 0U) {
+                info->ndis_imports_truncated = true;
             }
             if (info->import_symbol_count == UINT32_MAX) return false;
             ++info->import_symbol_count;

@@ -32,9 +32,15 @@ on:
       - "kernel/src/wifi_80211.h"
       - "kernel/src/wifi_pci.c"
       - "kernel/src/wifi_pci.h"
+      - "kernel/src/win_driver_inf.c"
+      - "kernel/src/win_driver_inf.h"
+      - "kernel/src/win_driver_pe.c"
+      - "kernel/src/win_driver_pe.h"
       - "kernel/tests/wifi_test.c"
       - "kernel/tests/wifi_80211_test.c"
       - "kernel/tests/wifi_pci_test.c"
+      - "kernel/tests/win_driver_inf_test.c"
+      - "kernel/tests/win_driver_pe_test.c"
       - ".github/workflows/nexus-wifi-tests.yml"
 
 permissions:

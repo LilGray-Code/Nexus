@@ -213,6 +213,8 @@ static struct nexus_virtio_gpu_display_info display_inventory;
 static uint32_t original_scanout_x[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint32_t original_scanout_y[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint32_t active_scanout_count;
+static uint32_t original_scanout_width[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+static uint32_t original_scanout_height[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint32_t current_scanout_rect_width[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint32_t current_scanout_rect_height[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint64_t framebuffer_physical;
@@ -657,6 +659,8 @@ static bool gpu_query_display_info(uint64_t preferred_width,
         original_scanout_y[i] = saved->y;
         saved->width = read_le32(response + offset + 8U);
         saved->height = read_le32(response + offset + 12U);
+        original_scanout_width[i] = saved->width;
+        original_scanout_height[i] = saved->height;
         current_scanout_rect_width[i] = saved->width;
         current_scanout_rect_height[i] = saved->height;
         saved->enabled = read_le32(response + offset + 16U) != 0U;
@@ -821,6 +825,8 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     for (uint32_t i = 0U; i < NEXUS_VIRTIO_GPU_MAX_SCANOUTS; ++i) {
         original_scanout_x[i] = 0U;
         original_scanout_y[i] = 0U;
+        original_scanout_width[i] = 0U;
+        original_scanout_height[i] = 0U;
         current_scanout_rect_width[i] = 0U;
         current_scanout_rect_height[i] = 0U;
     }
@@ -1314,10 +1320,12 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
     for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
         const struct nexus_virtio_gpu_scanout_info *scanout =
             &display_inventory.scanouts[i];
-        if (!scanout->enabled || scanout->width == 0U ||
-            scanout->height == 0U) continue;
-        if (scanout->width < mirror_width) mirror_width = scanout->width;
-        if (scanout->height < mirror_height) mirror_height = scanout->height;
+        if (!scanout->enabled || original_scanout_width[i] == 0U ||
+            original_scanout_height[i] == 0U) continue;
+        if (original_scanout_width[i] < mirror_width)
+            mirror_width = original_scanout_width[i];
+        if (original_scanout_height[i] < mirror_height)
+            mirror_height = original_scanout_height[i];
     }
     if (topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED &&
         (mirror_width == UINT32_MAX || mirror_height == UINT32_MAX ||
@@ -1339,13 +1347,13 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
                 if (!b->enabled || b->width == 0U || b->height == 0U)
                     continue;
                 const uint64_t ar = (uint64_t)original_scanout_x[i] +
-                                    a->width;
+                                    original_scanout_width[i];
                 const uint64_t ab = (uint64_t)original_scanout_y[i] +
-                                    a->height;
+                                    original_scanout_height[i];
                 const uint64_t br = (uint64_t)original_scanout_x[j] +
-                                    b->width;
+                                    original_scanout_width[j];
                 const uint64_t bb = (uint64_t)original_scanout_y[j] +
-                                    b->height;
+                                    original_scanout_height[j];
                 const bool overlap =
                     original_scanout_x[i] < br &&
                     original_scanout_x[j] < ar &&
@@ -1378,10 +1386,10 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
             ? 0U : original_scanout_y[i];
         const uint32_t width =
             topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
-                ? mirror_width : scanout->width;
+                ? mirror_width : original_scanout_width[i];
         const uint32_t height =
             topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
-                ? mirror_height : scanout->height;
+                ? mirror_height : original_scanout_height[i];
         if (width == 0U || height == 0U ||
             (uint64_t)x + width > width_pixels ||
             (uint64_t)y + height > height_pixels ||

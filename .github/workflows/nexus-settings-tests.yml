@@ -9,6 +9,8 @@ on:
       - "kernel/src/settings.h"
       - "kernel/src/display.c"
       - "kernel/src/display.h"
+      - "kernel/src/desktop.c"
+      - "kernel/Makefile"
       - "kernel/tests/settings_test.c"
       - "kernel/tests/display_test.c"
       - ".github/workflows/nexus-settings-tests.yml"
@@ -43,3 +45,6 @@ jobs:
             -Ikernel/include -Ikernel/src kernel/src/display.c \
             kernel/tests/display_test.c -o /tmp/nexus-display-test
           /tmp/nexus-display-test
+
+      - name: Build the freestanding Nexus kernel
+        run: make -C kernel

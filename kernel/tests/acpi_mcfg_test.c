@@ -11,6 +11,7 @@
 #define TEST_XSDT 0x200U
 #define TEST_MADT 0x300U
 #define TEST_MCFG 0x400U
+#define TEST_HPET 0x500U
 #define TEST_ARENA_SIZE 0x1000U
 
 static uint8_t arena[TEST_ARENA_SIZE];
@@ -61,10 +62,10 @@ static void build_tables(const uint16_t *segments, const uint8_t *starts,
     finish_checksum(rsdp, 20U, 8U);
     finish_checksum(rsdp, 36U, 32U);
 
-    const uint32_t xsdt_length = 36U + 2U * 8U;
+    const uint32_t xsdt_length = 36U + 3U * 8U;
     uint8_t *xsdt = &arena[TEST_XSDT];
     make_sdt(xsdt, "XSDT", xsdt_length);
-    const uint64_t table_addresses[2] = {TEST_MADT, TEST_MCFG};
+    const uint64_t table_addresses[3] = {TEST_MADT, TEST_MCFG, TEST_HPET};
     memcpy(xsdt + 36U, table_addresses, sizeof(table_addresses));
     finish_checksum(xsdt, xsdt_length, 9U);
 
@@ -85,6 +86,18 @@ static void build_tables(const uint16_t *segments, const uint8_t *starts,
                          starts[i], ends[i]);
     finish_checksum(mcfg, mcfg_length, 9U);
     if (corrupt_mcfg_checksum) mcfg[9] ^= 0x80U;
+
+    /* ACPI HPET table: system-memory GAS, 64-bit register block. */
+    uint8_t *hpet = &arena[TEST_HPET];
+    make_sdt(hpet, "HPET", 56U);
+    hpet[41] = 64U;
+    const uint64_t hpet_address = 0xFED00000ULL;
+    memcpy(hpet + 44U, &hpet_address, sizeof(hpet_address));
+    hpet[52] = 0U;
+    const uint16_t minimum_tick = 0x0080U;
+    memcpy(hpet + 53U, &minimum_tick, sizeof(minimum_tick));
+    hpet[55] = 0U;
+    finish_checksum(hpet, 56U, 9U);
 }
 
 static void test_multiple_segments_and_bus_bounds(void) {
@@ -97,6 +110,10 @@ static void test_multiple_segments_and_bus_bounds(void) {
     assert(acpi_init(&arena[TEST_RSDP]));
     const struct nexus_acpi_topology *topology = acpi_get_topology();
     assert(topology != NULL && topology->mcfg_region_count == 2U);
+    assert(topology->hpet_present);
+    assert(topology->hpet_physical_address == 0xFED00000ULL);
+    assert(topology->hpet_minimum_tick == 0x0080U);
+    assert(topology->hpet_number == 0U);
     const struct nexus_acpi_mcfg_region *segment0 =
         acpi_find_mcfg_region(0U, 0x80U);
     const struct nexus_acpi_mcfg_region *segment2 =
@@ -106,6 +123,18 @@ static void test_multiple_segments_and_bus_bounds(void) {
     assert(segment2->start_bus == 0x20U && segment2->end_bus == 0x2FU);
     assert(acpi_find_mcfg_region(2U, 0x30U) == NULL);
     assert(acpi_find_mcfg_region(1U, 0x20U) == NULL);
+}
+
+static void test_invalid_hpet_is_not_published(void) {
+    const uint16_t segments[] = {0U};
+    const uint8_t starts[] = {0U};
+    const uint8_t ends[] = {0xFFU};
+    const uint64_t bases[] = {0xB0000000ULL};
+    build_tables(segments, starts, ends, bases, 1U, false);
+    memset(&arena[TEST_HPET + 44U], 0, 8U);
+    finish_checksum(&arena[TEST_HPET], 56U, 9U);
+    assert(acpi_init(&arena[TEST_RSDP]));
+    assert(!acpi_get_topology()->hpet_present);
 }
 
 static void test_overlapping_segment_windows_rejected(void) {
@@ -138,8 +167,9 @@ static void test_bad_checksum_and_unaligned_base_are_ignored(void) {
 
 int main(void) {
     test_multiple_segments_and_bus_bounds();
+    test_invalid_hpet_is_not_published();
     test_overlapping_segment_windows_rejected();
     test_bad_checksum_and_unaligned_base_are_ignored();
-    puts("NEXUS ACPI MCFG TESTS PASSED");
+    puts("NEXUS ACPI MCFG AND HPET TESTS PASSED");
     return 0;
 }

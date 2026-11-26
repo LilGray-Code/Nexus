@@ -2515,6 +2515,10 @@ static void draw_shell(void) {
                     format_u64(timing->refresh_hz, number);
                     hardware_append_text(line, sizeof(line), &used, number);
                     hardware_append_text(line, sizeof(line), &used, " HZ");
+                    if (display->mode_set_available &&
+                        timing->refresh_hz == display->current_refresh_hz)
+                        hardware_append_text(line, sizeof(line), &used,
+                                             " CLICK TO APPLY");
                     graphics_draw_text(text_x + 12U,
                         content_y + 96U + (uint64_t)shown * 16U,
                         line, 1U, 239U, 247U, 255U);
@@ -6768,6 +6772,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                                 break;
                             }
                             ++visible_row;
+                        }
+                    }
+                } else if (py >= content_y + 96U &&
+                           py < content_y + 128U && px >= sx &&
+                           px < sx + 300U) {
+                    const struct nexus_display_info *display =
+                        nexus_display_get_info();
+                    const uint64_t row =
+                        (py - (content_y + 96U)) / 16U;
+                    if (display != NULL && display->mode_set_available &&
+                        row < display->timing_count &&
+                        display->timings[row].refresh_hz ==
+                            display->current_refresh_hz) {
+                        const struct nexus_display_timing *timing =
+                            &display->timings[row];
+                        for (uint32_t i = 0U; i < display->mode_count; ++i) {
+                            const struct nexus_display_mode *mode =
+                                &display->modes[i];
+                            if (!mode->edid_timing ||
+                                mode->width != timing->width ||
+                                mode->height != timing->height ||
+                                mode->refresh_hz != timing->refresh_hz)
+                                continue;
+                            (void)nexus_display_apply_mode(i);
+                            break;
                         }
                     }
                 } else if (py >= content_y + 227U && py < content_y + 254U &&

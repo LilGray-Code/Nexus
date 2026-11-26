@@ -28,8 +28,10 @@ struct memory_allocator_stats {
     uint64_t normal_free_bytes;
 };
 
+/* Initialize once on the bootstrap CPU before releasing application CPUs. */
 bool memory_init(const struct limine_memmap_response *map,
                  const struct limine_hhdm_response *hhdm);
+/* Allocation, reclamation, queries and accounting are SMP/IRQ safe. */
 bool memory_alloc_page(uint64_t *physical_address);
 bool memory_free_page(uint64_t physical_address);
 /* True only for a live page currently owned by the physical-page allocator. */

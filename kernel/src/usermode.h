@@ -25,6 +25,8 @@ bool usermode_is_active(void);
 bool usermode_report_exception(uint64_t vector, uint64_t error_code,
                                uint64_t instruction_pointer);
 bool usermode_get_fault_info(struct nexus_usermode_fault_info *info);
+/* Set by a recoverable ring-3 exception; consumed by exception_common. */
+extern volatile bool usermode_exception_recovered;
 bool usermode_sys_write(uint64_t user_address, uint64_t length);
 /* Copy the most recent native process's bounded write(1, ...) output. */
 size_t usermode_console_output_copy(char *destination, size_t capacity,

@@ -462,6 +462,16 @@ bool paging_user_address_space_selftest(void) {
     if (paging_map_user_page(test_root_physical, 0x01000000ULL,
                              0x00001000ULL, true, false)) valid = false;
 
+    /* Writable+executable user mappings must be rejected (W^X). */
+    uint64_t wx_probe_page = 0U;
+    if (!memory_alloc_page(&wx_probe_page)) {
+        (void)paging_destroy_user_address_space(test_root_physical);
+        return false;
+    }
+    if (paging_map_user_page(test_root_physical, 0x01800000ULL,
+                             wx_probe_page, true, true)) valid = false;
+    if (!memory_free_page(wx_probe_page)) valid = false;
+
     uint64_t duplicate_page = 0U;
     if (!memory_alloc_page(&duplicate_page)) {
         (void)paging_destroy_user_address_space(test_root_physical);
@@ -558,6 +568,12 @@ static bool user_page_table_contains_physical(uint64_t table_physical,
 /* Map one previously-unmapped 4 KiB page into a user address space. */
 bool paging_map_user_page(uint64_t root_physical, uint64_t virtual_address,
                           uint64_t page_physical, bool writable, bool executable) {
+    /*
+     * Enforce write-xor-execute for every user leaf mapping. Allowing a
+     * writable executable page lets data corruption become immediate code
+     * execution; applications must keep code RX and mutable data RW.
+     */
+    if (writable && executable) return false;
     if (!memory_page_is_allocated(root_physical) ||
         !memory_page_is_allocated(page_physical) ||
         (virtual_address & 0xFFFULL) != 0U ||

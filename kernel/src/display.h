@@ -60,7 +60,7 @@ struct nexus_display_monitor {
     int32_t desktop_y;
     uint32_t width;
     uint32_t height;
-    uint32_t current_refresh_hz;
+    uint32_t matching_edid_refresh_hz;
     uint16_t dpi_x;
     uint16_t dpi_y;
     bool edid_valid;
@@ -81,7 +81,7 @@ struct nexus_display_info {
     uint8_t red_bits;
     uint8_t green_bits;
     uint8_t blue_bits;
-    uint32_t current_refresh_hz;
+    uint32_t matching_edid_refresh_hz;
     uint32_t firmware_mode_count;
     uint32_t mode_count;
     uint32_t timing_count;

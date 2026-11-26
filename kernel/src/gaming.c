@@ -1,6 +1,7 @@
 #include "gaming.h"
 
 #include "ac97.h"
+#include "cpu.h"
 #include "gpu.h"
 #include "graphics.h"
 #include "sha256.h"
@@ -69,6 +70,10 @@ void nexus_gaming_query_system(
         capabilities->available |= NEXUS_GAME_CAP_DISPLAY_2D;
     if (ac97_is_ready())
         capabilities->available |= NEXUS_GAME_CAP_AUDIO_AC97_PCM;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_CMPXCHG16B))
+        capabilities->available |= NEXUS_GAME_CAP_CPU_CMPXCHG16B;
+    if (nexus_cpu_has_feature(NEXUS_CPU_FEATURE_SSE3))
+        capabilities->available |= NEXUS_GAME_CAP_CPU_SSE3;
 
     const struct nexus_gpu_info *primary = gpu_primary_info();
     if (primary != NULL) {

@@ -51,6 +51,8 @@ struct nexus_virtio_gpu_3d_info {
     uint64_t last_submitted_fence;
     uint64_t last_completed_fence;
     uint32_t failed_submissions;
+    uint32_t resources_allocated;
+    uint32_t resources_created_total;
 };
 
 bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info);

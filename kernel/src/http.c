@@ -118,8 +118,8 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
     size_t header_end = 0U;
     bool found_separator = false;
     for (size_t i = 0U; i + 3U < wire_length; ++i) {
-        if (wire[i] == '\\r' && wire[i + 1U] == '\\n' &&
-            wire[i + 2U] == '\\r' && wire[i + 3U] == '\\n') {
+        if (wire[i] == '\r' && wire[i + 1U] == '\n' &&
+            wire[i + 2U] == '\r' && wire[i + 3U] == '\n') {
             header_end = i;
             found_separator = true;
             break;
@@ -160,11 +160,11 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
         size_t value_start = colon + 1U;
         size_t value_end = line_end;
         while (value_start < value_end &&
-               (wire[value_start] == ' ' || wire[value_start] == '\\t'))
+               (wire[value_start] == ' ' || wire[value_start] == '\t'))
             ++value_start;
         while (value_end > value_start &&
                (wire[value_end - 1U] == ' ' ||
-                wire[value_end - 1U] == '\\t')) --value_end;
+                wire[value_end - 1U] == '\t')) --value_end;
         const size_t value_length = value_end - value_start;
 
         if (bytes_equal_ci(wire + cursor, colon - cursor, "Content-Length")) {
@@ -188,7 +188,7 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
                 if (ch <= 0x20U || ch >= 0x7FU) return false;
                 location[i] = (char)ch;
             }
-            location[value_length] = '\\0';
+            location[value_length] = '\0';
             have_location = true;
         } else if (bytes_equal_ci(wire + cursor, colon - cursor,
                                   "Content-Type")) {
@@ -199,7 +199,7 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
                 if (ch < 0x20U || ch >= 0x7FU) return false;
                 content_type[i] = (char)ch;
             }
-            content_type[value_length] = '\\0';
+            content_type[value_length] = '\0';
             have_content_type = true;
         } else if (bytes_equal_ci(wire + cursor, colon - cursor,
                                   "Content-Disposition")) {
@@ -210,7 +210,7 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
                 if (ch < 0x20U || ch >= 0x7FU) return false;
                 content_disposition[i] = (char)ch;
             }
-            content_disposition[value_length] = '\\0';
+            content_disposition[value_length] = '\0';
             have_content_disposition = true;
         }
         cursor = line_end + 2U;

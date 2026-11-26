@@ -8,6 +8,8 @@
 #define EDID_CTA_HDR_STATIC_METADATA 0x06U
 
 static struct nexus_display_info display_info;
+static struct nexus_display_monitor firmware_monitor_snapshot;
+static bool firmware_monitor_snapshot_valid;
 static struct nexus_display_info *edid_target;
 static struct nexus_display_mode_backend display_backend;
 static void *display_backend_context;
@@ -466,6 +468,8 @@ static void display_promote_monitor_edid(
 
 bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     display_info = (struct nexus_display_info){0};
+    firmware_monitor_snapshot = (struct nexus_display_monitor){0};
+    firmware_monitor_snapshot_valid = false;
     edid_target = NULL;
     display_backend = (struct nexus_display_mode_backend){0};
     display_backend_context = NULL;
@@ -549,6 +553,51 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     display_info.monitor_count = 1U;
     display_info.primary_monitor_id = 0U;
     display_info.initialized = true;
+    firmware_monitor_snapshot = display_info.monitors[0];
+    firmware_monitor_snapshot_valid = true;
+    return true;
+}
+
+bool nexus_display_recover_firmware_mode(uint64_t width,
+                                         uint64_t height,
+                                         uint64_t pitch,
+                                         uint16_t bits_per_pixel) {
+    if (!display_info.initialized || !firmware_monitor_snapshot_valid ||
+        width == 0U || height == 0U || width > 16384U || height > 16384U ||
+        bits_per_pixel == 0U) return false;
+    const uint64_t bytes_per_pixel =
+        ((uint64_t)bits_per_pixel + 7U) / 8U;
+    if (bytes_per_pixel == 0U || width > UINT64_MAX / bytes_per_pixel ||
+        pitch < width * bytes_per_pixel ||
+        height > UINT64_MAX / pitch) return false;
+
+    display_info.monitor_count = 1U;
+    display_info.primary_monitor_id = 0U;
+    display_info.monitors[0] = firmware_monitor_snapshot;
+    display_info.monitors[0].width = (uint32_t)width;
+    display_info.monitors[0].height = (uint32_t)height;
+    display_info.monitors[0].connected = true;
+    display_info.monitors[0].enabled = true;
+    display_info.monitors[0].primary = true;
+    display_info.monitors[0].desktop_x = 0;
+    display_info.monitors[0].desktop_y = 0;
+
+    display_info.current_bits_per_pixel = bits_per_pixel;
+    display_promote_monitor_edid(&display_info.monitors[0]);
+    display_info.current_width = width;
+    display_info.current_height = height;
+    display_info.current_pitch = pitch;
+    display_info.current_refresh_hz = monitor_matching_refresh(
+        &display_info.monitors[0]);
+    display_info.mode_set_available = false;
+    display_info.firmware_fallback_active = true;
+    display_info.topology = NEXUS_DISPLAY_TOPOLOGY_EXTENDED;
+    for (uint32_t i = 0U; i < display_info.mode_count; ++i)
+        display_info.modes[i].current_boot_mode =
+            display_info.modes[i].width == width &&
+            display_info.modes[i].height == height &&
+            display_info.modes[i].bits_per_pixel == bits_per_pixel;
+    if (display_info.mode_count == 0U) add_current_mode();
     return true;
 }
 

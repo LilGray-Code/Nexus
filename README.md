@@ -27,7 +27,7 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   Input (mouse speed, scroll speed, handedness), Accessibility (high contrast,
   larger text and pointer), System (AC'97 master volume when supported, network
   status, memory and uptime), and Devices (detected hardware and driver state).
-  Theme, wallpaper, UI scaling, mouse controls, accessibility, and volume
+  Theme, wallpaper, text sizing, mouse controls, accessibility, and volume
   preferences use a versioned, checksum-validated `NEXUS.CFG` record in the
   root of the NXFS Data volume. Settings or Files performs the existing explicit
   storage discovery before loading preferences; no user disk scan was added to

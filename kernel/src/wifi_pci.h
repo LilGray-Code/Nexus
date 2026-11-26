@@ -8,6 +8,7 @@
 #define NEXUS_WIFI_PCI_MAX_CANDIDATES 16U
 
 struct nexus_win_inf_match;
+struct nexus_win_driver_package_assessment;
 
 struct nexus_wifi_pci_candidate {
     uint8_t bus;
@@ -30,5 +31,11 @@ const struct nexus_wifi_pci_candidate *wifi_pci_candidate_at(uint32_t index);
 bool wifi_pci_match_windows_inf(uint32_t candidate_index,
                                 const char *inf_text, size_t text_length,
                                 struct nexus_win_inf_match *match);
+
+/* Assess an INF plus its .sys against a discovered adapter. */
+bool wifi_pci_assess_windows_package(
+    uint32_t candidate_index, const char *inf_data, size_t inf_size,
+    const void *sys_data, size_t sys_size,
+    struct nexus_win_driver_package_assessment *assessment);
 
 #endif

@@ -11,6 +11,17 @@
 #define NEXUS_WIN_PE_MAX_NDIS_IMPORTS 64U
 #define NEXUS_WIN_PE_SYMBOL_NAME_MAX 64U
 
+enum nexus_win_wifi_driver_profile {
+    NEXUS_WIN_WIFI_PROFILE_INVALID = 0,
+    NEXUS_WIN_WIFI_PROFILE_NOT_NDIS,
+    NEXUS_WIN_WIFI_PROFILE_LEGACY_OR_UNKNOWN_NDIS,
+    NEXUS_WIN_WIFI_PROFILE_REQUIRES_WDF,
+    NEXUS_WIN_WIFI_PROFILE_REQUIRES_NETADAPTERCX,
+    NEXUS_WIN_WIFI_PROFILE_INCOMPLETE_IMPORTS,
+    NEXUS_WIN_WIFI_PROFILE_UNSUPPORTED_RELOCATIONS,
+    NEXUS_WIN_WIFI_PROFILE_NDIS6_CANDIDATE
+};
+
 struct nexus_win_pe_info {
     uint16_t machine;
     uint16_t section_count;
@@ -45,5 +56,9 @@ struct nexus_win_pe_info {
  */
 bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
                           struct nexus_win_pe_info *info);
+
+/* Classification only: NDIS6_CANDIDATE does not mean loadable yet. */
+enum nexus_win_wifi_driver_profile
+nexus_win_pe_classify_wifi_driver(const struct nexus_win_pe_info *info);
 
 #endif

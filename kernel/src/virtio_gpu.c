@@ -210,6 +210,9 @@ static uint32_t selected_scanout_id;
 static uint32_t device_scanout_count;
 static uint32_t device_capset_count;
 static struct nexus_virtio_gpu_display_info display_inventory;
+static uint32_t original_scanout_x[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+static uint32_t original_scanout_y[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+static uint32_t active_scanout_count;
 static uint64_t framebuffer_physical;
 static uint64_t framebuffer_pages;
 static volatile uint8_t *framebuffer_memory;
@@ -648,6 +651,8 @@ static bool gpu_query_display_info(uint64_t preferred_width,
             &display_inventory.scanouts[i];
         saved->x = read_le32(response + offset);
         saved->y = read_le32(response + offset + 4U);
+        original_scanout_x[i] = saved->x;
+        original_scanout_y[i] = saved->y;
         saved->width = read_le32(response + offset + 8U);
         saved->height = read_le32(response + offset + 12U);
         saved->enabled = read_le32(response + offset + 16U) != 0U;
@@ -666,6 +671,7 @@ static bool gpu_query_display_info(uint64_t preferred_width,
     }
 
     selected_scanout_id = have_enabled ? selected : VIRTIO_GPU_SCANOUT_ID;
+    active_scanout_count = have_enabled ? enabled_count : 0U;
     display_inventory.selected_scanout = selected_scanout_id;
     serial_write("VIRTIO GPU: scanouts discovered/enabled/selected=");
     serial_write_hex(display_inventory.scanout_count);
@@ -802,6 +808,11 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     venus_capset_max_version = 0U;
     venus_capset_max_size = 0U;
     selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
+    active_scanout_count = 0U;
+    for (uint32_t i = 0U; i < NEXUS_VIRTIO_GPU_MAX_SCANOUTS; ++i) {
+        original_scanout_x[i] = 0U;
+        original_scanout_y[i] = 0U;
+    }
     device_scanout_count = 0U;
     device_capset_count = 0U;
     display_inventory = (struct nexus_virtio_gpu_display_info){0};
@@ -1205,6 +1216,71 @@ bool virtio_gpu_display_get_info(
     struct nexus_virtio_gpu_display_info *info) {
     if (info == NULL || !display_inventory.valid) return false;
     *info = display_inventory;
+    return true;
+}
+
+static bool gpu_set_scanout_rectangle(uint32_t scanout_id,
+                                      uint32_t x, uint32_t y,
+                                      uint32_t width, uint32_t height) {
+    const struct virtio_gpu_set_scanout set = {
+        .header = make_header(VIRTIO_GPU_CMD_SET_SCANOUT),
+        .rectangle = {x, y, width, height},
+        .scanout_id = scanout_id,
+        .resource_id = VIRTIO_GPU_RESOURCE_ID
+    };
+    return submit_command(&set, sizeof(set));
+}
+
+bool virtio_gpu_display_set_primary(uint32_t scanout_id) {
+    if (!active || !display_inventory.valid ||
+        scanout_id >= display_inventory.scanout_count ||
+        !display_inventory.scanouts[scanout_id].enabled) return false;
+    selected_scanout_id = scanout_id;
+    display_inventory.selected_scanout = scanout_id;
+    return true;
+}
+
+bool virtio_gpu_display_set_topology(uint32_t topology) {
+    if (!active || !display_inventory.valid || active_scanout_count < 2U ||
+        (topology != NEXUS_VIRTIO_GPU_TOPOLOGY_EXTENDED &&
+         topology != NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED)) return false;
+
+    struct nexus_virtio_gpu_scanout_info previous[
+        NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i)
+        previous[i] = display_inventory.scanouts[i];
+
+    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
+        const struct nexus_virtio_gpu_scanout_info *scanout =
+            &display_inventory.scanouts[i];
+        if (!scanout->enabled) continue;
+
+        const uint32_t x = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
+            ? 0U : original_scanout_x[i];
+        const uint32_t y = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
+            ? 0U : original_scanout_y[i];
+        const uint32_t width = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
+            ? (uint32_t)width_pixels : scanout->width;
+        const uint32_t height = topology == NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
+            ? (uint32_t)height_pixels : scanout->height;
+        if (width == 0U || height == 0U ||
+            (uint64_t)x + width > width_pixels ||
+            (uint64_t)y + height > height_pixels ||
+            !gpu_set_scanout_rectangle(i, x, y, width, height)) {
+            /* Restore every output already changed by this transaction. */
+            for (uint32_t j = 0U; j < i; ++j) {
+                if (!previous[j].enabled) continue;
+                (void)gpu_set_scanout_rectangle(
+                    j, previous[j].x, previous[j].y,
+                    previous[j].width, previous[j].height);
+            }
+            for (uint32_t j = 0U; j < display_inventory.scanout_count; ++j)
+                display_inventory.scanouts[j] = previous[j];
+            return false;
+        }
+        display_inventory.scanouts[i].x = x;
+        display_inventory.scanouts[i].y = y;
+    }
     return true;
 }
 

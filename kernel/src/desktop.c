@@ -63,7 +63,9 @@ enum desktop_view {
 
 static enum desktop_view active_view = DESKTOP_HOME;
 static bool settings_hardware_page;
+#define DESKTOP_STORE_VISIBLE_ROWS 8U
 static size_t store_selected_index;
+static size_t store_first_index;
 static bool store_installed[NEXUS_STORE_MAX_APPS];
 static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
@@ -2239,7 +2241,7 @@ static void draw_shell(void) {
         graphics_draw_text_aa(text_x, text_y, "NEXUS APP STORE",
                               163840U, 239U, 249U, 255U);
         graphics_draw_text(text_x, text_y + 27U,
-            "NEXUS NATIVE DEMOS + OFFICIAL WEB SHORTCUTS",
+            "NATIVE APPS + POPULAR PRODUCTIVITY / WEB APPS",
             1U, 170U, 191U, 211U);
         const uint64_t list_x = text_x;
         const uint64_t list_y = text_y + 56U;
@@ -2247,11 +2249,21 @@ static void draw_shell(void) {
         const uint64_t detail_width = panel_width > 370U
             ? panel_width - 370U : 210U;
         const size_t count = nexus_store_count();
-        for (size_t i = 0U; i < count; ++i) {
+        const size_t visible_count = count < DESKTOP_STORE_VISIBLE_ROWS
+            ? count : DESKTOP_STORE_VISIBLE_ROWS;
+        if (store_selected_index >= count) store_selected_index = count - 1U;
+        if (store_selected_index < store_first_index)
+            store_first_index = store_selected_index;
+        if (store_selected_index >= store_first_index + visible_count)
+            store_first_index = store_selected_index - visible_count + 1U;
+        if (store_first_index + visible_count > count)
+            store_first_index = count - visible_count;
+        for (size_t row = 0U; row < visible_count; ++row) {
+            const size_t i = store_first_index + row;
             const struct nexus_store_application *app =
                 nexus_store_application_at(i);
             if (app == NULL) continue;
-            const uint64_t row_y = list_y + (uint64_t)i * 40U;
+            const uint64_t row_y = list_y + (uint64_t)row * 40U;
             graphics_blend_round_rect(list_x, row_y, 310U, 34U, 7U,
                 i == store_selected_index
                     ? desktop_accent_palette[desktop_accent_index][0]
@@ -2283,7 +2295,7 @@ static void draw_shell(void) {
             graphics_draw_text(list_x + 218U, row_y + 13U,
                 native_app
                     ? (store_installed[i] ? "BUNDLED" : "MISSING")
-                    : (store_installed[i] ? "ADDED" : "WEB LINK"),
+                    : (store_installed[i] ? "ADDED" : "WEB APP"),
                 1U, store_installed[i] ? 108U : 170U,
                 store_installed[i] ? 216U : 191U,
                 store_installed[i] ? 229U : 211U);
@@ -2311,12 +2323,12 @@ static void draw_shell(void) {
             graphics_draw_text(detail_x + 14U, list_y + 100U,
                 native_app
                     ? "DELIVERY: BUNDLED NEXUS ELF APPLICATION"
-                    : "DELIVERY: HTTPS WEBSITE SHORTCUT", 1U,
+                    : "DELIVERY: OFFICIAL HTTPS WEBSITE / WEB APP SHORTCUT", 1U,
                 108U, 216U, 229U);
             graphics_draw_text(detail_x + 14U, list_y + 123U,
                 native_app
                     ? "RUNS ON THE NEXUS NATIVE ABI"
-                    : "FULL WINDOWS CLIENT NOT AVAILABLE", 1U,
+                    : "WEB APP; NATIVE DESKTOP INSTALL NOT AVAILABLE", 1U,
                 native_app ? 108U : 239U,
                 native_app ? 216U : 177U,
                 native_app ? 229U : 119U);
@@ -2365,8 +2377,11 @@ static void draw_shell(void) {
             "I RUN / ADD   ENTER OPEN   U REMOVE WEB LINK   ESC HOME",
             1U, 151U, 178U, 201U);
         graphics_draw_text(text_x, text_y + 356U,
-            "NATIVE DEMOS USE THE NEXUS ABI; WEB SITES MAY REQUIRE FULL JS / MEDIA / DRM",
+            "WEB ENTRIES ARE SHORTCUTS; MODERN JS / MEDIA FEATURES ARE LIMITED",
             1U, 239U, 177U, 119U);
+        graphics_draw_text(text_x, text_y + 378U,
+            "UP/DOWN OR PGUP/PGDN TO BROWSE THE FULL CATALOGUE",
+            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_BROWSER) {
         graphics_draw_text(text_x, text_y, "NEXUS BROWSER - WEB SEARCH + SECURE WEB",
                            2, 239, 249, 255);
@@ -5610,15 +5625,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 pointer_y - (int64_t)(bounds.y + 82U);
             const uint64_t row_top = 56U;
             const uint64_t row_height = 40U;
+            const size_t visible_count =
+                nexus_store_count() < DESKTOP_STORE_VISIBLE_ROWS
+                    ? nexus_store_count() : DESKTOP_STORE_VISIBLE_ROWS;
             if (relative_x >= 0 && relative_x < 310 &&
                 relative_y >= (int64_t)row_top &&
                 relative_y < (int64_t)(row_top +
-                    nexus_store_count() * row_height)) {
-                const size_t selected =
+                    visible_count * row_height)) {
+                const size_t row =
                     (size_t)((uint64_t)relative_y - row_top) /
                     (size_t)row_height;
-                if (selected < nexus_store_count())
-                    store_selected_index = selected;
+                if (row < visible_count)
+                    store_selected_index = store_first_index + row;
             } else if (relative_x >= 330 && relative_y >= 250 &&
                        relative_y < 278) {
                 if (relative_x < 438)
@@ -6164,6 +6182,17 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else if (event->scancode == 0x50U) {
             if (store_selected_index + 1U < nexus_store_count())
                 ++store_selected_index;
+        } else if (event->scancode == 0x49U) {
+            store_selected_index = store_selected_index > DESKTOP_STORE_VISIBLE_ROWS
+                ? store_selected_index - DESKTOP_STORE_VISIBLE_ROWS : 0U;
+        } else if (event->scancode == 0x51U) {
+            store_selected_index += DESKTOP_STORE_VISIBLE_ROWS;
+            if (store_selected_index >= nexus_store_count())
+                store_selected_index = nexus_store_count() - 1U;
+        } else if (event->scancode == 0x47U) {
+            store_selected_index = 0U;
+        } else if (event->scancode == 0x4FU) {
+            store_selected_index = nexus_store_count() - 1U;
         } else if (event->scancode == 0x17U) {
             desktop_store_install_selected();
         } else if (event->scancode == 0x16U) {

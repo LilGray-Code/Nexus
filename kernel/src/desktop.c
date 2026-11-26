@@ -2284,9 +2284,9 @@ static void draw_shell(void) {
                 format_labeled_u64("CURRENT REFRESH: ",
                     display->current_refresh_hz, line);
             } else {
-                line[0] = '\0';
-                hardware_append_text(line, sizeof(line), &(size_t){0},
-                                     "CURRENT REFRESH: NOT REPORTED");
+                graphics_draw_text(text_x, content_y + 80U,
+                    "CURRENT REFRESH: NOT REPORTED",
+                    1U, 171U, 191U, 211U);
             }
             graphics_draw_text(text_x, content_y + 80U, line,
                                1U, 171U, 191U, 211U);
@@ -2525,6 +2525,7 @@ static void draw_shell(void) {
                 "DEVICES", "Detected hardware, active driver path and capabilities.");
             desktop_draw_hardware_overview(text_x, content_y + 58U);
         } else if (settings_page == SETTINGS_NETWORK) {
+            char line[96];
             desktop_settings_draw_heading(text_x, content_y,
                 "NETWORK", "Adapter status and available wireless operations.");
             struct nexus_net_info network;
@@ -2571,6 +2572,7 @@ static void draw_shell(void) {
                 "WIRELESS CONNECTIVITY REQUIRES A SUPPORTED RADIO DRIVER.",
                 1U, 171U, 191U, 211U);
         } else if (settings_page == SETTINGS_STORAGE) {
+            char line[96], number[24];
             desktop_settings_draw_heading(text_x, content_y,
                 "STORAGE", "Detected block devices and controller inventory.");
             format_labeled_u64("BLOCK DEVICES: ", blockdev_count(), line);
@@ -2653,6 +2655,7 @@ static void draw_shell(void) {
                 "ARE NOT YET IMPLEMENTED.",
                 1U, 231U, 183U, 127U);
         } else if (settings_page == SETTINGS_APPS) {
+            char line[96];
             desktop_settings_draw_heading(text_x, content_y,
                 "APPLICATIONS", "App catalog and native application support.");
             format_labeled_u64("STORE CATALOG ENTRIES: ",
@@ -2686,6 +2689,7 @@ static void draw_shell(void) {
                 "ED25519 VERIFIER AND RELEASE TRUST KEY.",
                 1U, 171U, 191U, 211U);
         } else if (settings_page == SETTINGS_ABOUT) {
+            char line[96], number[24];
             desktop_settings_draw_heading(text_x, content_y,
                 "ABOUT NEXUS", "System identity and live hardware summary.");
             graphics_draw_text(text_x, content_y + 66U,
@@ -2696,9 +2700,11 @@ static void draw_shell(void) {
                 cpu != NULL && cpu->brand[0] != '\0'
                     ? cpu->brand : "CPU BRAND NOT AVAILABLE",
                 1U, 171U, 191U, 211U);
-            format_labeled_u64("FRAMEBUFFER: ", screen_width, line);
-            hardware_append_text(line, sizeof(line), &(size_t){0}, "");
+            format_labeled_u64("FRAMEBUFFER WIDTH: ", screen_width, line);
             graphics_draw_text(text_x, content_y + 133U, line,
+                               1U, 171U, 191U, 211U);
+            format_labeled_u64("FRAMEBUFFER HEIGHT: ", screen_height, line);
+            graphics_draw_text(text_x, content_y + 153U, line,
                                1U, 171U, 191U, 211U);
             format_labeled_u64("FREE MEMORY: ", memory_free_bytes(), line);
             graphics_draw_text(text_x, content_y + 160U, line,
@@ -6355,12 +6361,14 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         desktop_settings_select_page(
                             (enum desktop_settings_page)page);
                 } else if (relative_x >= 408U && relative_x < 448U) {
-                    if (settings_tab_first_page != 0U)
-                        --settings_tab_first_page;
-                } else if (relative_x >= 452U && relative_x < 492U &&
-                    settings_tab_first_page + SETTINGS_VISIBLE_TABS <
-                        SETTINGS_PAGE_COUNT) {
-                    ++settings_tab_first_page;
+                    const size_t previous = settings_page == 0U
+                        ? SETTINGS_PAGE_COUNT - 1U : (size_t)settings_page - 1U;
+                    desktop_settings_select_page(
+                        (enum desktop_settings_page)previous);
+                } else if (relative_x >= 452U && relative_x < 492U) {
+                    desktop_settings_select_page(
+                        (enum desktop_settings_page)(
+                            ((size_t)settings_page + 1U) % SETTINGS_PAGE_COUNT));
                 }
             } else if (settings_page == SETTINGS_PERSONAL) {
                 if (py >= content_y + 77U && py < content_y + 107U) {

@@ -464,6 +464,15 @@ static bool desktop_theme_is_light(void) {
 static void desktop_settings_apply(void) {
     desktop_text_scale_16_16 =
         (87381U * desktop_settings.ui_scale_percent + 50U) / 100U;
+    if (nexus_display_get_info() != NULL &&
+        nexus_display_set_scale_percent(desktop_settings.ui_scale_percent)) {
+        screen_width = graphics_width();
+        screen_height = graphics_height();
+        if (screen_width != 0U && (uint64_t)pointer_x >= screen_width)
+            pointer_x = (int64_t)(screen_width - 1U);
+        if (screen_height != 0U && (uint64_t)pointer_y >= screen_height)
+            pointer_y = (int64_t)(screen_height - 1U);
+    }
     if (ac97_is_ready())
         (void)ac97_set_master_volume(desktop_settings.volume_percent);
 }

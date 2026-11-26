@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-application-ecosystem
     paths:
       - "kernel/**"
       - "boot/**"
@@ -16,6 +17,7 @@ on:
       - nexus-original-kernel-roadmap
       - nexus-hardware-support-foundation
       - nexus-professional-graphics-foundation
+      - nexus-pc-gaming-foundation
   workflow_dispatch:
 
 permissions:

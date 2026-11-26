@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-application-ecosystem
     paths:
       - "kernel/src/app_store.c"
       - "kernel/src/app_store.h"
@@ -18,6 +19,7 @@ on:
   pull_request:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-pc-gaming-foundation
   workflow_dispatch:
 
 permissions:

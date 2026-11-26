@@ -168,6 +168,8 @@ static void installer_draw_button(uint64_t x, uint64_t y,
 static char terminal_scancode_char(uint8_t code);
 static void scan_files_once(void);
 static void refresh_files_listing(void);
+static bool files_listing_get_entry(size_t index,
+                                     struct nexus_vfs_dirent *entry);
 static void files_search_rebuild(void);
 static int64_t pointer_x;
 static int64_t pointer_y;

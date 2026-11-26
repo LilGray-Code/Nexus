@@ -95,6 +95,16 @@ int main(void) {
     if (info->vendor_kind == NEXUS_CPU_VENDOR_AMD ||
         info->vendor_kind == NEXUS_CPU_VENDOR_HYGON)
         assert(nexus_cpu_is_amd() && !nexus_cpu_is_intel());
+    if ((info->vendor_kind == NEXUS_CPU_VENDOR_AMD ||
+         info->vendor_kind == NEXUS_CPU_VENDOR_HYGON) &&
+        info->topology_extensions_supported &&
+        info->core_id_valid && info->node_id_valid) {
+        assert(info->logical_processors_per_core >= 1U);
+        assert(info->logical_processors_per_package ==
+               (uint32_t)info->physical_cores_per_package *
+               info->logical_processors_per_core);
+        assert(info->amd_nodes_per_processor_raw <= 7U);
+    }
     assert(info->brand[0] != '\0');
     assert(info->logical_processors_per_package >= 1U);
     assert(info->physical_cores_per_package >= 1U);

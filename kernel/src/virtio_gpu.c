@@ -1,5 +1,7 @@
 #include "virtio_gpu.h"
 
+#include "virtio_gpu_protocol.h"
+
 #include "gpu.h"
 #include "memory.h"
 #include "pci.h"
@@ -15,6 +17,7 @@
 #define VIRTIO_GPU_RESOURCE_ID 1U
 #define VIRTIO_GPU_SCANOUT_ID 0U
 #define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM 2U
+#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO 0x0100U
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D 0x0101U
 #define VIRTIO_GPU_CMD_SET_SCANOUT 0x0103U
 #define VIRTIO_GPU_CMD_RESOURCE_FLUSH 0x0104U
@@ -95,6 +98,7 @@ static uint64_t framebuffer_pages;
 static volatile uint8_t *framebuffer_memory;
 static uint64_t command_physical;
 static volatile uint8_t *command_memory;
+static struct nexus_virtio_gpu_display_info display_info;
 
 static void zero_bytes(volatile uint8_t *output, size_t length) {
     for (size_t i = 0U; i < length; ++i) output[i] = 0U;
@@ -120,10 +124,14 @@ static struct virtio_gpu_header make_header(uint32_t type) {
     };
 }
 
-static bool submit_command(const void *command, size_t command_length) {
+static bool submit_command_expect(
+    const void *command, size_t command_length, uint32_t expected_response,
+    uint32_t response_capacity, uint32_t minimum_response_length) {
     if (!active || command == NULL || command_length == 0U ||
         command_length > VIRTIO_GPU_COMMAND_BYTES ||
-        command_memory == NULL) return false;
+        command_memory == NULL || response_capacity == 0U ||
+        response_capacity > 4096U - VIRTIO_GPU_RESPONSE_OFFSET ||
+        minimum_response_length > response_capacity) return false;
 
     zero_bytes(command_memory, 4096U);
     copy_bytes(command_memory, (const uint8_t *)command, command_length);
@@ -131,7 +139,7 @@ static bool submit_command(const void *command, size_t command_length) {
     if (!virtio_pci_queue_submit_pair(
             &control_queue, command_physical, (uint32_t)command_length,
             command_physical + VIRTIO_GPU_RESPONSE_OFFSET,
-            64U, VIRTIO_GPU_COMMAND_TIMEOUT, &response_length)) {
+            response_capacity, VIRTIO_GPU_COMMAND_TIMEOUT, &response_length)) {
         serial_write("VIRTIO GPU: control queue command timed out or failed type=");
         serial_write_hex(read_le32(command_memory));
         serial_write(" queue=");
@@ -140,19 +148,46 @@ static bool submit_command(const void *command, size_t command_length) {
         serial_write_hex(control_queue.available_index);
         serial_write(" used=");
         serial_write_hex(control_queue.last_used_index);
-        serial_write("\r\n");
+        serial_write("\\r\\n");
         return false;
     }
     const uint32_t response_type =
         read_le32(command_memory + VIRTIO_GPU_RESPONSE_OFFSET);
-    if (response_length < sizeof(struct virtio_gpu_header) ||
-        response_type != VIRTIO_GPU_RESP_OK_NODATA) {
-        serial_write("VIRTIO GPU: device rejected a 2D display command type=");
+    if (response_length < minimum_response_length ||
+        response_type != expected_response) {
+        serial_write("VIRTIO GPU: device returned unexpected response type=");
         serial_write_hex(response_type);
-        serial_write("\r\n");
+        serial_write(" length=");
+        serial_write_hex(response_length);
+        serial_write("\\r\\n");
         return false;
     }
     return true;
+}
+
+static bool submit_command(const void *command, size_t command_length) {
+    return submit_command_expect(
+        command, command_length, VIRTIO_GPU_RESP_OK_NODATA,
+        64U, sizeof(struct virtio_gpu_header));
+}
+
+static bool query_display_info(void) {
+    const struct virtio_gpu_header request =
+        make_header(VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
+    if (!submit_command_expect(
+            &request, sizeof(request),
+            NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE,
+            NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE_SIZE,
+            NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE_SIZE)) return false;
+
+    uint8_t response[NEXUS_VIRTIO_GPU_DISPLAY_INFO_RESPONSE_SIZE];
+    const volatile uint8_t *source =
+        command_memory + VIRTIO_GPU_RESPONSE_OFFSET;
+    for (size_t i = 0U; i < sizeof(response); ++i)
+        response[i] = source[i];
+
+    return nexus_virtio_gpu_decode_display_info(
+        response, sizeof(response), &display_info);
 }
 
 static const struct nexus_pci_device *find_virtio_gpu(void) {
@@ -200,6 +235,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
                       const struct nexus_graphics_surface *firmware_surface,
                       struct nexus_graphics_surface *render_surface) {
     active = false;
+    display_info = (struct nexus_virtio_gpu_display_info){0};
     if (firmware_surface == NULL || render_surface == NULL ||
         width == 0U || height == 0U ||
         width > 4096U || height > 2160U ||
@@ -335,8 +371,22 @@ bool virtio_gpu_active(void) {
     return active;
 }
 
+uint32_t virtio_gpu_scanout_count(void) {
+    return display_info.enabled_scanout_count;
+}
+
+bool virtio_gpu_scanout_info(
+    uint32_t scanout_id, struct nexus_virtio_gpu_scanout *info) {
+    if (!active || info == NULL ||
+        scanout_id >= NEXUS_VIRTIO_GPU_MAX_SCANOUTS ||
+        !display_info.scanouts[scanout_id].enabled) return false;
+    *info = display_info.scanouts[scanout_id];
+    return true;
+}
+
 void virtio_gpu_stop(void) {
     active = false;
+    display_info = (struct nexus_virtio_gpu_display_info){0};
     if (transport.opened) virtio_pci_fail(&transport);
     serial_write("VIRTIO GPU: disabled; firmware framebuffer fallback selected\r\n");
 }

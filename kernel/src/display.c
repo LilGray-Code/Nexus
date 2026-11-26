@@ -441,6 +441,20 @@ bool nexus_display_add_monitor(uint32_t id, bool enabled,
                 monitor.dpi_y = (uint16_t)(((uint64_t)height * 254U) /
                                             ((uint32_t)edid[22] * 100U));
         }
+        if (id == display_info.primary_monitor_id) {
+            display_info.edid_valid = monitor.edid_valid;
+            display_info.edid_extensions_complete =
+                monitor.edid_extensions_complete;
+            display_info.monitor_name_valid = monitor.monitor_name_valid;
+            for (size_t i = 0U; i < sizeof(display_info.monitor_name); ++i)
+                display_info.monitor_name[i] = monitor.monitor_name[i];
+            display_info.hdr_static_metadata = monitor.hdr_static_metadata;
+            display_info.hdr_eotf_flags = monitor.hdr_eotf_flags;
+            display_info.timing_count = monitor.timing_count;
+            for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
+                display_info.timings[i] = monitor.timings[i];
+            add_edid_timing_modes();
+        }
     }
     display_info.monitors[slot] = monitor;
     return true;

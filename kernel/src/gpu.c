@@ -7,6 +7,7 @@ static struct nexus_gpu_info adapters[NEXUS_GPU_MAX_ADAPTERS];
 static uint32_t adapter_count;
 static bool firmware_framebuffer_active;
 static bool virtio_display_active;
+static struct nexus_gpu_runtime_capabilities runtime_capabilities;
 
 static enum nexus_gpu_vendor identify_vendor(uint16_t vendor_id) {
     switch (vendor_id) {
@@ -36,6 +37,7 @@ bool gpu_init(void) {
     adapter_count = 0U;
     firmware_framebuffer_active = false;
     virtio_display_active = false;
+    runtime_capabilities = (struct nexus_gpu_runtime_capabilities){0};
     for (uint32_t i = 0U; i < NEXUS_GPU_MAX_ADAPTERS; ++i)
         adapters[i] = (struct nexus_gpu_info){0};
 
@@ -146,17 +148,35 @@ const char *gpu_render_path_name(void) {
 
 bool gpu_hardware_acceleration_available(void) {
     const struct nexus_gpu_info *primary = gpu_primary_info();
-    return primary != NULL &&
-           (primary->hardware_2d_acceleration ||
-            primary->hardware_3d_acceleration);
+    return runtime_capabilities.hardware_2d_rendering ||
+           runtime_capabilities.hardware_3d_rendering ||
+           (primary != NULL &&
+            (primary->hardware_2d_acceleration ||
+             primary->hardware_3d_acceleration));
 }
 
 void gpu_set_firmware_framebuffer_active(bool active) {
     firmware_framebuffer_active = active;
+    runtime_capabilities.firmware_scanout_active = active;
+    if (active && !virtio_display_active)
+        runtime_capabilities.virtio_scanout_count = 0U;
     if (adapter_count != 0U)
         adapters[0].firmware_framebuffer_active = active;
 }
 
 void gpu_set_virtio_display_active(bool active) {
     virtio_display_active = active;
+    runtime_capabilities.virtio_scanout_active = active;
+    if (!active) runtime_capabilities.virtio_scanout_count = 0U;
+}
+
+void gpu_set_virtio_display_outputs(uint32_t count) {
+    runtime_capabilities.virtio_scanout_count =
+        virtio_display_active ? count : 0U;
+}
+
+void gpu_get_runtime_capabilities(
+    struct nexus_gpu_runtime_capabilities *capabilities) {
+    if (capabilities == NULL) return;
+    *capabilities = runtime_capabilities;
 }

@@ -197,6 +197,57 @@ static bool parse_imports(const struct pe_view *view, uint32_t import_rva,
     return terminated;
 }
 
+static bool parse_relocations(const struct pe_view *view, uint32_t rva,
+                              uint32_t size,
+                              struct nexus_win_pe_info *info) {
+    if (rva == 0U && size == 0U) {
+        info->relocations_supported = true;
+        return true;
+    }
+    if (rva == 0U || size < 8U || size > 4U * 1024U * 1024U) return false;
+    uint32_t consumed = 0U;
+    info->has_relocations = true;
+    info->relocations_supported = true;
+    while (consumed < size) {
+        if (size - consumed < 8U) return false;
+        const uint64_t block_rva = (uint64_t)rva + consumed;
+        if (block_rva > UINT32_MAX) return false;
+        size_t block_offset;
+        if (!rva_to_offset(view, (uint32_t)block_rva, 8U, &block_offset))
+            return false;
+        const uint32_t page_rva = read32(view->bytes + block_offset);
+        const uint32_t block_size = read32(view->bytes + block_offset + 4U);
+        if ((page_rva & 0xFFFU) != 0U || block_size < 8U ||
+            (block_size & 1U) != 0U || block_size > size - consumed)
+            return false;
+        const uint32_t entries = (block_size - 8U) / 2U;
+        for (uint32_t i = 0U; i < entries; ++i) {
+            size_t entry_offset;
+            const uint64_t entry_rva = block_rva + 8U + (uint64_t)i * 2U;
+            if (entry_rva > UINT32_MAX ||
+                !rva_to_offset(view, (uint32_t)entry_rva, 2U, &entry_offset))
+                return false;
+            const uint16_t entry = read16(view->bytes + entry_offset);
+            const uint16_t type = (uint16_t)(entry >> 12);
+            const uint16_t displacement = (uint16_t)(entry & 0x0FFFU);
+            if (type == 0U) continue;
+            if (type == 10U) {
+                const uint64_t target = (uint64_t)page_rva + displacement;
+                size_t target_offset;
+                if (target > UINT32_MAX ||
+                    !rva_to_offset(view, (uint32_t)target, 8U, &target_offset))
+                    return false;
+                (void)target_offset;
+                if (info->relocation_count == UINT32_MAX) return false;
+                ++info->relocation_count;
+            } else {
+                info->relocations_supported = false;
+            }
+        }
+        consumed += block_size;
+    }
+    return consumed == size;
+}
 bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
                           struct nexus_win_pe_info *info) {
     if (file_data == NULL || info == NULL || file_size < PE_DOS_HEADER_MIN ||
@@ -265,6 +316,11 @@ bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
         .bytes = bytes, .size = file_size, .headers_size = headers_size,
         .section_count = sections, .section_offset = section_offset
     };
+    uint32_t relocation_rva = 0U, relocation_size = 0U;
+    if (directory_count > 5U && optional_size >= 112U + 6U * PE_DIRECTORY_ENTRY_SIZE) {
+        relocation_rva = read32(bytes + optional + 112U + 5U * PE_DIRECTORY_ENTRY_SIZE);
+        relocation_size = read32(bytes + optional + 112U + 5U * PE_DIRECTORY_ENTRY_SIZE + 4U);
+    }
     uint32_t import_rva = read32(bytes + optional + 112U +
                                  PE_DIRECTORY_IMPORT * PE_DIRECTORY_ENTRY_SIZE);
     uint32_t import_size = read32(bytes + optional + 112U +
@@ -280,7 +336,8 @@ bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
     info->nx_compatible =
         (dll_characteristics & PE_DLLCHARACTERISTICS_NX_COMPAT) != 0U;
     if (entry >= image_size ||
-        !parse_imports(&view, import_rva, import_size, info)) {
+        !parse_imports(&view, import_rva, import_size, info) ||
+        !parse_relocations(&view, relocation_rva, relocation_size, info)) {
         *info = (struct nexus_win_pe_info){0};
         return false;
     }

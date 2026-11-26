@@ -2404,7 +2404,7 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + 406U,
                            browser_download_ready
                                ? "VERIFIED FILE READY TO SAVE"
-                               : "OPEN A VERIFIED HTTPS FILE TO DOWNLOAD",
+                               : "SAVE VERIFIED HTTPS FILES UP TO 4 MiB",
                            1U, 170U, 191U, 211U);
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
@@ -3607,7 +3607,15 @@ static void browser_save_current_download(void) {
         return;
     }
     if (browser_download_length > NEXUS_NXFS_MAX_FILE_BYTES) {
-        browser_set_status("Download exceeds the 1 MiB file limit");
+        browser_set_status("Download exceeds the 4 MiB Nexus file limit");
+        return;
+    }
+    const uint32_t data_file_limit = nxfs_get_max_file_bytes();
+    if (vfs_nxfs_writable() && data_file_limit != 0U &&
+        browser_download_length > data_file_limit) {
+        browser_set_status(data_file_limit == NEXUS_NXFS_LEGACY_FILE_BYTES
+            ? "This existing Data volume supports files up to 1 MiB; downloads above that need a newly formatted larger Data volume"
+            : "This Data volume cannot fit the selected download");
         return;
     }
 

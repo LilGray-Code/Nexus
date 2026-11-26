@@ -10,10 +10,13 @@ on:
       - "kernel/src/wifi.h"
       - "kernel/src/wifi_80211.c"
       - "kernel/src/wifi_80211.h"
+      - "kernel/src/wifi_pci.c"
+      - "kernel/src/wifi_pci.h"
       - "kernel/src/win_driver_inf.c"
       - "kernel/src/win_driver_inf.h"
       - "kernel/tests/wifi_test.c"
       - "kernel/tests/wifi_80211_test.c"
+      - "kernel/tests/wifi_pci_test.c"
       - "kernel/tests/win_driver_inf_test.c"
       - ".github/workflows/nexus-wifi-tests.yml"
   pull_request:
@@ -24,8 +27,11 @@ on:
       - "kernel/src/wifi.h"
       - "kernel/src/wifi_80211.c"
       - "kernel/src/wifi_80211.h"
+      - "kernel/src/wifi_pci.c"
+      - "kernel/src/wifi_pci.h"
       - "kernel/tests/wifi_test.c"
       - "kernel/tests/wifi_80211_test.c"
+      - "kernel/tests/wifi_pci_test.c"
       - ".github/workflows/nexus-wifi-tests.yml"
 
 permissions:
@@ -50,6 +56,13 @@ jobs:
             kernel/tests/wifi_80211_test.c -o /tmp/nexus-wifi-80211-test
       - name: Run 802.11 beacon parser tests
         run: /tmp/nexus-wifi-80211-test
+      - name: Compile Wi-Fi PCI and Windows INF integration tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/wifi_pci.c kernel/src/win_driver_inf.c \
+            kernel/tests/wifi_pci_test.c -o /tmp/nexus-wifi-pci-test
+      - name: Run Wi-Fi PCI and Windows INF integration tests
+        run: /tmp/nexus-wifi-pci-test
       - name: Compile Windows INF hardware-ID matching tests
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

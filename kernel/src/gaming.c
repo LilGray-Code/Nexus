@@ -112,6 +112,7 @@ static uint64_t graphics_api_requirements(
         case NEXUS_GAME_GRAPHICS_DIRECT3D_10:
         case NEXUS_GAME_GRAPHICS_DIRECT3D_11:
             return NEXUS_GAME_CAP_DXVK | NEXUS_GAME_CAP_VULKAN |
+                   NEXUS_GAME_CAP_VULKAN_1_4 |
                    NEXUS_GAME_CAP_GPU_3D_RENDERING;
         case NEXUS_GAME_GRAPHICS_DIRECT3D_12:
             return NEXUS_GAME_CAP_VKD3D_PROTON |
@@ -157,6 +158,7 @@ uint64_t nexus_gaming_platform_requirements(
         case NEXUS_GAME_PLATFORM_PROTON:
             return steam_requirements |
                    NEXUS_GAME_CAP_STEAM_CLIENT |
+                   NEXUS_GAME_CAP_OPENGL |
                    NEXUS_GAME_CAP_WINE_RUNTIME |
                    NEXUS_GAME_CAP_PROTON_RUNTIME |
                    NEXUS_GAME_CAP_VULKAN |
@@ -215,7 +217,11 @@ bool nexus_gaming_assess(
         game->platform, game->graphics_api);
     const uint64_t anti_cheat =
         anticheat_requirements(game->anticheat, game->platform);
-    if (required == UINT64_MAX || anti_cheat == UINT64_MAX ||
+    if (required == UINT64_MAX) {
+        assessment->status = NEXUS_GAME_ASSESS_INVALID;
+        return true;
+    }
+    if (anti_cheat == UINT64_MAX ||
         (anti_cheat != 0U &&
          (anti_cheat & ~system->available) != 0U)) {
         assessment->status = NEXUS_GAME_ASSESS_BLOCKED_ANTICHEAT;
@@ -223,15 +229,15 @@ bool nexus_gaming_assess(
     }
     required |= game->additional_required_capabilities | anti_cheat;
     assessment->required_capabilities = required;
-    assessment->missing_capabilities = required & ~system->available;
-
-    if (assessment->missing_capabilities != 0U) {
-        assessment->status = NEXUS_GAME_ASSESS_MISSING_PREREQUISITES;
-        return true;
-    }
 
     if (game->compatibility == NEXUS_GAME_COMPAT_UNSUPPORTED) {
         assessment->status = NEXUS_GAME_ASSESS_TESTED_UNSUPPORTED;
+        return true;
+    }
+
+    assessment->missing_capabilities = required & ~system->available;
+    if (assessment->missing_capabilities != 0U) {
+        assessment->status = NEXUS_GAME_ASSESS_MISSING_PREREQUISITES;
         return true;
     }
 

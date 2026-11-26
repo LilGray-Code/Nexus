@@ -39,6 +39,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Keep the UI in logical pixel coordinates, but rasterize text at 4/3 scale
+ * with fractional coverage. This avoids the hard, one-pixel edges produced by
+ * drawing the compact 5x7 font directly at 1x on a high-resolution display.
+ * All desktop and dedicated-installer text shares this path.
+ */
+#define NEXUS_DESKTOP_TEXT_SCALE_16_16 87381U
+#define graphics_draw_text(x, y, text, scale, red, green, blue) \
+    graphics_draw_text_aa((x), (y), (text), \
+        (uint32_t)(scale) * NEXUS_DESKTOP_TEXT_SCALE_16_16, \
+        (red), (green), (blue))
+
 enum desktop_view {
     DESKTOP_HOME = 0,
     DESKTOP_FILES,
@@ -1021,8 +1033,8 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
         {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U},
         {217U, 164U, 83U}, {239U, 177U, 119U}, {117U, 136U, 244U}
     };
-    const uint64_t tab_width = 72U;
-    const uint64_t tab_step = 78U;
+    const uint64_t tab_width = 84U;
+    const uint64_t tab_step = 86U;
     for (size_t i = 0U; i < 6U; ++i) {
         const uint64_t x = 110U + (uint64_t)i * tab_step;
         if (x + tab_width >= screen_width - 92U) break;

@@ -17,7 +17,7 @@
 #define EDGE_BLOCKS 64U
 #define FORMAT_BASE 2048U
 #define FORMAT_BLOCKS 32768U /* 16 MiB of the planned 512 MiB ESP */
-#define NXFS_TEST_AREA_BLOCKS 32768U
+#define NXFS_TEST_AREA_BLOCKS 65536U
 #define BIOS_TEST_AREA_BLOCKS 4096U
 
 struct mock_disk {
@@ -79,13 +79,14 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
             const uint64_t data_relative = relative - 67U;
             const uint64_t slot_bank = data_relative / blocks_per_slot;
             const uint64_t block_in_slot = data_relative % blocks_per_slot;
-            /* The host fixture stores up to 256 KiB for each logical bank.
-             * This covers the installer payload regression while keeping the
-             * sparse mock image bounded; production slots remain 4 MiB.
+            /* The host fixture stores up to 2 MiB per logical bank.
+             * This covers the actual kernel ELF and larger installer files
+             * while keeping the sparse mock image bounded; production slots
+             * remain 4 MiB.
              */
             if (slot_bank >= (uint64_t)NEXUS_NXFS_MAX_FILES * 2U ||
-                block_in_slot + count > 512U) return false;
-            compact_lba = 67U + slot_bank * 512U + block_in_slot;
+                block_in_slot + count > 4096U) return false;
+            compact_lba = 67U + slot_bank * 4096U + block_in_slot;
         } else if (relative + count > 67U) {
             return false;
         }

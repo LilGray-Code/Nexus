@@ -378,3 +378,23 @@ bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
     }
     return true;
 }
+
+
+enum nexus_win_wifi_driver_profile
+nexus_win_pe_classify_wifi_driver(const struct nexus_win_pe_info *info) {
+    if (info == NULL || !info->is_dll || info->machine != 0x8664U)
+        return NEXUS_WIN_WIFI_PROFILE_INVALID;
+    if (info->imports_net_adapter_cx)
+        return NEXUS_WIN_WIFI_PROFILE_REQUIRES_NETADAPTERCX;
+    if (info->imports_wdf)
+        return NEXUS_WIN_WIFI_PROFILE_REQUIRES_WDF;
+    if (!info->imports_ndis)
+        return NEXUS_WIN_WIFI_PROFILE_NOT_NDIS;
+    if (!info->ndis_v6_miniport)
+        return NEXUS_WIN_WIFI_PROFILE_LEGACY_OR_UNKNOWN_NDIS;
+    if (info->ndis_imports_truncated)
+        return NEXUS_WIN_WIFI_PROFILE_INCOMPLETE_IMPORTS;
+    if (!info->relocations_supported)
+        return NEXUS_WIN_WIFI_PROFILE_UNSUPPORTED_RELOCATIONS;
+    return NEXUS_WIN_WIFI_PROFILE_NDIS6_CANDIDATE;
+}

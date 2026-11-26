@@ -2298,29 +2298,30 @@ static void draw_shell(void) {
                                    1U, 142U, 174U, 199U);
                 uint32_t shown = 0U;
                 for (uint32_t i = 0U;
-                     i < display->mode_count && shown < 2U; ++i) {
-                    const struct nexus_display_mode *mode =
-                        nexus_display_mode_at(i);
-                    if (mode == NULL || !mode->firmware_listed) continue;
+                     i < display->timing_count && shown < 2U; ++i) {
+                    const struct nexus_display_timing *timing =
+                        &display->timings[i];
                     size_t used = 0U;
                     line[0] = '\0';
-                    hardware_append_text(line, sizeof(line), &used, "MODE ");
-                    format_u64(mode->width, number);
+                    hardware_append_text(line, sizeof(line), &used, "EDID ");
+                    format_u64(timing->width, number);
                     hardware_append_text(line, sizeof(line), &used, number);
                     hardware_append_text(line, sizeof(line), &used, " X ");
-                    format_u64(mode->height, number);
+                    format_u64(timing->height, number);
                     hardware_append_text(line, sizeof(line), &used, number);
-                    if (mode->refresh_hz != 0U) {
-                        hardware_append_text(line, sizeof(line), &used, " @ ");
-                        format_u64(mode->refresh_hz, number);
-                        hardware_append_text(line, sizeof(line), &used, number);
-                        hardware_append_text(line, sizeof(line), &used, " HZ");
-                    }
+                    hardware_append_text(line, sizeof(line), &used, " @ ");
+                    format_u64(timing->refresh_hz, number);
+                    hardware_append_text(line, sizeof(line), &used, number);
+                    hardware_append_text(line, sizeof(line), &used, " HZ");
                     graphics_draw_text(text_x + 12U,
                         content_y + 128U + (uint64_t)shown * 19U,
                         line, 1U, 239U, 247U, 255U);
                     ++shown;
                 }
+                if (shown == 0U)
+                    graphics_draw_text(text_x + 12U, content_y + 128U,
+                        "NO EDID DETAILED TIMINGS REPORTED",
+                        1U, 171U, 191U, 211U);
                 if (display->monitor_name_valid) {
                     graphics_draw_text(text_x, content_y + 173U, "MONITOR:",
                                        1U, 142U, 174U, 199U);

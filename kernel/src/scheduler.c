@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define NEXUS_MAX_THREADS 4U
+#define NEXUS_MAX_THREADS NEXUS_SCHEDULER_MAX_THREADS
 #define NEXUS_THREAD_STACK_SIZE 16384U
 #define RFLAGS_INTERRUPT_ENABLE (1ULL << 9)
 

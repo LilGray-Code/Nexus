@@ -156,6 +156,20 @@ static void test_catalog_has_web_and_native_entries(void) {
         assert(app->url == NULL);
         assert(!nexus_store_copy_url(index, mock_name, sizeof(mock_name)));
     }
+    const char *popular_expected[] = {
+        "M365", "GMAIL", "DRIVE", "YOUTUBE",
+        "ZOOM", "SLACK", "WHATSAPP", "NOTION"
+    };
+    for (size_t i = 0U; i < 8U; ++i) {
+        const struct nexus_store_application *app =
+            nexus_store_application_at(11U + i);
+        assert(app != NULL);
+        assert(strcmp(app->id, popular_expected[i]) == 0);
+        assert(app->delivery == NEXUS_STORE_DELIVERY_WEB_SHORTCUT);
+        assert(app->url != NULL && strncmp(app->url, "https://", 8U) == 0);
+        assert(app->native_status != NULL);
+        assert(strstr(app->native_status, "WEB APP") != NULL);
+    }
     assert(nexus_store_application_at(NEXUS_STORE_MAX_APPS) == NULL);
 }
 

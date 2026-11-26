@@ -132,6 +132,47 @@ static void smp_test_worker(uint32_t cpu_index, uint32_t item_index,
     if (item_index < 64U) results[item_index] = cpu_index + 1U;
 }
 
+#define NEXUS_SMP_ALLOCATOR_TEST_ITEMS 64U
+
+struct smp_allocator_test_context {
+    volatile uint64_t *pages;
+    volatile uint32_t *results;
+};
+
+static volatile uint64_t smp_allocator_test_pages[
+    NEXUS_SMP_ALLOCATOR_TEST_ITEMS];
+static volatile uint32_t smp_allocator_test_results[
+    NEXUS_SMP_ALLOCATOR_TEST_ITEMS];
+
+static void smp_page_allocate_worker(uint32_t cpu_index,
+                                     uint32_t item_index,
+                                     void *argument) {
+    (void)cpu_index;
+    struct smp_allocator_test_context *context =
+        (struct smp_allocator_test_context *)argument;
+    uint64_t page = 0U;
+    if (context == NULL || item_index >= NEXUS_SMP_ALLOCATOR_TEST_ITEMS)
+        return;
+    if (memory_alloc_page(&page)) {
+        context->pages[item_index] = page;
+        context->results[item_index] = 1U;
+    } else {
+        context->results[item_index] = 2U;
+    }
+}
+
+static void smp_page_free_worker(uint32_t cpu_index,
+                                 uint32_t item_index,
+                                 void *argument) {
+    (void)cpu_index;
+    struct smp_allocator_test_context *context =
+        (struct smp_allocator_test_context *)argument;
+    if (context == NULL || item_index >= NEXUS_SMP_ALLOCATOR_TEST_ITEMS)
+        return;
+    context->results[item_index] =
+        memory_free_page(context->pages[item_index]) ? 1U : 2U;
+}
+
 static volatile uint32_t scheduler_preempt_a_started;
 static volatile uint32_t scheduler_preempt_b_started;
 static volatile uint32_t scheduler_preempt_a_observed_b;
@@ -627,6 +668,64 @@ void kmain(void) {
             }
         }
         serial_write("NEXUS SMP PARALLEL WORK TEST READY\r\n");
+
+        struct smp_allocator_test_context allocator_context = {
+            .pages = smp_allocator_test_pages,
+            .results = smp_allocator_test_results
+        };
+        for (size_t i = 0U; i < NEXUS_SMP_ALLOCATOR_TEST_ITEMS; ++i) {
+            smp_allocator_test_pages[i] = 0U;
+            smp_allocator_test_results[i] = 0U;
+        }
+        if (!nexus_smp_parallel_for(NEXUS_SMP_ALLOCATOR_TEST_ITEMS,
+                                   smp_page_allocate_worker,
+                                   &allocator_context)) {
+            serial_write("ERROR: SMP page-allocation stress dispatch failed\r\n");
+            halt_forever();
+        }
+        bool allocator_unique = true;
+        for (size_t i = 0U; i < NEXUS_SMP_ALLOCATOR_TEST_ITEMS; ++i) {
+            if (smp_allocator_test_results[i] != 1U ||
+                smp_allocator_test_pages[i] == 0U ||
+                !memory_page_is_allocated(smp_allocator_test_pages[i])) {
+                allocator_unique = false;
+                break;
+            }
+            for (size_t j = i + 1U;
+                 j < NEXUS_SMP_ALLOCATOR_TEST_ITEMS; ++j) {
+                if (smp_allocator_test_pages[i] ==
+                    smp_allocator_test_pages[j]) {
+                    allocator_unique = false;
+                    break;
+                }
+            }
+            if (!allocator_unique) break;
+        }
+        if (!allocator_unique) {
+            serial_write("ERROR: concurrent CPUs received duplicate/invalid pages\r\n");
+            halt_forever();
+        }
+
+        for (size_t i = 0U; i < NEXUS_SMP_ALLOCATOR_TEST_ITEMS; ++i)
+            smp_allocator_test_results[i] = 0U;
+        if (!nexus_smp_parallel_for(NEXUS_SMP_ALLOCATOR_TEST_ITEMS,
+                                   smp_page_free_worker,
+                                   &allocator_context)) {
+            serial_write("ERROR: SMP page-free stress dispatch failed\r\n");
+            halt_forever();
+        }
+        for (size_t i = 0U; i < NEXUS_SMP_ALLOCATOR_TEST_ITEMS; ++i) {
+            if (smp_allocator_test_results[i] != 1U ||
+                memory_page_is_allocated(smp_allocator_test_pages[i])) {
+                serial_write("ERROR: concurrent page reclamation failed\r\n");
+                halt_forever();
+            }
+        }
+        if (!memory_allocator_validate()) {
+            serial_write("ERROR: allocator invariants failed after SMP stress\r\n");
+            halt_forever();
+        }
+        serial_write("NEXUS SMP-SAFE PHYSICAL PAGE ALLOCATOR VERIFIED\r\n");
     }
 
     scheduler_init();

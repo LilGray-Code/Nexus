@@ -167,7 +167,7 @@ static void test_platform_requirements_and_directx_mapping(void) {
         NEXUS_GAME_PLATFORM_NATIVE_NEXUS,
         NEXUS_GAME_GRAPHICS_DIRECT3D_11) == UINT64_MAX);
 
-    game = (struct nexus_game_descriptor){
+    struct nexus_game_descriptor game = {
         .platform = NEXUS_GAME_PLATFORM_NATIVE_NEXUS,
         .graphics_api = NEXUS_GAME_GRAPHICS_DIRECT3D_11,
         .anticheat = NEXUS_GAME_ANTICHEAT_NONE,

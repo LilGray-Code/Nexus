@@ -79,13 +79,13 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
             const uint64_t data_relative = relative - 67U;
             const uint64_t slot_bank = data_relative / blocks_per_slot;
             const uint64_t block_in_slot = data_relative % blocks_per_slot;
-            /* The host fixture stores the first 64 blocks from each of the
-             * 128 NXFS banks. Test files fit inside that bounded prefix;
-             * their large logical gaps are mapped into compact backing RAM.
+            /* The host fixture stores up to 256 KiB for each logical bank.
+             * This covers the installer payload regression while keeping the
+             * sparse mock image bounded; production slots remain 4 MiB.
              */
             if (slot_bank >= (uint64_t)NEXUS_NXFS_MAX_FILES * 2U ||
-                block_in_slot + count > 64U) return false;
-            compact_lba = 67U + slot_bank * 64U + block_in_slot;
+                block_in_slot + count > 512U) return false;
+            compact_lba = 67U + slot_bank * 512U + block_in_slot;
         } else if (relative + count > 67U) {
             return false;
         }

@@ -360,7 +360,7 @@ static void copy_bounded(char *destination, size_t capacity,
 bool nexus_desktop_notification_push(
     const char *title, const char *message,
     enum nexus_desktop_notification_level level, uint64_t timestamp) {
-    if (title == NULL || message == NULL ||
+    if (title == NULL || message == NULL || title[0] == '\0' ||
         bounded_length(title, NEXUS_DESKTOP_NOTIFICATION_TITLE_MAX) ==
             NEXUS_DESKTOP_NOTIFICATION_TITLE_MAX ||
         bounded_length(message, NEXUS_DESKTOP_NOTIFICATION_TEXT_MAX) ==

@@ -76,6 +76,9 @@ static void test_valid_x64_driver_and_imports(void) {
     assert(info.import_symbol_count == 1U);
     assert(strcmp(info.import_modules[0], "NDIS.sys") == 0);
     assert(info.imports_ndis);
+    assert(info.ndis_v6_miniport);
+    assert(info.ndis_import_count == 1U);
+    assert(strcmp(info.ndis_import_names[0], "NdisMRegisterMiniportDriver") == 0);
     assert(!info.imports_wdf && !info.imports_net_adapter_cx);
 }
 

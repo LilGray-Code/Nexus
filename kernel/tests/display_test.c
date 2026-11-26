@@ -13,6 +13,8 @@ struct fake_backend {
     bool fail_restore;
     uint32_t primary_monitor_id;
     bool fail_primary;
+    enum nexus_display_topology topology;
+    bool fail_topology;
     unsigned test_calls;
     unsigned set_calls;
     unsigned verify_calls;
@@ -57,6 +59,14 @@ static bool fake_primary(void *context, uint32_t monitor_id) {
     struct fake_backend *backend = context;
     if (backend->fail_primary) return false;
     backend->primary_monitor_id = monitor_id;
+    return true;
+}
+
+static bool fake_topology(void *context,
+                          enum nexus_display_topology topology) {
+    struct fake_backend *backend = context;
+    if (backend->fail_topology) return false;
+    backend->topology = topology;
     return true;
 }
 
@@ -215,11 +225,27 @@ int main(void) {
         .set_mode = fake_set,
         .restore_mode = fake_restore,
         .verify_mode = fake_verify,
-        .supports_hdr = fake_hdr,
-        .set_primary_monitor = fake_primary
+        .supports_hdr = fake_hdr
     };
     assert(nexus_display_register_mode_backend(&backend, &fake));
     assert(nexus_display_hdr_output_available());
+    const struct nexus_display_topology_backend topology_backend = {
+        .set_topology = fake_topology,
+        .set_primary_monitor = fake_primary
+    };
+    assert(nexus_display_register_topology_backend(&topology_backend, &fake));
+    assert(nexus_display_topology_available());
+    assert(nexus_display_get_info()->topology ==
+           NEXUS_DISPLAY_TOPOLOGY_EXTENDED);
+    assert(nexus_display_set_topology(NEXUS_DISPLAY_TOPOLOGY_MIRRORED));
+    assert(fake.topology == NEXUS_DISPLAY_TOPOLOGY_MIRRORED);
+    assert(nexus_display_get_info()->topology ==
+           NEXUS_DISPLAY_TOPOLOGY_MIRRORED);
+    fake.fail_topology = true;
+    assert(!nexus_display_set_topology(NEXUS_DISPLAY_TOPOLOGY_EXTENDED));
+    assert(nexus_display_get_info()->topology ==
+           NEXUS_DISPLAY_TOPOLOGY_MIRRORED);
+    fake.fail_topology = false;
     assert(nexus_display_set_primary_monitor(1U));
     assert(fake.primary_monitor_id == 1U);
     assert(nexus_display_monitor_at(0U)->primary == false);

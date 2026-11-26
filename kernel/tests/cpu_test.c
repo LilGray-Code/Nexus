@@ -10,6 +10,18 @@ int main(void) {
     assert(info != NULL);
     assert(info->cpuid_available);
     assert(info->vendor[0] != '\0');
+    struct nexus_cpu_local_topology local_topology;
+    assert(nexus_cpu_get_local_topology(&local_topology));
+    assert(local_topology.vendor == info->vendor_kind);
+    assert(local_topology.logical_processors_per_core >= 1U);
+    if (local_topology.apic_id_valid)
+        assert(local_topology.apic_id <= UINT32_MAX);
+    if (local_topology.core_id_valid || local_topology.node_id_valid) {
+        assert(local_topology.vendor == NEXUS_CPU_VENDOR_AMD ||
+               local_topology.vendor == NEXUS_CPU_VENDOR_HYGON);
+        assert(local_topology.topology_extensions_supported);
+        assert(local_topology.core_id_valid && local_topology.node_id_valid);
+    }
     assert(nexus_cpu_get_vendor() == info->vendor_kind);
     const enum nexus_cpu_core_type local_core_type =
         nexus_cpu_get_local_core_type();

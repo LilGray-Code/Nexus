@@ -31,7 +31,7 @@ $(OUT)/hello.o: src/hello.c include/nexus/syscall.h include/nexus/runtime.h | $(
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(OUT)/HELLO.ELF: $(OUT)/crt0.o $(OUT)/hello.o $(OUT)/libnexus.a linker.ld
-	$(LD) -m elf_x86_64 -static -nostdlib -z max-page-size=0x1000 \
+	$(LD) -m elf_x86_64 -static -nostdlib -z max-page-size=0x100 \
 		-s --gc-sections -T linker.ld -o $@ \
 		$(OUT)/crt0.o $(OUT)/hello.o $(OUT)/libnexus.a
 	$(STRIP) --strip-section-headers $@

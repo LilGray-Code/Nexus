@@ -297,20 +297,51 @@ bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
     if (!range_ok(file_size, section_offset, section_bytes) ||
         section_offset + section_bytes > headers_size) return false;
 
+    bool entry_is_executable = false;
     for (uint32_t i = 0U; i < sections; ++i) {
         const size_t at = section_offset + (size_t)i * PE_SECTION_HEADER_SIZE;
         const uint32_t virtual_size = read32(bytes + at + 8U);
         const uint32_t virtual_address = read32(bytes + at + 12U);
         const uint32_t raw_size = read32(bytes + at + 16U);
         const uint32_t raw_offset = read32(bytes + at + 20U);
+        const uint32_t section_flags = read32(bytes + at + 36U);
         const uint32_t span = virtual_size > raw_size ? virtual_size : raw_size;
-        if ((raw_size != 0U &&
+        if (span == 0U ||
+            (raw_size != 0U &&
              (!range_ok(file_size, raw_offset, raw_size) ||
-              raw_offset < headers_size || raw_offset % file_alignment != 0U)) ||
+              raw_offset < headers_size || raw_offset % file_alignment != 0U ||
+              raw_size % file_alignment != 0U)) ||
             virtual_address >= image_size ||
             (uint64_t)virtual_address + span > image_size ||
             virtual_address % section_alignment != 0U) return false;
+        if (entry >= virtual_address &&
+            (uint64_t)entry < (uint64_t)virtual_address + span &&
+            (section_flags & 0x20000000U) != 0U)
+            entry_is_executable = true;
+
+        for (uint32_t previous = 0U; previous < i; ++previous) {
+            const size_t prior = section_offset +
+                                 (size_t)previous * PE_SECTION_HEADER_SIZE;
+            const uint32_t prior_virtual_size = read32(bytes + prior + 8U);
+            const uint32_t prior_virtual_address = read32(bytes + prior + 12U);
+            const uint32_t prior_raw_size = read32(bytes + prior + 16U);
+            const uint32_t prior_raw_offset = read32(bytes + prior + 20U);
+            const uint32_t prior_span = prior_virtual_size > prior_raw_size
+                ? prior_virtual_size : prior_raw_size;
+            if ((uint64_t)virtual_address <
+                    (uint64_t)prior_virtual_address + prior_span &&
+                (uint64_t)prior_virtual_address <
+                    (uint64_t)virtual_address + span)
+                return false;
+            if (raw_size != 0U && prior_raw_size != 0U &&
+                (uint64_t)raw_offset <
+                    (uint64_t)prior_raw_offset + prior_raw_size &&
+                (uint64_t)prior_raw_offset <
+                    (uint64_t)raw_offset + raw_size)
+                return false;
+        }
     }
+    if (!entry_is_executable) return false;
 
     struct pe_view view = {
         .bytes = bytes, .size = file_size, .headers_size = headers_size,

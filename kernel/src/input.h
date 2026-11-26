@@ -31,6 +31,10 @@ void input_mouse_interrupt(void);
 bool input_pop_event(struct nexus_input_event *event);
 /* Number of input events dropped because the shared ring was full. */
 uint32_t input_dropped_event_count(void);
+/* F7 requests cancellation of the active browser download without consuming
+ * unrelated queued keyboard or mouse events.
+ */
+bool input_take_download_cancel_request(void);
 void input_usb_keyboard_report_state(struct nexus_usb_keyboard_state *state,
                                      const uint8_t report[8]);
 void input_usb_keyboard_report(const uint8_t report[8]);

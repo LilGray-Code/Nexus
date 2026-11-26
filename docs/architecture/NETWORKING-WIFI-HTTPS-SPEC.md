@@ -46,6 +46,12 @@ Do not describe Nexus as Windows/Chrome-equivalent or claim all Wi-Fi hardware w
 - No plaintext retry after TLS failure.
 - Fragmented records, partial reads/writes, EOF, timeout, reset, large responses and repeated connect/close cycles.
 
+## Windows PE driver package inspection
+
+Nexus now has a read-only PE32+ AMD64 inspector for Windows driver binaries. It validates DOS/PE signatures, AMD64 machine type, PE32+ optional headers, DLL characteristics, image and section bounds, alignment, import-directory termination, imported module names, and import thunk termination. The inspector reports whether the image imports NDIS, WDF, NetAdapterCx, the Windows kernel, or HAL. It never maps, relocates, resolves, or executes the image.
+
+This enables a package assistant to distinguish legacy NDIS miniports from WDF- or NetAdapterCx-based packages and to reject malformed binaries before compatibility work begins. It does not yet prove API-level compatibility, verify Authenticode/catalog signatures, load firmware, or make any Windows driver operational. Those require separate signature verification, a PE loader with relocation and import resolution, and a sandboxed NDIS host with DMA, interrupt, IRQL, power and packet-lifecycle support.
+
 ## Windows driver package import (initial compatibility layer)
 
 Nexus includes a bounded Windows INF model-section reader for PCI and USB hardware IDs. It can compare an installed adapter's vendor/device IDs, PCI subsystem IDs and revision against an INF package, then report the matching model description and install section. The reader treats INF text as untrusted metadata: it does not execute INF directives, copy arbitrary files, load PE images, or grant kernel privileges. Long lines and oversized output fields are rejected.

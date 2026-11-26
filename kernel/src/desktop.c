@@ -231,12 +231,14 @@ static bool desktop_virtio_mode_set(
     (void)context;
     const struct nexus_display_monitor *monitor =
         desktop_virtio_primary_monitor();
-    if (monitor == NULL || mode == NULL ||
-        !virtio_gpu_display_set_mode(monitor->id,
-            (uint32_t)mode->width, (uint32_t)mode->height)) {
-        desktop_virtio_recover_firmware_framebuffer();
+    if (monitor == NULL || mode == NULL) return false;
+
+    if (!virtio_gpu_display_set_mode(monitor->id,
+            (uint32_t)mode->width, (uint32_t)mode->height) &&
+        !virtio_gpu_display_verify_mode(monitor->id,
+            (uint32_t)mode->width, (uint32_t)mode->height))
         return false;
-    }
+
     return desktop_virtio_rebuild_mode_surface(mode->width, mode->height);
 }
 
@@ -246,12 +248,26 @@ static bool desktop_virtio_mode_restore(
     if (mode == NULL) return false;
     const struct nexus_display_monitor *monitor =
         desktop_virtio_primary_monitor();
-    if (monitor == NULL || !virtio_gpu_display_set_mode(monitor->id,
+    if (monitor == NULL) return false;
+
+    if (!virtio_gpu_display_set_mode(monitor->id,
+            (uint32_t)mode->width, (uint32_t)mode->height) &&
+        !virtio_gpu_display_verify_mode(monitor->id,
             (uint32_t)mode->width, (uint32_t)mode->height)) {
+        /* The device did not confirm that the last known-good rectangle was
+         * restored. Disable this backend so the caller can use firmware scanout.
+         */
+        virtio_gpu_stop();
         desktop_virtio_recover_firmware_framebuffer();
         return false;
     }
-    return desktop_virtio_rebuild_mode_surface(mode->width, mode->height);
+
+    if (!desktop_virtio_rebuild_mode_surface(mode->width, mode->height)) {
+        virtio_gpu_stop();
+        desktop_virtio_recover_firmware_framebuffer();
+        return false;
+    }
+    return true;
 }
 
 static bool desktop_virtio_mode_verify(

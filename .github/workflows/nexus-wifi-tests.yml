@@ -39,6 +39,8 @@ on:
       - "kernel/src/win_driver_inf.h"
       - "kernel/src/win_driver_pe.c"
       - "kernel/src/win_driver_pe.h"
+      - "kernel/src/win_driver_package.c"
+      - "kernel/src/win_driver_package.h"
       - "kernel/tests/wifi_test.c"
       - "kernel/tests/wifi_80211_test.c"
       - "kernel/tests/wifi_pci_test.c"

@@ -21,6 +21,20 @@ enum nexus_driver_state {
     NEXUS_DRIVER_STATE_REMOVED
 };
 /* native_device is a borrowed bus-specific pointer, valid only inside probe. */
+enum nexus_driver_probe_outcome {
+    NEXUS_DRIVER_PROBE_INVALID = 0,
+    NEXUS_DRIVER_PROBE_NO_MATCH,
+    NEXUS_DRIVER_PROBE_ACTIVE,
+    NEXUS_DRIVER_PROBE_ALL_FAILED,
+    NEXUS_DRIVER_PROBE_CAPACITY_EXHAUSTED
+};
+struct nexus_driver_probe_report {
+    enum nexus_driver_probe_outcome outcome;
+    size_t matching_driver_count;
+    size_t attempted_driver_count;
+    size_t failed_driver_count;
+    char active_driver_name[NEXUS_DRIVER_NAME_MAX];
+};
 struct nexus_driver_device {
     enum nexus_driver_bus bus;
     uint16_t vendor_id, device_id;
@@ -61,8 +75,16 @@ struct nexus_driver_binding_info {
 void nexus_driver_manager_init(void);
 bool nexus_driver_manager_register(
     const struct nexus_driver_descriptor *descriptor);
+/* Diagnostic probe API: distinguishes missing drivers from failed probes. */
+enum nexus_driver_probe_outcome nexus_driver_manager_probe_device_report(
+    const struct nexus_driver_device *device,
+    struct nexus_driver_probe_report *report);
+/* Compatibility wrapper; true only when a driver becomes active. */
 bool nexus_driver_manager_probe_device(
     const struct nexus_driver_device *device);
+enum nexus_driver_probe_outcome nexus_driver_manager_probe_pci_device_report(
+    const struct nexus_pci_device *device,
+    struct nexus_driver_probe_report *report);
 bool nexus_driver_manager_probe_pci_device(
     const struct nexus_pci_device *device);
 /* Unbind a removed device and invoke the active driver's remove callback. */

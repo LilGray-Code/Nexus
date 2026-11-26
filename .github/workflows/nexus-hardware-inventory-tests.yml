@@ -10,6 +10,8 @@ on:
       - "kernel/src/pci.*"
       - "kernel/src/wifi_pci.*"
       - "kernel/src/win_driver_inf.*"
+      - "kernel/src/win_driver_pe.*"
+      - "kernel/src/win_driver_package.*"
       - "kernel/tests/cpu_test.c"
       - "kernel/tests/gpu_test.c"
       - "kernel/tests/wifi_pci_test.c"
@@ -44,6 +46,7 @@ jobs:
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
             -Ikernel/src kernel/src/wifi_pci.c kernel/src/win_driver_inf.c \
+            kernel/src/win_driver_pe.c kernel/src/win_driver_package.c \
             kernel/tests/wifi_pci_test.c \
             -o /tmp/nexus-wifi-pci-test
           /tmp/nexus-wifi-pci-test

@@ -111,12 +111,36 @@ bool nexus_driver_manager_register(
     drivers[drivers_used++] = candidate;
     return true;
 }
-bool nexus_driver_manager_probe_device(
-    const struct nexus_driver_device *device) {
+enum nexus_driver_probe_outcome nexus_driver_manager_probe_device_report(
+    const struct nexus_driver_device *device,
+    struct nexus_driver_probe_report *report) {
+    struct nexus_driver_probe_report result = {
+        .outcome = NEXUS_DRIVER_PROBE_INVALID,
+        .matching_driver_count = 0U,
+        .attempted_driver_count = 0U,
+        .failed_driver_count = 0U,
+        .active_driver_name = {0}
+    };
+
     if (device == NULL || device->bus < NEXUS_DRIVER_BUS_PCI ||
-        device->bus > NEXUS_DRIVER_BUS_USB) return false;
+        device->bus > NEXUS_DRIVER_BUS_USB) {
+        if (report != NULL) *report = result;
+        return result.outcome;
+    }
+
+    for (size_t i = 0U; i < drivers_used; ++i) {
+        if (matches(&drivers[i].match, device))
+            ++result.matching_driver_count;
+    }
+    if (result.matching_driver_count == 0U) {
+        result.outcome = NEXUS_DRIVER_PROBE_NO_MATCH;
+        if (report != NULL) *report = result;
+        return result.outcome;
+    }
+
     bool attempted[NEXUS_DRIVER_MAX_DRIVERS] = {false};
-    for (size_t attempt = 0U; attempt < drivers_used; ++attempt) {
+    for (size_t attempt = 0U;
+         attempt < result.matching_driver_count; ++attempt) {
         size_t best = drivers_used;
         for (size_t i = 0U; i < drivers_used; ++i) {
             if (attempted[i] || !matches(&drivers[i].match, device)) continue;
@@ -125,18 +149,53 @@ bool nexus_driver_manager_probe_device(
         }
         if (best == drivers_used) break;
         attempted[best] = true;
-        if (bindings_used >= NEXUS_DRIVER_MAX_BINDINGS) return false;
+
+        if (bindings_used >= NEXUS_DRIVER_MAX_BINDINGS) {
+            result.outcome = NEXUS_DRIVER_PROBE_CAPACITY_EXHAUSTED;
+            if (report != NULL) *report = result;
+            return result.outcome;
+        }
+
+        ++result.attempted_driver_count;
         const bool active = drivers[best].probe(device, drivers[best].context);
         if (!append_binding(&drivers[best], device,
                             active ? NEXUS_DRIVER_STATE_ACTIVE
-                                   : NEXUS_DRIVER_STATE_FAILED)) return false;
-        if (active) return true;
+                                   : NEXUS_DRIVER_STATE_FAILED)) {
+            result.outcome = NEXUS_DRIVER_PROBE_CAPACITY_EXHAUSTED;
+            if (report != NULL) *report = result;
+            return result.outcome;
+        }
+
+        if (active) {
+            result.outcome = NEXUS_DRIVER_PROBE_ACTIVE;
+            for (size_t i = 0U; i < NEXUS_DRIVER_NAME_MAX; ++i)
+                result.active_driver_name[i] = drivers[best].name[i];
+            if (report != NULL) *report = result;
+            return result.outcome;
+        }
+        ++result.failed_driver_count;
     }
-    return false;
+
+    result.outcome = NEXUS_DRIVER_PROBE_ALL_FAILED;
+    if (report != NULL) *report = result;
+    return result.outcome;
 }
-bool nexus_driver_manager_probe_pci_device(
-    const struct nexus_pci_device *device) {
-    if (device == NULL) return false;
+
+bool nexus_driver_manager_probe_device(
+    const struct nexus_driver_device *device) {
+    return nexus_driver_manager_probe_device_report(device, NULL) ==
+           NEXUS_DRIVER_PROBE_ACTIVE;
+}
+enum nexus_driver_probe_outcome nexus_driver_manager_probe_pci_device_report(
+    const struct nexus_pci_device *device,
+    struct nexus_driver_probe_report *report) {
+    if (device == NULL) {
+        struct nexus_driver_probe_report invalid = {
+            .outcome = NEXUS_DRIVER_PROBE_INVALID
+        };
+        if (report != NULL) *report = invalid;
+        return NEXUS_DRIVER_PROBE_INVALID;
+    }
     const struct nexus_driver_device generic = {
         .bus = NEXUS_DRIVER_BUS_PCI,
         .vendor_id = device->vendor_id, .device_id = device->device_id,
@@ -147,7 +206,13 @@ bool nexus_driver_manager_probe_pci_device(
         .segment_group = device->segment_group,
         .native_device = device
     };
-    return nexus_driver_manager_probe_device(&generic);
+    return nexus_driver_manager_probe_device_report(&generic, report);
+}
+
+bool nexus_driver_manager_probe_pci_device(
+    const struct nexus_pci_device *device) {
+    return nexus_driver_manager_probe_pci_device_report(device, NULL) ==
+           NEXUS_DRIVER_PROBE_ACTIVE;
 }
 
 bool nexus_driver_manager_remove_device(

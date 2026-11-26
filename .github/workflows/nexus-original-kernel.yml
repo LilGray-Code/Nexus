@@ -179,6 +179,14 @@ jobs:
             kernel/tests/acpi_mcfg_test.c -o /tmp/nexus-acpi-mcfg-test
           /tmp/nexus-acpi-mcfg-test
 
+      - name: Test driver registry matching, fallback and diagnostic outcomes
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/driver_manager.c \
+            kernel/tests/driver_manager_test.c \
+            -o /tmp/nexus-driver-manager-test
+          /tmp/nexus-driver-manager-test
+
       - name: Test PCI standard and extended capability list parsing
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

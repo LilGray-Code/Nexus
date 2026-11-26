@@ -231,8 +231,21 @@ bool storage_probe(void) {
              device->programming_interface == 0x01) ||
             (device->subclass == 0x08 &&
              device->programming_interface == 0x02)) {
-            if (!nexus_driver_manager_probe_pci_device(device)) {
-                serial_write("STORAGE: no matching driver bound at ");
+            struct nexus_driver_probe_report report;
+            const enum nexus_driver_probe_outcome outcome =
+                nexus_driver_manager_probe_pci_device_report(device, &report);
+            if (outcome != NEXUS_DRIVER_PROBE_ACTIVE) {
+                if (outcome == NEXUS_DRIVER_PROBE_NO_MATCH) {
+                    serial_write("STORAGE: no compatible driver is registered");
+                } else if (outcome == NEXUS_DRIVER_PROBE_ALL_FAILED) {
+                    serial_write("STORAGE: matching driver probes failed count=");
+                    serial_write_hex(report.failed_driver_count);
+                } else if (outcome == NEXUS_DRIVER_PROBE_CAPACITY_EXHAUSTED) {
+                    serial_write("STORAGE: driver registry/binding capacity exhausted");
+                } else {
+                    serial_write("STORAGE: invalid device or driver probe request");
+                }
+                serial_write(" at ");
                 serial_write_hex(device->bus);
                 serial_write(":");
                 serial_write_hex(device->slot);

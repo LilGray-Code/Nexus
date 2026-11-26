@@ -88,6 +88,62 @@ static const struct nexus_store_application applications[NEXUS_STORE_MAX_APPS] =
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - KEYBOARD / USB HID GAMEPAD",
         "ARCADE.ELF"
+    },
+    {
+        "M365", "Microsoft 365", "Microsoft", "PRODUCTIVITY",
+        "Open Word, Excel, PowerPoint and Microsoft 365 online.",
+        "https://www.office.com/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - REQUIRES MODERN JAVASCRIPT; NOT A NATIVE INSTALL", NULL
+    },
+    {
+        "GMAIL", "Gmail", "Google", "COMMUNICATION",
+        "Open Google's email web application.",
+        "https://mail.google.com/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL
+    },
+    {
+        "DRIVE", "Google Drive", "Google", "PRODUCTIVITY",
+        "Open cloud file storage and document sharing.",
+        "https://drive.google.com/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - REQUIRES JAVASCRIPT AND GOOGLE SIGN-IN", NULL
+    },
+    {
+        "YOUTUBE", "YouTube", "Google", "VIDEO",
+        "Open YouTube videos and creator channels.",
+        "https://www.youtube.com/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - VIDEO PLAYBACK SUPPORT IS LIMITED", NULL
+    },
+    {
+        "ZOOM", "Zoom", "Zoom Communications", "COMMUNICATION",
+        "Open Zoom's web meeting client.",
+        "https://app.zoom.us/wc/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - CAMERA, MICROPHONE AND JAVASCRIPT SUPPORT REQUIRED", NULL
+    },
+    {
+        "SLACK", "Slack", "Salesforce", "COMMUNICATION",
+        "Open team messaging and collaboration.",
+        "https://app.slack.com/client/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL
+    },
+    {
+        "WHATSAPP", "WhatsApp Web", "Meta", "COMMUNICATION",
+        "Open WhatsApp Web and link a supported phone.",
+        "https://web.whatsapp.com/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - REQUIRES MODERN JAVASCRIPT AND DEVICE LINKING", NULL
+    },
+    {
+        "NOTION", "Notion", "Notion Labs", "PRODUCTIVITY",
+        "Open Notion notes, documents and workspace pages.",
+        "https://www.notion.so/",
+        NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
+        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL
     }
 };
 

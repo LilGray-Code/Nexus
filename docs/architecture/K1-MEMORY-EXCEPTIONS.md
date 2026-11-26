@@ -21,10 +21,13 @@ SMP allocation.
 The allocator exposes a diagnostic snapshot containing total/free/used bytes,
 region count, reclaimed-page count, largest remaining bump-allocation extent,
 allocation/free request and failure counters, and cumulative page allocation
-and reclamation counts. Boot diagnostics print the region count, largest
-unallocated extent, reclaimed-page count, and allocation failures. The largest
-extent deliberately reports only unallocated contiguous tails; it does not
-pretend that individually reclaimed pages can satisfy a contiguous DMA request.
+and reclamation counts. It also accounts RAM by hardware addressability zones:
+legacy DMA below 16 MiB, DMA32 below 4 GiB, and normal memory above 4 GiB.
+Per-zone free bytes include both untouched region tails and reclaimed pages.
+Boot diagnostics print each zone's total/free bytes so device bring-up can
+report whether suitable DMA memory is available. The largest extent
+deliberately reports only unallocated contiguous tails; it does not pretend
+that individually reclaimed pages can satisfy a contiguous DMA request.
 
 ## CPU exceptions
 

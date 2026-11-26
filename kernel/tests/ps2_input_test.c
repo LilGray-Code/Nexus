@@ -110,7 +110,24 @@ static void test_shared_input_queue_burst_and_recovery(void) {
     assert(input_dropped_event_count() == 1U);
 }
 
+
+static void test_download_cancel_hotkey_is_non_destructive(void) {
+    struct nexus_input_event event;
+    input_init();
+    input_test_keyboard_scancode(0x41U); /* F7 make */
+    assert(input_take_download_cancel_request());
+    assert(!input_take_download_cancel_request());
+    assert(input_pop_event(&event));
+    assert(event.type == NEXUS_INPUT_KEYBOARD && event.scancode == 0x41U);
+
+    input_test_keyboard_scancode(0xC1U); /* F7 break */
+    assert(!input_take_download_cancel_request());
+    assert(input_pop_event(&event));
+    assert(event.scancode == 0xC1U);
+}
+
 int main(void) {
+    test_download_cancel_hotkey_is_non_destructive();
     test_extended_keys_and_right_modifiers();
     test_print_screen_fake_shift_and_pause_sequence();
     test_intellimouse_wheel_and_explorer_buttons();

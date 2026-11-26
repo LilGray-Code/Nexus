@@ -210,7 +210,9 @@ bool nexus_gaming_assess(
         game->platform, game->graphics_api);
     const uint64_t anti_cheat =
         anticheat_requirements(game->anticheat, game->platform);
-    if (required == UINT64_MAX || anti_cheat == UINT64_MAX) {
+    if (required == UINT64_MAX || anti_cheat == UINT64_MAX ||
+        (anti_cheat != 0U &&
+         (anti_cheat & ~system->available) != 0U)) {
         assessment->status = NEXUS_GAME_ASSESS_BLOCKED_ANTICHEAT;
         return true;
     }

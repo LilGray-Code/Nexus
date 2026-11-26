@@ -77,6 +77,7 @@ static bool usermode_output_truncated;
 static uint32_t active_app_permissions;
 static bool active_app_execution;
 static struct nexus_usermode_fault_info active_app_fault;
+volatile bool usermode_exception_recovered;
 
 static bool usermode_permission_allowed(uint32_t permission) {
     return (active_app_permissions & permission) == permission;
@@ -318,6 +319,7 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
     active_app_fault = (struct nexus_usermode_fault_info){0};
     active_app_execution = false;
     active_app_permissions = 0U;
+    usermode_exception_recovered = false;
     if (root_physical == 0U || entry_point == 0U ||
         stack_pointer == 0U || kernel_stack_top == 0U ||
         (kernel_stack_top & 0x0FU) != 0U || exit_status == NULL ||

@@ -5259,6 +5259,9 @@ static void terminal_execute(void) {
                 case NEXUS_GAME_LIBRARY_ERROR_UNTESTED:
                     message = "game is not verified";
                     break;
+                case NEXUS_GAME_LIBRARY_ERROR_RETEST:
+                    message = "GPU/driver changed; game must be retested";
+                    break;
                 case NEXUS_GAME_LIBRARY_ERROR_STORAGE:
                     message = "game library storage is unavailable";
                     break;

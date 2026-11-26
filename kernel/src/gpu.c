@@ -7,6 +7,8 @@ static struct nexus_gpu_info adapters[NEXUS_GPU_MAX_ADAPTERS];
 static uint32_t adapter_count;
 static bool firmware_framebuffer_active;
 static bool virtio_display_active;
+static bool virtio_3d_submission_ready;
+static uint32_t virtio_3d_capset_id;
 
 static enum nexus_gpu_vendor identify_vendor(uint16_t vendor_id) {
     switch (vendor_id) {
@@ -145,6 +147,8 @@ bool gpu_init(void) {
     adapter_count = 0U;
     firmware_framebuffer_active = false;
     virtio_display_active = false;
+    virtio_3d_submission_ready = false;
+    virtio_3d_capset_id = 0U;
     for (uint32_t i = 0U; i < NEXUS_GPU_MAX_ADAPTERS; ++i)
         adapters[i] = (struct nexus_gpu_info){0};
 
@@ -181,6 +185,8 @@ bool gpu_init(void) {
         info->name = vendor_name(info->vendor);
         info->hardware_2d_acceleration = false;
         info->hardware_3d_acceleration = false;
+        info->virgl_command_submission_ready = false;
+        info->virgl_capset_id = 0U;
         info->firmware_framebuffer_active = false;
     }
 
@@ -251,6 +257,8 @@ const char *gpu_primary_name(void) {
 }
 
 const char *gpu_render_path_name(void) {
+    if (virtio_display_active && virtio_3d_submission_ready)
+        return "GPU: VIRTIO HOST SCANOUT / CPU RASTER / VIRGL QUEUE READY";
     if (virtio_display_active)
         return "GPU: VIRTIO HOST SCANOUT / CPU RASTER";
     return firmware_framebuffer_active
@@ -273,4 +281,14 @@ void gpu_set_firmware_framebuffer_active(bool active) {
 
 void gpu_set_virtio_display_active(bool active) {
     virtio_display_active = active;
+}
+
+void gpu_set_virtio_3d_submission_ready(bool ready, uint32_t capset_id) {
+    virtio_3d_submission_ready = ready;
+    virtio_3d_capset_id = ready ? capset_id : 0U;
+    for (uint32_t i = 0U; i < adapter_count; ++i) {
+        if (adapters[i].vendor != NEXUS_GPU_VENDOR_VIRTIO) continue;
+        adapters[i].virgl_command_submission_ready = ready;
+        adapters[i].virgl_capset_id = virtio_3d_capset_id;
+    }
 }

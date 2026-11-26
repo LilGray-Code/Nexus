@@ -28,6 +28,11 @@ static uint32_t next_pid = 1U;
 static uint8_t process_image[PROCESS_MAX_IMAGE_SIZE]
     __attribute__((aligned(16)));
 
+static void wipe_process_image(void) {
+    volatile uint8_t *bytes = process_image;
+    for (size_t i = 0U; i < PROCESS_MAX_IMAGE_SIZE; ++i) bytes[i] = 0U;
+}
+
 static void clear_slot(struct nexus_process *process) {
     if (process == NULL) return;
     process->pid = 0U;
@@ -225,6 +230,7 @@ static bool process_execute_file_internal(
         if (!vfs_read(&file, process_image + total_read, amount,
                       &bytes_read) || bytes_read == 0U) {
             vfs_close(&file);
+            wipe_process_image();
             if (error != NULL) *error = NEXUS_PROCESS_ERROR_IO;
             return false;
         }
@@ -233,12 +239,17 @@ static bool process_execute_file_internal(
     vfs_close(&file);
 
     if (!has_available_slot()) {
+        wipe_process_image();
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_TABLE_FULL;
         return false;
     }
 
     uint32_t pid = 0U;
-    if (!process_spawn_elf(name, process_image, total_read, &pid)) {
+    const bool spawned = process_spawn_elf(name, process_image, total_read, &pid);
+    /* The ELF loader has copied the image into its address space; erase the
+     * shared staging buffer before running untrusted user code. */
+    wipe_process_image();
+    if (!spawned) {
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_BAD_ELF;
         return false;
     }

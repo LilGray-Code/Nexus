@@ -36,8 +36,13 @@
 #define NET_DNS_MAX_RETRIES 2U
 #define ETHERTYPE_IPV4 0x0800U
 #define ETHERTYPE_ARP 0x0806U
+#define IP_PROTOCOL_ICMP 1U
 #define IP_PROTOCOL_UDP 17U
 #define IP_PROTOCOL_TCP 6U
+#define NET_ICMP_HEADER 8U
+#define NET_ICMP_PAYLOAD 8U
+#define ICMP_ECHO_REPLY 0U
+#define ICMP_ECHO_REQUEST 8U
 #define NET_TCP_HEADER 20U
 #define NET_TCP_MAX_PAYLOAD 1200U
 #define NET_TCP_RX_CAPACITY 4096U
@@ -148,7 +153,22 @@ struct net_tcp_connection {
 static struct net_tcp_connection tcp_connection;
 static uint16_t tcp_next_port = 49152U;
 
+struct net_icmp_ping {
+    bool active;
+    bool done;
+    bool success;
+    uint16_t identifier;
+    uint16_t sequence;
+    uint8_t remote_ipv4[4];
+    uint8_t payload[NET_ICMP_PAYLOAD];
+    uint8_t reply_ttl;
+};
+static struct net_icmp_ping icmp_ping;
+static uint16_t icmp_next_identifier = 0x4E58U;
+static uint16_t icmp_next_sequence = 1U;
+
 static bool ipv4_next_hop(const uint8_t destination[4], uint8_t next_hop[4]);
+static bool ipv4_is_limited_broadcast(const uint8_t address[4]);
 static void tcp_retry_pending_syn(void);
 static void dns_cache_clear(void);
 static bool dhcp_has_valid_address(void);
@@ -454,6 +474,26 @@ static void receive_tcp(const uint8_t *segment, size_t length,
                         const uint8_t source_ip[4],
                         const uint8_t destination_ip[4]);
 
+static void receive_icmp(const uint8_t *message, size_t length,
+                         const uint8_t source_ip[4],
+                         const uint8_t destination_ip[4], uint8_t ttl) {
+    if (message == NULL || source_ip == NULL || destination_ip == NULL ||
+        length != NET_ICMP_HEADER + NET_ICMP_PAYLOAD ||
+        checksum(message, length) != 0U || message[0] != ICMP_ECHO_REPLY ||
+        message[1] != 0U || !icmp_ping.active ||
+        !equal_bytes(source_ip, icmp_ping.remote_ipv4, 4U) ||
+        !equal_bytes(destination_ip, network.ipv4, 4U) ||
+        read_be16(message + 4U) != icmp_ping.identifier ||
+        read_be16(message + 6U) != icmp_ping.sequence ||
+        !equal_bytes(message + NET_ICMP_HEADER, icmp_ping.payload,
+                     NET_ICMP_PAYLOAD)) {
+        return;
+    }
+    icmp_ping.reply_ttl = ttl;
+    icmp_ping.success = true;
+    icmp_ping.done = true;
+}
+
 static void receive_ipv4(const uint8_t *ip, size_t length) {
     if (length < NET_IPV4_HEADER || (ip[0] >> 4) != 4U) return;
     const size_t header_length = (size_t)(ip[0] & 0x0FU) * 4U;
@@ -487,6 +527,9 @@ static void receive_ipv4(const uint8_t *ip, size_t length) {
         }
     } else if (ip[9] == IP_PROTOCOL_TCP) {
         receive_tcp(transport, transport_length, ip + 12U, ip + 16U);
+    } else if (ip[9] == IP_PROTOCOL_ICMP) {
+        receive_icmp(transport, transport_length, ip + 12U, ip + 16U,
+                     ip[8]);
     }
 }
 
@@ -755,6 +798,9 @@ static void dhcp_clear_configuration(void) {
         network.arp[i].valid = false;
     network.arp_replace = 0U;
     tcp_connection = (struct net_tcp_connection){0};
+    icmp_ping.active = false;
+    icmp_ping.done = true;
+    icmp_ping.success = false;
     dns_query_active = false;
     dns_query_done = true;
     dns_query_success = false;
@@ -1422,6 +1468,9 @@ bool net_init(void) {
     dns_query_name[0] = '\0';
     dns_next_id = 0x4E58U;
     dns_cache_clear();
+    icmp_ping = (struct net_icmp_ping){0};
+    icmp_next_identifier = 0x4E58U;
+    icmp_next_sequence = 1U;
     struct nexus_netdev_info device_info;
     if (!netdev_get_info(&device_info)) return false;
     copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
@@ -1590,6 +1639,83 @@ static bool ipv4_next_hop(const uint8_t destination[4], uint8_t next_hop[4]) {
     if (ipv4_zero(gateway_ipv4)) return false;
     copy_bytes(next_hop, gateway_ipv4, 4U);
     return true;
+}
+
+static bool send_icmp_echo_request(const uint8_t destination_ipv4[4],
+                                   const uint8_t destination_mac[6]) {
+    uint8_t packet[NET_IPV4_HEADER + NET_ICMP_HEADER + NET_ICMP_PAYLOAD] = {0};
+    const size_t icmp_length = NET_ICMP_HEADER + NET_ICMP_PAYLOAD;
+    const size_t ip_length = NET_IPV4_HEADER + icmp_length;
+    packet[0] = 0x45U;
+    write_be16(packet + 2U, (uint16_t)ip_length);
+    write_be16(packet + 4U, network.ipv4_id++);
+    write_be16(packet + 6U, 0U);
+    packet[8] = 64U;
+    packet[9] = IP_PROTOCOL_ICMP;
+    copy_bytes(packet + 12U, network.ipv4, 4U);
+    copy_bytes(packet + 16U, destination_ipv4, 4U);
+    write_be16(packet + 10U, checksum(packet, NET_IPV4_HEADER));
+
+    uint8_t *icmp = packet + NET_IPV4_HEADER;
+    icmp[0] = ICMP_ECHO_REQUEST;
+    write_be16(icmp + 4U, icmp_ping.identifier);
+    write_be16(icmp + 6U, icmp_ping.sequence);
+    copy_bytes(icmp + NET_ICMP_HEADER, icmp_ping.payload,
+               NET_ICMP_PAYLOAD);
+    write_be16(icmp + 2U, checksum(icmp, icmp_length));
+    return send_ethernet(destination_mac, ETHERTYPE_IPV4, packet, ip_length);
+}
+
+bool net_ping(const uint8_t destination_ipv4[4], uint64_t timeout_ticks,
+              uint8_t *reply_ttl) {
+    if (!dhcp_has_valid_address() || !network.link_up ||
+        destination_ipv4 == NULL || ipv4_zero(destination_ipv4) ||
+        ipv4_is_limited_broadcast(destination_ipv4) ||
+        (destination_ipv4[0] >= 224U && destination_ipv4[0] <= 239U) ||
+        timeout_ticks == 0U || icmp_ping.active) return false;
+
+    uint8_t next_hop[4];
+    uint8_t destination_mac[6];
+    if (!ipv4_next_hop(destination_ipv4, next_hop)) return false;
+    const uint64_t start_tick = timer_ticks();
+    uint64_t last_arp_tick = 0U;
+    bool arp_probe_sent = false;
+    while (!arp_lookup(next_hop, destination_mac)) {
+        const uint64_t now = timer_ticks();
+        if (now - start_tick >= timeout_ticks) return false;
+        if (!arp_probe_sent || now - last_arp_tick >= NET_ARP_RETRY_TICKS) {
+            (void)send_arp_request(next_hop);
+            last_arp_tick = now;
+            arp_probe_sent = true;
+        }
+        net_poll();
+        __asm__ volatile ("pause");
+    }
+
+    icmp_ping = (struct net_icmp_ping){0};
+    icmp_ping.active = true;
+    copy_bytes(icmp_ping.remote_ipv4, destination_ipv4, 4U);
+    icmp_ping.identifier = icmp_next_identifier++;
+    if (icmp_next_identifier == 0U) icmp_next_identifier = 1U;
+    icmp_ping.sequence = icmp_next_sequence++;
+    if (icmp_next_sequence == 0U) icmp_next_sequence = 1U;
+    write_be32(icmp_ping.payload, (uint32_t)start_tick);
+    write_be32(icmp_ping.payload + 4U,
+               ((uint32_t)icmp_ping.identifier << 16) ^
+               (uint32_t)icmp_ping.sequence ^ 0x4E585553U);
+
+    if (!send_icmp_echo_request(destination_ipv4, destination_mac)) {
+        icmp_ping.active = false;
+        return false;
+    }
+    while (!icmp_ping.done && timer_ticks() - start_tick < timeout_ticks) {
+        net_poll();
+        __asm__ volatile ("pause");
+    }
+    const bool success = icmp_ping.done && icmp_ping.success;
+    if (success && reply_ttl != NULL) *reply_ttl = icmp_ping.reply_ttl;
+    icmp_ping.active = false;
+    return success;
 }
 
 static bool ipv4_is_limited_broadcast(const uint8_t address[4]) {

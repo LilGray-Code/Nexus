@@ -35,6 +35,8 @@ struct nexus_http_response {
     char content_type[NEXUS_HTTP_CONTENT_TYPE_MAX + 1U];
     bool has_content_disposition;
     char content_disposition[NEXUS_HTTP_DISPOSITION_MAX + 1U];
+    bool has_sha256_digest;
+    uint8_t sha256_digest[32];
 };
 
 /*

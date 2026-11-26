@@ -695,6 +695,10 @@ void kmain(void) {
         uint32_t performance_cores = 0U;
         uint32_t efficiency_cores = 0U;
         uint32_t unclassified_cores = 0U;
+        uint32_t intel_cpus = 0U;
+        uint32_t amd_cpus = 0U;
+        uint32_t other_vendor_cpus = 0U;
+        uint32_t amd_topology_records = 0U;
         uint32_t inventory_online_count = 0U;
         for (uint32_t cpu_slot = 0U;
              cpu_slot < NEXUS_SMP_MAX_CPUS; ++cpu_slot) {
@@ -702,6 +706,19 @@ void kmain(void) {
             if (!nexus_smp_cpu_info_at(cpu_slot, &cpu_topology)) break;
             if (!cpu_topology.online) continue;
             ++inventory_online_count;
+            if (cpu_topology.vendor == NEXUS_CPU_VENDOR_INTEL)
+                ++intel_cpus;
+            else if (cpu_topology.vendor == NEXUS_CPU_VENDOR_AMD ||
+                     cpu_topology.vendor == NEXUS_CPU_VENDOR_HYGON)
+                ++amd_cpus;
+            else
+                ++other_vendor_cpus;
+            if ((cpu_topology.vendor == NEXUS_CPU_VENDOR_AMD ||
+                 cpu_topology.vendor == NEXUS_CPU_VENDOR_HYGON) &&
+                cpu_topology.topology_extensions_supported &&
+                cpu_topology.apic_id_valid &&
+                cpu_topology.core_id_valid && cpu_topology.node_id_valid)
+                ++amd_topology_records;
             if (cpu_topology.core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE)
                 ++performance_cores;
             else if (cpu_topology.core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY)
@@ -713,6 +730,15 @@ void kmain(void) {
             serial_write("ERROR: SMP online count disagrees with CPU topology inventory\r\n");
             halt_forever();
         }
+        serial_write("SMP CPU vendor inventory Intel/AMD/other=");
+        serial_write_hex(intel_cpus);
+        serial_write("/");
+        serial_write_hex(amd_cpus);
+        serial_write("/");
+        serial_write_hex(other_vendor_cpus);
+        serial_write(" AMD extended topology records=");
+        serial_write_hex(amd_topology_records);
+        serial_write("\r\n");
         serial_write("SMP core inventory P/E/other=");
         serial_write_hex(performance_cores);
         serial_write("/");

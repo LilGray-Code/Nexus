@@ -291,7 +291,9 @@ static void test_bounded_heap_allocator(void) {
     assert(nexus_malloc(0U) == NULL);
     assert(nexus_calloc(SIZE_MAX, 2U) == NULL);
     assert(nexus_malloc(128U * 1024U) == NULL);
-    assert(nexus_realloc(NULL, 24U) != NULL);
+    void *from_null = nexus_realloc(NULL, 24U);
+    assert(from_null != NULL);
+    nexus_free(from_null);
     assert(nexus_realloc(NULL, 0U) == NULL);
     assert(nexus_realloc((void *)(uintptr_t)1U, 32U) == NULL);
     nexus_free((void *)(uintptr_t)1U);

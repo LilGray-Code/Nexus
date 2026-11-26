@@ -40,6 +40,23 @@ struct nexus_gpu_info {
     const char *name;
 };
 
+/*
+ * Runtime capability snapshot. A display scanout path is deliberately
+ * separate from GPU rendering acceleration: VirtIO 2D scanout currently
+ * receives pixels rasterized by the CPU.
+ */
+struct nexus_gpu_runtime_capabilities {
+    bool firmware_scanout_active;
+    bool virtio_scanout_active;
+    bool hardware_2d_rendering;
+    bool hardware_3d_rendering;
+    bool opengl_available;
+    bool vulkan_available;
+    bool video_decode_available;
+    bool video_encode_available;
+    uint32_t virtio_scanout_count;
+};
+
 /* Read-only PCI discovery. This never writes a GPU BAR or command register. */
 bool gpu_init(void);
 uint32_t gpu_adapter_count(void);
@@ -50,5 +67,8 @@ const char *gpu_render_path_name(void);
 bool gpu_hardware_acceleration_available(void);
 void gpu_set_firmware_framebuffer_active(bool active);
 void gpu_set_virtio_display_active(bool active);
+void gpu_set_virtio_display_outputs(uint32_t count);
+void gpu_get_runtime_capabilities(
+    struct nexus_gpu_runtime_capabilities *capabilities);
 
 #endif

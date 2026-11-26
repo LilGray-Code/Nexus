@@ -752,7 +752,8 @@ bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
 bool nxfs_write_file_begin(const char *name, uint32_t expected_length) {
     char normalized[NEXUS_NXFS_NAME_MAX];
     if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
-        expected_length > nxfs_max_file_bytes ||
+        (expected_length != NEXUS_NXFS_STREAM_LENGTH_UNKNOWN &&
+         expected_length > nxfs_max_file_bytes) ||
         !normalize_name(name, normalized) ||
         !parent_directory_exists(normalized)) return false;
 
@@ -786,8 +787,12 @@ bool nxfs_write_file_begin(const char *name, uint32_t expected_length) {
 bool nxfs_write_file_append(const void *data, size_t length) {
     if (!nxfs_stream.active || !nxfs_busy ||
         (length != 0U && data == NULL) ||
-        length > (size_t)(nxfs_stream.expected - nxfs_stream.received))
-        return false;
+        nxfs_stream.received > nxfs_max_file_bytes) return false;
+    const uint32_t remaining = nxfs_stream.expected ==
+        NEXUS_NXFS_STREAM_LENGTH_UNKNOWN
+            ? nxfs_max_file_bytes - nxfs_stream.received
+            : nxfs_stream.expected - nxfs_stream.received;
+    if (length > (size_t)remaining) return false;
     const uint8_t *input = (const uint8_t *)data;
     size_t consumed = 0U;
     while (consumed < length) {
@@ -819,7 +824,8 @@ bool nxfs_write_file_append(const void *data, size_t length) {
 
 bool nxfs_write_file_finish(void) {
     if (!nxfs_stream.active || !nxfs_busy ||
-        nxfs_stream.received != nxfs_stream.expected) return false;
+        (nxfs_stream.expected != NEXUS_NXFS_STREAM_LENGTH_UNKNOWN &&
+         nxfs_stream.received != nxfs_stream.expected)) return false;
     if (nxfs_stream.buffered != 0U) {
         if (nxfs_stream.next_block >= nxfs_blocks_per_slot ||
             !nxfs_write_block(
@@ -837,7 +843,7 @@ bool nxfs_write_file_finish(void) {
     struct nexus_nxfs_entry entry = {0};
     entry.used = true;
     entry.bank = nxfs_stream.bank;
-    entry.size = nxfs_stream.expected;
+    entry.size = nxfs_stream.received;
     entry.data_crc = ~nxfs_stream.crc;
     entry.generation = nxfs_entries[nxfs_stream.slot].generation + 1U;
     for (size_t i = 0U; i < NEXUS_NXFS_NAME_MAX; ++i)

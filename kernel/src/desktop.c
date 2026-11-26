@@ -38,6 +38,7 @@
 #include "text_buffer.h"
 #include "partition_plan.h"
 #include "installer_runtime.h"
+#include "storage.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -108,6 +109,8 @@ static uint64_t desktop_virtio_backing_height;
 static bool desktop_ready;
 static bool installer_session_mode;
 static uint32_t desktop_display_monitor_selection;
+static int64_t pointer_x;
+static int64_t pointer_y;
 
 static void desktop_virtio_recover_firmware_framebuffer(void) {
     if (!desktop_virtio_gpu_active || virtio_gpu_active()) return;
@@ -397,8 +400,6 @@ static char terminal_scancode_char(uint8_t code);
 static void scan_files_once(void);
 static void refresh_files_listing(void);
 static void files_search_rebuild(void);
-static int64_t pointer_x;
-static int64_t pointer_y;
 static bool files_scanned;
 static bool files_scan_ok;
 static size_t files_partition_count;

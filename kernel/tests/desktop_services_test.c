@@ -125,8 +125,8 @@ static void test_clipboard_history(void) {
     assert(length == strlen(text));
     assert(!nexus_desktop_clipboard_get(0U, text, 4U, &length));
     for (size_t i = 0U; i < NEXUS_DESKTOP_CLIPBOARD_HISTORY_MAX + 2U; ++i) {
-        char entry[32];
-        (void)snprintf(entry, sizeof(entry), "entry-%u", (unsigned)i);
+        char entry[32] = "entry-0";
+        entry[6] = (char)('0' + (char)i);
         assert(nexus_desktop_clipboard_set(entry));
     }
     assert(nexus_desktop_clipboard_count() ==
@@ -147,9 +147,12 @@ static void test_cross_app_file_and_setting_search(void) {
     size_t indices[4] = {0U};
     size_t matched = 0U;
     assert(nexus_desktop_search(items, 4U, "dis", indices, 4U, &matched));
-    assert(matched == 2U);
-    assert(indices[0] == 0U); /* Prefix/title relevance ranks Settings first. */
-    assert(indices[1] == 1U); /* detail search for Pictures? no "dis" title? */
+    assert(matched == 1U);
+    assert(indices[0] == 0U); /* Display detail is indexed with its app. */
+    assert(nexus_desktop_search(items, 4U, "pic", indices, 4U, &matched));
+    assert(matched == 1U && indices[0] == 1U); /* Files can be found by folder detail. */
+    assert(nexus_desktop_search(items, 4U, "high", indices, 4U, &matched));
+    assert(matched == 1U && indices[0] == 3U);
     assert(nexus_desktop_search(items, 4U, "FILES",
                                 indices, 4U, &matched));
     assert(matched == 1U && indices[0] == 2U);

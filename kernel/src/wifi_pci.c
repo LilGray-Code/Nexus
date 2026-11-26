@@ -4,6 +4,7 @@
 
 #include "pci.h"
 #include "win_driver_inf.h"
+#include "win_driver_package.h"
 
 static struct nexus_wifi_pci_candidate
     candidates[NEXUS_WIFI_PCI_MAX_CANDIDATES];
@@ -68,4 +69,23 @@ bool wifi_pci_match_windows_inf(uint32_t candidate_index,
         .revision_id = candidate->revision_id
     };
     return nexus_win_inf_find_match(inf_text, text_length, &device, match);
+}
+
+bool wifi_pci_assess_windows_package(
+    uint32_t candidate_index, const char *inf_data, size_t inf_size,
+    const void *sys_data, size_t sys_size,
+    struct nexus_win_driver_package_assessment *assessment) {
+    const struct nexus_wifi_pci_candidate *candidate =
+        wifi_pci_candidate_at(candidate_index);
+    if (candidate == NULL || assessment == NULL) return false;
+    const struct nexus_win_device_id device = {
+        .bus = NEXUS_WIN_DEVICE_PCI,
+        .vendor_id = candidate->vendor_id,
+        .device_id = candidate->device_id,
+        .subsystem_vendor_id = candidate->subsystem_vendor_id,
+        .subsystem_device_id = candidate->subsystem_device_id,
+        .revision_id = candidate->revision_id
+    };
+    return nexus_win_assess_driver_package(
+        &device, inf_data, inf_size, sys_data, sys_size, assessment);
 }

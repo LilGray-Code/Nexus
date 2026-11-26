@@ -25,8 +25,10 @@ struct nexus_netdev_ops {
     bool (*send_frame)(void *context, const void *frame, size_t length);
     bool (*receive_frame)(void *context, void *buffer, size_t capacity,
                           size_t *length);
-    /* Optional live physical-link query; false also means unavailable/down. */
+    /* Optional live physical-link query; false means link is not usable. */
     bool (*link_up)(void *context);
+    /* Optional negotiated speed in Mbit/s; zero means unknown/unavailable. */
+    uint32_t (*link_speed_mbps)(void *context);
 };
 
 struct nexus_netdev_info {
@@ -35,6 +37,15 @@ struct nexus_netdev_info {
     size_t max_frame_size;
     enum nexus_netdev_medium medium;
     bool link_up;
+    bool active;
+    bool preferred;
+    uint32_t link_speed_mbps;
+    uint64_t tx_frames;
+    uint64_t rx_frames;
+    uint64_t tx_bytes;
+    uint64_t rx_bytes;
+    uint32_t tx_errors;
+    uint32_t rx_errors;
 };
 
 void netdev_init(void);
@@ -44,6 +55,10 @@ bool netdev_register(const char *name, enum nexus_netdev_medium medium,
 size_t netdev_count(void);
 bool netdev_get_info_at(size_t index, struct nexus_netdev_info *info);
 bool netdev_ready(void);
+/* The preferred device is automatically restored when its link returns. */
+bool netdev_select_device(size_t index);
+void netdev_use_automatic_device(void);
+size_t netdev_active_index(void);
 /* Keeps a live current interface; falls back to another linked adapter. */
 bool netdev_link_up(void);
 bool netdev_get_info(struct nexus_netdev_info *info);

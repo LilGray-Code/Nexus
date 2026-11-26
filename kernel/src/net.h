@@ -20,6 +20,9 @@ struct nexus_net_info {
     bool interface_ready;
     bool link_up;
     bool ipv4_configured;
+    bool dns_manual_override;
+    uint32_t dhcp_lease_seconds;
+    uint32_t dhcp_lease_remaining_seconds;
     uint8_t mac[6];
     uint8_t ipv4[4];
     uint8_t subnet_mask[4];
@@ -30,6 +33,9 @@ struct nexus_net_info {
 bool net_init(void);
 void net_poll(void);
 bool net_get_info(struct nexus_net_info *info);
+/* Select a unicast DNS server or restore the server supplied by DHCP. */
+bool net_set_dns_server(const uint8_t server_ipv4[4]);
+void net_use_dhcp_dns(void);
 bool net_dns_resolve(const char *hostname, uint8_t result[4],
                      uint64_t timeout_ticks);
 bool net_udp_send(const uint8_t destination_ipv4[4],

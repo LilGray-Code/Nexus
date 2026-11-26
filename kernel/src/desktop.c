@@ -8,6 +8,7 @@
 #include "process.h"
 #include "usermode.h"
 #include "net.h"
+#include "netdev.h"
 #include "net_https.h"
 #include "http.h"
 #include "browser_url.h"
@@ -449,6 +450,11 @@ static bool files_run_output_available;
 static bool files_run_output_truncated;
 static char terminal_input[64];
 static size_t terminal_input_length;
+static size_t network_selected_wifi_index;
+static bool network_password_entry_active;
+static char network_passphrase[NEXUS_WIFI_PASSPHRASE_MAX + 1U];
+static size_t network_passphrase_length;
+static char network_ui_status[80] = "Automatic adapter selection is enabled.";
 static enum nexus_firmware_mode installer_firmware = NEXUS_FIRMWARE_UEFI;
 static size_t installer_selected_device;
 static bool installer_drive_dropdown_open;
@@ -2870,26 +2876,115 @@ static void draw_shell(void) {
                 "DEVICES", "Detected hardware, active driver path and capabilities.");
             desktop_draw_hardware_overview(text_x, content_y + 58U);
         } else if (settings_page == SETTINGS_NETWORK) {
-            char line[96];
+            char line[96], number[24];
             desktop_settings_draw_heading(text_x, content_y,
-                "NETWORK", "Adapter status and available wireless operations.");
-            struct nexus_net_info network;
-            const bool ethernet = net_get_info(&network) && network.interface_ready;
-            graphics_draw_text(text_x, content_y + 64U, "ETHERNET",
+                "NETWORK", "Adapter failover, Wi-Fi and IPv4 configuration.");
+            graphics_draw_text(text_x, content_y + 52U, "NETWORK ADAPTERS",
                                1U, 142U, 174U, 199U);
-            graphics_draw_text(text_x + 100U, content_y + 64U,
-                !ethernet ? "NO ACTIVE ETHERNET INTERFACE"
-                    : (!network.link_up ? "LINK DOWN"
-                        : (network.ipv4_configured ? "CONNECTED / DHCP READY"
-                                                  : "LINK UP / WAITING FOR DHCP")),
-                1U, 108U, 216U, 229U);
-            if (ethernet) {
-                graphics_draw_text(text_x, content_y + 89U,
-                    network.interface_name, 1U, 239U, 247U, 255U);
-                graphics_draw_text(text_x + 110U, content_y + 89U,
-                    network.ipv4_configured ? "IPV4 CONFIGURED" : "NO IPV4 ADDRESS",
-                    1U, 171U, 191U, 211U);
+            const size_t adapter_count = netdev_count();
+            const size_t shown_adapters = adapter_count < NEXUS_NETDEV_MAX_DEVICES
+                ? adapter_count : NEXUS_NETDEV_MAX_DEVICES;
+            for (size_t i = 0U; i < shown_adapters; ++i) {
+                struct nexus_netdev_info adapter;
+                if (!netdev_get_info_at(i, &adapter)) continue;
+                size_t used = 0U;
+                line[0] = '\0';
+                format_u64(i + 1U, number);
+                hardware_append_text(line, sizeof(line), &used, number);
+                hardware_append_text(line, sizeof(line), &used, " ");
+                hardware_append_text(line, sizeof(line), &used,
+                    adapter.medium == NEXUS_NETDEV_MEDIUM_WIFI ? "WI-FI " : "ETH ");
+                hardware_append_text(line, sizeof(line), &used, adapter.name);
+                hardware_append_text(line, sizeof(line), &used,
+                    adapter.link_up ? " UP" : " DOWN");
+                if (adapter.active)
+                    hardware_append_text(line, sizeof(line), &used, " [ACTIVE]");
+                if (adapter.preferred)
+                    hardware_append_text(line, sizeof(line), &used, " [PREFERRED]");
+                if (adapter.link_speed_mbps != 0U) {
+                    hardware_append_text(line, sizeof(line), &used, " ");
+                    format_u64(adapter.link_speed_mbps, number);
+                    hardware_append_text(line, sizeof(line), &used, number);
+                    hardware_append_text(line, sizeof(line), &used, " MBPS");
+                }
+                hardware_append_text(line, sizeof(line), &used, " TX");
+                format_u64(adapter.tx_frames, number);
+                hardware_append_text(line, sizeof(line), &used, number);
+                hardware_append_text(line, sizeof(line), &used, " RX");
+                format_u64(adapter.rx_frames, number);
+                hardware_append_text(line, sizeof(line), &used, number);
+                graphics_draw_text(text_x + 4U, content_y + 69U +
+                    (uint64_t)i * 15U, line, 1U,
+                    adapter.link_up ? 239U : 171U,
+                    adapter.link_up ? 247U : 191U,
+                    adapter.link_up ? 255U : 211U);
             }
+            if (adapter_count == 0U)
+                graphics_draw_text(text_x + 4U, content_y + 69U,
+                    "NO NETWORK ADAPTER REGISTERED", 1U,
+                    231U, 183U, 127U);
+            desktop_settings_draw_button(text_x, content_y + 129U,
+                124U, 25U, "AUTO FAILOVER", netdev_active_index() >=
+                    NEXUS_NETDEV_MAX_DEVICES);
+
+            struct nexus_net_info network;
+            const bool have_network = net_get_info(&network);
+            size_t used = 0U;
+            line[0] = '\0';
+            hardware_append_text(line, sizeof(line), &used, "IPv4: ");
+            if (have_network && network.ipv4_configured) {
+                for (size_t i = 0U; i < 4U; ++i) {
+                    format_u64(network.ipv4[i], number);
+                    hardware_append_text(line, sizeof(line), &used, number);
+                    if (i != 3U)
+                        hardware_append_text(line, sizeof(line), &used, ".");
+                }
+            } else {
+                hardware_append_text(line, sizeof(line), &used,
+                    have_network && network.link_up
+                        ? "WAITING FOR DHCP" : "NO ACTIVE LINK");
+            }
+            graphics_draw_text(text_x, content_y + 160U, line,
+                               1U, 239U, 247U, 255U);
+
+            used = 0U;
+            line[0] = '\0';
+            hardware_append_text(line, sizeof(line), &used, "DNS: ");
+            const uint8_t *dns = have_network ? network.dns_server : NULL;
+            if (dns == NULL || (dns[0] | dns[1] | dns[2] | dns[3]) == 0U) {
+                hardware_append_text(line, sizeof(line), &used, "NOT CONFIGURED");
+            } else {
+                for (size_t i = 0U; i < 4U; ++i) {
+                    format_u64(dns[i], number);
+                    hardware_append_text(line, sizeof(line), &used, number);
+                    if (i != 3U)
+                        hardware_append_text(line, sizeof(line), &used, ".");
+                }
+                hardware_append_text(line, sizeof(line), &used,
+                    network.dns_manual_override ? " MANUAL" : " DHCP");
+            }
+            graphics_draw_text(text_x, content_y + 178U, line,
+                               1U, 171U, 191U, 211U);
+            if (have_network && network.ipv4_configured) {
+                format_labeled_u64("DHCP LEASE REMAINING: ",
+                    network.dhcp_lease_remaining_seconds, line);
+                graphics_draw_text(text_x + 300U, content_y + 160U, line,
+                                   1U, 171U, 191U, 211U);
+            }
+            desktop_settings_draw_button(text_x, content_y + 190U,
+                94U, 25U, "DHCP DNS", have_network &&
+                    !network.dns_manual_override);
+            desktop_settings_draw_button(text_x + 102U, content_y + 190U,
+                94U, 25U, "1.1.1.1", have_network &&
+                    network.dns_manual_override &&
+                    network.dns_server[0] == 1U &&
+                    network.dns_server[1] == 1U);
+            desktop_settings_draw_button(text_x + 204U, content_y + 190U,
+                94U, 25U, "8.8.8.8", have_network &&
+                    network.dns_manual_override &&
+                    network.dns_server[0] == 8U &&
+                    network.dns_server[1] == 8U);
+
             const char *wifi_status = "NO RADIO DRIVER";
             if (wifi_available()) {
                 switch (wifi_get_state()) {
@@ -2903,20 +2998,92 @@ static void draw_shell(void) {
             } else if (wifi_pci_candidate_count() != 0U) {
                 wifi_status = "ADAPTER DETECTED / DRIVER NEEDED";
             }
-            graphics_draw_text(text_x, content_y + 132U, "WI-FI",
+            graphics_draw_text(text_x, content_y + 224U, "WI-FI",
                                1U, 142U, 174U, 199U);
-            graphics_draw_text(text_x + 100U, content_y + 132U,
+            graphics_draw_text(text_x + 76U, content_y + 224U,
                 wifi_status, 1U, 108U, 216U, 229U);
-            format_labeled_u64("SCAN RESULTS: ", wifi_scan_result_count(), line);
-            graphics_draw_text(text_x, content_y + 160U, line,
-                               1U, 171U, 191U, 211U);
-            desktop_settings_draw_button(text_x, content_y + 190U,
-                136U, 32U, wifi_available() ? "SCAN WI-FI" : "NO RADIO DRIVER",
-                wifi_available());
-            graphics_draw_text(text_x, content_y + 239U,
-                "WIRELESS CONNECTIVITY REQUIRES A SUPPORTED RADIO DRIVER.",
+            desktop_settings_draw_button(text_x, content_y + 240U,
+                124U, 27U, "SCAN WI-FI", wifi_available());
+
+            graphics_draw_text(text_x + 148U, content_y + 246U,
+                wifi_security_supported(NEXUS_WIFI_SECURITY_WPA2_PSK)
+                    ? "WPA2 DRIVER READY"
+                    : "WPA2 AUTH NOT AVAILABLE",
                 1U, 171U, 191U, 211U);
-        } else if (settings_page == SETTINGS_STORAGE) {
+            graphics_draw_text(text_x + 356U, content_y + 246U,
+                wifi_security_supported(NEXUS_WIFI_SECURITY_WPA3_SAE)
+                    ? "WPA3 SAE READY"
+                    : "WPA3 SAE NOT AVAILABLE",
+                1U, 171U, 191U, 211U);
+
+            for (size_t i = 0U; i < 4U; ++i) {
+                struct nexus_wifi_network found;
+                if (!wifi_scan_result_at(i, &found)) continue;
+                char ssid[NEXUS_WIFI_SSID_MAX + 1U];
+                for (size_t j = 0U; j < found.ssid_length; ++j) {
+                    const uint8_t c = found.ssid[j];
+                    ssid[j] = c >= 0x20U && c <= 0x7EU ? (char)c : '.';
+                }
+                ssid[found.ssid_length] = '\0';
+                used = 0U;
+                line[0] = '\0';
+                hardware_append_text(line, sizeof(line), &used,
+                    i == network_selected_wifi_index ? "> " : "  ");
+                hardware_append_text(line, sizeof(line), &used, ssid);
+                hardware_append_text(line, sizeof(line), &used, "  ");
+                format_u64((uint64_t)(found.signal_dbm < 0
+                    ? -found.signal_dbm : found.signal_dbm), number);
+                hardware_append_text(line, sizeof(line), &used, number);
+                hardware_append_text(line, sizeof(line), &used, " DBM ");
+                const char *security =
+                    found.security == NEXUS_WIFI_SECURITY_OPEN ? "OPEN" :
+                    found.security == NEXUS_WIFI_SECURITY_WPA2_PSK ? "WPA2" :
+                    "WPA3 SAE";
+                hardware_append_text(line, sizeof(line), &used, security);
+                if (!wifi_security_supported(found.security))
+                    hardware_append_text(line, sizeof(line), &used, " UNSUPPORTED");
+                graphics_draw_text(text_x + 4U, content_y + 278U +
+                    (uint64_t)i * 18U, line, 1U,
+                    i == network_selected_wifi_index ? 108U : 239U,
+                    i == network_selected_wifi_index ? 216U : 247U,
+                    i == network_selected_wifi_index ? 229U : 255U);
+            }
+            if (wifi_scan_result_count() == 0U)
+                graphics_draw_text(text_x + 4U, content_y + 278U,
+                    "NO SCAN RESULTS AVAILABLE", 1U,
+                    171U, 191U, 211U);
+
+            desktop_settings_draw_button(text_x, content_y + 354U,
+                112U, 27U, "CONNECT", wifi_available() &&
+                    wifi_scan_result_count() != 0U);
+            desktop_settings_draw_button(text_x + 122U, content_y + 354U,
+                112U, 27U, "DISCONNECT",
+                wifi_get_state() == NEXUS_WIFI_CONNECTED);
+            graphics_draw_text(text_x + 252U, content_y + 362U,
+                wifi_get_state() == NEXUS_WIFI_CONNECTED
+                    ? "WIRELESS LINK ACTIVE" : "SELECT A RESULT TO CONNECT",
+                1U, 171U, 191U, 211U);
+
+            if (network_password_entry_active) {
+                used = 0U;
+                line[0] = '\0';
+                hardware_append_text(line, sizeof(line), &used,
+                                     "WIFI PASSWORD: ");
+                for (size_t i = 0U; i < network_passphrase_length; ++i)
+                    hardware_append_text(line, sizeof(line), &used, "*");
+                graphics_draw_text(text_x, content_y + 392U, line,
+                                   1U, 239U, 247U, 255U);
+                graphics_draw_text(text_x + 310U, content_y + 392U,
+                    "ENTER TO CONNECT / ESC TO CANCEL", 1U,
+                    171U, 191U, 211U);
+            } else {
+                graphics_draw_text(text_x, content_y + 392U,
+                    network_ui_status, 1U, 171U, 191U, 211U);
+            }
+            graphics_draw_text(text_x, content_y + 416U,
+                "PASSWORDS ARE NOT SAVED; PERSISTENT ENCRYPTED CREDENTIAL STORAGE IS NOT AVAILABLE.",
+                1U, 171U, 191U, 211U);
+        }        } else if (settings_page == SETTINGS_STORAGE) {
             char line[96], number[24];
             desktop_settings_draw_heading(text_x, content_y,
                 "STORAGE", "Detected block devices and controller inventory.");
@@ -6505,6 +6672,50 @@ static void desktop_store_open_selected(void) {
     browser_navigate(true);
 }
 
+static void desktop_network_clear_passphrase(void) {
+    volatile char *bytes = (volatile char *)network_passphrase;
+    for (size_t i = 0U; i < sizeof(network_passphrase); ++i)
+        bytes[i] = '\0';
+    network_passphrase_length = 0U;
+}
+
+static bool desktop_network_connect_selected(void) {
+    struct nexus_wifi_network selected;
+    if (!wifi_scan_result_at(network_selected_wifi_index, &selected)) {
+        const char *message = "Select a visible Wi-Fi network first.";
+        size_t i = 0U;
+        while (i < sizeof(network_ui_status) - 1U && message[i] != '\0') {
+            network_ui_status[i] = message[i];
+            ++i;
+        }
+        network_ui_status[i] = '\0';
+        return false;
+    }
+    if (!wifi_security_supported(selected.security)) {
+        const char *message = "This radio driver does not support the network security mode.";
+        size_t i = 0U;
+        while (i < sizeof(network_ui_status) - 1U && message[i] != '\0') {
+            network_ui_status[i] = message[i];
+            ++i;
+        }
+        network_ui_status[i] = '\0';
+        return false;
+    }
+    const bool connected = selected.security == NEXUS_WIFI_SECURITY_OPEN
+        ? wifi_connect(&selected, NULL)
+        : wifi_connect(&selected, network_passphrase);
+    const char *message = connected
+        ? "Wi-Fi authentication/association started."
+        : "Wi-Fi connection request was rejected.";
+    size_t i = 0U;
+    while (i < sizeof(network_ui_status) - 1U && message[i] != '\0') {
+        network_ui_status[i] = message[i];
+        ++i;
+    }
+    network_ui_status[i] = '\0';
+    return connected;
+}
+
 void desktop_handle_input(const struct nexus_input_event *event) {
     if (!desktop_ready || event == NULL) return;
     struct nexus_input_event normalized_event;
@@ -6991,10 +7202,100 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     }
                 }
             } else if (settings_page == SETTINGS_NETWORK) {
-                if (wifi_available() &&
-                    py >= content_y + 190U && py < content_y + 222U &&
-                    px >= sx && px < sx + 136U)
+                if (py >= content_y + 58U && py < content_y + 118U &&
+                    px >= sx && px < sx + 520U) {
+                    const size_t index = (size_t)(py - (content_y + 58U)) / 15U;
+                    struct nexus_netdev_info adapter;
+                    if (index < netdev_count() &&
+                        netdev_get_info_at(index, &adapter)) {
+                        if (adapter.link_up && netdev_select_device(index)) {
+                            network_ui_status[0] = '\0';
+                        } else {
+                            const char *message = "Selected adapter has no link.";
+                            size_t i = 0U;
+                            while (i < sizeof(network_ui_status) - 1U &&
+                                   message[i] != '\0') {
+                                network_ui_status[i] = message[i];
+                                ++i;
+                            }
+                            network_ui_status[i] = '\0';
+                        }
+                    }
+                } else if (py >= content_y + 129U &&
+                           py < content_y + 154U && px >= sx &&
+                           px < sx + 124U) {
+                    netdev_use_automatic_device();
+                    network_ui_status[0] = '\0';
+                } else if (py >= content_y + 190U &&
+                           py < content_y + 215U && px >= sx) {
+                    const uint64_t relative_x = px - sx;
+                    if (relative_x < 94U) {
+                        net_use_dhcp_dns();
+                    } else if (relative_x >= 102U && relative_x < 196U) {
+                        const uint8_t resolver[4] = {1U, 1U, 1U, 1U};
+                        (void)net_set_dns_server(resolver);
+                    } else if (relative_x >= 204U && relative_x < 298U) {
+                        const uint8_t resolver[4] = {8U, 8U, 8U, 8U};
+                        (void)net_set_dns_server(resolver);
+                    }
+                } else if (py >= content_y + 240U &&
+                           py < content_y + 267U && px >= sx &&
+                           px < sx + 124U && wifi_available()) {
                     (void)wifi_scan();
+                    network_ui_status[0] = '\0';
+                } else if (py >= content_y + 278U &&
+                           py < content_y + 350U && px >= sx &&
+                           px < sx + 520U) {
+                    const size_t index = (size_t)(py - (content_y + 278U)) / 18U;
+                    struct nexus_wifi_network found;
+                    if (wifi_scan_result_at(index, &found))
+                        network_selected_wifi_index = index;
+                } else if (py >= content_y + 354U &&
+                           py < content_y + 381U && px >= sx) {
+                    const uint64_t relative_x = px - sx;
+                    if (relative_x < 112U && wifi_available()) {
+                        struct nexus_wifi_network found;
+                        if (!wifi_scan_result_at(network_selected_wifi_index,
+                                                 &found)) {
+                            const char *message = "Select a Wi-Fi result first.";
+                            size_t i = 0U;
+                            while (i < sizeof(network_ui_status) - 1U &&
+                                   message[i] != '\0') {
+                                network_ui_status[i] = message[i];
+                                ++i;
+                            }
+                            network_ui_status[i] = '\0';
+                        } else if (!wifi_security_supported(found.security)) {
+                            const char *message = "This Wi-Fi security mode is not supported by the current radio driver.";
+                            size_t i = 0U;
+                            while (i < sizeof(network_ui_status) - 1U &&
+                                   message[i] != '\0') {
+                                network_ui_status[i] = message[i];
+                                ++i;
+                            }
+                            network_ui_status[i] = '\0';
+                        } else if (found.security == NEXUS_WIFI_SECURITY_OPEN) {
+                            (void)wifi_connect(&found, NULL);
+                            network_ui_status[0] = '\0';
+                        } else {
+                            desktop_network_clear_passphrase();
+                            network_password_entry_active = true;
+                            const char *message = "Enter passphrase, then press Enter.";
+                            size_t i = 0U;
+                            while (i < sizeof(network_ui_status) - 1U &&
+                                   message[i] != '\0') {
+                                network_ui_status[i] = message[i];
+                                ++i;
+                            }
+                            network_ui_status[i] = '\0';
+                        }
+                    } else if (relative_x >= 122U && relative_x < 234U &&
+                               wifi_get_state() == NEXUS_WIFI_CONNECTED) {
+                        wifi_disconnect();
+                        network_password_entry_active = false;
+                        desktop_network_clear_passphrase();
+                    }
+                }
             }
             if (changed) desktop_preferences_save();
             else desktop_settings_apply();
@@ -7338,6 +7639,35 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (key_released) return;
+
+    if (active_view == DESKTOP_SETTINGS &&
+        settings_page == SETTINGS_NETWORK &&
+        network_password_entry_active) {
+        if (key_code == 0x01U) {
+            network_password_entry_active = false;
+            desktop_network_clear_passphrase();
+            network_ui_status[0] = '\0';
+        } else if (key_code == 0x0EU) {
+            if (network_passphrase_length != 0U) {
+                network_passphrase[--network_passphrase_length] = '\0';
+            }
+        } else if (key_code == 0x1CU) {
+            const bool connected = desktop_network_connect_selected();
+            network_password_entry_active = false;
+            desktop_network_clear_passphrase();
+            if (connected) network_ui_status[0] = '\0';
+        } else {
+            const char ch = terminal_scancode_char(event->scancode);
+            if (ch >= 0x20 && ch <= 0x7E &&
+                network_passphrase_length < NEXUS_WIFI_PASSPHRASE_MAX) {
+                network_passphrase[network_passphrase_length++] = ch;
+                network_passphrase[network_passphrase_length] = '\0';
+            }
+        }
+        draw_shell();
+        draw_pointer();
+        return;
+    }
 
     if (active_view != DESKTOP_INSTALLER && keyboard_alt &&
         event->scancode == 0x0FU) {

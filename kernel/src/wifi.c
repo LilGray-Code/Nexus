@@ -8,6 +8,9 @@ static void *driver_context;
 static enum nexus_wifi_state state = NEXUS_WIFI_UNAVAILABLE;
 static struct nexus_wifi_network scan_results[NEXUS_WIFI_MAX_SCAN_RESULTS];
 static size_t scan_count;
+static struct nexus_wifi_network requested_network;
+static struct nexus_wifi_network connected_network;
+static bool connected_network_valid;
 
 static bool valid_network(const struct nexus_wifi_network *network) {
     if (network == NULL || network->ssid_length == 0U ||
@@ -21,11 +24,17 @@ bool wifi_register_driver(const struct nexus_wifi_driver_ops *ops,
                           void *context) {
     if (driver_ops != NULL || ops == NULL || ops->start == NULL ||
         ops->scan == NULL || ops->connect == NULL ||
-        ops->disconnect == NULL || ops->poll == NULL) return false;
+        ops->disconnect == NULL || ops->poll == NULL ||
+        (ops->supported_security_mask &
+         ~(NEXUS_WIFI_SECURITY_MASK_OPEN | NEXUS_WIFI_SECURITY_MASK_WPA2 |
+           NEXUS_WIFI_SECURITY_MASK_WPA3)) != 0U) return false;
     driver_ops = ops;
     driver_context = context;
     state = NEXUS_WIFI_READY;
     scan_count = 0U;
+    requested_network = (struct nexus_wifi_network){0};
+    connected_network = (struct nexus_wifi_network){0};
+    connected_network_valid = false;
     return true;
 }
 
@@ -80,9 +89,24 @@ bool wifi_scan_result_at(size_t index, struct nexus_wifi_network *result) {
     return true;
 }
 
+bool wifi_security_supported(enum nexus_wifi_security security) {
+    if (driver_ops == NULL || security > NEXUS_WIFI_SECURITY_WPA3_SAE)
+        return false;
+    return (driver_ops->supported_security_mask & (1U << (uint32_t)security))
+        != 0U;
+}
+
+bool wifi_get_connected_network(struct nexus_wifi_network *network) {
+    if (network == NULL || !connected_network_valid ||
+        state != NEXUS_WIFI_CONNECTED) return false;
+    *network = connected_network;
+    return true;
+}
+
 bool wifi_connect(const struct nexus_wifi_network *network,
                   const char *passphrase) {
     if (driver_ops == NULL || !valid_network(network) ||
+        !wifi_security_supported(network->security) ||
         (state != NEXUS_WIFI_READY && state != NEXUS_WIFI_CONNECTED) ||
         (network->security == NEXUS_WIFI_SECURITY_OPEN &&
          passphrase != NULL && passphrase[0] != '\0')) return false;
@@ -101,32 +125,49 @@ bool wifi_connect(const struct nexus_wifi_network *network,
      * before connect() returns. Set CONNECTING first and preserve any valid
      * state transition emitted from inside the callback.
      */
+    requested_network = *network;
+    connected_network_valid = false;
     state = NEXUS_WIFI_CONNECTING;
     if (!driver_ops->connect(driver_context, network, passphrase)) {
         state = NEXUS_WIFI_FAILED;
+        requested_network = (struct nexus_wifi_network){0};
         return false;
     }
     return true;
 }
 
 void wifi_report_connected(void) {
-    if (driver_ops != NULL && state == NEXUS_WIFI_CONNECTING)
+    if (driver_ops != NULL && state == NEXUS_WIFI_CONNECTING) {
+        connected_network = requested_network;
+        connected_network_valid = true;
         state = NEXUS_WIFI_CONNECTED;
+    }
 }
 
 void wifi_report_disconnected(void) {
-    if (driver_ops != NULL && state != NEXUS_WIFI_UNAVAILABLE)
+    if (driver_ops != NULL && state != NEXUS_WIFI_UNAVAILABLE) {
         state = NEXUS_WIFI_READY;
+        connected_network_valid = false;
+        connected_network = (struct nexus_wifi_network){0};
+        requested_network = (struct nexus_wifi_network){0};
+    }
 }
 
 void wifi_report_failure(void) {
-    if (driver_ops != NULL) state = NEXUS_WIFI_FAILED;
+    if (driver_ops != NULL) {
+        state = NEXUS_WIFI_FAILED;
+        connected_network_valid = false;
+        connected_network = (struct nexus_wifi_network){0};
+    }
 }
 
 void wifi_disconnect(void) {
     if (driver_ops == NULL) return;
     driver_ops->disconnect(driver_context);
     state = NEXUS_WIFI_READY;
+    connected_network_valid = false;
+    connected_network = (struct nexus_wifi_network){0};
+    requested_network = (struct nexus_wifi_network){0};
 }
 
 void wifi_poll(void) {

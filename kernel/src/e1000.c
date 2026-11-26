@@ -291,6 +291,19 @@ static bool e1000_netdev_link_up(void *context) {
            (status & (1U << 1)) != 0U;
 }
 
+static uint32_t e1000_netdev_link_speed(void *context) {
+    (void)context;
+    uint32_t status = 0U;
+    if (!e1000_netdev_link_up(NULL) ||
+        !register_read(E1000_REG_STATUS, &status)) return 0U;
+    switch ((status >> 6) & 0x03U) {
+        case 0U: return 10U;
+        case 1U: return 100U;
+        case 2U: return 1000U;
+        default: return 0U;
+    }
+}
+
 bool e1000_init(void) {
     state = (struct e1000_state){0};
     const struct nexus_pci_device *device = NULL;
@@ -372,7 +385,8 @@ bool e1000_init(void) {
     static const struct nexus_netdev_ops netdev_ops = {
         .send_frame = e1000_netdev_send,
         .receive_frame = e1000_netdev_receive,
-        .link_up = e1000_netdev_link_up
+        .link_up = e1000_netdev_link_up,
+        .link_speed_mbps = e1000_netdev_link_speed
     };
     if (!netdev_register("e1000", NEXUS_NETDEV_MEDIUM_ETHERNET,
                          state.mac, E1000_BUFFER_SIZE, &netdev_ops, NULL)) {

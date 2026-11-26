@@ -117,3 +117,90 @@ The PCI wireless inventory now exposes a per-adapter package assessment entry po
 ## Windows NDIS driver compatibility boundary
 
 Nexus now has a bounded Windows PE/INF assessment path and an NDIS adapter lifecycle contract. The lifecycle tracks discovery, package validation, image-mapped, initialization, running, halt, stopped, and failure states; it rejects out-of-order transitions and records initialization/halt status. It is groundwork for a future isolated miniport host, not an NDIS implementation: Nexus still has no PE image mapper/relocator, Windows kernel API shims, NDIS ABI structures/callback dispatcher, IRQL model, DMA-safe packet buffers, or firmware/power-management integration. The IMAGE_MAPPED transition is an explicit future-loader boundary and must only be called after a real loader has completed validation and mapping. No Windows .sys driver is executed by this state machine.
+
+
+## Current networking capability snapshot (2026-11-26)
+
+This status is intentionally conservative. A PCI device being inventoried, a
+protocol being parsed, or a security mode appearing in a beacon is not proof
+that a working driver can establish that connection.
+
+| Area | Current Nexus implementation | Important boundary |
+|---|---|---|
+| Ethernet adapters | Intel e1000, Realtek RTL8139 and VirtIO-net drivers register through the shared network-device contract | Support is limited to implemented controller/device families; this is not a universal PCI driver |
+| Adapter reliability | Up to four registered interfaces, live link checks, preferred interface selection, automatic failover and return to a preferred link | Adapter selection requires an actual live link |
+| Diagnostics | Per-adapter TX/RX frames, bytes and errors; link state; negotiated speed where a driver reports it | Speed is unknown for drivers without a speed callback |
+| IPv4 | Ethernet framing, ARP, IPv4, UDP, bounded TCP client and route/next-hop selection | No general POSIX socket layer, TCP congestion control, IP fragmentation reassembly or complete router stack |
+| DHCP | IPv4 discovery/request, lease option parsing, T1 renewal, T2 rebind, and lease-expiry rediscovery | DHCPv4 only; DHCPv6 is not implemented |
+| DNS | IPv4 A lookup, question/answer validation, CNAME chain handling, bounded retry and TTL cache; user-selectable resolver or DHCP resolver | No AAAA/IPv6 DNS transport, DNS-over-HTTPS or DNS-over-TLS |
+| TLS / HTTPS | Mbed TLS TLS 1.3 integration, certificate/hostname verification, CA trust store and bounded HTTPS client | The TCP transport remains a bounded synchronous client rather than a full general networking API |
+| Wi-Fi inventory | PCI adapter inventory, bounded 802.11 beacon/probe-response parsing, SSID/BSSID/channel/signal/security metadata | Inventory and beacon parsing do not drive a physical radio |
+| Wi-Fi connection manager | Async driver contract, scan-result model, connect/disconnect states and explicit per-driver security capability mask | No supported physical Wi-Fi chipset currently registers a driver, so scanning/association is unavailable on ordinary hardware |
+| WPA2 / WPA3 | WPA2 cryptographic/handshake primitives exist; parser can identify WPA2-PSK and WPA3-SAE advertisements; manager checks the driver's declared authentication capabilities | There is no production supplicant/SAE implementation wired to a supported radio; WPA3 is not a working connection feature |
+| Network Settings | Adapter selection, automatic failover, link/speed/traffic status, IPv4/DNS/lease information, DNS presets, Wi-Fi result selection, transient passphrase entry and disconnect | Saved Wi-Fi profiles and static IPv4 properties are not yet available |
+| Firewall, IPv6, VPN, Bluetooth PAN | Not implemented | Do not expose as supported or secure until packet filtering, IPv6 control/data plane, tunnel interfaces, or Bluetooth PAN drivers and tests exist |
+
+### Adapter selection and DHCP recovery
+
+The shared network-device interface fails closed when no adapter has a physical
+link; it never sends through a stale/down interface. Users can prefer one
+currently linked adapter or return to automatic selection. Automatic selection
+falls back to another linked adapter and restores the preferred adapter when
+its link returns. Adapter counters are kept per registered interface.
+
+The IPv4 DHCP client now records the lease duration and optional T1/T2 timers.
+It renews with a unicast IP destination at T1, rebroadcasts a renewal at T2,
+and clears the expired address before rediscovering. If a NIC is present at boot
+without carrier, the network stack still initializes against its inventory
+record and starts DHCP when a cable is inserted later. A user may choose a
+unicast DNS resolver or restore the DHCP-provided DNS server.
+
+### Wi-Fi security and credential handling
+
+The scan parser is deliberately separate from authentication. It may recognize
+an SAE/PMF beacon, but the connection manager only allows an authentication
+method explicitly advertised by the registered radio driver's capability mask.
+The passphrase supplied to a driver is a callback-lifetime value: a driver that
+needs to continue an asynchronous handshake must derive or copy the needed key
+material into driver-owned protected state before returning. Nexus clears the
+desktop entry buffer after the callback. It does not save Wi-Fi passwords because
+an encrypted credential store and its key-management lifecycle are not yet
+implemented.
+
+### Vendor driver compatibility strategy
+
+**Linux driver reuse is the preferred long-term porting route where licensing
+and hardware support allow it.** Linux wireless drivers normally register
+through cfg80211, directly or through mac80211, which also supplies a common
+userspace configuration interface and regulatory enforcement. A Nexus port
+must map that model onto Nexus's own radio, firmware, work-queue, DMA, packet,
+regulatory-domain and network-device APIs; it cannot simply load a Linux
+kernel object. Prefer porting a maintained driver source tree with an explicit
+license review and a per-chipset firmware review.
+
+**Windows driver support requires a real NDIS compatibility environment.**
+The current Windows path is limited to INF matching, PE32+ AMD64 structural
+inspection, package assessment and a lifecycle model. It does not map,
+relocate, execute, or emulate a Windows .sys binary. A genuine NDIS miniport
+expects DriverEntry registration, MiniportInitializeEx/MiniportHaltEx lifecycle,
+Paused/Running transitions, OID query/set semantics, NDIS packet-buffer pools,
+DMA mapping, interrupts, timers, synchronization and Windows kernel services.
+A future host must isolate the driver behind a versioned NDIS miniport ABI,
+explicitly emulate only reviewed imports, contain faults, and reject unsupported
+imports. Do not run third-party kernel driver code in the Nexus kernel simply
+because the PE image is AMD64 or the INF matches a PCI ID.
+
+**Firmware is a separate dependency from driver code.** Every prospective
+chipset port needs an exact PCI/USB hardware-ID match, firmware filename and
+version, a verified firmware source, redistribution/license review, device
+initialization, regulatory-domain behavior and physical test evidence. A
+shared hardware family name or Windows INF match alone is insufficient.
+
+### Regression coverage added in this networking update
+
+The network-device tests exercise preferred adapter selection, automatic
+failover, failback, link speed, traffic accounting, malformed receive lengths
+and the no-link fail-closed path. Network-stack host tests exercise DHCP lease
+renewal, rebind, expiry, DNS override/reset and recovery when a cable is inserted
+after boot. Wi-Fi manager tests assert that a driver cannot use WPA3 unless it
+explicitly advertises WPA3 authentication support.

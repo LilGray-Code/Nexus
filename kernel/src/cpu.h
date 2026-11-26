@@ -73,6 +73,7 @@ struct nexus_cpu_local_topology {
     uint32_t core_id;
     uint32_t node_id;
     uint8_t logical_processors_per_core;
+    uint8_t nodes_per_processor_raw;
     bool apic_id_valid;
     bool core_id_valid;
     bool node_id_valid;

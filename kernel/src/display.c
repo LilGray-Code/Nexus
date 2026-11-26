@@ -36,6 +36,38 @@ static bool edid_checksum_valid(const uint8_t *block) {
     return sum == 0U;
 }
 
+/* Decode EDID vendor/model/serial identity and advertised physical size. */
+static void parse_monitor_identity(const uint8_t *edid) {
+    if (edid == NULL || edid_target == NULL) return;
+
+    const uint16_t code =
+        (uint16_t)(((uint16_t)edid[8] << 8) | (uint16_t)edid[9]);
+    char decoded[4] = {'?', '?', '?', '\0'};
+    bool valid = true;
+    for (uint32_t i = 0U; i < 3U; ++i) {
+        const uint32_t shift = 10U - (i * 5U);
+        const uint8_t letter = (uint8_t)((code >> shift) & 0x1FU);
+        if (letter < 1U || letter > 26U) {
+            decoded[i] = '?';
+            valid = false;
+        } else {
+            decoded[i] = (char)('A' + letter - 1U);
+        }
+    }
+    for (size_t i = 0U; i < sizeof(edid_target->manufacturer); ++i)
+        edid_target->manufacturer[i] = decoded[i];
+    edid_target->identity_valid = valid;
+    edid_target->product_code =
+        (uint16_t)((uint16_t)edid[10] | ((uint16_t)edid[11] << 8));
+    edid_target->serial_number =
+        (uint32_t)edid[12] |
+        ((uint32_t)edid[13] << 8) |
+        ((uint32_t)edid[14] << 16) |
+        ((uint32_t)edid[15] << 24);
+    edid_target->physical_width_mm = (uint16_t)((uint16_t)edid[21] * 10U);
+    edid_target->physical_height_mm = (uint16_t)((uint16_t)edid[22] * 10U);
+}
+
 static bool timing_equal(const struct nexus_display_timing *a,
                          const struct nexus_display_timing *b) {
     return a->width == b->width && a->height == b->height &&
@@ -228,6 +260,7 @@ static bool parse_edid(const uint8_t *edid, size_t length) {
         !edid_header_valid(edid) || !edid_checksum_valid(edid))
         return false;
 
+    parse_monitor_identity(edid);
     parse_established_timings(edid);
     parse_standard_timings(edid);
 
@@ -243,19 +276,20 @@ static bool parse_edid(const uint8_t *edid, size_t length) {
 
     const size_t available_blocks = length / EDID_BLOCK_BYTES;
     size_t declared_blocks = (size_t)edid[126] + 1U;
-    if (declared_blocks > available_blocks) {
+    bool extensions_complete = declared_blocks <= available_blocks;
+    if (declared_blocks > available_blocks)
         declared_blocks = available_blocks;
-        edid_target->edid_extensions_complete = false;
-    } else {
-        edid_target->edid_extensions_complete = true;
-    }
 
     for (size_t block = 1U; block < declared_blocks; ++block) {
         const uint8_t *extension = edid + block * EDID_BLOCK_BYTES;
-        if (!edid_checksum_valid(extension)) continue;
+        if (!edid_checksum_valid(extension)) {
+            extensions_complete = false;
+            continue;
+        }
         if (extension[0] == EDID_CTA_TAG)
             parse_cta_extension(extension);
     }
+    edid_target->edid_extensions_complete = extensions_complete;
     return true;
 }
 
@@ -349,6 +383,13 @@ static uint32_t monitor_matching_refresh(
 static void monitor_copy_edid(struct nexus_display_monitor *monitor,
                               const struct nexus_display_info *parsed) {
     if (monitor == NULL || parsed == NULL) return;
+    monitor->identity_valid = parsed->identity_valid;
+    for (size_t i = 0U; i < sizeof(monitor->manufacturer); ++i)
+        monitor->manufacturer[i] = parsed->manufacturer[i];
+    monitor->product_code = parsed->product_code;
+    monitor->serial_number = parsed->serial_number;
+    monitor->physical_width_mm = parsed->physical_width_mm;
+    monitor->physical_height_mm = parsed->physical_height_mm;
     monitor->edid_valid = parsed->edid_valid;
     monitor->edid_extensions_complete = parsed->edid_extensions_complete;
     monitor->monitor_name_valid = parsed->monitor_name_valid;
@@ -365,6 +406,13 @@ static bool parse_edid_into(struct nexus_display_info *target,
                             const uint8_t *edid, size_t length) {
     if (target == NULL) return false;
     target->timing_count = 0U;
+    target->identity_valid = false;
+    for (size_t i = 0U; i < sizeof(target->manufacturer); ++i)
+        target->manufacturer[i] = '\0';
+    target->product_code = 0U;
+    target->serial_number = 0U;
+    target->physical_width_mm = 0U;
+    target->physical_height_mm = 0U;
     target->monitor_name_valid = false;
     target->hdr_static_metadata = false;
     target->hdr_eotf_flags = 0U;
@@ -418,6 +466,13 @@ static void add_edid_timing_modes(void) {
 static void display_promote_monitor_edid(
     const struct nexus_display_monitor *monitor) {
     if (monitor == NULL) return;
+    display_info.identity_valid = monitor->identity_valid;
+    for (size_t i = 0U; i < sizeof(display_info.manufacturer); ++i)
+        display_info.manufacturer[i] = monitor->manufacturer[i];
+    display_info.product_code = monitor->product_code;
+    display_info.serial_number = monitor->serial_number;
+    display_info.physical_width_mm = monitor->physical_width_mm;
+    display_info.physical_height_mm = monitor->physical_height_mm;
     display_info.edid_valid = monitor->edid_valid;
     display_info.edid_extensions_complete =
         monitor->edid_extensions_complete;
@@ -543,12 +598,20 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
             display_info.current_refresh_hz = primary->matching_edid_refresh_hz;
         if (framebuffer->edid != NULL && framebuffer->edid_size >= 128U) {
             const uint8_t *edid = (const uint8_t *)framebuffer->edid;
-            if (edid[21] != 0U)
-                primary->dpi_x = (uint16_t)((framebuffer->width * 254U) /
-                                             ((uint32_t)edid[21] * 100U));
-            if (edid[22] != 0U)
-                primary->dpi_y = (uint16_t)((framebuffer->height * 254U) /
-                                             ((uint32_t)edid[22] * 100U));
+            if (primary->physical_width_mm != 0U) {
+                const uint64_t dpi =
+                    ((uint64_t)framebuffer->width * 254U +
+                     primary->physical_width_mm * 5U) /
+                    ((uint64_t)primary->physical_width_mm * 10U);
+                primary->dpi_x = dpi > UINT16_MAX ? UINT16_MAX : (uint16_t)dpi;
+            }
+            if (primary->physical_height_mm != 0U) {
+                const uint64_t dpi =
+                    ((uint64_t)framebuffer->height * 254U +
+                     primary->physical_height_mm * 5U) /
+                    ((uint64_t)primary->physical_height_mm * 10U);
+                primary->dpi_y = dpi > UINT16_MAX ? UINT16_MAX : (uint16_t)dpi;
+            }
         }
     }
     display_info.monitor_count = 1U;
@@ -645,12 +708,20 @@ bool nexus_display_add_monitor(uint32_t id, bool connected,
         if (parse_edid_into(&parsed, edid, edid_length)) {
             monitor_copy_edid(&monitor, &parsed);
             monitor.matching_edid_refresh_hz = monitor_matching_refresh(&monitor);
-            if (edid[21] != 0U)
-                monitor.dpi_x = (uint16_t)(((uint64_t)width * 254U) /
-                                            ((uint32_t)edid[21] * 100U));
-            if (edid[22] != 0U)
-                monitor.dpi_y = (uint16_t)(((uint64_t)height * 254U) /
-                                            ((uint32_t)edid[22] * 100U));
+            if (monitor.physical_width_mm != 0U) {
+                const uint64_t dpi =
+                    ((uint64_t)width * 254U +
+                     monitor.physical_width_mm * 5U) /
+                    ((uint64_t)monitor.physical_width_mm * 10U);
+                monitor.dpi_x = dpi > UINT16_MAX ? UINT16_MAX : (uint16_t)dpi;
+            }
+            if (monitor.physical_height_mm != 0U) {
+                const uint64_t dpi =
+                    ((uint64_t)height * 254U +
+                     monitor.physical_height_mm * 5U) /
+                    ((uint64_t)monitor.physical_height_mm * 10U);
+                monitor.dpi_y = dpi > UINT16_MAX ? UINT16_MAX : (uint16_t)dpi;
+            }
         }
         if (id == display_info.primary_monitor_id)
             display_promote_monitor_edid(&monitor);

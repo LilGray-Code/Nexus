@@ -60,6 +60,7 @@ struct nexus_display_monitor {
     int32_t desktop_y;
     uint32_t width;
     uint32_t height;
+    uint32_t current_refresh_hz;
     uint16_t dpi_x;
     uint16_t dpi_y;
     bool edid_valid;

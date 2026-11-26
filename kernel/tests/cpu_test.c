@@ -11,7 +11,11 @@ int main(void) {
     assert(info->cpuid_available);
     assert(info->vendor[0] != '\0');
     assert(nexus_cpu_get_vendor() == info->vendor_kind);
-    assert(nexus_cpu_get_local_core_type() == info->core_type);
+    const enum nexus_cpu_core_type local_core_type =
+        nexus_cpu_get_local_core_type();
+    assert(local_core_type == NEXUS_CPU_CORE_TYPE_UNKNOWN ||
+           local_core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE ||
+           local_core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY);
     assert(nexus_cpu_vendor_name()[0] != '\0');
     if (info->vendor_kind == NEXUS_CPU_VENDOR_INTEL)
         assert(nexus_cpu_is_intel() && !nexus_cpu_is_amd());

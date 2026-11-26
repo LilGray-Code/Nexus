@@ -213,6 +213,8 @@ static struct nexus_virtio_gpu_display_info display_inventory;
 static uint32_t original_scanout_x[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint32_t original_scanout_y[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint32_t active_scanout_count;
+static uint32_t current_scanout_rect_width[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+static uint32_t current_scanout_rect_height[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
 static uint64_t framebuffer_physical;
 static uint64_t framebuffer_pages;
 static volatile uint8_t *framebuffer_memory;
@@ -655,6 +657,8 @@ static bool gpu_query_display_info(uint64_t preferred_width,
         original_scanout_y[i] = saved->y;
         saved->width = read_le32(response + offset + 8U);
         saved->height = read_le32(response + offset + 12U);
+        current_scanout_rect_width[i] = saved->width;
+        current_scanout_rect_height[i] = saved->height;
         saved->enabled = read_le32(response + offset + 16U) != 0U;
         saved->flags = read_le32(response + offset + 20U);
         if (!saved->enabled) continue;
@@ -812,6 +816,8 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     for (uint32_t i = 0U; i < NEXUS_VIRTIO_GPU_MAX_SCANOUTS; ++i) {
         original_scanout_x[i] = 0U;
         original_scanout_y[i] = 0U;
+        current_scanout_rect_width[i] = 0U;
+        current_scanout_rect_height[i] = 0U;
     }
     device_scanout_count = 0U;
     device_capset_count = 0U;
@@ -1247,8 +1253,13 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
 
     struct nexus_virtio_gpu_scanout_info previous[
         NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
-    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i)
+    uint32_t previous_rect_width[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+    uint32_t previous_rect_height[NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
         previous[i] = display_inventory.scanouts[i];
+        previous_rect_width[i] = current_scanout_rect_width[i];
+        previous_rect_height[i] = current_scanout_rect_height[i];
+    }
 
     for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
         const struct nexus_virtio_gpu_scanout_info *scanout =
@@ -1272,7 +1283,7 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
                 if (!previous[j].enabled) continue;
                 (void)gpu_set_scanout_rectangle(
                     j, previous[j].x, previous[j].y,
-                    previous[j].width, previous[j].height);
+                    previous_rect_width[j], previous_rect_height[j]);
             }
             for (uint32_t j = 0U; j < display_inventory.scanout_count; ++j)
                 display_inventory.scanouts[j] = previous[j];
@@ -1280,6 +1291,8 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
         }
         display_inventory.scanouts[i].x = x;
         display_inventory.scanouts[i].y = y;
+        current_scanout_rect_width[i] = width;
+        current_scanout_rect_height[i] = height;
     }
     return true;
 }

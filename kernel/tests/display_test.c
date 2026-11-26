@@ -82,6 +82,19 @@ static void set_checksum(uint8_t *block) {
     block[127] = (uint8_t)(0U - sum);
 }
 
+static size_t find_mode(const struct nexus_display_info *info,
+                        uint64_t width, uint64_t height,
+                        uint32_t refresh_hz) {
+    assert(info != NULL);
+    for (size_t i = 0U; i < info->mode_count; ++i) {
+        const struct nexus_display_mode *mode = &info->modes[i];
+        if (mode->width == width && mode->height == height &&
+            mode->refresh_hz == refresh_hz) return i;
+    }
+    assert(!"requested display mode was not enumerated");
+    return 0U;
+}
+
 static void make_1080p60_dtd(uint8_t *dtd) {
     memset(dtd, 0, 18U);
     dtd[0] = 0x02U;
@@ -137,13 +150,13 @@ int main(void) {
         .height = 1080U,
         .bpp = 32U
     };
-    struct limine_video_mode mode_720 = {
-        .pitch = 1280U * 4U,
-        .width = 1280U,
-        .height = 720U,
+    struct limine_video_mode mode_1600 = {
+        .pitch = 1600U * 4U,
+        .width = 1600U,
+        .height = 900U,
         .bpp = 32U
     };
-    struct limine_video_mode *modes[] = {&mode_1080, &mode_720};
+    struct limine_video_mode *modes[] = {&mode_1080, &mode_1600};
     uint32_t framebuffer[1024U * 768U] = {0};
     struct limine_framebuffer fb = {
         .address = framebuffer,
@@ -258,18 +271,20 @@ int main(void) {
     assert(!nexus_display_set_primary_monitor(0U));
     assert(nexus_display_get_info()->primary_monitor_id == 1U);
     fake.fail_primary = false;
-    assert(nexus_display_apply_mode(0U));
+    const size_t mode_1600 = find_mode(info, 1600U, 900U, 0U);
+    const size_t mode_1280 = find_mode(info, 1280U, 800U, 60U);
+    assert(nexus_display_apply_mode(mode_1600));
     info = nexus_display_get_info();
-    assert(info->current_width == 1920U);
-    assert(info->current_height == 1080U);
-    assert(fake.current_width == 1920U);
+    assert(info->current_width == 1600U);
+    assert(info->current_height == 900U);
+    assert(fake.current_width == 1600U);
     assert(fake.verify_calls == 1U);
 
-    /* A set failure must restore and verify the prior mode. */
-    assert(!nexus_display_apply_mode(1U));
+    /* A set failure must restore and verify the previous primary mode. */
+    assert(!nexus_display_apply_mode(mode_1280));
     info = nexus_display_get_info();
-    assert(info->current_width == 1920U);
-    assert(fake.current_width == 1920U);
+    assert(info->current_width == 1600U);
+    assert(fake.current_width == 1600U);
     assert(fake.restore_calls == 1U);
     assert(fake.verify_calls == 2U);
     assert(info->last_rollback_succeeded);
@@ -280,11 +295,12 @@ int main(void) {
     /* A mode that fails post-set verification must also roll back. */
     fake.fail_width = 0U;
     fake.fail_verify_width = 1280U;
-    assert(!nexus_display_apply_mode(1U));
+    assert(!nexus_display_apply_mode(mode_1280));
     info = nexus_display_get_info();
-    assert(info->current_width == 1920U);
-    assert(fake.current_width == 1920U);
+    assert(info->current_width == 1600U);
+    assert(fake.current_width == 1600U);
     assert(fake.restore_calls == 2U);
+    assert(fake.verify_calls == 4U);
     assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_VERIFY);
     assert(info->last_rollback_succeeded);
 
@@ -292,12 +308,12 @@ int main(void) {
     fake.fail_verify_width = 0U;
     fake.fail_width = 1280U;
     fake.fail_restore = true;
-    assert(!nexus_display_apply_mode(1U));
+    assert(!nexus_display_apply_mode(mode_1280));
     info = nexus_display_get_info();
     assert(!info->last_rollback_succeeded);
     assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_ROLLBACK);
     assert(!info->mode_set_available);
-    assert(!nexus_display_apply_mode(0U));
+    assert(!nexus_display_apply_mode(mode_1600));
 
     uint8_t bad_edid[128];
     memcpy(bad_edid, edid, sizeof(bad_edid));

@@ -302,12 +302,13 @@ static bool package_read_permission_record(const char *id,
     size_t id_length = 0U;
     while (cursor + id_length < total && bytes[cursor + id_length] != '\n')
         ++id_length;
-    if (id_length == 0U || id_length >= NEXUS_PACKAGE_ID_MAX + 1U ||
+    size_t expected_id_length = 0U;
+    while (id[expected_id_length] != '\0') ++expected_id_length;
+    if (id_length == 0U || id_length != expected_id_length ||
+        id_length >= NEXUS_PACKAGE_ID_MAX + 1U ||
         cursor + id_length >= total) return false;
-    if (id_length != 0U) {
-        for (size_t i = 0U; i < id_length; ++i)
-            if (bytes[cursor + i] != (uint8_t)id[i]) return false;
-    }
+    for (size_t i = 0U; i < id_length; ++i)
+        if (bytes[cursor + i] != (uint8_t)id[i]) return false;
     cursor += id_length + 1U;
     if (cursor + sizeof(middle) - 1U > total ||
         !bytes_equal(bytes + cursor, middle, sizeof(middle) - 1U))
@@ -740,11 +741,10 @@ bool nexus_package_set_permissions(
     if (!valid_id(id) || verifier == NULL ||
         (granted_permissions & ~NEXUS_APP_PERMISSION_ALL) != 0U)
         return false;
-    struct nexus_package_manifest manifest;
-    char receipt[32];
-    if (!make_paths(&(struct nexus_package_manifest){0}, receipt, receipt))
+    if (!nexus_package_is_installed(id, verifier, verifier_context, NULL))
         return false;
-    /* Derive receipt path only after authenticating the signed installed manifest. */
+    struct nexus_package_manifest manifest;
+    /* Derive the receipt path only after validating the installed package. */
     char receipt_path[32];
     static const char prefix[] = "APPS/";
     size_t used = 0U;

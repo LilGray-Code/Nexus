@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "nexus/app.h"
+
 #define NEXUS_PACKAGE_ABI_VERSION 1U
 #define NEXUS_PACKAGE_MAX_PAYLOAD (4U * 1024U * 1024U)
 #define NEXUS_PACKAGE_HEADER_MAX 512U
@@ -29,6 +31,7 @@ struct nexus_package_manifest {
     char key_id[NEXUS_PACKAGE_KEY_ID_MAX + 1U];
     uint32_t abi_version;
     uint32_t payload_size;
+    uint32_t permissions;
     size_t signed_message_size;
     size_t header_size;
     size_t payload_offset;
@@ -52,6 +55,7 @@ struct nexus_package_install_result {
     char id[NEXUS_PACKAGE_ID_MAX + 1U];
     char version[NEXUS_PACKAGE_VERSION_MAX + 1U];
     char executable_path[32];
+    uint32_t permissions;
 };
 
 /* Parse a complete package. This does not authenticate it. */
@@ -63,7 +67,9 @@ bool nexus_package_verify(const void *package_bytes, size_t package_length,
                           void *verifier_context,
                           struct nexus_package_manifest *manifest);
 /*
- * Install one static ELF64 app into the writable NXFS Data volume.
+ * Install one static ELF64 app into the writable NXFS Data volume. Signed
+ * PERMISSIONS= metadata controls the optional syscalls granted at launch;
+ * legacy packages receive no optional capabilities.
  * The signed .NPK receipt is committed only after the executable is present.
  */
 bool nexus_package_install(const void *package_bytes, size_t package_length,

@@ -5,6 +5,8 @@
 
 typedef void (*nexus_thread_entry_t)(void *argument);
 
+#define NEXUS_SCHEDULER_MAX_THREADS 16U
+
 void scheduler_init(void);
 bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument);
 void scheduler_start(void);

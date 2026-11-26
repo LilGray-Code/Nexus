@@ -284,10 +284,20 @@ static bool gpu_virgl_query_capset(void) {
         const uint32_t id = read_le32(response + 24U);
         const uint32_t version = read_le32(response + 28U);
         const uint32_t size = read_le32(response + 32U);
+        const bool context_init_supported =
+            (transport.features & ((uint64_t)1U <<
+                                   (32U + VIRTIO_GPU_F_CONTEXT_INIT))) != 0U;
         if ((id != VIRTIO_GPU_CAPSET_VIRGL &&
              id != VIRTIO_GPU_CAPSET_VIRGL2) || version == 0U || size == 0U)
             continue;
-        if (!found || id == VIRTIO_GPU_CAPSET_VIRGL2) {
+        /* Without CONTEXT_INIT, the host chooses its default context type.
+         * Do not advertise an explicitly discovered VIRGL2 capset as the
+         * selected context unless the guest can request that capset.
+         */
+        if (id == VIRTIO_GPU_CAPSET_VIRGL2 && !context_init_supported)
+            continue;
+        if (!found || (context_init_supported &&
+                       id == VIRTIO_GPU_CAPSET_VIRGL2)) {
             virgl_capset_id = id;
             virgl_capset_max_version = version;
             virgl_capset_max_size = size;
@@ -407,6 +417,17 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
                       const struct nexus_graphics_surface *firmware_surface,
                       struct nexus_graphics_surface *render_surface) {
     active = false;
+    virgl_feature_negotiated = false;
+    virgl_context_created = false;
+    virgl_command_submission_ready = false;
+    virgl_capset_id = 0U;
+    virgl_capset_max_version = 0U;
+    virgl_capset_max_size = 0U;
+    virgl_next_fence = 1U;
+    virgl_last_submitted_fence = 0U;
+    virgl_last_completed_fence = 0U;
+    virgl_failed_submissions = 0U;
+    gpu_set_virtio_3d_submission_ready(false, 0U);
     if (firmware_surface == NULL || render_surface == NULL ||
         width == 0U || height == 0U ||
         width > 4096U || height > 2160U ||

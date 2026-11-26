@@ -295,7 +295,7 @@ static bool package_read_permission_record(const char *id,
     if (!okay) return false;
 
     static const char prefix[] = "NEXUS-PACKAGE-GRANTS/1\nID=";
-    static const char middle[] = "\nPERMISSIONS=";
+    static const char middle[] = "PERMISSIONS=";
     if (total < sizeof(prefix) - 1U ||
         !bytes_equal(bytes, prefix, sizeof(prefix) - 1U)) return false;
     size_t cursor = sizeof(prefix) - 1U;

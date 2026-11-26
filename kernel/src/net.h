@@ -7,6 +7,15 @@
 
 #include "netdev.h"
 
+enum nexus_dhcp_client_state {
+    NEXUS_DHCP_STATE_IDLE = 0,
+    NEXUS_DHCP_STATE_DISCOVERING,
+    NEXUS_DHCP_STATE_REQUESTING,
+    NEXUS_DHCP_STATE_BOUND,
+    NEXUS_DHCP_STATE_RENEWING,
+    NEXUS_DHCP_STATE_REBINDING
+};
+
 enum nexus_tcp_receive_result {
     NEXUS_TCP_RECEIVE_ERROR = -1,
     NEXUS_TCP_RECEIVE_TIMEOUT = 0,
@@ -20,6 +29,13 @@ struct nexus_net_info {
     bool interface_ready;
     bool link_up;
     bool ipv4_configured;
+    enum nexus_dhcp_client_state dhcp_state;
+    bool dhcp_lease_valid;
+    uint32_t dhcp_lease_seconds;
+    uint32_t dhcp_t1_seconds;
+    uint32_t dhcp_t2_seconds;
+    uint32_t dhcp_lease_remaining_seconds;
+    uint32_t dhcp_renew_in_seconds;
     uint8_t mac[6];
     uint8_t ipv4[4];
     uint8_t subnet_mask[4];
@@ -32,6 +48,9 @@ void net_poll(void);
 bool net_get_info(struct nexus_net_info *info);
 bool net_dns_resolve(const char *hostname, uint8_t result[4],
                      uint64_t timeout_ticks);
+/* Send a bounded IPv4 ICMP echo probe. reply_ttl may be NULL. */
+bool net_ping(const uint8_t destination_ipv4[4], uint64_t timeout_ticks,
+              uint8_t *reply_ttl);
 bool net_udp_send(const uint8_t destination_ipv4[4],
                   uint16_t source_port, uint16_t destination_port,
                   const void *payload, uint16_t payload_length);

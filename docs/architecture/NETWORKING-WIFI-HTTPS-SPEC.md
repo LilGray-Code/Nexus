@@ -1,10 +1,12 @@
 # Nexus OS Networking, HTTPS, Browser, and Wi-Fi Engineering Specification
 
-**Status:** Active implementation. Nexus has a freestanding TCP/HTTP stack, a pinned Mbed TLS 4.1.2 TLS 1.3 adapter, certificate and hostname verification, a bounded crypto allocator, and an HTTPS-first browser with web-search form submission and selectable text results. The release build now embeds a checksum-verified Mozilla-derived CA root bundle. Physical Wi-Fi drivers and a modern HTML/CSS/JavaScript browser engine remain incomplete.
+**Status:** Active implementation. Nexus has selected Ethernet drivers (Intel e1000, Realtek RTL8139 and VirtIO-net), DHCP-managed IPv4, ARP, bounded ICMPv4 echo diagnostics, a bounded DNS A-record resolver, a small TCP/UDP stack, a pinned Mbed TLS 4.1.2 TLS 1.3 adapter, hostname/certificate verification, and a checksum-verified Mozilla-derived root bundle. DHCP tracks lease T1/T2/expiry and performs unicast renewal, broadcast rebinding and stale-route cleanup. ICMP currently supports echo request/reply only; error messages and path-MTU discovery remain absent. Physical Wi-Fi chipset drivers, IPv6, Bluetooth, a general socket API, and a modern HTML/CSS/JavaScript browser engine remain incomplete.
 
 ## Verified current boundary
 
 The browser's secure search providers use HTTPS and parse bounded, server-rendered HTML result links. Bing is tried first and DuckDuckGo HTML is attempted once when the first provider returns an unusable response. The release build downloads the Mozilla-derived CA PEM from curl's CA Extract service, verifies the published SHA-256 digest, and embeds the immutable file in the TLS-enabled kernel. A valid NEXUS.CRT file on the writable Nexus Data volume may override the built-in store. The trust source, licensing, and policy limits are documented in docs/security/CA-TRUST-STORE.md.
+
+The DHCPv4 client parses lease time (option 51), renewal T1 (option 58) and rebinding T2 (option 59), uses conservative 50%/87% defaults when the server omits the timers, unicasts renewal requests to the current lease server at T1, broadcasts at T2, accepts a new server during rebinding, and discards stale address/routes/DNS/ARP/TCP state on lease expiry or NAK. This does not yet provide static IPv4 profiles, DHCPv6 or IPv6 SLAAC.
 
 The IPv4 DNS client validates the active transaction's question and answer framing, follows a bounded CNAME chain, rejects malformed compression pointers, retries unanswered queries with bounded exponential backoff, and keeps a small positive A-record cache. Cached entries honor the shortest TTL in the CNAME/A chain, cap storage at five minutes, and are cleared when the selected link or adapter changes. This is not a full recursive resolver, negative cache, or IPv6 resolver.
 

@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 static uint64_t fake_ticks;
 static uint8_t queued_frame[NET_MAX_FRAME];
@@ -22,10 +23,17 @@ static bool inject_bad_ack_once;
 static bool bad_ack_injected;
 static uint8_t last_data_payload[NET_TCP_MAX_PAYLOAD];
 static size_t last_data_payload_length;
+static unsigned icmp_requests;
+static bool drop_icmp_echo_replies;
 static unsigned dns_request_count;
 static unsigned dns_reply_on_request;
+static unsigned dhcp_request_count;
+static uint8_t last_dhcp_frame[NET_MAX_FRAME];
+static size_t last_dhcp_frame_length;
 
 static void queue_dns_test_udp_reply(uint16_t transaction_id);
+static void queue_icmp_test_reply(const uint8_t *request_ip,
+                                  size_t request_ip_length);
 
 static void inject_tcp_test_segment(uint32_t sequence,
                                     uint32_t acknowledgement,
@@ -145,10 +153,29 @@ bool netdev_send_frame(const void *frame_data, size_t length) {
     const size_t ip_header = (size_t)(ip[0] & 0x0FU) * 4U;
     if (ip_header < NET_IPV4_HEADER ||
         length < NET_ETHERNET_HEADER + ip_header) return true;
+    if (ip[9] == IP_PROTOCOL_ICMP) {
+        if (length < NET_ETHERNET_HEADER + ip_header +
+                     NET_ICMP_HEADER + NET_ICMP_PAYLOAD) return true;
+        const uint8_t *icmp = ip + ip_header;
+        if (icmp[0] == ICMP_ECHO_REQUEST && icmp[1] == 0U &&
+            checksum(icmp, NET_ICMP_HEADER + NET_ICMP_PAYLOAD) == 0U) {
+            ++icmp_requests;
+            if (!drop_icmp_echo_replies)
+                queue_icmp_test_reply(ip, read_be16(ip + 2U));
+        }
+        return true;
+    }
     if (ip[9] == IP_PROTOCOL_UDP) {
         if (length < NET_ETHERNET_HEADER + ip_header + NET_UDP_HEADER)
             return true;
         const uint8_t *udp = ip + ip_header;
+        if (read_be16(udp) == NET_DHCP_CLIENT_PORT &&
+            read_be16(udp + 2U) == NET_DHCP_SERVER_PORT) {
+            ++dhcp_request_count;
+            last_dhcp_frame_length = length;
+            assert(length <= sizeof(last_dhcp_frame));
+            copy_bytes(last_dhcp_frame, frame, length);
+        }
         if (read_be16(udp) == NET_DNS_CLIENT_PORT &&
             read_be16(udp + 2U) == NET_DNS_SERVER_PORT) {
             ++dns_request_count;
@@ -215,6 +242,9 @@ static void setup_network(void) {
     last_sent_frame_length = 0U;
     syn_transmissions = 0U;
     data_transmissions = 0U;
+    icmp_requests = 0U;
+    drop_icmp_echo_replies = false;
+    icmp_ping = (struct net_icmp_ping){0};
     last_data_sequence = 0U;
     attempts_for_sequence = 0U;
     have_data_sequence = false;
@@ -224,6 +254,8 @@ static void setup_network(void) {
     last_data_payload_length = 0U;
     dns_request_count = 0U;
     dns_reply_on_request = 0U;
+    dhcp_request_count = 0U;
+    last_dhcp_frame_length = 0U;
 
     network = (struct net_state){0};
     network.ready = true;
@@ -240,6 +272,13 @@ static void setup_network(void) {
     subnet_mask[2] = 255U;
     subnet_mask[3] = 0U;
     dhcp_state = NET_DHCP_BOUND;
+    dhcp_transaction_id = 0x4E585553U;
+    dhcp_retry_count = 0U;
+    dhcp_last_send_tick = fake_ticks;
+    dhcp_clear_lease();
+    dhcp_set_lease(NET_DHCP_INFINITE_LEASE, 0U, 0U);
+    const uint8_t server_ip[4] = {192U,0U,2U,1U};
+    copy_bytes(dhcp_server_ipv4, server_ip, sizeof(server_ip));
 
     network.arp[0].valid = true;
     copy_bytes(network.arp[0].ipv4, remote_ip, sizeof(remote_ip));
@@ -253,6 +292,225 @@ static void setup_network(void) {
     dns_query_name[0] = '\0';
     for (size_t i = 0U; i < 4U; ++i) dns_ipv4[i] = 0U;
     dns_cache_clear();
+}
+
+
+static void dhcp_test_append_option(uint8_t *packet, size_t *cursor,
+                                    uint8_t code, const uint8_t *value,
+                                    uint8_t length) {
+    assert(packet != NULL && cursor != NULL);
+    packet[(*cursor)++] = code;
+    packet[(*cursor)++] = length;
+    for (size_t i = 0U; i < length; ++i)
+        packet[(*cursor)++] = value[i];
+}
+
+static size_t dhcp_test_make_reply(
+    uint8_t packet[NET_DHCP_PACKET_SIZE], uint8_t message_type,
+    const uint8_t offered[4], const uint8_t server[4],
+    uint32_t lease_seconds, uint32_t t1_seconds, uint32_t t2_seconds,
+    bool include_timers) {
+    memset(packet, 0, NET_DHCP_PACKET_SIZE);
+    packet[0] = 2U;
+    packet[1] = 1U;
+    packet[2] = 6U;
+    write_be32(packet + 4U, dhcp_transaction_id);
+    if (offered != NULL) copy_bytes(packet + 16U, offered, 4U);
+    copy_bytes(packet + 28U, network.mac, 6U);
+    packet[236] = 99U;
+    packet[237] = 130U;
+    packet[238] = 83U;
+    packet[239] = 99U;
+    size_t cursor = NET_DHCP_OPTIONS_OFFSET;
+    const uint8_t type_value[1] = {message_type};
+    const uint8_t mask[4] = {255U,255U,255U,0U};
+    const uint8_t router[4] = {192U,0U,2U,1U};
+    const uint8_t dns[4] = {192U,0U,2U,53U};
+    dhcp_test_append_option(packet, &cursor, 53U, type_value, 1U);
+    dhcp_test_append_option(packet, &cursor, 1U, mask, 4U);
+    dhcp_test_append_option(packet, &cursor, 3U, router, 4U);
+    dhcp_test_append_option(packet, &cursor, 6U, dns, 4U);
+    if (server != NULL)
+        dhcp_test_append_option(packet, &cursor, 54U, server, 4U);
+    if (include_timers) {
+        uint8_t value[4];
+        write_be32(value, lease_seconds);
+        dhcp_test_append_option(packet, &cursor, 51U, value, 4U);
+        write_be32(value, t1_seconds);
+        dhcp_test_append_option(packet, &cursor, 58U, value, 4U);
+        write_be32(value, t2_seconds);
+        dhcp_test_append_option(packet, &cursor, 59U, value, 4U);
+    }
+    packet[cursor++] = 255U;
+    assert(cursor <= NET_DHCP_PACKET_SIZE);
+    return cursor;
+}
+
+static void dhcp_test_decode_last_request(uint8_t *source_ip,
+                                          uint8_t *destination_ip,
+                                          uint8_t *ciaddr,
+                                          uint8_t *flags) {
+    assert(last_dhcp_frame_length >= NET_ETHERNET_HEADER +
+           NET_IPV4_HEADER + NET_UDP_HEADER + NET_DHCP_OPTIONS_OFFSET);
+    const uint8_t *ip = last_dhcp_frame + NET_ETHERNET_HEADER;
+    assert(ip[9] == IP_PROTOCOL_UDP);
+    copy_bytes(source_ip, ip + 12U, 4U);
+    copy_bytes(destination_ip, ip + 16U, 4U);
+    const uint8_t *dhcp = ip + NET_IPV4_HEADER + NET_UDP_HEADER;
+    copy_bytes(ciaddr, dhcp + 12U, 4U);
+    *flags = dhcp[10];
+}
+
+static void test_dhcp_lease_renew_rebind_and_expiry(void) {
+    setup_network();
+    const uint8_t assigned_ip[4] = {192U,0U,2U,10U};
+    const uint8_t server_ip[4] = {192U,0U,2U,1U};
+    const uint8_t server_mac[6] = {0x02U,0xAAU,0xBBU,0xCCU,0xDDU,0x01U};
+    const uint8_t dhcp_offer_ip[4] = {192U,0U,2U,10U};
+    const uint8_t server_new_ip[4] = {192U,0U,2U,99U};
+
+    /* Start a real DHCP selecting/requesting lifecycle from an unconfigured NIC. */
+    dhcp_state = NET_DHCP_REQUESTING;
+    network.ipv4[0] = network.ipv4[1] =
+        network.ipv4[2] = network.ipv4[3] = 0U;
+    copy_bytes(offered_ipv4, dhcp_offer_ip, 4U);
+    copy_bytes(dhcp_server_ipv4, server_ip, 4U);
+    subnet_mask[0] = subnet_mask[1] =
+        subnet_mask[2] = subnet_mask[3] = 0U;
+    gateway_ipv4[0] = gateway_ipv4[1] =
+        gateway_ipv4[2] = gateway_ipv4[3] = 0U;
+    dns_ipv4[0] = dns_ipv4[1] = dns_ipv4[2] = dns_ipv4[3] = 0U;
+
+    uint8_t reply[NET_DHCP_PACKET_SIZE];
+    size_t reply_length = dhcp_test_make_reply(
+        reply, 5U, assigned_ip, server_ip, 120U, 60U, 100U, true);
+    receive_dhcp(reply, reply_length, server_ip);
+    assert(dhcp_state == NET_DHCP_BOUND);
+    assert(dhcp_lease_seconds == 120U);
+    assert(dhcp_t1_seconds == 60U && dhcp_t2_seconds == 100U);
+    assert(equal_bytes(network.ipv4, assigned_ip, 4U));
+    assert(dhcp_renew_tick == dhcp_lease_started_tick + 6000U);
+    assert(dhcp_rebind_tick == dhcp_lease_started_tick + 10000U);
+    assert(dhcp_expire_tick == dhcp_lease_started_tick + 12000U);
+
+    /* T1 unicasts a renewal using ciaddr, with no SELECTING-only options. */
+    network.arp[1].valid = true;
+    copy_bytes(network.arp[1].ipv4, server_ip, 4U);
+    copy_bytes(network.arp[1].mac, server_mac, 6U);
+    fake_ticks = dhcp_renew_tick - 1U;
+    const unsigned before_renew = dhcp_request_count;
+    dhcp_retry();
+    assert(dhcp_state == NET_DHCP_RENEWING);
+    assert(dhcp_request_count == before_renew + 1U);
+    uint8_t source[4], destination[4], ciaddr[4], flags = 0U;
+    dhcp_test_decode_last_request(source, destination, ciaddr, &flags);
+    assert(equal_bytes(source, assigned_ip, 4U));
+    assert(equal_bytes(destination, server_ip, 4U));
+    assert(equal_bytes(ciaddr, assigned_ip, 4U));
+    assert(flags == 0U);
+
+    /* A different server cannot replace the active lease during T1 renewal. */
+    reply_length = dhcp_test_make_reply(
+        reply, 5U, server_new_ip, server_new_ip, 900U, 450U, 800U, true);
+    const uint8_t gateway_before[4] = {
+        gateway_ipv4[0], gateway_ipv4[1], gateway_ipv4[2], gateway_ipv4[3]
+    };
+    const uint8_t dns_before[4] = {
+        dns_ipv4[0], dns_ipv4[1], dns_ipv4[2], dns_ipv4[3]
+    };
+    receive_dhcp(reply, reply_length, server_new_ip);
+    assert(dhcp_state == NET_DHCP_RENEWING);
+    assert(equal_bytes(network.ipv4, assigned_ip, 4U));
+    assert(equal_bytes(dhcp_server_ipv4, server_ip, 4U));
+    assert(equal_bytes(gateway_ipv4, gateway_before, 4U));
+    assert(equal_bytes(dns_ipv4, dns_before, 4U));
+    assert(dhcp_lease_seconds == 120U);
+
+    /* T2 switches to broadcast rebinding while retaining the leased address. */
+    fake_ticks = dhcp_rebind_tick - 1U;
+    const unsigned before_rebind = dhcp_request_count;
+    dhcp_retry();
+    assert(dhcp_state == NET_DHCP_REBINDING);
+    assert(dhcp_request_count == before_rebind + 1U);
+    dhcp_test_decode_last_request(source, destination, ciaddr, &flags);
+    const uint8_t broadcast[4] = {255U,255U,255U,255U};
+    assert(equal_bytes(source, assigned_ip, 4U));
+    assert(equal_bytes(destination, broadcast, 4U));
+    assert(equal_bytes(ciaddr, assigned_ip, 4U));
+    assert(flags == 0x80U);
+
+    /* A different DHCP server may answer a REBINDING request. */
+    reply_length = dhcp_test_make_reply(
+        reply, 5U, NULL, server_new_ip, 240U, 120U, 210U, true);
+    receive_dhcp(reply, reply_length, server_new_ip);
+    assert(dhcp_state == NET_DHCP_BOUND);
+    assert(equal_bytes(network.ipv4, assigned_ip, 4U));
+    assert(equal_bytes(dhcp_server_ipv4, server_new_ip, 4U));
+    assert(dhcp_lease_seconds == 240U);
+    assert(dhcp_t1_seconds == 120U && dhcp_t2_seconds == 210U);
+
+    /* Public status stays configured across renewal and reports remaining time. */
+    struct nexus_net_info info;
+    assert(net_get_info(&info));
+    assert(info.ipv4_configured && info.dhcp_lease_valid);
+    assert(info.dhcp_state == NEXUS_DHCP_STATE_BOUND);
+    assert(info.dhcp_lease_seconds == 240U);
+    assert(info.dhcp_lease_remaining_seconds <= 240U);
+
+    /* Expiry clears stale route/DNS state and restarts DHCP discovery. */
+    fake_ticks = dhcp_expire_tick - 1U;
+    const unsigned before_expiry = dhcp_request_count;
+    dhcp_retry();
+    assert(dhcp_state == NET_DHCP_DISCOVERING);
+    assert(dhcp_request_count == before_expiry + 1U);
+    assert(ipv4_zero(network.ipv4));
+    assert(ipv4_zero(gateway_ipv4) && ipv4_zero(dns_ipv4));
+    assert(dhcp_lease_seconds == 0U);
+    assert(net_get_info(&info));
+    assert(!info.ipv4_configured && !info.dhcp_lease_valid);
+}
+
+static void test_dhcp_default_timers_and_infinite_lease(void) {
+    setup_network();
+    const uint8_t assigned_ip[4] = {192U,0U,2U,10U};
+    const uint8_t server_ip[4] = {192U,0U,2U,1U};
+    uint8_t reply[NET_DHCP_PACKET_SIZE];
+    dhcp_state = NET_DHCP_REQUESTING;
+    copy_bytes(offered_ipv4, assigned_ip, 4U);
+    copy_bytes(dhcp_server_ipv4, server_ip, 4U);
+
+    size_t length = dhcp_test_make_reply(
+        reply, 5U, assigned_ip, server_ip, 0U, 0U, 0U, false);
+    /* Missing lease timer options use the RFC-sized 1-hour default. */
+    receive_dhcp(reply, length, server_ip);
+    assert(dhcp_state == NET_DHCP_BOUND);
+    assert(dhcp_lease_seconds == NET_DHCP_DEFAULT_LEASE_SECONDS);
+    assert(dhcp_t1_seconds == 1800U);
+    assert(dhcp_t2_seconds == 3132U);
+
+    dhcp_state = NET_DHCP_REQUESTING;
+    length = dhcp_test_make_reply(
+        reply, 5U, assigned_ip, server_ip, NET_DHCP_INFINITE_LEASE,
+        0U, 0U, true);
+    receive_dhcp(reply, length, server_ip);
+    assert(dhcp_lease_seconds == NET_DHCP_INFINITE_LEASE);
+    assert(dhcp_renew_tick == UINT64_MAX &&
+           dhcp_rebind_tick == UINT64_MAX &&
+           dhcp_expire_tick == UINT64_MAX);
+}
+
+static void test_dhcp_nak_clears_existing_lease(void) {
+    setup_network();
+    const uint8_t server_ip[4] = {192U,0U,2U,1U};
+    uint8_t reply[NET_DHCP_PACKET_SIZE];
+    const size_t length = dhcp_test_make_reply(
+        reply, 6U, NULL, server_ip, 0U, 0U, 0U, false);
+    dhcp_state = NET_DHCP_RENEWING;
+    dhcp_lease_seconds = 120U;
+    receive_dhcp(reply, length, server_ip);
+    assert(dhcp_state == NET_DHCP_DISCOVERING);
+    assert(ipv4_zero(network.ipv4));
+    assert(dhcp_lease_seconds == 0U);
 }
 
 static size_t dns_test_append_name(uint8_t *packet, size_t offset,
@@ -271,6 +529,45 @@ static size_t dns_test_append_name(uint8_t *packet, size_t offset,
     }
     packet[offset++] = 0U;
     return offset;
+}
+
+static void queue_icmp_test_reply(const uint8_t *request_ip,
+                                  size_t request_ip_length) {
+    assert(request_ip != NULL && request_ip_length >= NET_IPV4_HEADER +
+           NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const size_t ip_header = (size_t)(request_ip[0] & 0x0FU) * 4U;
+    const size_t ip_total = read_be16(request_ip + 2U);
+    assert(ip_header >= NET_IPV4_HEADER && ip_total <= request_ip_length &&
+           ip_total == ip_header + NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const uint8_t *request = request_ip + ip_header;
+    assert(request[0] == ICMP_ECHO_REQUEST && request[1] == 0U &&
+           checksum(request, ip_total - ip_header) == 0U);
+
+    uint8_t frame[NET_MAX_FRAME] = {0};
+    copy_bytes(frame, network.mac, 6U);
+    copy_bytes(frame + 6U, remote_mac, 6U);
+    write_be16(frame + 12U, ETHERTYPE_IPV4);
+    uint8_t *ip = frame + NET_ETHERNET_HEADER;
+    ip[0] = 0x45U;
+    write_be16(ip + 2U, (uint16_t)(NET_IPV4_HEADER +
+        NET_ICMP_HEADER + NET_ICMP_PAYLOAD));
+    write_be16(ip + 4U, 0x1234U);
+    ip[8] = 49U;
+    ip[9] = IP_PROTOCOL_ICMP;
+    copy_bytes(ip + 12U, remote_ip, 4U);
+    copy_bytes(ip + 16U, network.ipv4, 4U);
+    write_be16(ip + 10U, checksum(ip, NET_IPV4_HEADER));
+    uint8_t *reply = ip + NET_IPV4_HEADER;
+    copy_bytes(reply, request, NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    reply[0] = ICMP_ECHO_REPLY;
+    write_be16(reply + 2U, 0U);
+    write_be16(reply + 2U,
+               checksum(reply, NET_ICMP_HEADER + NET_ICMP_PAYLOAD));
+
+    queued_frame_length = NET_ETHERNET_HEADER + NET_IPV4_HEADER +
+                          NET_ICMP_HEADER + NET_ICMP_PAYLOAD;
+    copy_bytes(queued_frame, frame, queued_frame_length);
+    queued_frame_ready = true;
 }
 
 static void queue_dns_test_udp_reply(uint16_t transaction_id) {
@@ -603,6 +900,33 @@ static void test_tcp_reassembles_multiple_queued_segments(void) {
     assert(tcp_connection.reorder_length == 0U);
 }
 
+static void test_icmp_echo_diagnostic_round_trip_and_timeout(void) {
+    setup_network();
+    uint8_t reply_ttl = 0U;
+    assert(net_ping(remote_ip, 50U, &reply_ttl));
+    assert(reply_ttl == 49U);
+    assert(icmp_requests == 1U);
+    assert(!icmp_ping.active && icmp_ping.done && icmp_ping.success);
+    assert(last_sent_frame_length == NET_ETHERNET_HEADER +
+           NET_IPV4_HEADER + NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const uint8_t *ip = last_sent_frame + NET_ETHERNET_HEADER;
+    assert(ip[9] == IP_PROTOCOL_ICMP);
+    assert(checksum(ip, NET_IPV4_HEADER) == 0U);
+    assert(read_be16(ip + 2U) == NET_IPV4_HEADER +
+           NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const uint8_t *icmp = ip + NET_IPV4_HEADER;
+    assert(icmp[0] == ICMP_ECHO_REQUEST && icmp[1] == 0U);
+    assert(checksum(icmp, NET_ICMP_HEADER + NET_ICMP_PAYLOAD) == 0U);
+
+    drop_icmp_echo_replies = true;
+    reply_ttl = 0xAAU;
+    assert(!net_ping(remote_ip, 5U, &reply_ttl));
+    assert(reply_ttl == 0xAAU);
+    assert(icmp_requests == 2U);
+    assert(!icmp_ping.active);
+    assert(!net_ping(remote_ip, 0U, NULL));
+}
+
 static void test_receive_wait_reports_timeout_data_and_eof(void) {
     setup_network();
     assert(net_tcp_connect(remote_ip, 443U, 300U));
@@ -664,10 +988,14 @@ int main(void) {
     assert(!net_tcp_send(&byte, 1U));
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
+    test_icmp_echo_diagnostic_round_trip_and_timeout();
     test_receive_wait_reports_timeout_data_and_eof();
     test_tcp_advertised_window_tracks_buffer_and_updates();
     test_tcp_out_of_order_reassembly_and_ack();
     test_tcp_reassembles_multiple_queued_segments();
+    test_dhcp_lease_renew_rebind_and_expiry();
+    test_dhcp_default_timers_and_infinite_lease();
+    test_dhcp_nak_clears_existing_lease();
     test_dns_question_validation_and_cname_chains();
     test_dns_cache_ttl_and_link_reset();
     test_dns_retransmission_and_cache_hit();

@@ -524,14 +524,55 @@ uint64_t memory_free_bytes(void) {
     return free_bytes;
 }
 
+static void memory_stats_add_range(uint64_t start, uint64_t end,
+                                     uint64_t *dma_bytes,
+                                     uint64_t *dma32_bytes,
+                                     uint64_t *normal_bytes) {
+    const uint64_t dma_limit = 0x01000000ULL;
+    const uint64_t dma32_limit = 0x100000000ULL;
+    if (start >= end) return;
+
+    if (start < dma_limit) {
+        uint64_t zone_end = end < dma_limit ? end : dma_limit;
+        saturating_add_u64(dma_bytes, zone_end - start);
+        start = zone_end;
+    }
+    if (start < end && start < dma32_limit) {
+        uint64_t zone_end = end < dma32_limit ? end : dma32_limit;
+        saturating_add_u64(dma32_bytes, zone_end - start);
+        start = zone_end;
+    }
+    if (start < end)
+        saturating_add_u64(normal_bytes, end - start);
+}
+
 bool memory_get_allocator_stats(struct memory_allocator_stats *stats) {
     if (!initialized || stats == NULL) return false;
 
     uint64_t largest_extent = 0U;
+    stats->dma_total_bytes = 0U;
+    stats->dma_free_bytes = 0U;
+    stats->dma32_total_bytes = 0U;
+    stats->dma32_free_bytes = 0U;
+    stats->normal_total_bytes = 0U;
+    stats->normal_free_bytes = 0U;
+
     for (size_t i = 0U; i < usable_region_count; ++i) {
         const struct memory_region *region = &usable_regions[i];
         const uint64_t extent = region->end - region->next;
         if (extent > largest_extent) largest_extent = extent;
+        memory_stats_add_range(region->start, region->end,
+            &stats->dma_total_bytes, &stats->dma32_total_bytes,
+            &stats->normal_total_bytes);
+        memory_stats_add_range(region->next, region->end,
+            &stats->dma_free_bytes, &stats->dma32_free_bytes,
+            &stats->normal_free_bytes);
+    }
+    for (size_t i = 0U; i < freed_page_count; ++i) {
+        const uint64_t page = freed_pages[i];
+        memory_stats_add_range(page, page + NEXUS_PAGE_SIZE,
+            &stats->dma_free_bytes, &stats->dma32_free_bytes,
+            &stats->normal_free_bytes);
     }
 
     stats->total_bytes = total_bytes;

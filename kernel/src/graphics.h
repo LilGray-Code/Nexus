@@ -24,6 +24,13 @@ struct nexus_graphics_surface {
 };
 
 bool graphics_init(const struct nexus_graphics_surface *surface);
+/* Rotation, logical scaling, brightness and night-light effects run in the
+ * software framebuffer path. Surface dimensions/pitch remain physical.
+ */
+bool graphics_set_rotation(uint32_t rotation);
+bool graphics_set_scale_percent(uint8_t percent);
+bool graphics_set_color_effects(uint8_t brightness_percent,
+                                uint16_t color_temperature_kelvin);
 uint64_t graphics_width(void);
 uint64_t graphics_height(void);
 /* Returns and clears the union of all modified pixels since the last call. */

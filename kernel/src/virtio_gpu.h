@@ -79,6 +79,9 @@ struct nexus_virtio_gpu_3d_info {
 
 bool virtio_gpu_display_get_info(
     struct nexus_virtio_gpu_display_info *info);
+bool virtio_gpu_display_get_edid(uint32_t scanout_id,
+                                 uint8_t *edid, size_t edid_capacity,
+                                 size_t *edid_length);
 bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info);
 /* Allocate a host-side Virgl resource and attach it to the active context. */
 bool virtio_gpu_3d_resource_create(

@@ -58,7 +58,8 @@ static bool rva_to_offset(const struct pe_view *view, uint32_t rva,
                           size_t length, size_t *offset) {
     if (view == NULL || offset == NULL) return false;
     if (rva < view->headers_size &&
-        range_ok(view->size, rva, length)) {
+        range_ok(view->size, rva, length) &&
+        range_ok(view->headers_size, rva, length)) {
         *offset = rva;
         return true;
     }
@@ -286,6 +287,9 @@ bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
         file_alignment == 0U || image_size == 0U ||
         headers_size == 0U || headers_size > file_size ||
         section_alignment < file_alignment ||
+        file_alignment < 0x200U || file_alignment > 0x10000U ||
+        image_size % section_alignment != 0U ||
+        headers_size % file_alignment != 0U ||
         (section_alignment & (section_alignment - 1U)) != 0U ||
         (file_alignment & (file_alignment - 1U)) != 0U ||
         directory_count < 2U ||

@@ -43,6 +43,9 @@ static void test_collision_suffix_stays_before_extension(void) {
 _Static_assert(NEXUS_NXFS_MAX_FILE_BYTES == (4U * 1024U * 1024U),
                "browser and persistent download limit must be 4 MiB");
 
+_Static_assert(NEXUS_DOWNLOAD_MAX_BYTES == (256U * 1024U * 1024U),
+               "browser streaming download limit must be 256 MiB");
+
 int main(void) {
     test_url_filename_and_query_removal();
     test_content_disposition_and_path_sanitization();

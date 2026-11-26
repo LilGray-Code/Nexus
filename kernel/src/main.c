@@ -46,8 +46,8 @@ __attribute__((used, section(".limine_requests_start")))
 static volatile uint64_t requests_start[] = LIMINE_REQUESTS_START_MARKER;
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_framebuffer_request framebuffer_request = {
-    /* Revision 1 provides the firmware-enumerated video-mode list. */
-    .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 1
+    /* Revision 2 adds upright framebuffer rotation metadata. */
+    .id = LIMINE_FRAMEBUFFER_REQUEST_ID, .revision = 2
 };
 __attribute__((used, section(".limine_requests")))
 static volatile struct limine_memmap_request memory_map_request = {

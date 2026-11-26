@@ -139,8 +139,38 @@ static void syscall_frame_trace(const char *phase,
 #else
 #define syscall_frame_trace(phase, frame) ((void)0)
 #endif
-__attribute__((noreturn))
 void exception_dispatch(const struct interrupt_frame *frame) {
+    /* User applications can fail independently. Double fault, NMI and
+     * machine-check remain fatal because recovery is not safe for them.
+     */
+    if (frame->vector != 2U && frame->vector != 8U &&
+        frame->vector != 18U && (frame->code_segment & 3U) == 3U &&
+        usermode_is_active() &&
+        usermode_report_exception(frame->vector, frame->error_code,
+                                  frame->instruction_pointer)) {
+        struct interrupt_frame *mutable_frame =
+            (struct interrupt_frame *)(uintptr_t)frame;
+        serial_write("\\r\\nNEXUS APPLICATION CRASH: vector=");
+        serial_write_hex(frame->vector);
+        serial_write(" error=");
+        serial_write_hex(frame->error_code);
+        serial_write(" ip=");
+        serial_write_hex(frame->instruction_pointer);
+        serial_write("\\r\\n");
+
+        /* Return through the exact trampoline used by SYS_EXIT. It restores
+         * the parent kernel CR3 and stack; the process manager then reclaims
+         * the isolated address space and records the exception.
+         */
+        mutable_frame->instruction_pointer =
+            (uint64_t)(uintptr_t)nexus_user_return;
+        mutable_frame->code_segment = 0x08U;
+        mutable_frame->user_stack_pointer = gdt_get_kernel_stack();
+        mutable_frame->user_stack_segment = 0x10U;
+        mutable_frame->flags &= ~0x200ULL;
+        return;
+    }
+
     uint16_t current_cs = 0U;
     uint16_t current_ss = 0U;
     __asm__ volatile ("mov %%cs, %0" : "=r"(current_cs));

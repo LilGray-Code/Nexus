@@ -16,6 +16,7 @@
 #define VIRTIO_GPU_SCANOUT_ID 0U
 #define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM 2U
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D 0x0101U
+#define VIRTIO_GPU_CMD_RESOURCE_UNREF 0x0102U
 #define VIRTIO_GPU_CMD_SET_SCANOUT 0x0103U
 #define VIRTIO_GPU_CMD_RESOURCE_FLUSH 0x0104U
 #define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D 0x0105U
@@ -23,6 +24,9 @@
 #define VIRTIO_GPU_CMD_GET_CAPSET_INFO 0x0108U
 #define VIRTIO_GPU_CMD_CTX_CREATE 0x0200U
 #define VIRTIO_GPU_CMD_CTX_DESTROY 0x0201U
+#define VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE 0x0202U
+#define VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE 0x0203U
+#define VIRTIO_GPU_CMD_RESOURCE_CREATE_3D 0x0204U
 #define VIRTIO_GPU_CMD_SUBMIT_3D 0x0205U
 #define VIRTIO_GPU_RESP_OK_NODATA 0x1100U
 #define VIRTIO_GPU_RESP_ERR_UNSPEC 0x1200U
@@ -33,6 +37,8 @@
 #define VIRTIO_GPU_CAPSET_VIRGL 1U
 #define VIRTIO_GPU_CAPSET_VIRGL2 2U
 #define VIRTIO_GPU_CONTEXT_ID 1U
+#define VIRTIO_GPU_MAX_3D_RESOURCES 64U
+#define VIRTIO_GPU_MAX_3D_DIMENSION 16384U
 #define VIRTIO_GPU_COMMAND_TIMEOUT 200U
 #define VIRTIO_GPU_COMMAND_BYTES 65536U
 #define VIRTIO_GPU_RESPONSE_OFFSET VIRTIO_GPU_COMMAND_BYTES
@@ -83,6 +89,39 @@ struct virtio_gpu_submit_3d {
     uint32_t size;
     uint32_t padding;
 } __attribute__((packed));
+
+struct virtio_gpu_ctx_resource {
+    struct virtio_gpu_header header;
+    uint32_t resource_id;
+    uint32_t padding;
+} __attribute__((packed));
+
+struct virtio_gpu_resource_unref {
+    struct virtio_gpu_header header;
+    uint32_t resource_id;
+    uint32_t padding;
+} __attribute__((packed));
+
+struct virtio_gpu_resource_create_3d {
+    struct virtio_gpu_header header;
+    uint32_t resource_id;
+    uint32_t target;
+    uint32_t format;
+    uint32_t bind;
+    uint32_t width;
+    uint32_t height;
+    uint32_t depth;
+    uint32_t array_size;
+    uint32_t last_level;
+    uint32_t nr_samples;
+    uint32_t flags;
+    uint32_t padding;
+} __attribute__((packed));
+
+_Static_assert(sizeof(struct virtio_gpu_ctx_resource) == 32U,
+               "VirtIO GPU context resource command ABI");
+_Static_assert(sizeof(struct virtio_gpu_resource_create_3d) == 72U,
+               "VirtIO GPU 3D resource command ABI");
 
 struct virtio_gpu_rectangle {
     uint32_t x;
@@ -157,6 +196,17 @@ static uint64_t virgl_last_submitted_fence;
 static uint64_t virgl_last_completed_fence;
 static uint32_t virgl_failed_submissions;
 static volatile uint32_t command_queue_lock;
+static volatile uint32_t resource_table_lock;
+static uint32_t next_3d_resource_id = VIRTIO_GPU_RESOURCE_ID + 1U;
+struct virtio_gpu_tracked_resource {
+    bool allocated;
+    bool attached;
+    uint32_t resource_id;
+};
+static struct virtio_gpu_tracked_resource
+    tracked_resources[VIRTIO_GPU_MAX_3D_RESOURCES];
+static uint32_t tracked_resource_count;
+static uint32_t tracked_resource_total_created;
 
 static void zero_bytes(volatile uint8_t *output, size_t length) {
     for (size_t i = 0U; i < length; ++i) output[i] = 0U;
@@ -185,6 +235,16 @@ static void gpu_command_queue_lock(void) {
 
 static void gpu_command_queue_unlock(void) {
     __atomic_store_n(&command_queue_lock, 0U, __ATOMIC_RELEASE);
+}
+
+static void gpu_resource_table_lock(void) {
+    while (__atomic_exchange_n(&resource_table_lock, 1U,
+                               __ATOMIC_ACQUIRE) != 0U)
+        __asm__ volatile ("pause" ::: "memory");
+}
+
+static void gpu_resource_table_unlock(void) {
+    __atomic_store_n(&resource_table_lock, 0U, __ATOMIC_RELEASE);
 }
 
 static struct virtio_gpu_header make_header(uint32_t type) {
@@ -328,6 +388,11 @@ static bool gpu_virgl_create_context(void) {
 
 static void gpu_virgl_destroy_context(void) {
     if (!active || !virgl_context_created) return;
+    for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i) {
+        if (tracked_resources[i].allocated)
+            (void)virtio_gpu_3d_resource_destroy(
+                tracked_resources[i].resource_id);
+    }
     const struct virtio_gpu_ctx_destroy destroy = {
         .header = {
             .type = VIRTIO_GPU_CMD_CTX_DESTROY,
@@ -355,6 +420,11 @@ static bool gpu_virgl_start(void) {
     virgl_last_submitted_fence = 0U;
     virgl_last_completed_fence = 0U;
     virgl_failed_submissions = 0U;
+    next_3d_resource_id = VIRTIO_GPU_RESOURCE_ID + 1U;
+    tracked_resource_count = 0U;
+    tracked_resource_total_created = 0U;
+    for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i)
+        tracked_resources[i] = (struct virtio_gpu_tracked_resource){0};
     gpu_set_virtio_3d_submission_ready(false, 0U);
 
     if (!virgl_feature_negotiated) {
@@ -640,6 +710,142 @@ bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
     return true;
 }
 
+static size_t gpu_find_tracked_resource(uint32_t resource_id) {
+    for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i)
+        if (tracked_resources[i].allocated &&
+            tracked_resources[i].resource_id == resource_id) return i;
+    return VIRTIO_GPU_MAX_3D_RESOURCES;
+}
+
+static bool gpu_resource_unref(uint32_t resource_id) {
+    const struct virtio_gpu_resource_unref request = {
+        .header = make_header(VIRTIO_GPU_CMD_RESOURCE_UNREF),
+        .resource_id = resource_id,
+        .padding = 0U
+    };
+    return submit_command(&request, sizeof(request));
+}
+
+bool virtio_gpu_3d_resource_create(
+    const struct nexus_virtio_gpu_3d_resource_desc *description,
+    uint32_t *resource_id) {
+    if (description == NULL || resource_id == NULL ||
+        !active || !virgl_context_created ||
+        description->width == 0U || description->height == 0U ||
+        description->depth == 0U || description->array_size == 0U ||
+        description->width > VIRTIO_GPU_MAX_3D_DIMENSION ||
+        description->height > VIRTIO_GPU_MAX_3D_DIMENSION ||
+        description->depth > VIRTIO_GPU_MAX_3D_DIMENSION ||
+        description->array_size > VIRTIO_GPU_MAX_3D_DIMENSION ||
+        description->last_level > 15U) return false;
+
+    gpu_resource_table_lock();
+    size_t free_slot = VIRTIO_GPU_MAX_3D_RESOURCES;
+    for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i) {
+        if (!tracked_resources[i].allocated) {
+            free_slot = i;
+            break;
+        }
+    }
+    if (free_slot == VIRTIO_GPU_MAX_3D_RESOURCES ||
+        next_3d_resource_id == 0U ||
+        next_3d_resource_id == UINT32_MAX) {
+        gpu_resource_table_unlock();
+        return false;
+    }
+
+    const uint32_t id = next_3d_resource_id++;
+    const struct virtio_gpu_resource_create_3d create = {
+        .header = make_header(VIRTIO_GPU_CMD_RESOURCE_CREATE_3D),
+        .resource_id = id,
+        .target = description->target,
+        .format = description->format,
+        .bind = description->bind,
+        .width = description->width,
+        .height = description->height,
+        .depth = description->depth,
+        .array_size = description->array_size,
+        .last_level = description->last_level,
+        .nr_samples = description->nr_samples,
+        .flags = description->flags,
+        .padding = 0U
+    };
+    if (!submit_command(&create, sizeof(create))) {
+        gpu_resource_table_unlock();
+        return false;
+    }
+
+    const struct virtio_gpu_ctx_resource attach = {
+        .header = {
+            .type = VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE,
+            .flags = 0U,
+            .fence_id = 0U,
+            .context_id = VIRTIO_GPU_CONTEXT_ID,
+            .padding = 0U
+        },
+        .resource_id = id,
+        .padding = 0U
+    };
+    if (!submit_command(&attach, sizeof(attach))) {
+        (void)gpu_resource_unref(id);
+        gpu_resource_table_unlock();
+        return false;
+    }
+
+    tracked_resources[free_slot] = (struct virtio_gpu_tracked_resource){
+        .allocated = true,
+        .attached = true,
+        .resource_id = id
+    };
+    ++tracked_resource_count;
+    if (tracked_resource_total_created != UINT32_MAX)
+        ++tracked_resource_total_created;
+    *resource_id = id;
+    gpu_resource_table_unlock();
+    return true;
+}
+
+bool virtio_gpu_3d_resource_destroy(uint32_t resource_id) {
+    if (!active || !virgl_context_created ||
+        resource_id <= VIRTIO_GPU_RESOURCE_ID) return false;
+    gpu_resource_table_lock();
+    const size_t slot = gpu_find_tracked_resource(resource_id);
+    if (slot == VIRTIO_GPU_MAX_3D_RESOURCES) {
+        gpu_resource_table_unlock();
+        return false;
+    }
+
+    struct virtio_gpu_tracked_resource *resource = &tracked_resources[slot];
+    if (resource->attached) {
+        const struct virtio_gpu_ctx_resource detach = {
+            .header = {
+                .type = VIRTIO_GPU_CMD_CTX_DETACH_RESOURCE,
+                .flags = 0U,
+                .fence_id = 0U,
+                .context_id = VIRTIO_GPU_CONTEXT_ID,
+                .padding = 0U
+            },
+            .resource_id = resource_id,
+            .padding = 0U
+        };
+        if (!submit_command(&detach, sizeof(detach))) {
+            gpu_resource_table_unlock();
+            return false;
+        }
+        resource->attached = false;
+    }
+
+    if (!gpu_resource_unref(resource_id)) {
+        gpu_resource_table_unlock();
+        return false;
+    }
+
+    *resource = (struct virtio_gpu_tracked_resource){0};
+    if (tracked_resource_count != 0U) --tracked_resource_count;
+    gpu_resource_table_unlock();
+    return true;
+}
+
 bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info) {
     if (info == NULL) return false;
     *info = (struct nexus_virtio_gpu_3d_info){
@@ -651,7 +857,9 @@ bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info) {
         .capset_max_size = virgl_capset_max_size,
         .last_submitted_fence = virgl_last_submitted_fence,
         .last_completed_fence = virgl_last_completed_fence,
-        .failed_submissions = virgl_failed_submissions
+        .failed_submissions = virgl_failed_submissions,
+        .resources_allocated = tracked_resource_count,
+        .resources_created_total = tracked_resource_total_created
     };
     return true;
 }

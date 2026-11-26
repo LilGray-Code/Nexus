@@ -489,6 +489,13 @@ static uint8_t browser_download_decoded_chunk[4096U];
 static bool browser_download_ready;
 static size_t browser_download_length;
 static char browser_download_name[NEXUS_DOWNLOAD_NAME_MAX];
+static struct nexus_download_job browser_download_job;
+static bool browser_download_transfer_active;
+static bool browser_download_checksum_verified;
+static char browser_download_sha256_hex[65];
+static uint32_t browser_download_progress_bytes;
+static uint32_t browser_download_progress_total;
+static uint32_t browser_download_progress_percent;
 static char browser_text_buffer[NEXUS_BROWSER_RESPONSE_CAPACITY];
 static char browser_address[NEXUS_BROWSER_SEARCH_URL_MAX];
 static size_t browser_address_length;
@@ -4978,6 +4985,9 @@ static bool browser_stream_chunked_input(
             if (produced > UINT32_MAX - *received ||
                 !vfs_stream_write_append(browser_download_decoded_chunk,
                                          produced)) return false;
+            if (!nexus_download_job_append(&browser_download_job,
+                                           browser_download_decoded_chunk,
+                                           produced)) return false;
             *received += (uint32_t)produced;
         }
         if (used > input_length - offset) return false;
@@ -4995,7 +5005,6 @@ static bool browser_https_stream_large_download(
     int *failure_result) {
     if (connection == NULL || response == NULL || parsed == NULL ||
         download_streamed == NULL || failure_result == NULL ||
-        (!parsed->has_content_length && !parsed->chunked) ||
         (parsed->has_content_length && !parsed->chunked &&
          parsed->content_length <= NEXUS_BROWSER_BODY_CAPACITY))
         return false;
@@ -5005,8 +5014,7 @@ static bool browser_https_stream_large_download(
         return false;
     }
     if (parsed->has_content_length &&
-        (parsed->content_length > NEXUS_DOWNLOAD_MAX_BYTES ||
-         parsed->content_length > UINT32_MAX)) {
+        parsed->content_length > UINT32_MAX) {
         *failure_result = -4;
         return false;
     }
@@ -5020,9 +5028,11 @@ static bool browser_https_stream_large_download(
         return false;
     }
 
-    /* Mount persistent Data on demand; large files are never RAM-only. */
+    /* Streaming always targets the persistent NXFS volume. Its per-file
+     * capability, not the browser's RAM buffer, is the download ceiling.
+     */
     scan_files_once();
-    if (!vfs_current_directory_writable()) {
+    if (!vfs_nxfs_writable() || !vfs_current_directory_writable()) {
         *failure_result = -5;
         return false;
     }
@@ -5048,9 +5058,29 @@ static bool browser_https_stream_large_download(
         *failure_result = -5;
         return false;
     }
+    if (!nexus_download_job_begin(
+            &browser_download_job, maximum_bytes,
+            parsed->has_content_length && !parsed->chunked,
+            parsed->has_content_length && !parsed->chunked
+                ? (uint32_t)parsed->content_length : 0U,
+            parsed->has_sha256_digest ? parsed->sha256_digest : NULL)) {
+        vfs_stream_write_abort();
+        *failure_result = -9;
+        return false;
+    }
+
+    browser_download_transfer_active = true;
+    browser_download_checksum_verified = false;
+    browser_download_sha256_hex[0] = '\0';
+    browser_download_progress_bytes = 0U;
+    browser_download_progress_total = parsed->has_content_length
+        ? (uint32_t)parsed->content_length : 0U;
+    browser_download_progress_percent =
+        nexus_download_job_progress_percent(&browser_download_job);
 
     uint32_t received = 0U;
     bool chunked_complete = false;
+    bool orderly_eof = false;
     struct nexus_http_chunked_decoder chunked_decoder;
     if (parsed->chunked)
         nexus_http_chunked_decoder_init(&chunked_decoder, maximum_bytes);
@@ -5062,14 +5092,21 @@ static bool browser_https_stream_large_download(
                 &chunked_decoder, initial_body, initial_length,
                 &received, &chunked_complete)) {
             vfs_stream_write_abort();
+            nexus_download_job_fail(&browser_download_job);
+            browser_download_transfer_active = false;
             *failure_result = -8;
             return false;
         }
     } else {
-        if (initial_length > expected ||
+        if ((parsed->has_content_length && initial_length > expected) ||
+            initial_length > maximum_bytes ||
             (initial_length != 0U &&
-             !vfs_stream_write_append(initial_body, initial_length))) {
+             (!vfs_stream_write_append(initial_body, initial_length) ||
+              !nexus_download_job_append(&browser_download_job,
+                                         initial_body, initial_length)))) {
             vfs_stream_write_abort();
+            nexus_download_job_fail(&browser_download_job);
+            browser_download_transfer_active = false;
             *failure_result = -1;
             return false;
         }
@@ -5077,16 +5114,30 @@ static bool browser_https_stream_large_download(
     }
 
     const uint64_t start = timer_ticks();
-    size_t last_reported_mib = received / (1024U * 1024U);
+    uint32_t last_progress_report = received;
     while ((parsed->chunked ? !chunked_complete
-                            : received < expected) &&
+            : (parsed->has_content_length ? received < expected
+                                          : !orderly_eof)) &&
            timer_ticks() - start < NEXUS_BROWSER_DOWNLOAD_TIMEOUT_TICKS) {
+        /* F7 is latched by the keyboard interrupt path; it does not consume
+         * unrelated key or mouse events while the synchronous TLS read runs.
+         */
+        if (input_take_download_cancel_request()) {
+            vfs_stream_write_abort();
+            nexus_download_job_cancel(&browser_download_job);
+            browser_download_transfer_active = false;
+            *failure_result = -10;
+            return false;
+        }
+
         const int result = nexus_https_read(
             connection, browser_download_wire_chunk,
             sizeof(browser_download_wire_chunk));
         if (result > 0) {
             if ((size_t)result > sizeof(browser_download_wire_chunk)) {
                 vfs_stream_write_abort();
+                nexus_download_job_fail(&browser_download_job);
+                browser_download_transfer_active = false;
                 *failure_result = -1;
                 return false;
             }
@@ -5095,53 +5146,99 @@ static bool browser_https_stream_large_download(
                         &chunked_decoder, browser_download_wire_chunk,
                         (size_t)result, &received, &chunked_complete)) {
                     vfs_stream_write_abort();
+                    nexus_download_job_fail(&browser_download_job);
+                    browser_download_transfer_active = false;
                     *failure_result = -8;
                     return false;
                 }
             } else {
-                if ((uint32_t)result > expected - received ||
+                if ((parsed->has_content_length &&
+                     (received > expected ||
+                      (uint32_t)result > expected - received)) ||
+                    (uint32_t)result > maximum_bytes - received ||
                     !vfs_stream_write_append(browser_download_wire_chunk,
-                                             (size_t)result)) {
+                                             (size_t)result) ||
+                    !nexus_download_job_append(&browser_download_job,
+                        browser_download_wire_chunk, (size_t)result)) {
                     vfs_stream_write_abort();
+                    nexus_download_job_fail(&browser_download_job);
+                    browser_download_transfer_active = false;
                     *failure_result = -1;
                     return false;
                 }
                 received += (uint32_t)result;
             }
 
-            const size_t completed_mib = received / (1024U * 1024U);
-            if (completed_mib > last_reported_mib) {
-                last_reported_mib = completed_mib;
-                serial_write("BROWSER: streamed download MiB=");
-                serial_write_hex(completed_mib);
-                serial_write("\\r\\n");
+            if (received - last_progress_report >= 256U * 1024U) {
+                last_progress_report = received;
+                browser_download_progress_bytes = received;
+                browser_download_progress_percent =
+                    nexus_download_job_progress_percent(&browser_download_job);
+                browser_set_status("Downloading over verified HTTPS...");
+                draw_shell();
+                draw_pointer();
             }
             continue;
         }
         if (result == 0) {
+            /* net_https returns EOF only after TLS close_notify verification. */
+            if (!parsed->has_content_length && !parsed->chunked) {
+                orderly_eof = true;
+                break;
+            }
             vfs_stream_write_abort();
+            nexus_download_job_fail(&browser_download_job);
+            browser_download_transfer_active = false;
             *failure_result = -7;
             return false;
         }
         if (result != NEXUS_HTTPS_WANT_READ &&
             result != NEXUS_HTTPS_WANT_WRITE) {
             vfs_stream_write_abort();
+            nexus_download_job_fail(&browser_download_job);
+            browser_download_transfer_active = false;
             *failure_result = result;
             return false;
         }
         net_poll();
         __asm__ volatile ("pause" ::: "memory");
     }
-    if (parsed->chunked ? !chunked_complete : received != expected) {
+
+    const bool body_complete = parsed->chunked
+        ? chunked_complete
+        : (parsed->has_content_length ? received == expected : orderly_eof);
+    if (!body_complete) {
         vfs_stream_write_abort();
+        nexus_download_job_fail(&browser_download_job);
+        browser_download_transfer_active = false;
         *failure_result = -3;
+        return false;
+    }
+
+    /* Compare the server's SHA-256 Content-Digest before publishing the
+     * alternate NXFS bank. A mismatch leaves the previous file untouched.
+     */
+    if (!nexus_download_job_finish(&browser_download_job)) {
+        vfs_stream_write_abort();
+        browser_download_transfer_active = false;
+        *failure_result = -9;
         return false;
     }
     if (!vfs_stream_write_finish()) {
         vfs_stream_write_abort();
+        nexus_download_job_fail(&browser_download_job);
+        browser_download_transfer_active = false;
         *failure_result = -1;
         return false;
     }
+
+    browser_download_transfer_active = false;
+    browser_download_progress_bytes = received;
+    browser_download_progress_percent = 100U;
+    browser_download_checksum_verified =
+        browser_download_job.checksum_verified;
+    (void)nexus_download_sha256_hex(
+        browser_download_job.actual_sha256, browser_download_sha256_hex);
 
     for (size_t i = 0U; i < sizeof(browser_download_name); ++i) {
         browser_download_name[i] = target[i];
@@ -5190,7 +5287,7 @@ static bool browser_https_receive_response(
                 if (header.status_code >= 200U && header.status_code < 300U &&
                     ((header.has_content_length &&
                       header.content_length > body_capacity) ||
-                     header.chunked) &&
+                     header.chunked || !header.has_content_length) &&
                     browser_content_type_is_binary_download(&header)) {
                     *parsed = header;
                     return browser_https_stream_large_download(
@@ -5242,6 +5339,11 @@ static void browser_navigate(bool record_history) {
     browser_search_selected = 0U;
     browser_download_ready = false;
     browser_download_length = 0U;
+    browser_download_transfer_active = false;
+    browser_download_progress_bytes = 0U;
+    browser_download_progress_total = 0U;
+    browser_download_progress_percent = 0U;
+    browser_download_sha256_hex[0] = '\0';
     browser_download_name[0] = '\0';
 browser_retry:
     browser_clear_page();
@@ -5503,7 +5605,11 @@ browser_retry:
             browser_append_page_text(saved_size);
             browser_append_page_text(" BYTES\\n\\n");
             browser_append_page_text(
-                "THE FILE WAS COMMITTED ONLY AFTER ITS FULL VERIFIED HTTPS BODY ARRIVED.");
+                browser_download_checksum_verified
+                    ? "SERVER SHA-256 MATCHED BEFORE ATOMIC FILE COMMIT."
+                    : "LOCAL SHA-256 CALCULATED; SERVER DIGEST HEADER NOT PROVIDED.");
+            browser_append_page_text("\\nSHA-256: ");
+            browser_append_page_text(browser_download_sha256_hex);
             browser_address_edited = false;
             browser_set_status("Large HTTPS download saved to Nexus Data");
             return;
@@ -5542,6 +5648,10 @@ browser_retry:
             browser_set_status("HTTPS closed before the complete download arrived");
         else if (receive_error == -8)
             browser_set_status("Chunked HTTPS download had invalid framing or exceeded the Data file limit");
+        else if (receive_error == -9)
+            browser_set_status("Download length or SHA-256 checksum failed; prior file was preserved");
+        else if (receive_error == -10)
+            browser_set_status("Download cancelled with F7; incomplete data was discarded");
         else
             browser_set_status(use_https
                 ? "No complete TLS response received"

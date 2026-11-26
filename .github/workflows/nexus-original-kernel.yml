@@ -15,6 +15,7 @@ on:
     branches:
       - nexus-original-kernel-roadmap
       - nexus-hardware-support-foundation
+      - nexus-professional-graphics-foundation
   workflow_dispatch:
 
 permissions:

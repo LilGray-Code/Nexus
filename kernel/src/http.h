@@ -12,6 +12,7 @@
 struct nexus_http_response {
     uint16_t status_code;
     size_t body_length;
+    size_t content_length;
     bool chunked;
     bool has_content_length;
     bool has_location;
@@ -29,6 +30,11 @@ struct nexus_http_response {
  * redirect and MIME-aware browser handling. Unsupported transfer codings,
  * ambiguous framing, and malformed redirect metadata are rejected.
  */
+/* Parses a complete HTTP header block without requiring its body in RAM. */
+bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
+                               size_t *header_length,
+                               struct nexus_http_response *response);
+
 bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
                                 uint8_t *body, size_t body_capacity,
                                 struct nexus_http_response *response);

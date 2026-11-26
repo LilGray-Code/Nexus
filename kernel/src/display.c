@@ -597,7 +597,6 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
         if (primary->matching_edid_refresh_hz != 0U)
             display_info.current_refresh_hz = primary->matching_edid_refresh_hz;
         if (framebuffer->edid != NULL && framebuffer->edid_size >= 128U) {
-            const uint8_t *edid = (const uint8_t *)framebuffer->edid;
             if (primary->physical_width_mm != 0U) {
                 const uint64_t dpi =
                     ((uint64_t)framebuffer->width * 254U +

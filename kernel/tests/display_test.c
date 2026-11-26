@@ -315,6 +315,20 @@ int main(void) {
     assert(!info->mode_set_available);
     assert(!nexus_display_apply_mode(mode_1600));
 
+    /* A failed GPU modeset can recover to the original firmware framebuffer
+     * and must restore the matching monitor model, not retain stale VirtIO data.
+     */
+    assert(nexus_display_recover_firmware_mode(
+        1024U, 768U, 1024U * 4U, 32U));
+    info = nexus_display_get_info();
+    assert(info->firmware_fallback_active);
+    assert(info->monitor_count == 1U);
+    assert(info->primary_monitor_id == 0U);
+    assert(info->current_width == 1024U);
+    assert(info->current_height == 768U);
+    assert(!info->mode_set_available);
+    assert(nexus_display_monitor_at(0U)->primary);
+
     uint8_t bad_edid[128];
     memcpy(bad_edid, edid, sizeof(bad_edid));
     bad_edid[20] ^= 1U;

@@ -233,7 +233,7 @@ static void setup_network(void) {
     dhcp_renew_seconds = 0U;
     dhcp_rebind_seconds = 0U;
     dhcp_lease_start_tick = 0U;
-    dhcp_manual_override = false;
+    dns_manual_override = false;
     for (size_t i = 0U; i < 4U; ++i) {
         dhcp_dns_ipv4[i] = 0U;
         dns_ipv4[i] = 0U;

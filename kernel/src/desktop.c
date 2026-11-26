@@ -2569,6 +2569,15 @@ static void draw_shell(void) {
                         monitor->monitor_name_valid ? monitor->monitor_name :
                         (monitor->edid_valid
                             ? "EDID NAME NOT PROVIDED" : "EDID UNAVAILABLE"));
+                    if (monitor->identity_valid) {
+                        hardware_append_text(line, sizeof(line), &used, " [");
+                        hardware_append_text(line, sizeof(line), &used,
+                                             monitor->manufacturer);
+                        hardware_append_text(line, sizeof(line), &used, "/");
+                        format_u64(monitor->product_code, number);
+                        hardware_append_text(line, sizeof(line), &used, number);
+                        hardware_append_text(line, sizeof(line), &used, "]");
+                    }
                     if (!monitor->connected)
                         hardware_append_text(line, sizeof(line), &used,
                                              " [DISCONNECTED]");
@@ -2614,10 +2623,10 @@ static void draw_shell(void) {
                     1U, 231U, 183U, 127U);
                 if (display->mode_set_available) {
                     graphics_draw_text(text_x, content_y + 170U,
-                        "RESOLUTION SWITCH: DEVICE VERIFY / ROLLBACK READY",
+                        "SCANOUT RESIZE: DEVICE VERIFY / ROLLBACK READY",
                         1U, 108U, 216U, 229U);
                     graphics_draw_text(text_x, content_y + 188U,
-                        "REFRESH RATE: FIXED TO MATCHING EDID RATE",
+                        "PHYSICAL REFRESH: NOT PROGRAMMABLE BY THIS DRIVER",
                         1U, 171U, 191U, 211U);
                 } else {
                     graphics_draw_text(text_x, content_y + 170U,
@@ -2698,7 +2707,7 @@ static void draw_shell(void) {
                         color_temperatures[i]);
             }
             graphics_draw_text(text_x, content_y + 365U,
-                "ROTATION, BRIGHTNESS AND NIGHT LIGHT ARE SOFTWARE EFFECTS.",
+                "SOFTWARE EFFECTS ONLY; PANEL BACKLIGHT DRIVER UNAVAILABLE.",
                 1U, 171U, 191U, 211U);
             if (display != NULL) {
                 const char *layout = display->monitor_count > 1U

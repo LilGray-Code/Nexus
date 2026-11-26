@@ -10,6 +10,7 @@ struct fake_backend {
     uint64_t current_height;
     uint64_t fail_width;
     uint64_t fail_verify_width;
+    uint64_t fail_test_width;
     bool fail_restore;
     uint32_t primary_monitor_id;
     bool fail_primary;
@@ -24,7 +25,8 @@ struct fake_backend {
 static bool fake_test(void *context, const struct nexus_display_mode *mode) {
     struct fake_backend *backend = context;
     ++backend->test_calls;
-    return mode != NULL && mode->width != 0U && mode->height != 0U;
+    return mode != NULL && mode->width != 0U && mode->height != 0U &&
+           mode->width != backend->fail_test_width;
 }
 
 static bool fake_set(void *context, const struct nexus_display_mode *mode) {
@@ -114,6 +116,14 @@ int main(void) {
         0x00U, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0x00U
     };
     memcpy(edid, header, sizeof(header));
+    edid[8] = 0x04U; /* EDID manufacturer code ABC. */
+    edid[9] = 0x43U;
+    edid[10] = 0x34U; /* Product code 0x1234. */
+    edid[11] = 0x12U;
+    edid[12] = 0x78U; /* Serial number 0x12345678. */
+    edid[13] = 0x56U;
+    edid[14] = 0x34U;
+    edid[15] = 0x12U;
     edid[18] = 1U;
     edid[19] = 4U;
     edid[21] = 53U; /* 530 mm physical width. */
@@ -181,6 +191,14 @@ int main(void) {
     assert(info->edid_extensions_complete);
     assert(info->monitor_name_valid);
     assert(strcmp(info->monitor_name, "NEXUS PANEL") == 0);
+    assert(info->identity_valid);
+    assert(strcmp(info->manufacturer, "ABC") == 0);
+    assert(info->product_code == 0x1234U);
+    assert(info->serial_number == 0x12345678U);
+    assert(info->physical_width_mm == 530U);
+    assert(info->physical_height_mm == 300U);
+    assert(nexus_display_monitor_at(0U)->identity_valid);
+    assert(strcmp(nexus_display_monitor_at(0U)->manufacturer, "ABC") == 0);
     assert(info->timing_count == 2U);
     /* Standard timings are enumerated before detailed descriptors. */
     assert(info->timings[0].width == 1280U);
@@ -223,6 +241,8 @@ int main(void) {
     assert(info->monitor_count == 2U);
     assert(nexus_display_monitor_at(1U) != NULL);
     assert(nexus_display_monitor_at(1U)->edid_valid);
+    assert(nexus_display_monitor_at(1U)->identity_valid);
+    assert(nexus_display_monitor_at(1U)->product_code == 0x1234U);
     assert(nexus_display_monitor_at(1U)->dpi_x != 0U);
     assert(nexus_display_monitor_at(1U)->matching_edid_refresh_hz == 60U);
     assert(!nexus_display_set_primary_monitor(1U));
@@ -274,9 +294,21 @@ int main(void) {
     assert(!nexus_display_set_primary_monitor(0U));
     assert(nexus_display_get_info()->primary_monitor_id == 1U);
     fake.fail_primary = false;
-    const size_t mode_1600 = find_mode(info, 1600U, 900U, 0U);
+    const size_t mode_index_1600 = find_mode(info, 1600U, 900U, 0U);
     const size_t mode_1280 = find_mode(info, 1280U, 800U, 60U);
-    assert(nexus_display_apply_mode(mode_1600));
+
+    /* Preflight rejection must not mutate scanout or invoke rollback. */
+    fake.fail_test_width = 1600U;
+    assert(!nexus_display_apply_mode(mode_index_1600));
+    info = nexus_display_get_info();
+    assert(info->last_mode_change_failed);
+    assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_TEST);
+    assert(fake.current_width == 1920U);
+    assert(fake.set_calls == 0U);
+    assert(fake.restore_calls == 0U);
+    fake.fail_test_width = 0U;
+
+    assert(nexus_display_apply_mode(mode_index_1600));
     info = nexus_display_get_info();
     assert(info->current_width == 1600U);
     assert(info->current_height == 900U);
@@ -316,7 +348,7 @@ int main(void) {
     assert(!info->last_rollback_succeeded);
     assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_ROLLBACK);
     assert(!info->mode_set_available);
-    assert(!nexus_display_apply_mode(mode_1600));
+    assert(!nexus_display_apply_mode(mode_index_1600));
 
     /* A failed GPU modeset can recover to the original firmware framebuffer
      * and must restore the matching monitor model, not retain stale VirtIO data.
@@ -334,7 +366,18 @@ int main(void) {
     assert(!nexus_display_topology_available());
     assert(!nexus_display_primary_selection_available());
     assert(!nexus_display_set_primary_monitor(0U));
-    assert(!nexus_display_apply_mode(mode_1600));
+    assert(!nexus_display_apply_mode(mode_index_1600));
+
+    uint8_t bad_extension_edid[256];
+    memcpy(bad_extension_edid, edid, sizeof(bad_extension_edid));
+    bad_extension_edid[140] ^= 1U;
+    fb.edid = bad_extension_edid;
+    fb.edid_size = sizeof(bad_extension_edid);
+    assert(nexus_display_init(&fb));
+    info = nexus_display_get_info();
+    assert(info->edid_valid);
+    assert(!info->edid_extensions_complete);
+    assert(!info->hdr_static_metadata);
 
     uint8_t bad_edid[128];
     memcpy(bad_edid, edid, sizeof(bad_edid));

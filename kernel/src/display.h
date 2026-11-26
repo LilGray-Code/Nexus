@@ -63,6 +63,12 @@ struct nexus_display_monitor {
     uint32_t matching_edid_refresh_hz;
     uint16_t dpi_x;
     uint16_t dpi_y;
+    bool identity_valid;
+    char manufacturer[4];
+    uint16_t product_code;
+    uint32_t serial_number;
+    uint16_t physical_width_mm;
+    uint16_t physical_height_mm;
     bool edid_valid;
     bool edid_extensions_complete;
     bool monitor_name_valid;
@@ -86,6 +92,12 @@ struct nexus_display_info {
     uint32_t mode_count;
     uint32_t timing_count;
     bool initialized;
+    bool identity_valid;
+    char manufacturer[4];
+    uint16_t product_code;
+    uint32_t serial_number;
+    uint16_t physical_width_mm;
+    uint16_t physical_height_mm;
     bool edid_valid;
     bool edid_extensions_complete;
     bool monitor_name_valid;

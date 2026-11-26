@@ -94,6 +94,30 @@ void nexus_gaming_query_system(
      */
 }
 
+static uint64_t graphics_api_requirements(
+    enum nexus_game_graphics_api graphics_api) {
+    switch (graphics_api) {
+        case NEXUS_GAME_GRAPHICS_NONE:
+            return 0U;
+        case NEXUS_GAME_GRAPHICS_OPENGL:
+            return NEXUS_GAME_CAP_OPENGL;
+        case NEXUS_GAME_GRAPHICS_VULKAN:
+            return NEXUS_GAME_CAP_VULKAN;
+        case NEXUS_GAME_GRAPHICS_DIRECT3D_8_9:
+        case NEXUS_GAME_GRAPHICS_DIRECT3D_10:
+        case NEXUS_GAME_GRAPHICS_DIRECT3D_11:
+            return NEXUS_GAME_CAP_DXVK | NEXUS_GAME_CAP_VULKAN |
+                   NEXUS_GAME_CAP_GPU_3D_RENDERING;
+        case NEXUS_GAME_GRAPHICS_DIRECT3D_12:
+            return NEXUS_GAME_CAP_VKD3D_PROTON |
+                   NEXUS_GAME_CAP_VULKAN |
+                   NEXUS_GAME_CAP_VULKAN_1_3 |
+                   NEXUS_GAME_CAP_GPU_3D_RENDERING;
+        default:
+            return UINT64_MAX;
+    }
+}
+
 uint64_t nexus_gaming_platform_requirements(
     enum nexus_game_platform platform,
     enum nexus_game_graphics_api graphics_api) {
@@ -111,69 +135,37 @@ uint64_t nexus_gaming_platform_requirements(
         NEXUS_GAME_CAP_STEAM_RUNTIME |
         NEXUS_GAME_CAP_CPU_CMPXCHG16B |
         NEXUS_GAME_CAP_CPU_SSE3;
+    const uint64_t graphics = graphics_api_requirements(graphics_api);
+    if (graphics == UINT64_MAX) return UINT64_MAX;
 
-    uint64_t required = 0U;
     switch (platform) {
         case NEXUS_GAME_PLATFORM_NATIVE_NEXUS:
-            required = NEXUS_GAME_CAP_NATIVE_STATIC_ELF;
-            break;
+            if (graphics_api >= NEXUS_GAME_GRAPHICS_DIRECT3D_8_9)
+                return UINT64_MAX;
+            return NEXUS_GAME_CAP_NATIVE_STATIC_ELF | graphics;
         case NEXUS_GAME_PLATFORM_STEAM_LINUX:
-            required = steam_requirements |
-                       NEXUS_GAME_CAP_STEAM_CLIENT |
-                       NEXUS_GAME_CAP_OPENGL;
-            break;
+            if (graphics_api >= NEXUS_GAME_GRAPHICS_DIRECT3D_8_9)
+                return UINT64_MAX;
+            return steam_requirements |
+                   NEXUS_GAME_CAP_STEAM_CLIENT |
+                   NEXUS_GAME_CAP_OPENGL | graphics;
         case NEXUS_GAME_PLATFORM_PROTON:
-            required = steam_requirements |
-                       NEXUS_GAME_CAP_STEAM_CLIENT |
-                       NEXUS_GAME_CAP_WINE_RUNTIME |
-                       NEXUS_GAME_CAP_PROTON_RUNTIME |
-                       NEXUS_GAME_CAP_VULKAN |
-                       NEXUS_GAME_CAP_GPU_3D_RENDERING |
-                       NEXUS_GAME_CAP_GPU_FENCE_SYNC;
-            if (graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_8_9 ||
-                graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_10 ||
-                graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_11)
-                required |= NEXUS_GAME_CAP_DXVK;
-            else if (graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_12)
-                required |= NEXUS_GAME_CAP_VKD3D_PROTON |
-                            NEXUS_GAME_CAP_VULKAN_1_3;
-            break;
+            return steam_requirements |
+                   NEXUS_GAME_CAP_STEAM_CLIENT |
+                   NEXUS_GAME_CAP_WINE_RUNTIME |
+                   NEXUS_GAME_CAP_PROTON_RUNTIME |
+                   NEXUS_GAME_CAP_VULKAN |
+                   NEXUS_GAME_CAP_GPU_3D_RENDERING |
+                   NEXUS_GAME_CAP_GPU_FENCE_SYNC | graphics;
         case NEXUS_GAME_PLATFORM_WINE:
-            required = NEXUS_GAME_CAP_LINUX_SYSCALL_ABI |
-                       NEXUS_GAME_CAP_POSIX_RUNTIME |
-                       NEXUS_GAME_CAP_GLIBC_64 |
-                       NEXUS_GAME_CAP_DYNAMIC_ELF_LINKING |
-                       NEXUS_GAME_CAP_WINE_RUNTIME;
-            if (graphics_api == NEXUS_GAME_GRAPHICS_OPENGL)
-                required |= NEXUS_GAME_CAP_OPENGL;
-            else if (graphics_api == NEXUS_GAME_GRAPHICS_VULKAN)
-                required |= NEXUS_GAME_CAP_VULKAN;
-            else if (graphics_api >= NEXUS_GAME_GRAPHICS_DIRECT3D_8_9 &&
-                     graphics_api <= NEXUS_GAME_GRAPHICS_DIRECT3D_11)
-                required |= NEXUS_GAME_CAP_DXVK |
-                            NEXUS_GAME_CAP_VULKAN;
-            else if (graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_12)
-                required |= NEXUS_GAME_CAP_VKD3D_PROTON |
-                            NEXUS_GAME_CAP_VULKAN |
-                            NEXUS_GAME_CAP_VULKAN_1_3;
-            break;
+            return NEXUS_GAME_CAP_LINUX_SYSCALL_ABI |
+                   NEXUS_GAME_CAP_POSIX_RUNTIME |
+                   NEXUS_GAME_CAP_GLIBC_64 |
+                   NEXUS_GAME_CAP_DYNAMIC_ELF_LINKING |
+                   NEXUS_GAME_CAP_WINE_RUNTIME | graphics;
         default:
             return UINT64_MAX;
     }
-
-    if (graphics_api == NEXUS_GAME_GRAPHICS_OPENGL)
-        required |= NEXUS_GAME_CAP_OPENGL;
-    else if (graphics_api == NEXUS_GAME_GRAPHICS_VULKAN)
-        required |= NEXUS_GAME_CAP_VULKAN;
-    else if (graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_8_9 ||
-             graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_10 ||
-             graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_11)
-        required |= NEXUS_GAME_CAP_DXVK | NEXUS_GAME_CAP_VULKAN;
-    else if (graphics_api == NEXUS_GAME_GRAPHICS_DIRECT3D_12)
-        required |= NEXUS_GAME_CAP_VKD3D_PROTON |
-                    NEXUS_GAME_CAP_VULKAN |
-                    NEXUS_GAME_CAP_VULKAN_1_3;
-    return required;
 }
 
 static uint64_t anticheat_requirements(enum nexus_game_anticheat anticheat,

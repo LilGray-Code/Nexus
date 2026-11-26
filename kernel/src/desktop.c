@@ -2781,16 +2781,19 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     if (desktop_virtio_gpu_active) {
         surface = desktop_render_surface;
         gpu_set_virtio_display_active(true);
+        gpu_set_virtio_display_outputs(virtio_gpu_scanout_count());
         gpu_set_firmware_framebuffer_active(false);
     } else {
         surface = desktop_firmware_surface;
         gpu_set_virtio_display_active(false);
+        gpu_set_virtio_display_outputs(0U);
         gpu_set_firmware_framebuffer_active(false);
     }
     if (!graphics_init(&surface)) {
         if (desktop_virtio_gpu_active) virtio_gpu_stop();
         desktop_virtio_gpu_active = false;
         gpu_set_virtio_display_active(false);
+        gpu_set_virtio_display_outputs(0U);
         serial_write("DESKTOP: graphics surface validation failed; keeping serial console\r\n");
         return false;
     }
@@ -2905,6 +2908,7 @@ static void draw_pointer(void) {
         virtio_gpu_stop();
         desktop_virtio_gpu_active = false;
         gpu_set_virtio_display_active(false);
+        gpu_set_virtio_display_outputs(0U);
         gpu_set_firmware_framebuffer_active(true);
         (void)graphics_init(&desktop_firmware_surface);
         serial_write("DESKTOP: VirtIO GPU failed; copied frame to firmware framebuffer fallback\r\n");

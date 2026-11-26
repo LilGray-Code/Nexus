@@ -5768,15 +5768,20 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
     }
     if (event->type == NEXUS_INPUT_MOUSE) {
-        pointer_x += event->mouse_dx;
-        pointer_y += event->mouse_dy;
+        const int64_t sensitivity =
+            desktop_settings.mouse_sensitivity_percent;
+        pointer_x += ((int64_t)event->mouse_dx * sensitivity) / 100;
+        pointer_y += ((int64_t)event->mouse_dy * sensitivity) / 100;
         if (pointer_x < 0) pointer_x = 0;
         if (pointer_y < 0) pointer_y = 0;
         if ((uint64_t)pointer_x >= screen_width)
             pointer_x = (int64_t)(screen_width - 1U);
         if ((uint64_t)pointer_y >= screen_height)
             pointer_y = (int64_t)(screen_height - 1U);
-        const bool left_down = (event->mouse_buttons & 1U) != 0;
+        const uint8_t primary_button =
+            desktop_settings.left_handed_mouse ? 2U : 1U;
+        const bool left_down =
+            (event->mouse_buttons & primary_button) != 0U;
         const bool clicked = left_down && !mouse_left_was_down;
         mouse_left_was_down = left_down;
         if (clicked && active_view == DESKTOP_FILES)
@@ -5987,52 +5992,146 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (clicked && active_view == DESKTOP_SETTINGS) {
             const struct desktop_window_rect bounds = desktop_window_bounds();
-            const uint64_t px = bounds.x;
-            const uint64_t py = bounds.y;
-            const uint64_t sx = px + 32U;
-            const uint64_t sy = py + 60U;
-            const uint64_t tab_y = py + 60U;
-            if ((uint64_t)pointer_y >= tab_y &&
-                (uint64_t)pointer_y < tab_y + 24U) {
-                if ((uint64_t)pointer_x >= sx + 284U &&
-                    (uint64_t)pointer_x < sx + 366U) {
-                    settings_hardware_page = true;
-                } else if ((uint64_t)pointer_x >= sx + 374U &&
-                           (uint64_t)pointer_x < sx + 456U) {
-                    settings_hardware_page = false;
-                }
-                draw_shell();
-                draw_pointer();
-                return;
-            }
+            const uint64_t sx = bounds.x + 32U;
+            const uint64_t sy = bounds.y + 60U;
+            const uint64_t content_y = sy + 42U;
+            const uint64_t px = (uint64_t)pointer_x;
+            const uint64_t py = (uint64_t)pointer_y;
             bool changed = false;
-            if ((uint64_t)pointer_y >= sy + 42U &&
-                (uint64_t)pointer_y < sy + 74U) {
-                if ((uint64_t)pointer_x >= sx &&
-                    (uint64_t)pointer_x < sx + 116U &&
-                    desktop_settings.theme != DESKTOP_THEME_DARK) {
-                    desktop_settings.theme = DESKTOP_THEME_DARK;
-                    changed = true;
-                } else if ((uint64_t)pointer_x >= sx + 128U &&
-                           (uint64_t)pointer_x < sx + 244U &&
-                           desktop_settings.theme != DESKTOP_THEME_LIGHT) {
-                    desktop_settings.theme = DESKTOP_THEME_LIGHT;
+            if (py >= sy - 2U && py < sy + 25U && px >= sx) {
+                const uint64_t relative_x = px - sx;
+                const size_t page = (size_t)(relative_x / 80U);
+                if (page < SETTINGS_PAGE_COUNT && relative_x % 80U < 74U)
+                    settings_page = (enum desktop_settings_page)page;
+            } else if (settings_page == SETTINGS_PERSONAL) {
+                if (py >= content_y + 77U && py < content_y + 107U) {
+                    if (px >= sx && px < sx + 112U &&
+                        desktop_settings.theme != NEXUS_SETTINGS_THEME_DARK) {
+                        desktop_settings.theme = NEXUS_SETTINGS_THEME_DARK;
+                        changed = true;
+                    } else if (px >= sx + 122U && px < sx + 234U &&
+                               desktop_settings.theme != NEXUS_SETTINGS_THEME_LIGHT) {
+                        desktop_settings.theme = NEXUS_SETTINGS_THEME_LIGHT;
+                        changed = true;
+                    }
+                } else if (py >= content_y + 140U &&
+                           py < content_y + 201U && px >= sx &&
+                           px < sx + 328U) {
+                    const uint64_t row = py < content_y + 174U ? 0U : 1U;
+                    const uint64_t y_start = content_y + 140U + row * 34U;
+                    const uint64_t col = (px - sx) / 82U;
+                    if (py >= y_start && py < y_start + 27U && col < 4U) {
+                        const uint8_t accent = (uint8_t)(row * 4U + col);
+                        if (desktop_settings.accent != accent) {
+                            desktop_settings.accent = accent;
+                            changed = true;
+                        }
+                    }
+                } else if (py >= content_y + 234U &&
+                           py < content_y + 263U && px >= sx &&
+                           px < sx + 368U) {
+                    const uint64_t col = (px - sx) / 92U;
+                    if (col < NEXUS_SETTINGS_WALLPAPER_COUNT &&
+                        (px - sx) % 92U < 84U &&
+                        desktop_settings.wallpaper != col) {
+                        desktop_settings.wallpaper = (uint8_t)col;
+                        changed = true;
+                    }
+                }
+            } else if (settings_page == SETTINGS_DISPLAY) {
+                if (py >= content_y + 145U && py < content_y + 175U &&
+                    px >= sx) {
+                    static const uint8_t scales[5] = {
+                        80U, 90U, 100U, 110U, 120U
+                    };
+                    const uint64_t col = (px - sx) / 68U;
+                    if (col < 5U && (px - sx) % 68U < 62U &&
+                        desktop_settings.ui_scale_percent != scales[col]) {
+                        desktop_settings.ui_scale_percent = scales[col];
+                        changed = true;
+                    }
+                } else if (py >= content_y + 213U &&
+                           py < content_y + 243U && px >= sx) {
+                    const uint64_t col = (px - sx) / 104U;
+                    if (col < 3U && (px - sx) % 104U < 96U) {
+                        const uint8_t cursor = (uint8_t)(col + 1U);
+                        if (desktop_settings.cursor_size != cursor) {
+                            desktop_settings.cursor_size = cursor;
+                            changed = true;
+                        }
+                    }
+                }
+            } else if (settings_page == SETTINGS_INPUT) {
+                if (py >= content_y + 83U && py < content_y + 113U &&
+                    px >= sx) {
+                    static const uint8_t speeds[7] = {
+                        50U, 75U, 100U, 125U, 150U, 175U, 200U
+                    };
+                    const uint64_t col = (px - sx) / 70U;
+                    if (col < 7U && (px - sx) % 70U < 64U &&
+                        desktop_settings.mouse_sensitivity_percent != speeds[col]) {
+                        desktop_settings.mouse_sensitivity_percent = speeds[col];
+                        changed = true;
+                    }
+                } else if (py >= content_y + 157U &&
+                           py < content_y + 187U && px >= sx) {
+                    const uint64_t col = (px - sx) / 82U;
+                    if (col < 5U && (px - sx) % 82U < 74U) {
+                        const uint8_t speed = (uint8_t)(col + 1U);
+                        if (desktop_settings.scroll_speed != speed) {
+                            desktop_settings.scroll_speed = speed;
+                            changed = true;
+                        }
+                    }
+                } else if (py >= content_y + 233U &&
+                           py < content_y + 265U &&
+                           px >= sx && px < sx + 170U) {
+                    desktop_settings.left_handed_mouse =
+                        !desktop_settings.left_handed_mouse;
                     changed = true;
                 }
-            } else if ((uint64_t)pointer_y >= sy + 104U &&
-                       (uint64_t)pointer_y < sy + 129U) {
-                for (size_t i = 0U; i < 4U; ++i) {
-                    const uint64_t x = sx + (uint64_t)i * 78U;
-                    if ((uint64_t)pointer_x >= x &&
-                        (uint64_t)pointer_x < x + 62U &&
-                        desktop_settings.accent != (uint8_t)i) {
-                        desktop_settings.accent = (uint8_t)i;
+            } else if (settings_page == SETTINGS_ACCESSIBILITY) {
+                if (py >= content_y + 83U && py < content_y + 115U &&
+                    px >= sx && px < sx + 160U) {
+                    desktop_settings.high_contrast =
+                        !desktop_settings.high_contrast;
+                    changed = true;
+                } else if (py >= content_y + 160U &&
+                           py < content_y + 190U && px >= sx) {
+                    static const uint8_t scales[3] = {100U, 110U, 120U};
+                    const uint64_t col = (px - sx) / 112U;
+                    if (col < 3U && (px - sx) % 112U < 100U &&
+                        desktop_settings.ui_scale_percent != scales[col]) {
+                        desktop_settings.ui_scale_percent = scales[col];
                         changed = true;
-                        break;
+                    }
+                } else if (py >= content_y + 237U &&
+                           py < content_y + 267U && px >= sx) {
+                    const uint64_t col = (px - sx) / 104U;
+                    if (col < 3U && (px - sx) % 104U < 96U) {
+                        const uint8_t cursor = (uint8_t)(col + 1U);
+                        if (desktop_settings.cursor_size != cursor) {
+                            desktop_settings.cursor_size = cursor;
+                            changed = true;
+                        }
+                    }
+                }
+            } else if (settings_page == SETTINGS_SYSTEM) {
+                if (py >= content_y + 83U && py < content_y + 113U &&
+                    px >= sx) {
+                    static const uint8_t volumes[5] = {
+                        0U, 25U, 50U, 75U, 100U
+                    };
+                    const uint64_t col = (px - sx) / 82U;
+                    if (col < 5U && (px - sx) % 82U < 74U &&
+                        desktop_settings.volume_percent != volumes[col]) {
+                        desktop_settings.volume_percent = volumes[col];
+                        changed = true;
                     }
                 }
             }
             if (changed) desktop_preferences_save();
+            else desktop_settings_apply();
             draw_shell();
             draw_pointer();
             return;
@@ -6631,19 +6730,32 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (active_view == DESKTOP_SETTINGS) {
+        if ((event->scancode & 0x80U) != 0U) return;
         if (event->scancode == 0x01U) {
             desktop_open_view(DESKTOP_HOME);
+        } else if (event->scancode == 0x4BU) {
+            settings_page = settings_page == 0U
+                ? (enum desktop_settings_page)(SETTINGS_PAGE_COUNT - 1U)
+                : (enum desktop_settings_page)(settings_page - 1U);
+        } else if (event->scancode == 0x4DU || event->scancode == 0x0FU) {
+            settings_page = (enum desktop_settings_page)(
+                ((uint32_t)settings_page + 1U) % SETTINGS_PAGE_COUNT);
+        } else if (event->scancode >= 0x02U && event->scancode <= 0x07U) {
+            settings_page = (enum desktop_settings_page)(
+                event->scancode - 0x02U);
         } else if (event->scancode == 0x14U) {
             desktop_toggle_theme();
         } else if (event->scancode == 0x1EU) {
             desktop_cycle_accent();
         } else if (event->scancode == 0x23U) {
-            settings_hardware_page = true;
-        } else if (event->scancode == 0x19U) {
-            settings_hardware_page = false;
+            settings_page = SETTINGS_DEVICES;
+        } else if (event->scancode == 0x25U) {
+            desktop_settings.high_contrast = !desktop_settings.high_contrast;
+            desktop_preferences_save();
         } else {
             return;
         }
+        desktop_settings_apply();
         draw_shell();
         draw_pointer();
         return;

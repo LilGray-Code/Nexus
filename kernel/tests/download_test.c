@@ -40,8 +40,8 @@ static void test_collision_suffix_stays_before_extension(void) {
     assert(strcmp(name, "APP_12.ZIP") == 0);
 }
 
-_Static_assert(NEXUS_NXFS_MAX_FILE_BYTES == (4U * 1024U * 1024U),
-               "browser and persistent download limit must be 4 MiB");
+_Static_assert(NEXUS_NXFS_MAX_FILE_BYTES == (256U * 1024U * 1024U),
+               "new NXFS volumes support per-file slots up to 256 MiB");
 
 _Static_assert(NEXUS_DOWNLOAD_MAX_BYTES == (256U * 1024U * 1024U),
                "browser streaming download limit must be 256 MiB");

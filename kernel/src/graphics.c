@@ -41,6 +41,7 @@ static uint32_t output_rotation;
 static uint8_t output_scale_percent = 100U;
 static uint8_t output_brightness_percent = 100U;
 static uint16_t output_color_temperature_kelvin = 6500U;
+static uint32_t graphics_unfilter_pixel(uint32_t pixel);
 
 static uint64_t graphics_logical_width(void) {
     if (!initialized || output_scale_percent == 0U) return 0U;
@@ -106,7 +107,8 @@ static uint32_t graphics_read_pixel(uint64_t x, uint64_t y) {
     graphics_map_scaled_point(sx, sy, &px, &py);
     volatile const uint32_t *base =
         (volatile const uint32_t *)active_surface.address;
-    return base[(py * active_surface.pitch) / 4U + px];
+    return graphics_unfilter_pixel(
+        base[(py * active_surface.pitch) / 4U + px]);
 }
 
 static bool graphics_direct_mapping(void) {
@@ -157,30 +159,35 @@ static uint32_t channel_mask(uint8_t size, uint8_t shift) {
     return ((1U << size) - 1U) << shift;
 }
 
-static uint32_t pack_rgb(uint8_t red, uint8_t green, uint8_t blue) {
-    uint32_t r8 = red, g8 = green, b8 = blue;
-    if (output_color_temperature_kelvin != 6500U) {
-        const uint32_t kelvin = output_color_temperature_kelvin;
-        uint32_t red_gain = 255U;
-        uint32_t green_gain;
-        uint32_t blue_gain;
-        if (kelvin < 6600U) {
-            green_gain = 160U + ((kelvin - 1000U) * 95U) / 5600U;
-            blue_gain = kelvin <= 1900U ? 0U :
-                ((kelvin - 1900U) * 255U) / 4700U;
-        } else {
-            const uint32_t excess = kelvin - 6600U;
-            red_gain = 255U - (excess * 48U) / 3400U;
-            green_gain = 255U - (excess * 20U) / 3400U;
-            blue_gain = 255U;
-        }
-        r8 = (r8 * red_gain) / 255U;
-        g8 = (g8 * green_gain) / 255U;
-        b8 = (b8 * blue_gain) / 255U;
+static void graphics_color_gains(uint32_t *red_gain,
+                                uint32_t *green_gain,
+                                uint32_t *blue_gain) {
+    *red_gain = 255U;
+    *green_gain = 255U;
+    *blue_gain = 255U;
+    if (output_color_temperature_kelvin == 6500U) return;
+
+    const uint32_t kelvin = output_color_temperature_kelvin;
+    if (kelvin < 6600U) {
+        *green_gain = 160U + ((kelvin - 1000U) * 95U) / 5600U;
+        *blue_gain = kelvin <= 1900U ? 0U :
+            ((kelvin - 1900U) * 255U) / 4700U;
+    } else {
+        const uint32_t excess = kelvin - 6600U;
+        *red_gain = 255U - (excess * 48U) / 3400U;
+        *green_gain = 255U - (excess * 20U) / 3400U;
     }
-    r8 = (r8 * output_brightness_percent) / 100U;
-    g8 = (g8 * output_brightness_percent) / 100U;
-    b8 = (b8 * output_brightness_percent) / 100U;
+}
+
+static uint32_t pack_rgb(uint8_t red, uint8_t green, uint8_t blue) {
+    uint32_t red_gain = 255U, green_gain = 255U, blue_gain = 255U;
+    graphics_color_gains(&red_gain, &green_gain, &blue_gain);
+    const uint32_t r8 =
+        ((uint32_t)red * red_gain / 255U) * output_brightness_percent / 100U;
+    const uint32_t g8 =
+        ((uint32_t)green * green_gain / 255U) * output_brightness_percent / 100U;
+    const uint32_t b8 =
+        ((uint32_t)blue * blue_gain / 255U) * output_brightness_percent / 100U;
 
     const uint32_t rmax = (1U << active_surface.red_mask_size) - 1U;
     const uint32_t gmax = (1U << active_surface.green_mask_size) - 1U;
@@ -465,6 +472,44 @@ static uint8_t unpack_channel(uint32_t pixel, uint8_t size, uint8_t shift) {
     return (uint8_t)(value * 255U / maximum);
 }
 
+static uint8_t graphics_unfilter_channel(uint8_t value,
+                                         uint32_t gain) {
+    if (output_brightness_percent == 0U || gain == 0U) return 0U;
+    uint32_t expanded =
+        ((uint32_t)value * 100U) / output_brightness_percent;
+    if (expanded > 255U) expanded = 255U;
+    expanded = (expanded * 255U) / gain;
+    if (expanded > 255U) expanded = 255U;
+    return (uint8_t)expanded;
+}
+
+static uint32_t graphics_unfilter_pixel(uint32_t pixel) {
+    uint32_t red_gain = 255U, green_gain = 255U, blue_gain = 255U;
+    graphics_color_gains(&red_gain, &green_gain, &blue_gain);
+    const uint8_t red = graphics_unfilter_channel(
+        unpack_channel(pixel, active_surface.red_mask_size,
+                       active_surface.red_mask_shift), red_gain);
+    const uint8_t green = graphics_unfilter_channel(
+        unpack_channel(pixel, active_surface.green_mask_size,
+                       active_surface.green_mask_shift), green_gain);
+    const uint8_t blue = graphics_unfilter_channel(
+        unpack_channel(pixel, active_surface.blue_mask_size,
+                       active_surface.blue_mask_shift), blue_gain);
+    /* Return a raw packed color; callers blend it and pack_rgb reapplies the
+     * output effect exactly once on the final write.
+     */
+    const uint32_t r = ((uint32_t)red *
+        ((1U << active_surface.red_mask_size) - 1U) / 255U)
+        << active_surface.red_mask_shift;
+    const uint32_t g = ((uint32_t)green *
+        ((1U << active_surface.green_mask_size) - 1U) / 255U)
+        << active_surface.green_mask_shift;
+    const uint32_t b = ((uint32_t)blue *
+        ((1U << active_surface.blue_mask_size) - 1U) / 255U)
+        << active_surface.blue_mask_shift;
+    return r | g | b;
+}
+
 static uint8_t blend_channel(uint8_t source, uint8_t destination,
                              uint8_t alpha) {
     const uint32_t inverse = 255U - alpha;
@@ -510,7 +555,7 @@ void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
         volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
             (base + (y + row) * active_surface.pitch + x * 4U);
         for (uint64_t column = 0U; column < width; ++column) {
-            const uint32_t old = pixels[column];
+            const uint32_t old = graphics_unfilter_pixel(pixels[column]);
             const uint8_t old_red = unpack_channel(
                 old, active_surface.red_mask_size,
                 active_surface.red_mask_shift);

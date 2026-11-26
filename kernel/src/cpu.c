@@ -301,8 +301,16 @@ bool nexus_cpu_init(void) {
         cpu_info.physical_address_bits = (uint8_t)(address_eax & 0xFFU);
         cpu_info.virtual_address_bits =
             (uint8_t)((address_eax >> 8) & 0xFFU);
-        const uint16_t cores = (uint16_t)((address_ecx & 0xFFU) + 1U);
-        if (cores != 0U) cpu_info.physical_cores_per_package = cores;
+        /* ECX[7:0] is the AMD/Hygon NC field. Do not interpret that
+         * vendor-defined field as a core count on unrelated x86 vendors.
+         */
+        if (cpu_info.vendor_kind == NEXUS_CPU_VENDOR_AMD ||
+            cpu_info.vendor_kind == NEXUS_CPU_VENDOR_HYGON) {
+            const uint16_t cores =
+                (uint16_t)((address_ecx & 0xFFU) + 1U);
+            if (cores != 0U)
+                cpu_info.physical_cores_per_package = cores;
+        }
     }
     if (cpu_info.physical_cores_per_package == 0U)
         cpu_info.physical_cores_per_package = 1U;

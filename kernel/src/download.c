@@ -38,6 +38,9 @@ bool nexus_download_job_append(struct nexus_download_job *job,
                                const void *data, size_t length) {
     if (job == NULL || job->state != NEXUS_DOWNLOAD_JOB_ACTIVE ||
         (length != 0U && data == NULL) ||
+        job->received_bytes > job->maximum_bytes ||
+        (job->length_known &&
+         job->received_bytes > job->expected_bytes) ||
         length > (size_t)(job->maximum_bytes - job->received_bytes) ||
         (job->length_known &&
          length > (size_t)(job->expected_bytes - job->received_bytes))) {

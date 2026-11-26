@@ -142,9 +142,9 @@ static void test_content_disposition_metadata(void) {
 
 static void test_incremental_chunked_decoder(void) {
     static const uint8_t wire[] =
-        "4;name=value\\r\\nWiki\\r\\n"
-        "5\\r\\npedia\\r\\n"
-        "0\\r\\nX-Trace: ok\\r\\n\\r\\n";
+        "4;name=value\r\nWiki\r\n"
+        "5\r\npedia\r\n"
+        "0\r\nX-Trace: ok\r\n\r\n";
     struct nexus_http_chunked_decoder decoder;
     nexus_http_chunked_decoder_init(&decoder, 64U);
     uint8_t output[3] = {0U};
@@ -170,14 +170,14 @@ static void test_incremental_chunked_decoder(void) {
     assert(memcmp(decoded, "Wikipedia", 9U) == 0);
     assert(decoder.decoded_bytes == 9U);
 
-    static const uint8_t oversized[] = "9\\r\\n123456789\\r\\n0\\r\\n\\r\\n";
+    static const uint8_t oversized[] = "9\r\n123456789\r\n0\r\n\r\n";
     nexus_http_chunked_decoder_init(&decoder, 8U);
     size_t used = 0U, produced = 0U;
     assert(!nexus_http_chunked_decoder_feed(
         &decoder, oversized, sizeof(oversized) - 1U, &used,
         output, sizeof(output), &produced, &complete));
 
-    static const uint8_t malformed[] = "3\\r\\nabcXX0\\r\\n\\r\\n";
+    static const uint8_t malformed[] = "3\r\nabcXX0\r\n\r\n";
     nexus_http_chunked_decoder_init(&decoder, 64U);
     assert(!nexus_http_chunked_decoder_feed(
         &decoder, malformed, sizeof(malformed) - 1U, &used,

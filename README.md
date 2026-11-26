@@ -23,7 +23,7 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   launcher supports typed app search, Up/Down selection, and Enter to launch.
   The shell also includes a six-section Settings application: Personalization
   (dark/light theme, eight accent palettes, four wallpaper presets), Display
-  (firmware-selected resolution readout, 80–120% UI scaling, pointer size),
+  (firmware-selected resolution readout, 80–120% text sizing, pointer size),
   Input (mouse speed, scroll speed, handedness), Accessibility (high contrast,
   larger text and pointer), System (AC'97 master volume when supported, network
   status, memory and uptime), and Devices (detected hardware and driver state).

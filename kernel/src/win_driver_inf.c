@@ -166,7 +166,7 @@ bool nexus_win_inf_find_match(const char *text, size_t length,
                 ch = text[offset++];
             }
             if (ch == '\n') break;
-            if (ch == '\0' || (uint8_t)ch < 0x20U && ch != '\t' && ch != '\r')
+            if (ch == '\0' || ((uint8_t)ch < 0x20U && ch != '\t' && ch != '\r'))
                 return false;
             if (n + 1U >= sizeof(line)) return false;
             line[n++] = ch;

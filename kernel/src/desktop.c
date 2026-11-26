@@ -2383,6 +2383,91 @@ static void draw_shell(void) {
             }
             graphics_draw_text(text_x + 330U, content_y + 361U,
                 gpu_render_path_name(), 1U, 108U, 216U, 229U);
+            if (display != NULL) {
+                format_labeled_u64("MONITORS DETECTED: ",
+                    display->monitor_count, line);
+                graphics_draw_text(text_x, content_y + 383U, line,
+                                   1U, 142U, 174U, 199U);
+                uint32_t monitor_lines = 0U;
+                for (uint32_t i = 0U;
+                     i < display->monitor_count && monitor_lines < 2U; ++i) {
+                    const struct nexus_display_monitor *monitor =
+                        &display->monitors[i];
+                    if (!monitor->present) continue;
+                    const char *name = monitor->monitor_name_valid
+                        ? monitor->monitor_name
+                        : (monitor->edid_valid
+                            ? "EDID NAME NOT PROVIDED" : "EDID UNAVAILABLE");
+                    graphics_draw_text(text_x + 12U,
+                        content_y + 400U + (uint64_t)monitor_lines * 16U,
+                        name, 1U, 171U, 191U, 211U);
+                    ++monitor_lines;
+                }
+            }
+
+            graphics_draw_text(text_x, content_y + 435U,
+                "DISPLAY SCALE", 1U, 142U, 174U, 199U);
+            static const uint8_t display_scales[5] = {
+                80U, 90U, 100U, 110U, 120U
+            };
+            for (size_t i = 0U; i < 5U; ++i) {
+                char label[8] = {' ', ' ', ' ', '%', '\0'};
+                uint8_t digits = display_scales[i];
+                size_t digit = 3U;
+                do {
+                    label[--digit] = (char)('0' + digits % 10U);
+                    digits = (uint8_t)(digits / 10U);
+                } while (digits != 0U && digit != 0U);
+                desktop_settings_draw_button(text_x + (uint64_t)i * 68U,
+                    content_y + 450U, 62U, 28U, label,
+                    display != NULL &&
+                    display->scale_percent == display_scales[i]);
+            }
+
+            graphics_draw_text(text_x, content_y + 485U,
+                "SOFTWARE ROTATION", 1U, 142U, 174U, 199U);
+            static const uint32_t rotations[4] = {0U, 90U, 180U, 270U};
+            for (size_t i = 0U; i < 4U; ++i) {
+                char label[8] = {' ', ' ', ' ', ' ', '\0'};
+                uint32_t degrees = rotations[i];
+                size_t digit = 3U;
+                do {
+                    label[--digit] = (char)('0' + degrees % 10U);
+                    degrees /= 10U;
+                } while (degrees != 0U && digit != 0U);
+                desktop_settings_draw_button(text_x + (uint64_t)i * 72U,
+                    content_y + 500U, 66U, 28U, label,
+                    display != NULL &&
+                    display->upright_rotation == (uint32_t)i);
+            }
+
+            graphics_draw_text(text_x, content_y + 535U,
+                "SOFTWARE BRIGHTNESS", 1U, 142U, 174U, 199U);
+            static const uint8_t brightness_levels[3] = {50U, 75U, 100U};
+            static const char *const brightness_labels[3] = {
+                "50%", "75%", "100%"
+            };
+            for (size_t i = 0U; i < 3U; ++i)
+                desktop_settings_draw_button(text_x + (uint64_t)i * 82U,
+                    content_y + 550U, 76U, 28U, brightness_labels[i],
+                    display != NULL &&
+                    display->brightness_percent == brightness_levels[i]);
+
+            graphics_draw_text(text_x, content_y + 585U,
+                "NIGHT LIGHT / COLOR TEMPERATURE", 1U,
+                142U, 174U, 199U);
+            static const uint16_t color_temperatures[3] = {
+                6500U, 4500U, 3000U
+            };
+            static const char *const temperature_labels[3] = {
+                "6500K", "4500K", "3000K"
+            };
+            for (size_t i = 0U; i < 3U; ++i)
+                desktop_settings_draw_button(text_x + (uint64_t)i * 82U,
+                    content_y + 600U, 76U, 28U, temperature_labels[i],
+                    display != NULL &&
+                    display->color_temperature_kelvin ==
+                        color_temperatures[i]);
         } else if (settings_page == SETTINGS_INPUT) {
             desktop_settings_draw_heading(text_x, content_y,
                 "INPUT", "Tune pointer movement and mouse behavior.");
@@ -3083,6 +3168,28 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         virtio_gpu_start(surface.width, surface.height,
                          &desktop_firmware_surface,
                          &desktop_render_surface);
+    if (desktop_virtio_gpu_active) {
+        struct nexus_virtio_gpu_display_info discovered;
+        if (virtio_gpu_display_get_info(&discovered)) {
+            for (uint32_t i = 0U; i < discovered.scanout_count; ++i) {
+                const struct nexus_virtio_gpu_scanout_info *scanout =
+                    &discovered.scanouts[i];
+                uint8_t edid[NEXUS_DISPLAY_MAX_EDID_BYTES];
+                size_t edid_length = 0U;
+                const bool have_edid = virtio_gpu_display_get_edid(
+                    i, edid, sizeof(edid), &edid_length);
+                const int32_t desktop_x = scanout->x <= INT32_MAX
+                    ? (int32_t)scanout->x : 0;
+                const int32_t desktop_y = scanout->y <= INT32_MAX
+                    ? (int32_t)scanout->y : 0;
+                (void)nexus_display_add_monitor(
+                    i, scanout->enabled, desktop_x, desktop_y,
+                    scanout->width, scanout->height,
+                    have_edid ? edid : NULL,
+                    have_edid ? edid_length : 0U);
+            }
+        }
+    }
     serial_write(desktop_virtio_gpu_active
         ? "DESKTOP: VirtIO GPU 2D backend initialized\\r\\n"
         : "DESKTOP: using firmware framebuffer backend\\r\\n");
@@ -3105,6 +3212,17 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     serial_write("DESKTOP: graphics surface validated\\r\\n");
     if (!desktop_virtio_gpu_active)
         gpu_set_firmware_framebuffer_active(true);
+    const struct nexus_display_info *display_config =
+        nexus_display_get_info();
+    if (display_config != NULL) {
+        (void)nexus_display_set_rotation(
+            (enum nexus_display_rotation)display_config->upright_rotation);
+        (void)nexus_display_set_scale_percent(display_config->scale_percent);
+        (void)nexus_display_set_brightness_percent(
+            display_config->brightness_percent);
+        (void)nexus_display_set_color_temperature(
+            display_config->color_temperature_kelvin);
+    }
     screen_width = graphics_width();
     screen_height = graphics_height();
     active_view = installer_session_mode ? DESKTOP_INSTALLER : DESKTOP_HOME;
@@ -6428,6 +6546,52 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             changed = true;
                         }
                     }
+                } else if (py >= content_y + 450U &&
+                           py < content_y + 478U && px >= sx) {
+                    static const uint8_t display_scales[5] = {
+                        80U, 90U, 100U, 110U, 120U
+                    };
+                    const uint64_t col = (px - sx) / 68U;
+                    if (col < 5U && (px - sx) % 68U < 62U &&
+                        nexus_display_set_scale_percent(display_scales[col])) {
+                        screen_width = graphics_width();
+                        screen_height = graphics_height();
+                        if ((uint64_t)pointer_x >= screen_width)
+                            pointer_x = (int64_t)(screen_width - 1U);
+                        if ((uint64_t)pointer_y >= screen_height)
+                            pointer_y = (int64_t)(screen_height - 1U);
+                    }
+                } else if (py >= content_y + 500U &&
+                           py < content_y + 528U && px >= sx) {
+                    const uint64_t col = (px - sx) / 72U;
+                    if (col < 4U && (px - sx) % 72U < 66U &&
+                        nexus_display_set_rotation(
+                            (enum nexus_display_rotation)col)) {
+                        screen_width = graphics_width();
+                        screen_height = graphics_height();
+                        if ((uint64_t)pointer_x >= screen_width)
+                            pointer_x = (int64_t)(screen_width - 1U);
+                        if ((uint64_t)pointer_y >= screen_height)
+                            pointer_y = (int64_t)(screen_height - 1U);
+                    }
+                } else if (py >= content_y + 550U &&
+                           py < content_y + 578U && px >= sx) {
+                    static const uint8_t brightness_levels[3] = {
+                        50U, 75U, 100U
+                    };
+                    const uint64_t col = (px - sx) / 82U;
+                    if (col < 3U && (px - sx) % 82U < 76U)
+                        (void)nexus_display_set_brightness_percent(
+                            brightness_levels[col]);
+                } else if (py >= content_y + 600U &&
+                           py < content_y + 628U && px >= sx) {
+                    static const uint16_t color_temperatures[3] = {
+                        6500U, 4500U, 3000U
+                    };
+                    const uint64_t col = (px - sx) / 82U;
+                    if (col < 3U && (px - sx) % 82U < 76U)
+                        (void)nexus_display_set_color_temperature(
+                            color_temperatures[col]);
                 }
             } else if (settings_page == SETTINGS_INPUT) {
                 if (py >= content_y + 83U && py < content_y + 113U &&

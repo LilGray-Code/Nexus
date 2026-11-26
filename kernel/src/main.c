@@ -695,20 +695,23 @@ void kmain(void) {
         uint32_t performance_cores = 0U;
         uint32_t efficiency_cores = 0U;
         uint32_t unclassified_cores = 0U;
+        uint32_t inventory_online_count = 0U;
         for (uint32_t cpu_slot = 0U;
-             cpu_slot < nexus_smp_online_cpu_count(); ++cpu_slot) {
+             cpu_slot < NEXUS_SMP_MAX_CPUS; ++cpu_slot) {
             struct nexus_smp_cpu_info cpu_topology;
-            if (!nexus_smp_cpu_info_at(cpu_slot, &cpu_topology) ||
-                !cpu_topology.online) {
-                serial_write("ERROR: online CPU topology record is unavailable\r\n");
-                halt_forever();
-            }
+            if (!nexus_smp_cpu_info_at(cpu_slot, &cpu_topology)) break;
+            if (!cpu_topology.online) continue;
+            ++inventory_online_count;
             if (cpu_topology.core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE)
                 ++performance_cores;
             else if (cpu_topology.core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY)
                 ++efficiency_cores;
             else
                 ++unclassified_cores;
+        }
+        if (inventory_online_count != nexus_smp_online_cpu_count()) {
+            serial_write("ERROR: SMP online count disagrees with CPU topology inventory\r\n");
+            halt_forever();
         }
         serial_write("SMP core inventory P/E/other=");
         serial_write_hex(performance_cores);

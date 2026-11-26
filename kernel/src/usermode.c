@@ -379,7 +379,32 @@ bool usermode_run_selftest(void) {
     }
     const bool result_ok = executed && exit_status == USER_EXIT_STATUS &&
                            usermode_write_rejected && output_matches;
-    return process_reap(pid) && result_ok;
+    if (!process_reap(pid) || !result_ok) return false;
+
+    /* A deliberately invalid user instruction must fail only that process. */
+    size_t fault_elf_size = 0U;
+    if (!build_test_elf(&fault_elf_size)) return false;
+    usermode_test_elf[0x1000U] = 0x0FU; /* UD2 -> #UD (vector 6). */
+    usermode_test_elf[0x1001U] = 0x0BU;
+
+    uint32_t fault_pid = 0U;
+    if (!process_spawn_elf("FAULTTEST", usermode_test_elf,
+                           fault_elf_size, &fault_pid)) return false;
+    uint64_t fault_exit_status = 0U;
+    const bool fault_returned_as_success =
+        process_run(fault_pid, &fault_exit_status);
+
+    bool fault_recorded = false;
+    for (size_t slot = 0U; slot < NEXUS_PROCESS_MAX; ++slot) {
+        struct nexus_process_info info;
+        if (!process_get_info(slot, &info) || info.pid != fault_pid) continue;
+        fault_recorded = info.state == NEXUS_PROCESS_FAILED &&
+            info.crashed && info.fault_vector == 6U &&
+            info.fault_instruction_pointer == USER_CODE_VA;
+        break;
+    }
+    const bool fault_reaped = process_reap(fault_pid);
+    return !fault_returned_as_success && fault_recorded && fault_reaped;
 }
 
 bool usermode_sys_write(uint64_t user_address, uint64_t length) {

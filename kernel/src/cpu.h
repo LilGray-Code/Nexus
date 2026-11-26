@@ -101,6 +101,8 @@ struct nexus_cpu_info {
 /* Runtime detection only: optional instructions are never enabled implicitly. */
 bool nexus_cpu_init(void);
 enum nexus_cpu_vendor nexus_cpu_get_vendor(void);
+/* Query the executing logical core without altering the BSP capability snapshot. */
+enum nexus_cpu_core_type nexus_cpu_get_local_core_type(void);
 const char *nexus_cpu_vendor_name(void);
 bool nexus_cpu_is_intel(void);
 bool nexus_cpu_is_amd(void);

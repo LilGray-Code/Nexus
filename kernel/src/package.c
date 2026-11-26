@@ -209,6 +209,123 @@ static bool parse_permission_mask(const char *text,
     return true;
 }
 
+static bool make_permission_path(const char *id, char output[32]) {
+    if (!valid_id(id) || output == NULL) return false;
+    static const char prefix[] = "APPS/";
+    static const char suffix[] = ".NPA";
+    size_t used = 0U;
+    for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
+        output[used++] = prefix[i];
+    for (size_t i = 0U; id[i] != '\0'; ++i) {
+        if (used >= 30U) return false;
+        output[used++] = id[i];
+    }
+    for (size_t i = 0U; i < sizeof(suffix) - 1U; ++i) {
+        if (used >= 31U) return false;
+        output[used++] = suffix[i];
+    }
+    output[used] = '\0';
+    return true;
+}
+
+static bool package_write_permission_record(const char *id,
+                                            uint32_t permissions) {
+    if ((permissions & ~NEXUS_APP_PERMISSION_ALL) != 0U) return false;
+    char path[32];
+    uint8_t bytes[128];
+    if (!make_permission_path(id, path)) return false;
+    static const char prefix[] = "NEXUS-PACKAGE-GRANTS/1\nID=";
+    static const char middle[] = "\nPERMISSIONS=";
+    size_t used = 0U;
+    for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
+        bytes[used++] = (uint8_t)prefix[i];
+    for (size_t i = 0U; id[i] != '\0'; ++i) {
+        if (used >= sizeof(bytes)) return false;
+        bytes[used++] = (uint8_t)id[i];
+    }
+    for (size_t i = 0U; i < sizeof(middle) - 1U; ++i) {
+        if (used >= sizeof(bytes)) return false;
+        bytes[used++] = (uint8_t)middle[i];
+    }
+    char reverse[10];
+    size_t digits = 0U;
+    uint32_t remaining = permissions;
+    do {
+        reverse[digits++] = (char)('0' + remaining % 10U);
+        remaining /= 10U;
+    } while (remaining != 0U && digits < sizeof(reverse));
+    while (digits != 0U) {
+        if (used >= sizeof(bytes) - 1U) return false;
+        bytes[used++] = (uint8_t)reverse[--digits];
+    }
+    bytes[used++] = '\n';
+    return vfs_write_root_path(path, bytes, used);
+}
+
+static bool package_read_permission_record(const char *id,
+                                           uint32_t *permissions) {
+    if (!valid_id(id) || permissions == NULL) return false;
+    *permissions = 0U; /* Missing record means no user approval. */
+    char path[32];
+    if (!make_permission_path(id, path)) return false;
+    struct nexus_vfs_file file;
+    if (!vfs_open_root_readonly_path(path, &file)) return true;
+
+    uint32_t size = 0U;
+    uint8_t bytes[128];
+    if (!vfs_file_size(&file, &size) || size == 0U ||
+        size > sizeof(bytes)) {
+        vfs_close(&file);
+        return false;
+    }
+    size_t total = 0U;
+    bool okay = true;
+    while (total < size) {
+        size_t amount = size - total;
+        size_t actual = 0U;
+        if (amount > NEXUS_VFS_READ_CHUNK) amount = NEXUS_VFS_READ_CHUNK;
+        if (!vfs_read(&file, bytes + total, amount, &actual) ||
+            actual != amount) {
+            okay = false;
+            break;
+        }
+        total += actual;
+    }
+    vfs_close(&file);
+    if (!okay) return false;
+
+    static const char prefix[] = "NEXUS-PACKAGE-GRANTS/1\nID=";
+    static const char middle[] = "\nPERMISSIONS=";
+    if (total < sizeof(prefix) - 1U ||
+        !bytes_equal(bytes, prefix, sizeof(prefix) - 1U)) return false;
+    size_t cursor = sizeof(prefix) - 1U;
+    size_t id_length = 0U;
+    while (cursor + id_length < total && bytes[cursor + id_length] != '\n')
+        ++id_length;
+    if (id_length == 0U || id_length >= NEXUS_PACKAGE_ID_MAX + 1U ||
+        cursor + id_length >= total) return false;
+    if (id_length != 0U) {
+        for (size_t i = 0U; i < id_length; ++i)
+            if (bytes[cursor + i] != (uint8_t)id[i]) return false;
+    }
+    cursor += id_length + 1U;
+    if (cursor + sizeof(middle) - 1U > total ||
+        !bytes_equal(bytes + cursor, middle, sizeof(middle) - 1U))
+        return false;
+    cursor += sizeof(middle) - 1U;
+
+    char decimal[16];
+    size_t digits = 0U;
+    while (cursor < total && bytes[cursor] != '\n') {
+        if (digits + 1U >= sizeof(decimal)) return false;
+        decimal[digits++] = (char)bytes[cursor++];
+    }
+    if (cursor + 1U != total || digits == 0U) return false;
+    decimal[digits] = '\0';
+    return parse_permission_mask(decimal, permissions);
+}
+
+
 static bool parse_header(const void *package_bytes, size_t package_length,
                          bool require_payload,
                          struct nexus_package_manifest *manifest) {
@@ -503,6 +620,9 @@ bool nexus_package_is_installed(const char *id,
         !make_paths(&manifest, executable, receipt) ||
         !installed_payload_matches(executable, &manifest)) return false;
 
+    uint32_t stored_grants = 0U;
+    if (!package_read_permission_record(manifest.id, &stored_grants))
+        return false;
     if (result != NULL) {
         for (size_t i = 0U; i < sizeof(result->id); ++i)
             result->id[i] = manifest.id[i];
@@ -510,7 +630,8 @@ bool nexus_package_is_installed(const char *id,
             result->version[i] = manifest.version[i];
         for (size_t i = 0U; i < sizeof(result->executable_path); ++i)
             result->executable_path[i] = executable[i];
-        result->permissions = manifest.permissions;
+        result->requested_permissions = manifest.permissions;
+        result->granted_permissions = stored_grants & manifest.permissions;
     }
     return true;
 }
@@ -596,6 +717,9 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
     if (receipt_exists && old_executable[0] != '\0' &&
         !strings_equal(old_executable, executable)) {
         (void)vfs_remove_root_path(old_executable);
+        char permission_path[32];
+        if (make_permission_path(manifest.id, permission_path))
+            (void)vfs_remove_root_path(permission_path);
     }
 
     if (result != NULL) {
@@ -608,6 +732,37 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
         result->permissions = manifest.permissions;
     }
     return true;
+}
+
+bool nexus_package_set_permissions(
+    const char *id, uint32_t granted_permissions,
+    nexus_package_signature_verifier verifier, void *verifier_context) {
+    if (!valid_id(id) || verifier == NULL ||
+        (granted_permissions & ~NEXUS_APP_PERMISSION_ALL) != 0U)
+        return false;
+    struct nexus_package_manifest manifest;
+    char receipt[32];
+    if (!make_paths(&(struct nexus_package_manifest){0}, receipt, receipt))
+        return false;
+    /* Derive receipt path only after authenticating the signed installed manifest. */
+    char receipt_path[32];
+    static const char prefix[] = "APPS/";
+    size_t used = 0U;
+    for (size_t i = 0U; i < sizeof(prefix) - 1U; ++i)
+        receipt_path[used++] = prefix[i];
+    for (size_t i = 0U; id[i] != '\0'; ++i)
+        receipt_path[used++] = id[i];
+    for (size_t i = 0U; i < sizeof(PACKAGE_RECEIPT_SUFFIX) - 1U; ++i)
+        receipt_path[used++] = PACKAGE_RECEIPT_SUFFIX[i];
+    receipt_path[used] = '\0';
+
+    uint8_t header[NEXUS_PACKAGE_HEADER_MAX];
+    if (!read_receipt(receipt_path, header, &manifest, verifier,
+                      verifier_context) ||
+        !strings_equal(manifest.id, id) ||
+        (granted_permissions & ~manifest.permissions) != 0U)
+        return false;
+    return package_write_permission_record(id, granted_permissions);
 }
 
 bool nexus_package_uninstall(const char *id,
@@ -629,6 +784,9 @@ bool nexus_package_uninstall(const char *id,
 
     /* Remove the visibility record first; leftover payload is then an orphan. */
     if (!vfs_remove_root_path(receipt)) return false;
+    char permission_path[32];
+    if (make_permission_path(id, permission_path))
+        (void)vfs_remove_root_path(permission_path);
     return vfs_remove_root_path(installed.executable_path);
 }
 
@@ -639,7 +797,7 @@ bool nexus_package_launch(const char *id, nexus_package_signature_verifier verif
     struct nexus_process_result process_result = {0};
     enum nexus_process_error process_error = NEXUS_PROCESS_ERROR_NONE;
     if (!process_execute_root_file_with_permissions(
-            installed.executable_path, installed.permissions,
+            installed.executable_path, installed.granted_permissions,
             &process_result, &process_error)) return false;
     if (exit_status != NULL) *exit_status = process_result.exit_status;
     return true;

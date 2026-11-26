@@ -36,4 +36,16 @@ int64_t nexus_write_file(const char *path, const void *buffer, size_t length);
 /* Returns the package-granted capability bitmask for this process. */
 uint32_t nexus_get_permissions(void);
 
+/*
+ * Bounded 64 KiB bootstrap heap. The allocator is single-threaded, uses
+ * max_align_t alignment, and returns NULL on exhaustion/invalid requests.
+ * It is not a process-wide POSIX malloc ABI and will be replaced by a
+ * kernel-backed heap when general user-process memory management is ready.
+ */
+void nexus_heap_init(void);
+void *nexus_malloc(size_t size);
+void nexus_free(void *pointer);
+void *nexus_calloc(size_t count, size_t size);
+void *nexus_realloc(void *pointer, size_t size);
+
 #endif

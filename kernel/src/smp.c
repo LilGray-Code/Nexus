@@ -33,6 +33,7 @@
 
 static uint32_t lapic_ids[NEXUS_SMP_MAX_CPUS];
 static volatile uint32_t cpu_online[NEXUS_SMP_MAX_CPUS];
+static volatile uint8_t cpu_core_type[NEXUS_SMP_MAX_CPUS];
 static uint32_t expected_cpu_count = 1U;
 static volatile uint32_t online_cpu_count = 1U;
 static bool smp_initialized;
@@ -202,6 +203,7 @@ static void smp_ap_entry(struct limine_mp_info *info) {
         for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
     }
 
+    cpu_core_type[slot] = (uint8_t)nexus_cpu_get_local_core_type();
     cpu_online[slot] = 1U;
     __atomic_add_fetch(&online_cpu_count, 1U, __ATOMIC_RELEASE);
     for (;;) {
@@ -213,7 +215,13 @@ bool nexus_smp_init(struct limine_mp_response *response) {
     smp_initialized = false;
     expected_cpu_count = 1U;
     online_cpu_count = 1U;
+    for (uint32_t slot = 0U; slot < NEXUS_SMP_MAX_CPUS; ++slot) {
+        cpu_online[slot] = 0U;
+        cpu_core_type[slot] = (uint8_t)NEXUS_CPU_CORE_TYPE_UNKNOWN;
+        lapic_ids[slot] = 0U;
+    }
     cpu_online[0] = 1U;
+    cpu_core_type[0] = (uint8_t)nexus_cpu_get_local_core_type();
     lapic_ids[0] = (uint32_t)read_msr(IA32_APIC_BASE_MSR);
     work_active = 0U;
     work_next = 0U;
@@ -294,6 +302,19 @@ bool nexus_smp_init(struct limine_mp_response *response) {
 
 uint32_t nexus_smp_online_cpu_count(void) {
     return __atomic_load_n(&online_cpu_count, __ATOMIC_ACQUIRE);
+}
+
+bool nexus_smp_cpu_info_at(uint32_t cpu_slot,
+                           struct nexus_smp_cpu_info *info) {
+    if (!smp_initialized || info == NULL ||
+        cpu_slot >= expected_cpu_count) return false;
+    const bool online =
+        __atomic_load_n(&cpu_online[cpu_slot], __ATOMIC_ACQUIRE) != 0U;
+    info->apic_id = lapic_ids[cpu_slot];
+    info->core_type =
+        (enum nexus_cpu_core_type)cpu_core_type[cpu_slot];
+    info->online = online;
+    return true;
 }
 
 bool nexus_smp_parallel_for(uint32_t item_count,

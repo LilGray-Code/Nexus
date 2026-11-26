@@ -6464,8 +6464,13 @@ desktop_run_process_selftest(void) {
     bool output_truncated = false;
     const size_t output_length = usermode_console_output_copy(
         captured_output, sizeof(captured_output), &output_truncated);
+    /*
+     * HELLO.ELF writes its original formatted file-I/O result first, then
+     * appends CPU/SIMD/SMP capability lines. Validate the stable prefix while
+     * allowing those additional ABI diagnostics to remain in the capture.
+     */
     bool output_matches =
-        output_length == sizeof(expected_output) - 1U &&
+        output_length >= sizeof(expected_output) - 1U &&
         !output_truncated;
     for (size_t i = 0U; i < output_length && output_matches; ++i) {
         if (captured_output[i] != expected_output[i])

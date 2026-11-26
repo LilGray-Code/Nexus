@@ -28,6 +28,10 @@ on:
       - "kernel/src/usermode.h"
       - "kernel/src/interrupts.c"
       - "kernel/src/elf64.c"
+      - "userland/include/nexus/syscall.h"
+      - "userland/include/nexus/runtime.h"
+      - "userland/src/runtime.c"
+      - "userland/tests/runtime_test.c"
       - "kernel/tests/ac97_format_test.c"
       - "kernel/src/ac97_format.c"
       - "kernel/src/ac97.h"
@@ -37,6 +41,7 @@ on:
       - "kernel/src/paging.h"
       - "kernel/src/paging.c"
       - "kernel/src/process.c"
+      - "kernel/src/process.h"
       - "kernel/src/syscall.h"
       - "kernel/include/nexus/**"
       - "kernel/tests/graphics_blit_test.c"
@@ -147,7 +152,8 @@ jobs:
           fi
       - name: Test signed package parsing and transactional install
         run: |
-          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/include -Ikernel/src \
             kernel/src/package.c kernel/src/sha256.c \
             kernel/tests/package_test.c -o /tmp/nexus-package-test
           /tmp/nexus-package-test

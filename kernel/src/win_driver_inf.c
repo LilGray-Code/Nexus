@@ -143,16 +143,34 @@ bool nexus_win_inf_find_match(const char *text, size_t length,
     *match = (struct nexus_win_inf_match){0};
     char line[NEXUS_WIN_INF_LINE_MAX];
     char section[NEXUS_WIN_INF_FIELD_MAX] = {0};
-    size_t offset = 0U, line_number = 0U;
+    const bool utf16le = length >= 2U &&
+        (uint8_t)text[0] == 0xFFU && (uint8_t)text[1] == 0xFEU;
+    if (utf16le && ((length - 2U) & 1U) != 0U) return false;
+    size_t offset = utf16le ? 2U :
+        (length >= 3U && (uint8_t)text[0] == 0xEFU &&
+         (uint8_t)text[1] == 0xBBU && (uint8_t)text[2] == 0xBFU ? 3U : 0U);
+    size_t line_number = 0U;
     uint16_t best = 0U;
 
     while (offset < length) {
         size_t n = 0U;
-        while (offset < length && text[offset] != '\n') {
+        while (offset < length) {
+            char ch;
+            if (utf16le) {
+                if (length - offset < 2U) return false;
+                const uint16_t unit = (uint16_t)(uint8_t)text[offset] |
+                    (uint16_t)((uint16_t)(uint8_t)text[offset + 1U] << 8);
+                offset += 2U;
+                ch = unit <= 0x7FU ? (char)unit : '?';
+            } else {
+                ch = text[offset++];
+            }
+            if (ch == '\n') break;
+            if (ch == '\0' || (uint8_t)ch < 0x20U && ch != '\t' && ch != '\r')
+                return false;
             if (n + 1U >= sizeof(line)) return false;
-            line[n++] = text[offset++];
+            line[n++] = ch;
         }
-        if (offset < length) ++offset;
         ++line_number;
         line[n] = '\0';
         const char *p = line;

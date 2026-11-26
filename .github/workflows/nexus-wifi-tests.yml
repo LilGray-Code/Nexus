@@ -102,8 +102,8 @@ jobs:
         run: /tmp/nexus-win-package-test
       - name: Compile NDIS adapter lifecycle tests
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
-            -Ikernel/src kernel/src/win_driver_ndis.c \\
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/win_driver_ndis.c \
             kernel/tests/win_driver_ndis_test.c -o /tmp/nexus-win-ndis-test
       - name: Run NDIS adapter lifecycle tests
         run: /tmp/nexus-win-ndis-test

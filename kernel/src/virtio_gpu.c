@@ -15,6 +15,7 @@
 #define VIRTIO_GPU_RESOURCE_ID 1U
 #define VIRTIO_GPU_SCANOUT_ID 0U
 #define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM 2U
+#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO 0x0100U
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D 0x0101U
 #define VIRTIO_GPU_CMD_RESOURCE_UNREF 0x0102U
 #define VIRTIO_GPU_CMD_SET_SCANOUT 0x0103U
@@ -29,6 +30,7 @@
 #define VIRTIO_GPU_CMD_RESOURCE_CREATE_3D 0x0204U
 #define VIRTIO_GPU_CMD_SUBMIT_3D 0x0205U
 #define VIRTIO_GPU_RESP_OK_NODATA 0x1100U
+#define VIRTIO_GPU_RESP_OK_DISPLAY_INFO 0x1101U
 #define VIRTIO_GPU_RESP_ERR_UNSPEC 0x1200U
 #define VIRTIO_GPU_RESP_OK_CAPSET_INFO 0x1102U
 #define VIRTIO_GPU_F_VIRGL (1U << 0)
@@ -42,7 +44,7 @@
 #define VIRTIO_GPU_COMMAND_TIMEOUT 200U
 #define VIRTIO_GPU_COMMAND_BYTES 65536U
 #define VIRTIO_GPU_RESPONSE_OFFSET VIRTIO_GPU_COMMAND_BYTES
-#define VIRTIO_GPU_RESPONSE_CAPACITY 64U
+#define VIRTIO_GPU_RESPONSE_CAPACITY 512U
 #define VIRTIO_GPU_COMMAND_POOL_PAGES \
     ((VIRTIO_GPU_RESPONSE_OFFSET + 4096U + NEXUS_PAGE_SIZE - 1U) / \
      NEXUS_PAGE_SIZE)
@@ -130,6 +132,25 @@ struct virtio_gpu_rectangle {
     uint32_t height;
 } __attribute__((packed));
 
+struct virtio_gpu_display_one {
+    struct virtio_gpu_rectangle rectangle;
+    uint32_t enabled;
+    uint32_t flags;
+} __attribute__((packed));
+
+struct virtio_gpu_resp_display_info {
+    struct virtio_gpu_header header;
+    struct virtio_gpu_display_one scanouts[
+        NEXUS_VIRTIO_GPU_MAX_SCANOUTS];
+} __attribute__((packed));
+
+_Static_assert(sizeof(struct virtio_gpu_rectangle) == 16U,
+               "VirtIO GPU display rectangle ABI");
+_Static_assert(sizeof(struct virtio_gpu_display_one) == 24U,
+               "VirtIO GPU display scanout ABI");
+_Static_assert(sizeof(struct virtio_gpu_resp_display_info) == 408U,
+               "VirtIO GPU display info response ABI");
+
 struct virtio_gpu_create_2d {
     struct virtio_gpu_header header;
     uint32_t resource_id;
@@ -179,6 +200,8 @@ static bool active;
 static uint64_t width_pixels;
 static uint64_t height_pixels;
 static uint64_t pitch_bytes;
+static uint32_t selected_scanout_id;
+static struct nexus_virtio_gpu_display_info display_inventory;
 static uint64_t framebuffer_physical;
 static uint64_t framebuffer_pages;
 static volatile uint8_t *framebuffer_memory;
@@ -420,6 +443,8 @@ static bool gpu_virgl_start(void) {
     virgl_last_submitted_fence = 0U;
     virgl_last_completed_fence = 0U;
     virgl_failed_submissions = 0U;
+    selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
+    display_inventory = (struct nexus_virtio_gpu_display_info){0};
     next_3d_resource_id = VIRTIO_GPU_RESOURCE_ID + 1U;
     tracked_resource_count = 0U;
     tracked_resource_total_created = 0U;
@@ -451,6 +476,69 @@ static bool gpu_virgl_start(void) {
     return true;
 }
 
+static bool gpu_query_display_info(uint64_t preferred_width,
+                                   uint64_t preferred_height) {
+    const struct virtio_gpu_header request =
+        make_header(VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
+    uint32_t response_type = 0U, response_length = 0U;
+    if (!submit_command_raw(&request, sizeof(request),
+                            &response_type, &response_length) ||
+        response_type != VIRTIO_GPU_RESP_OK_DISPLAY_INFO ||
+        response_length < sizeof(struct virtio_gpu_resp_display_info)) {
+        display_inventory.valid = false;
+        selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
+        serial_write("VIRTIO GPU: display-info query unavailable; defaulting to scanout 0\r\n");
+        return false;
+    }
+
+    const volatile uint8_t *response =
+        command_memory + VIRTIO_GPU_RESPONSE_OFFSET;
+    display_inventory = (struct nexus_virtio_gpu_display_info){0};
+    display_inventory.valid = true;
+    display_inventory.scanout_count = NEXUS_VIRTIO_GPU_MAX_SCANOUTS;
+    bool have_enabled = false;
+    bool have_exact = false;
+    uint32_t selected = VIRTIO_GPU_SCANOUT_ID;
+
+    for (uint32_t i = 0U; i < NEXUS_VIRTIO_GPU_MAX_SCANOUTS; ++i) {
+        const size_t offset = sizeof(struct virtio_gpu_header) +
+            (size_t)i * sizeof(struct virtio_gpu_display_one);
+        struct nexus_virtio_gpu_scanout_info *saved =
+            &display_inventory.scanouts[i];
+        saved->x = read_le32(response + offset);
+        saved->y = read_le32(response + offset + 4U);
+        saved->width = read_le32(response + offset + 8U);
+        saved->height = read_le32(response + offset + 12U);
+        saved->enabled = read_le32(response + offset + 16U) != 0U;
+        saved->flags = read_le32(response + offset + 20U);
+        if (!saved->enabled) continue;
+
+        if (!have_enabled) {
+            selected = i;
+            have_enabled = true;
+        }
+        if (!have_exact && saved->width == preferred_width &&
+            saved->height == preferred_height) {
+            selected = i;
+            have_exact = true;
+        }
+    }
+
+    selected_scanout_id = have_enabled ? selected : VIRTIO_GPU_SCANOUT_ID;
+    display_inventory.selected_scanout = selected_scanout_id;
+    serial_write("VIRTIO GPU: scanouts discovered/enabled/selected=");
+    serial_write_hex(display_inventory.scanout_count);
+    serial_write("/");
+    uint32_t enabled_count = 0U;
+    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i)
+        if (display_inventory.scanouts[i].enabled) ++enabled_count;
+    serial_write_hex(enabled_count);
+    serial_write("/");
+    serial_write_hex(selected_scanout_id);
+    serial_write("\r\n");
+    return have_enabled;
+}
+
 static bool gpu_create_resource(void) {
     const struct virtio_gpu_create_2d create = {
         .header = make_header(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D),
@@ -477,7 +565,7 @@ static bool gpu_create_resource(void) {
         .header = make_header(VIRTIO_GPU_CMD_SET_SCANOUT),
         .rectangle = {0U, 0U, (uint32_t)width_pixels,
                       (uint32_t)height_pixels},
-        .scanout_id = VIRTIO_GPU_SCANOUT_ID,
+        .scanout_id = selected_scanout_id,
         .resource_id = VIRTIO_GPU_RESOURCE_ID
     };
     return submit_command(&scanout, sizeof(scanout));
@@ -581,6 +669,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     height_pixels = height;
     pitch_bytes = width * 4U;
     active = true;
+    (void)gpu_query_display_info(width, height);
     if (!gpu_create_resource()) {
         active = false;
         virtio_pci_fail(&transport);
@@ -848,6 +937,13 @@ bool virtio_gpu_3d_resource_destroy(uint32_t resource_id) {
     *resource = (struct virtio_gpu_tracked_resource){0};
     if (tracked_resource_count != 0U) --tracked_resource_count;
     gpu_resource_table_unlock();
+    return true;
+}
+
+bool virtio_gpu_display_get_info(
+    struct nexus_virtio_gpu_display_info *info) {
+    if (info == NULL || !display_inventory.valid) return false;
+    *info = display_inventory;
     return true;
 }
 

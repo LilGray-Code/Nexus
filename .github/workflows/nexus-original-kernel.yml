@@ -14,6 +14,7 @@ on:
   pull_request:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-hardware-support-foundation
   workflow_dispatch:
 
 permissions:

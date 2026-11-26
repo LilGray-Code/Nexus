@@ -3,6 +3,7 @@
 
 #include "graphics.h"
 #include "virtio_gpu_protocol.h"
+#include "display_edid.h"
 
 #include <stdbool.h>
 
@@ -22,6 +23,9 @@ bool virtio_gpu_active(void);
 uint32_t virtio_gpu_scanout_count(void);
 bool virtio_gpu_scanout_info(
     uint32_t scanout_id, struct nexus_virtio_gpu_scanout *info);
+/* Returns EDID-derived base-block timings when the device advertises EDID. */
+bool virtio_gpu_edid_info(
+    uint32_t scanout_id, struct nexus_edid_info *info);
 void virtio_gpu_stop(void);
 
 #endif

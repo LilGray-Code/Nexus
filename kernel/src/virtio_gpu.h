@@ -67,6 +67,8 @@ struct nexus_virtio_gpu_3d_info {
     uint32_t failed_submissions;
     uint32_t resources_allocated;
     uint32_t resources_created_total;
+    uint32_t clear_commands_fenced;
+    uint32_t last_clear_resource_id;
 };
 
 bool virtio_gpu_display_get_info(
@@ -78,6 +80,15 @@ bool virtio_gpu_3d_resource_create(
     uint32_t *resource_id);
 /* Detach and unreference a resource created by the API above. */
 bool virtio_gpu_3d_resource_destroy(uint32_t resource_id);
+/*
+ * Execute a Virgl color clear on a tracked 2D render-target resource.
+ * rgba contains IEEE-754 binary32 channel bit patterns. A true return means
+ * the device acknowledged the command stream's completion fence; it does not
+ * independently verify pixel readback or the host's physical-GPU backend.
+ */
+bool virtio_gpu_3d_clear_rgba32(uint32_t resource_id,
+                               const uint32_t rgba[4],
+                               uint64_t *completed_fence);
 /* Submit a 4-byte-aligned Virgl command stream. Returns only after its fence
  * has been acknowledged; this call is synchronous and serialized.
  */

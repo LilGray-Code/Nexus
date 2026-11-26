@@ -121,13 +121,21 @@ static bool match_id(const char *id, size_t n,
 }
 
 
-static bool is_model_section(const char *name) {
-    static const char models[] = "models";
+static bool is_model_section(const char *name,
+                              char models[16][NEXUS_WIN_INF_FIELD_MAX],
+                              size_t model_count) {
     if (name == NULL) return false;
-    size_t i = 0U;
-    while (models[i] != '\0' && name[i] != '\0' &&
-           lower_ascii(name[i]) == models[i]) ++i;
-    return models[i] == '\0' && (name[i] == '\0' || name[i] == '.');
+    for (size_t i = 0U; i < model_count; ++i) {
+        size_t j = 0U;
+        while (models[i][j] != '\0' && name[j] != '\0' &&
+               lower_ascii(models[i][j]) == lower_ascii(name[j])) ++j;
+        if (models[i][j] == '\0' &&
+            (name[j] == '\0' ||
+             (name[j] == '.' && lower_ascii(name[j + 1U]) == 'n' &&
+              lower_ascii(name[j + 2U]) == 't')))
+            return true;
+    }
+    return false;
 }
 
 
@@ -138,6 +146,9 @@ bool nexus_win_inf_find_match(const char *text, size_t length,
     *match = (struct nexus_win_inf_match){0};
     char line[NEXUS_WIN_INF_LINE_MAX];
     char section[NEXUS_WIN_INF_FIELD_MAX] = {0};
+    char model_sections[16][NEXUS_WIN_INF_FIELD_MAX] = {{0}};
+    size_t model_count = 0U;
+    bool in_manufacturer = false;
     const bool utf16le = length >= 2U &&
         (uint8_t)text[0] == 0xFFU && (uint8_t)text[1] == 0xFEU;
     if (utf16le && ((length - 2U) & 1U) != 0U) return false;
@@ -177,13 +188,24 @@ bool nexus_win_inf_find_match(const char *text, size_t length,
             const char *name = p + 1U;
             size_t name_length = used - 2U;
             if (!copy_field(section, name, name_length)) section[0] = '\0';
+            in_manufacturer = equal_ci(section, "Manufacturer", 12U) &&
+                              section[12] == '\0';
             continue;
         }
-        if (!is_model_section(section)) continue;
-
         size_t equals = 0U;
         while (equals < used && p[equals] != '=') ++equals;
         if (equals == used) continue;
+        if (in_manufacturer) {
+            const char *model_name = NULL;
+            size_t model_length = 0U;
+            if (model_count < 16U &&
+                csv_field(p + equals + 1U, used - equals - 1U, 0U,
+                          &model_name, &model_length))
+                (void)copy_field(model_sections[model_count++],
+                                 model_name, model_length);
+            continue;
+        }
+        if (!is_model_section(section, model_sections, model_count)) continue;
         const char *description = p;
         size_t description_length = equals;
         trim(&description, &description_length);

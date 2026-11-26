@@ -159,10 +159,15 @@ GitHub, VS Code, itch.io, Microsoft 365, Gmail, Google Drive, YouTube, Zoom,
 Slack, WhatsApp Web, and Notion are listed as official HTTPS website shortcuts,
 not native desktop installations. Five bundled Nexus ELF demos can be launched
 directly from the Store, but they are immutable examples rather than
-user-installable NUP packages. Verified HTTPS browser downloads and native
-package payloads are currently limited to 4 MiB per file; newly formatted
-NXFS volumes use the larger file geometry, while existing 1 MiB volumes
-remain compatible at their original limit. See
+user-installable NUP packages. Verified HTTPS binary attachments can now
+stream directly to Nexus Data in bounded-memory chunks up to 256 MiB per file,
+including Content-Length and HTTP/1.1 chunked responses. New NXFS volumes
+choose the largest supported per-file size tier that fits the Data partition;
+older 4 MiB and 1 MiB volumes remain compatible at their recorded limits.
+Ordinary browser page rendering remains a bounded 4 MiB in-memory path, and
+native NUP package payloads remain capped at 4 MiB until package installation
+is connected to the streaming downloader. The browser is not yet a full
+JavaScript/CSS/DOM engine and cannot run Chrome web applications. See
 [`docs/development/SOFTWARE-ECOSYSTEM.md`](docs/development/SOFTWARE-ECOSYSTEM.md)
 for the format and trust requirements. The [Steam/game compatibility roadmap](docs/development/STEAM-COMPATIBILITY-ROADMAP.md) lists the Linux ABI, process model, audio, 3D, filesystem, and runtime work that still blocks Steam titles.
 

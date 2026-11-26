@@ -623,7 +623,7 @@ static bool package_read_permission_record(
         return false;
     if (!strings_equal(stored_id, manifest->id) ||
         !strings_equal(stored_version, manifest->version) ||
-        !strings_equal(stored_digest, expected_digest))
+        !bytes_equal((const uint8_t *)stored_digest, expected_digest, 64U))
         return true;
     *permissions = stored_permissions & manifest->permissions;
     return true;

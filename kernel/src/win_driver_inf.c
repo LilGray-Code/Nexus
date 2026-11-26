@@ -73,6 +73,20 @@ static bool find_hex(const char *p, size_t n, const char *marker,
     return false;
 }
 
+static bool find_subsystem(const char *p, size_t n,
+                           uint16_t *sub_device, uint16_t *sub_vendor) {
+    const char marker[] = "SUBSYS_";
+    for (size_t i = 0U; i + 15U <= n; ++i) {
+        if ((i == 0U || p[i - 1U] == '&' || p[i - 1U] == '\\\\') &&
+            equal_ci(p + i, marker, 7U)) {
+            *sub_device = hex_value(p + i + 7U, 4U);
+            *sub_vendor = hex_value(p + i + 11U, 4U);
+            return *sub_device != 0xFFFFU && *sub_vendor != 0xFFFFU;
+        }
+    }
+    return false;
+}
+
 static bool match_id(const char *id, size_t n,
                      const struct nexus_win_device_id *d,
                      uint16_t *specificity) {
@@ -91,10 +105,8 @@ static bool match_id(const char *id, size_t n,
 
     *specificity = 1U;
     if (d->bus == NEXUS_WIN_DEVICE_PCI) {
-        uint16_t subsystem;
-        if (find_hex(id, n, "SUBSYS_", 7U, 8U, &subsystem)) {
-            const uint16_t sub_device = (uint16_t)(subsystem >> 16);
-            const uint16_t sub_vendor = subsystem;
+        uint16_t sub_device, sub_vendor;
+        if (find_subsystem(id, n, &sub_device, &sub_vendor)) {
             if (sub_device != d->subsystem_device_id ||
                 sub_vendor != d->subsystem_vendor_id) return false;
             *specificity = 2U;

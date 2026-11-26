@@ -93,6 +93,7 @@ struct nexus_display_info {
     bool hdr_static_metadata;
     uint8_t hdr_eotf_flags;
     bool mode_set_available;
+    bool firmware_fallback_active;
     bool last_rollback_succeeded;
     bool last_mode_change_failed;
     enum nexus_display_failure_stage last_failure_stage;
@@ -130,6 +131,10 @@ struct nexus_display_topology_backend {
 };
 
 bool nexus_display_init(const struct limine_framebuffer *framebuffer);
+bool nexus_display_recover_firmware_mode(uint64_t width,
+                                         uint64_t height,
+                                         uint64_t pitch,
+                                         uint16_t bits_per_pixel);
 const struct nexus_display_info *nexus_display_get_info(void);
 const struct nexus_display_mode *nexus_display_mode_at(size_t index);
 const struct nexus_display_monitor *nexus_display_monitor_at(size_t index);

@@ -62,28 +62,63 @@ bool memory_init(const struct limine_memmap_response *map,
         start = (start + (NEXUS_PAGE_SIZE - 1)) & ~(NEXUS_PAGE_SIZE - 1);
         end &= ~(NEXUS_PAGE_SIZE - 1);
         if (start >= end) continue;
-        if (usable_region_count >= MEMORY_MAX_REGIONS) break;
+        /*
+         * Firmware maps are normally sorted and non-overlapping, but do not
+         * rely on that property here. Insert each usable range in address
+         * order and coalesce overlaps/adjacent ranges so a bad ordering can
+         * never make the allocator hand out the same physical page twice.
+         */
+        size_t insert_at = 0U;
+        while (insert_at < usable_region_count &&
+               usable_regions[insert_at].end < start) {
+            ++insert_at;
+        }
 
-        const uint64_t bytes = end - start;
-        usable_regions[usable_region_count].start = start;
-        usable_regions[usable_region_count].next = start;
-        usable_regions[usable_region_count].end = end;
+        uint64_t merged_start = start;
+        uint64_t merged_end = end;
+        size_t merge_end = insert_at;
+        while (merge_end < usable_region_count &&
+               usable_regions[merge_end].start <= merged_end) {
+            if (usable_regions[merge_end].start < merged_start)
+                merged_start = usable_regions[merge_end].start;
+            if (usable_regions[merge_end].end > merged_end)
+                merged_end = usable_regions[merge_end].end;
+            ++merge_end;
+        }
+
+        if (merge_end > insert_at) {
+            const size_t removed = merge_end - insert_at;
+            for (size_t move = merge_end; move < usable_region_count; ++move)
+                usable_regions[move - removed] = usable_regions[move];
+            usable_region_count -= removed;
+        }
+
+        if (usable_region_count >= MEMORY_MAX_REGIONS) {
+            usable_region_count = 0U;
+            total_bytes = 0U;
+            free_bytes = 0U;
+            return false;
+        }
+
+        for (size_t move = usable_region_count; move > insert_at; --move)
+            usable_regions[move] = usable_regions[move - 1U];
+        usable_regions[insert_at].start = merged_start;
+        usable_regions[insert_at].next = merged_start;
+        usable_regions[insert_at].end = merged_end;
         ++usable_region_count;
-
-        if (UINT64_MAX - total_bytes < bytes) {
-            total_bytes = UINT64_MAX;
-        } else {
-            total_bytes += bytes;
-        }
-        if (UINT64_MAX - free_bytes < bytes) {
-            free_bytes = UINT64_MAX;
-        } else {
-            free_bytes += bytes;
-        }
     }
 
-    initialized = usable_region_count != 0;
-    return initialized;
+    /* Compute accounting only after all ranges have been normalized. */
+    for (size_t i = 0U; i < usable_region_count; ++i) {
+        const uint64_t bytes = usable_regions[i].end - usable_regions[i].start;
+        if (UINT64_MAX - total_bytes < bytes) total_bytes = UINT64_MAX;
+        else total_bytes += bytes;
+        if (UINT64_MAX - free_bytes < bytes) free_bytes = UINT64_MAX;
+        else free_bytes += bytes;
+    }
+
+    initialized = usable_region_count != 0U;
+    return initialized && memory_allocator_validate();
 }
 
 bool memory_alloc_page(uint64_t *physical_address) {
@@ -295,6 +330,67 @@ bool memory_page_is_allocated(uint64_t physical_address) {
     return true;
 }
 
+bool memory_allocator_validate(void) {
+    if (!initialized || usable_region_count == 0U ||
+        usable_region_count > MEMORY_MAX_REGIONS ||
+        freed_page_count > MEMORY_MAX_FREED_PAGES) return false;
+
+    uint64_t calculated_total = 0U;
+    uint64_t calculated_free = 0U;
+    for (size_t i = 0U; i < usable_region_count; ++i) {
+        const struct memory_region *region = &usable_regions[i];
+        if ((region->start & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
+            (region->next & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
+            (region->end & (NEXUS_PAGE_SIZE - 1U)) != 0U ||
+            region->start >= region->end ||
+            region->next < region->start || region->next > region->end)
+            return false;
+        if (i != 0U && usable_regions[i - 1U].end >= region->start)
+            return false;
+
+        const uint64_t span = region->end - region->start;
+        const uint64_t remaining = region->end - region->next;
+        if (UINT64_MAX - calculated_total < span)
+            calculated_total = UINT64_MAX;
+        else
+            calculated_total += span;
+        if (UINT64_MAX - calculated_free < remaining)
+            calculated_free = UINT64_MAX;
+        else
+            calculated_free += remaining;
+    }
+
+    for (size_t i = 0U; i < freed_page_count; ++i) {
+        const uint64_t page = freed_pages[i];
+        bool belongs_to_allocated_range = false;
+        if ((page & (NEXUS_PAGE_SIZE - 1U)) != 0U) return false;
+        for (size_t region_index = 0U;
+             region_index < usable_region_count; ++region_index) {
+            const struct memory_region *region =
+                &usable_regions[region_index];
+            if (page >= region->start && page < region->next &&
+                region->next - page >= NEXUS_PAGE_SIZE &&
+                page < region->end) {
+                belongs_to_allocated_range = true;
+                break;
+            }
+        }
+        if (!belongs_to_allocated_range) return false;
+        for (size_t previous = 0U; previous < i; ++previous)
+            if (freed_pages[previous] == page) return false;
+    }
+
+    const uint64_t reclaimed_bytes =
+        (uint64_t)freed_page_count * NEXUS_PAGE_SIZE;
+    if (UINT64_MAX - calculated_free < reclaimed_bytes)
+        calculated_free = UINT64_MAX;
+    else
+        calculated_free += reclaimed_bytes;
+
+    return calculated_total == total_bytes &&
+           calculated_free == free_bytes;
+}
+
 bool memory_allocator_selftest(void) {
     uint64_t first, second, reused;
     if (!memory_alloc_page(&first) || !memory_alloc_page(&second)) return false;
@@ -306,7 +402,8 @@ bool memory_allocator_selftest(void) {
         !memory_page_is_allocated(reused)) return false;
     if (!memory_free_page(second) || !memory_free_page(reused)) return false;
     return !memory_page_is_allocated(first) &&
-           !memory_page_is_allocated(second);
+           !memory_page_is_allocated(second) &&
+           memory_allocator_validate();
 }
 
 void *memory_phys_to_virt(uint64_t physical_address) {

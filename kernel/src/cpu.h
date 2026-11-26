@@ -124,9 +124,14 @@ struct nexus_cpu_info {
 /* Runtime detection only: optional instructions are never enabled implicitly. */
 bool nexus_cpu_init(void);
 enum nexus_cpu_vendor nexus_cpu_get_vendor(void);
-/* Query the executing logical core without altering the BSP capability snapshot. */
 /* Query CPUID topology for the executing logical CPU (BSP or AP). */
 bool nexus_cpu_get_local_topology(struct nexus_cpu_local_topology *topology);
+/* Decode a captured AMD/Hygon CPUID 0x8000001E topology record. */
+bool nexus_cpu_decode_amd_topology(
+    enum nexus_cpu_vendor vendor, uint32_t maximum_extended_leaf,
+    uint32_t extended_feature_ecx, uint32_t topology_eax,
+    uint32_t topology_ebx, uint32_t topology_ecx,
+    struct nexus_cpu_local_topology *topology);
 enum nexus_cpu_core_type nexus_cpu_get_local_core_type(void);
 const char *nexus_cpu_vendor_name(void);
 bool nexus_cpu_is_intel(void);

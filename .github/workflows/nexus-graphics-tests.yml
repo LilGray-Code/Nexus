@@ -6,6 +6,17 @@ on:
       - nexus-original-kernel-roadmap
     paths:
       - "kernel/src/graphics.c"
+      - "kernel/src/gpu.c"
+      - "kernel/src/gpu.h"
+      - "kernel/src/display_edid.c"
+      - "kernel/src/display_edid.h"
+      - "kernel/src/virtio_gpu_protocol.c"
+      - "kernel/src/virtio_gpu_protocol.h"
+      - "kernel/src/virtio_gpu.c"
+      - "kernel/src/virtio_gpu.h"
+      - "kernel/tests/gpu_test.c"
+      - "kernel/tests/display_edid_test.c"
+      - "kernel/tests/virtio_gpu_protocol_test.c"
       - "kernel/src/graphics.h"
       - "kernel/tests/graphics_test.c"
       - ".github/workflows/nexus-graphics-tests.yml"
@@ -23,6 +34,29 @@ jobs:
     steps:
       - name: Check out Nexus
         uses: actions/checkout@v4
+
+      - name: Test EDID validation and detailed display timings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/display_edid.c \
+            kernel/tests/display_edid_test.c \
+            -o /tmp/nexus-display-edid-test
+          /tmp/nexus-display-edid-test
+
+      - name: Test VirtIO-GPU scanout response decoder
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/virtio_gpu_protocol.c \
+            kernel/tests/virtio_gpu_protocol_test.c \
+            -o /tmp/nexus-virtio-gpu-protocol-test
+          /tmp/nexus-virtio-gpu-protocol-test
+
+      - name: Test GPU runtime capability truthfulness
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/src kernel/src/gpu.c kernel/tests/gpu_test.c \
+            -o /tmp/nexus-gpu-runtime-test
+          /tmp/nexus-gpu-runtime-test
 
       - name: Compile framebuffer renderer with strict warnings
         run: |

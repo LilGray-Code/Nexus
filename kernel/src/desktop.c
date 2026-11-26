@@ -2597,7 +2597,8 @@ static void draw_shell(void) {
                         desktop_display_monitor_selection + 1U >=
                             display->monitor_count);
                     graphics_draw_text(text_x + 466U, content_y + 120U,
-                        "CLICK OUTPUT TO MAKE PRIMARY",
+                        nexus_display_primary_selection_available()
+                            ? "SELECT PRIMARY" : "PRIMARY DISPLAY",
                         1U, 171U, 191U, 211U);
                 }
 

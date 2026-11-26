@@ -6,6 +6,30 @@
 
 #define NEXUS_GPU_MAX_ADAPTERS 16U
 
+enum nexus_gpu_family {
+    NEXUS_GPU_FAMILY_UNKNOWN = 0,
+    NEXUS_GPU_FAMILY_INTEL_GENERIC,
+    NEXUS_GPU_FAMILY_INTEL_XE_LPG,
+    NEXUS_GPU_FAMILY_INTEL_ARC_ALCHEMIST,
+    NEXUS_GPU_FAMILY_INTEL_ARC_BATTLEMAGE,
+    NEXUS_GPU_FAMILY_INTEL_XE2,
+    NEXUS_GPU_FAMILY_INTEL_XE3,
+    NEXUS_GPU_FAMILY_AMD_RADEON,
+    NEXUS_GPU_FAMILY_NVIDIA,
+    NEXUS_GPU_FAMILY_VIRTIO,
+    NEXUS_GPU_FAMILY_VMWARE,
+    NEXUS_GPU_FAMILY_QEMU
+};
+
+struct nexus_gpu_bar_info {
+    bool present;
+    bool assigned;
+    bool io_space;
+    bool is_64bit;
+    bool prefetchable;
+    uint64_t base;
+};
+
 enum nexus_gpu_vendor {
     NEXUS_GPU_VENDOR_UNKNOWN = 0,
     NEXUS_GPU_VENDOR_INTEL,
@@ -22,6 +46,13 @@ struct nexus_gpu_info {
     bool hardware_2d_acceleration;
     bool hardware_3d_acceleration;
     enum nexus_gpu_vendor vendor;
+    enum nexus_gpu_family family;
+    const char *family_name;
+    uint8_t bar_count;
+    uint8_t memory_bar_count;
+    bool has_64bit_memory_bar;
+    bool has_prefetchable_memory_bar;
+    struct nexus_gpu_bar_info bars[NEXUS_GPU_MAX_ADAPTERS > 0U ? 6U : 6U];
     uint16_t vendor_id;
     uint16_t device_id;
     uint16_t subsystem_vendor_id;

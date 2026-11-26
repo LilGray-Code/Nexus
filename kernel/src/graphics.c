@@ -789,7 +789,6 @@ void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
         x >= graphics_logical_width() || y >= graphics_logical_height()) return;
 
     const uint32_t color = pack_rgb(red, green, blue);
-    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
     const uint64_t max_advance = graphics_logical_width() - x;
     const uint64_t max_height = graphics_logical_height() - y;
 

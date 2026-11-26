@@ -12,6 +12,7 @@ on:
       - "kernel/src/wifi_80211.h"
       - "kernel/tests/wifi_test.c"
       - "kernel/tests/wifi_80211_test.c"
+      - "kernel/tests/win_driver_inf_test.c"
       - ".github/workflows/nexus-wifi-tests.yml"
   pull_request:
     branches:
@@ -47,3 +48,10 @@ jobs:
             kernel/tests/wifi_80211_test.c -o /tmp/nexus-wifi-80211-test
       - name: Run 802.11 beacon parser tests
         run: /tmp/nexus-wifi-80211-test
+      - name: Compile Windows INF hardware-ID matching tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
+            -Ikernel/src kernel/src/win_driver_inf.c \\
+            kernel/tests/win_driver_inf_test.c -o /tmp/nexus-win-inf-test
+      - name: Run Windows INF hardware-ID matching tests
+        run: /tmp/nexus-win-inf-test

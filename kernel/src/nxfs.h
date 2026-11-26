@@ -12,6 +12,7 @@
 #define NEXUS_NXFS_MAX_FILE_BYTES (256U * 1024U * 1024U)
 #define NEXUS_NXFS_LEGACY_FILE_BYTES (4U * 1024U * 1024U)
 #define NEXUS_NXFS_OLD_FILE_BYTES (1024U * 1024U)
+#define NEXUS_NXFS_STREAM_LENGTH_UNKNOWN UINT32_MAX
 #define NEXUS_NXFS_NAME_MAX 32U /* 31 printable characters plus NUL */
 
 struct nexus_nxfs_entry {

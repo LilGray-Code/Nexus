@@ -5,14 +5,26 @@ K1 extends the K0 boot proof with two early kernel services.
 ## Physical memory
 
 The kernel requests the Limine memory map and higher-half direct-map (HHDM)
-offset. It records usable memory-map regions and provides a page-aligned,
-monotonic 4 KiB physical page allocator. Physical addresses returned by the
-allocator can be translated through the bootloader-provided HHDM.
+offset. It validates and normalizes usable regions into an ordered list,
+coalescing overlapping and adjacent ranges and keeping the first MiB reserved.
+The early allocator supplies aligned 4 KiB pages, DMA-constrained pages, and
+physically contiguous runs for devices such as paravirtual GPUs.
 
-This is intentionally a bootstrap allocator, not a finished general-purpose
-physical memory manager. It currently has no free operation, page ownership,
-buddy allocator, virtual-memory mapper, heap, or reclamation of bootloader
-memory. It caps the region list at 256 entries and keeps the first MiB reserved.
+Individual pages and contiguous runs can be returned to a bounded reclaimed
+page list. The allocator rejects unaligned, foreign, and duplicate frees and
+validates region ordering, page ownership, and free-byte accounting. The region
+list is capped at 256 entries and the reclaimed-page list at 8192 pages. This
+remains a single-CPU bootstrap allocator: it is not yet a buddy allocator,
+does not compact fragmented memory, and is not synchronized for concurrent
+SMP allocation.
+
+The allocator exposes a diagnostic snapshot containing total/free/used bytes,
+region count, reclaimed-page count, largest remaining bump-allocation extent,
+allocation/free request and failure counters, and cumulative page allocation
+and reclamation counts. Boot diagnostics print the region count, largest
+unallocated extent, reclaimed-page count, and allocation failures. The largest
+extent deliberately reports only unallocated contiguous tails; it does not
+pretend that individually reclaimed pages can satisfy a contiguous DMA request.
 
 ## CPU exceptions
 

@@ -18,6 +18,10 @@
 #define NET_DHCP_PACKET_SIZE 320U
 #define NET_DHCP_RETRY_TICKS 300U
 #define NET_DHCP_MAX_RETRIES 5U
+#define NET_DHCP_DEFAULT_LEASE_SECONDS 3600U
+#define NET_DHCP_DEFAULT_T1_PERCENT 50U
+#define NET_DHCP_DEFAULT_T2_PERCENT 87U
+#define NET_DHCP_INFINITE_LEASE UINT32_MAX
 #define NET_DHCP_CLIENT_PORT 68U
 #define NET_DHCP_SERVER_PORT 67U
 #define NET_DNS_SERVER_PORT 53U
@@ -70,7 +74,9 @@ enum net_dhcp_state {
     NET_DHCP_IDLE = 0,
     NET_DHCP_DISCOVERING,
     NET_DHCP_REQUESTING,
-    NET_DHCP_BOUND
+    NET_DHCP_BOUND,
+    NET_DHCP_RENEWING,
+    NET_DHCP_REBINDING
 };
 
 static struct net_state network;
@@ -83,6 +89,13 @@ static uint8_t dns_ipv4[4];
 static uint32_t dhcp_transaction_id;
 static uint64_t dhcp_last_send_tick;
 static uint32_t dhcp_retry_count;
+static uint32_t dhcp_lease_seconds;
+static uint32_t dhcp_t1_seconds;
+static uint32_t dhcp_t2_seconds;
+static uint64_t dhcp_lease_started_tick;
+static uint64_t dhcp_renew_tick;
+static uint64_t dhcp_rebind_tick;
+static uint64_t dhcp_expire_tick;
 static bool dns_query_active;
 static bool dns_query_done;
 static bool dns_query_success;
@@ -137,6 +150,8 @@ static uint16_t tcp_next_port = 49152U;
 
 static bool ipv4_next_hop(const uint8_t destination[4], uint8_t next_hop[4]);
 static void tcp_retry_pending_syn(void);
+static void dns_cache_clear(void);
+static bool dhcp_has_valid_address(void);
 
 static uint16_t read_be16(const uint8_t *p) {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
@@ -524,12 +539,24 @@ static bool send_ipv4_udp_raw(const uint8_t source_ip[4],
 }
 
 static bool send_dhcp_message(uint8_t message_type) {
+    const bool selecting_request =
+        message_type == 3U && dhcp_state == NET_DHCP_REQUESTING;
+    const bool renewing =
+        message_type == 3U && dhcp_state == NET_DHCP_RENEWING;
+    const bool rebinding =
+        message_type == 3U && dhcp_state == NET_DHCP_REBINDING;
+    if (message_type == 3U && !selecting_request &&
+        !renewing && !rebinding) return false;
+
     uint8_t packet[NET_DHCP_PACKET_SIZE] = {0};
     packet[0] = 1U;
     packet[1] = 1U;
     packet[2] = 6U;
     write_be32(packet + 4U, dhcp_transaction_id);
-    packet[10] = 0x80U;
+    if (selecting_request || rebinding || message_type == 1U)
+        packet[10] = 0x80U;
+    if (renewing || rebinding)
+        copy_bytes(packet + 12U, network.ipv4, 4U);
     copy_bytes(packet + 28U, network.mac, 6U);
     packet[236] = 99U;
     packet[237] = 130U;
@@ -538,13 +565,13 @@ static bool send_dhcp_message(uint8_t message_type) {
 
     size_t cursor = NET_DHCP_OPTIONS_OFFSET;
     const uint8_t type_option[1] = {message_type};
-    const uint8_t request_list[4] = {1U, 3U, 6U, 51U};
+    const uint8_t request_list[6] = {1U, 3U, 6U, 51U, 58U, 59U};
     const uint8_t maximum_size[2] = {0x02U, 0x40U};
     const uint8_t hostname[5] = {'N', 'E', 'X', 'U', 'S'};
     if (!append_dhcp_option(packet, sizeof(packet), &cursor,
                             53U, type_option, 1U)) return false;
 
-    if (message_type == 3U) {
+    if (selecting_request) {
         if (!append_dhcp_option(packet, sizeof(packet), &cursor,
                                 50U, offered_ipv4, 4U) ||
             !append_dhcp_option(packet, sizeof(packet), &cursor,
@@ -565,7 +592,26 @@ static bool send_dhcp_message(uint8_t message_type) {
     static const uint8_t broadcast_mac[6] =
         {0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU};
 
-    const bool sent = send_ipv4_udp_raw(zero_ip, broadcast_ip, broadcast_mac,
+    const uint8_t *source_ip = (renewing || rebinding)
+        ? network.ipv4 : zero_ip;
+    const uint8_t *destination_ip = broadcast_ip;
+    const uint8_t *destination_mac = broadcast_mac;
+    uint8_t next_hop[4], resolved_mac[6];
+    if (renewing) {
+        if (!ipv4_next_hop(dhcp_server_ipv4, next_hop) ||
+            !arp_lookup(next_hop, resolved_mac)) {
+            if (timer_ticks() - dhcp_last_send_tick >= NET_ARP_RETRY_TICKS) {
+                if (ipv4_next_hop(dhcp_server_ipv4, next_hop))
+                    (void)send_arp_request(next_hop);
+                dhcp_last_send_tick = timer_ticks();
+            }
+            return false;
+        }
+        destination_ip = dhcp_server_ipv4;
+        destination_mac = resolved_mac;
+    }
+    const bool sent = send_ipv4_udp_raw(source_ip, destination_ip,
+                                        destination_mac,
                                         NET_DHCP_CLIENT_PORT,
                                         NET_DHCP_SERVER_PORT,
                                         packet, cursor);
@@ -574,35 +620,146 @@ static bool send_dhcp_message(uint8_t message_type) {
 }
 
 static bool read_dhcp_options(const uint8_t *packet, size_t length,
-                              uint8_t *message_type) {
+                              uint8_t *message_type,
+                              uint32_t *lease_seconds,
+                              uint32_t *t1_seconds,
+                              uint32_t *t2_seconds) {
     if (packet == NULL || message_type == NULL ||
+        lease_seconds == NULL || t1_seconds == NULL || t2_seconds == NULL ||
         length < NET_DHCP_OPTIONS_OFFSET ||
         read_be32(packet + 236U) != 0x63825363U) return false;
 
     *message_type = 0U;
+    *lease_seconds = NET_DHCP_DEFAULT_LEASE_SECONDS;
+    *t1_seconds = 0U;
+    *t2_seconds = 0U;
+    bool have_t1 = false, have_t2 = false;
     size_t cursor = NET_DHCP_OPTIONS_OFFSET;
+    bool have_end = false;
     while (cursor < length) {
         const uint8_t code = packet[cursor++];
         if (code == 0U) continue;
-        if (code == 255U) break;
+        if (code == 255U) {
+            have_end = true;
+            break;
+        }
         if (cursor >= length) return false;
         const uint8_t option_length = packet[cursor++];
         if ((size_t)option_length > length - cursor) return false;
         const uint8_t *value = packet + cursor;
-        if (code == 53U && option_length == 1U) {
+        if (code == 53U) {
+            if (option_length != 1U) return false;
             *message_type = value[0];
-        } else if (code == 1U && option_length == 4U) {
+        } else if (code == 1U) {
+            if (option_length != 4U) return false;
             copy_bytes(subnet_mask, value, 4U);
-        } else if (code == 3U && option_length >= 4U) {
+        } else if (code == 3U) {
+            if (option_length < 4U || (option_length % 4U) != 0U)
+                return false;
             copy_bytes(gateway_ipv4, value, 4U);
-        } else if (code == 6U && option_length >= 4U) {
+        } else if (code == 6U) {
+            if (option_length < 4U || (option_length % 4U) != 0U)
+                return false;
             copy_bytes(dns_ipv4, value, 4U);
-        } else if (code == 54U && option_length == 4U) {
+        } else if (code == 51U) {
+            if (option_length != 4U) return false;
+            *lease_seconds = read_be32(value);
+        } else if (code == 54U) {
+            if (option_length != 4U) return false;
             copy_bytes(dhcp_server_ipv4, value, 4U);
+        } else if (code == 58U) {
+            if (option_length != 4U) return false;
+            *t1_seconds = read_be32(value);
+            have_t1 = true;
+        } else if (code == 59U) {
+            if (option_length != 4U) return false;
+            *t2_seconds = read_be32(value);
+            have_t2 = true;
         }
         cursor += option_length;
     }
-    return *message_type != 0U;
+    if (!have_end || *message_type == 0U) return false;
+    if (*lease_seconds == 0U) return false;
+    if (*lease_seconds == NET_DHCP_INFINITE_LEASE) {
+        *t1_seconds = 0U;
+        *t2_seconds = 0U;
+        return true;
+    }
+    if (!have_t1 || *t1_seconds == 0U ||
+        *t1_seconds >= *lease_seconds) {
+        *t1_seconds = (uint32_t)(((uint64_t)*lease_seconds *
+                                  NET_DHCP_DEFAULT_T1_PERCENT) / 100U);
+        if (*t1_seconds == 0U) *t1_seconds = 1U;
+    }
+    if (*lease_seconds < 3U) {
+        /* Very short leases have no room for distinct T1/T2 boundaries. */
+        *t1_seconds = 0U;
+        *t2_seconds = 0U;
+        return true;
+    }
+    if (!have_t2 || *t2_seconds <= *t1_seconds ||
+        *t2_seconds >= *lease_seconds) {
+        *t2_seconds = (uint32_t)(((uint64_t)*lease_seconds *
+                                  NET_DHCP_DEFAULT_T2_PERCENT) / 100U);
+        if (*t2_seconds <= *t1_seconds)
+            *t2_seconds = *t1_seconds + 1U;
+    }
+    return *t1_seconds < *t2_seconds &&
+           *t2_seconds < *lease_seconds;
+}
+
+static uint64_t dhcp_seconds_to_ticks(uint32_t seconds) {
+    return (uint64_t)seconds * NET_DNS_TICKS_PER_SECOND;
+}
+
+static void dhcp_set_lease(uint32_t lease_seconds,
+                           uint32_t t1_seconds, uint32_t t2_seconds) {
+    dhcp_lease_seconds = lease_seconds;
+    dhcp_t1_seconds = t1_seconds;
+    dhcp_t2_seconds = t2_seconds;
+    dhcp_lease_started_tick = timer_ticks();
+    if (lease_seconds == NET_DHCP_INFINITE_LEASE) {
+        dhcp_renew_tick = UINT64_MAX;
+        dhcp_rebind_tick = UINT64_MAX;
+        dhcp_expire_tick = UINT64_MAX;
+        return;
+    }
+    dhcp_renew_tick = dhcp_lease_started_tick +
+                      dhcp_seconds_to_ticks(t1_seconds);
+    dhcp_rebind_tick = dhcp_lease_started_tick +
+                       dhcp_seconds_to_ticks(t2_seconds);
+    dhcp_expire_tick = dhcp_lease_started_tick +
+                       dhcp_seconds_to_ticks(lease_seconds);
+}
+
+static void dhcp_clear_lease(void) {
+    dhcp_lease_seconds = 0U;
+    dhcp_t1_seconds = 0U;
+    dhcp_t2_seconds = 0U;
+    dhcp_lease_started_tick = 0U;
+    dhcp_renew_tick = 0U;
+    dhcp_rebind_tick = 0U;
+    dhcp_expire_tick = 0U;
+}
+
+static void dhcp_clear_configuration(void) {
+    for (size_t i = 0U; i < 4U; ++i) {
+        network.ipv4[i] = 0U;
+        offered_ipv4[i] = 0U;
+        dhcp_server_ipv4[i] = 0U;
+        subnet_mask[i] = 0U;
+        gateway_ipv4[i] = 0U;
+        dns_ipv4[i] = 0U;
+    }
+    for (size_t i = 0U; i < NET_ARP_CACHE_SIZE; ++i)
+        network.arp[i].valid = false;
+    network.arp_replace = 0U;
+    tcp_connection = (struct net_tcp_connection){0};
+    dns_query_active = false;
+    dns_query_done = true;
+    dns_query_success = false;
+    dns_cache_clear();
+    dhcp_clear_lease();
 }
 
 static void receive_dhcp(const uint8_t *packet, size_t length,
@@ -613,29 +770,75 @@ static void receive_dhcp(const uint8_t *packet, size_t length,
         read_be32(packet + 4U) != dhcp_transaction_id ||
         !equal_bytes(packet + 28U, network.mac, 6U)) return;
 
+    uint8_t previous_server[4], previous_mask[4];
+    uint8_t previous_gateway[4], previous_dns[4];
+    copy_bytes(previous_server, dhcp_server_ipv4, sizeof(previous_server));
+    copy_bytes(previous_mask, subnet_mask, sizeof(previous_mask));
+    copy_bytes(previous_gateway, gateway_ipv4, sizeof(previous_gateway));
+    copy_bytes(previous_dns, dns_ipv4, sizeof(previous_dns));
     uint8_t message_type = 0U;
-    if (!read_dhcp_options(packet, length, &message_type)) return;
-
-    if (message_type == 2U && dhcp_state == NET_DHCP_DISCOVERING) {
-        copy_bytes(offered_ipv4, packet + 16U, 4U);
-        if (ipv4_zero(offered_ipv4)) return;
-        if (ipv4_zero(dhcp_server_ipv4)) {
-            copy_bytes(dhcp_server_ipv4, source_ip, 4U);
-        }
-        dhcp_state = NET_DHCP_REQUESTING;
-        dhcp_retry_count = 0U;
-        if (send_dhcp_message(3U)) {
-            serial_write("NET: DHCP offer received; request sent\r\n");
-        }
+    uint32_t lease_seconds = NET_DHCP_DEFAULT_LEASE_SECONDS;
+    uint32_t t1_seconds = 0U, t2_seconds = 0U;
+    if (!read_dhcp_options(packet, length, &message_type,
+                           &lease_seconds, &t1_seconds, &t2_seconds)) {
+        copy_bytes(dhcp_server_ipv4, previous_server, sizeof(previous_server));
+        copy_bytes(subnet_mask, previous_mask, sizeof(previous_mask));
+        copy_bytes(gateway_ipv4, previous_gateway, sizeof(previous_gateway));
+        copy_bytes(dns_ipv4, previous_dns, sizeof(previous_dns));
         return;
     }
 
-    if (message_type == 5U && dhcp_state == NET_DHCP_REQUESTING) {
-        copy_bytes(network.ipv4, packet + 16U, 4U);
-        if (ipv4_zero(network.ipv4)) copy_bytes(network.ipv4, offered_ipv4, 4U);
+    if (message_type == 2U && dhcp_state == NET_DHCP_DISCOVERING) {
+        copy_bytes(offered_ipv4, packet + 16U, 4U);
+        if (ipv4_zero(offered_ipv4)) {
+            copy_bytes(dhcp_server_ipv4, previous_server, sizeof(previous_server));
+            copy_bytes(subnet_mask, previous_mask, sizeof(previous_mask));
+            copy_bytes(gateway_ipv4, previous_gateway, sizeof(previous_gateway));
+            copy_bytes(dns_ipv4, previous_dns, sizeof(previous_dns));
+            return;
+        }
+        if (ipv4_zero(dhcp_server_ipv4))
+            copy_bytes(dhcp_server_ipv4, source_ip, 4U);
+        dhcp_state = NET_DHCP_REQUESTING;
+        dhcp_retry_count = 0U;
+        dhcp_last_send_tick = timer_ticks();
+        if (send_dhcp_message(3U))
+            serial_write("NET: DHCP offer received; request sent\r\n");
+        return;
+    }
+
+    if (message_type == 5U &&
+        (dhcp_state == NET_DHCP_REQUESTING ||
+         dhcp_state == NET_DHCP_RENEWING ||
+         dhcp_state == NET_DHCP_REBINDING)) {
+        if (dhcp_state == NET_DHCP_RENEWING &&
+            !equal_bytes(source_ip, previous_server, sizeof(previous_server))) {
+            copy_bytes(dhcp_server_ipv4, previous_server,
+                       sizeof(previous_server));
+            copy_bytes(subnet_mask, previous_mask, sizeof(previous_mask));
+            copy_bytes(gateway_ipv4, previous_gateway, sizeof(previous_gateway));
+            copy_bytes(dns_ipv4, previous_dns, sizeof(previous_dns));
+            return;
+        }
+        if (!ipv4_zero(packet + 16U))
+            copy_bytes(network.ipv4, packet + 16U, 4U);
+        else if (dhcp_state == NET_DHCP_REQUESTING)
+            copy_bytes(network.ipv4, offered_ipv4, 4U);
+        if (ipv4_zero(network.ipv4)) {
+            copy_bytes(dhcp_server_ipv4, previous_server,
+                       sizeof(previous_server));
+            copy_bytes(subnet_mask, previous_mask, sizeof(previous_mask));
+            copy_bytes(gateway_ipv4, previous_gateway, sizeof(previous_gateway));
+            copy_bytes(dns_ipv4, previous_dns, sizeof(previous_dns));
+            return;
+        }
+        if (ipv4_zero(dhcp_server_ipv4))
+            copy_bytes(dhcp_server_ipv4, source_ip, 4U);
         dhcp_state = NET_DHCP_BOUND;
-        serial_write("NET: DHCP bound IPv4=");
-        for (size_t i = 0; i < 4U; ++i) {
+        dhcp_retry_count = 0U;
+        dhcp_set_lease(lease_seconds, t1_seconds, t2_seconds);
+        serial_write("NET: DHCP bound/renewed IPv4=");
+        for (size_t i = 0U; i < 4U; ++i) {
             serial_write_hex(network.ipv4[i]);
             if (i != 3U) serial_write(".");
         }
@@ -643,23 +846,87 @@ static void receive_dhcp(const uint8_t *packet, size_t length,
         return;
     }
 
-    if (message_type == 6U) {
+    if (message_type == 6U &&
+        (dhcp_state == NET_DHCP_REQUESTING ||
+         dhcp_state == NET_DHCP_RENEWING ||
+         dhcp_state == NET_DHCP_REBINDING)) {
+        dhcp_clear_configuration();
         dhcp_state = NET_DHCP_DISCOVERING;
         dhcp_retry_count = 0U;
+        dhcp_transaction_id ^= (uint32_t)timer_ticks() ^ 0x4E585553U;
+        if (dhcp_transaction_id == 0U) dhcp_transaction_id = 0x4E585553U;
+        dhcp_last_send_tick = timer_ticks();
         (void)send_dhcp_message(1U);
+        return;
     }
+
+    /* Ignore unexpected DHCP packet types without applying their options. */
+    copy_bytes(dhcp_server_ipv4, previous_server, sizeof(previous_server));
+    copy_bytes(subnet_mask, previous_mask, sizeof(previous_mask));
+    copy_bytes(gateway_ipv4, previous_gateway, sizeof(previous_gateway));
+    copy_bytes(dns_ipv4, previous_dns, sizeof(previous_dns));
+}
+
+static void dhcp_restart_discovery(void) {
+    dhcp_clear_configuration();
+    dhcp_state = NET_DHCP_DISCOVERING;
+    dhcp_retry_count = 0U;
+    dhcp_transaction_id ^= (uint32_t)timer_ticks() ^ 0x4E585553U;
+    if (dhcp_transaction_id == 0U) dhcp_transaction_id = 0x4E585553U;
+    dhcp_last_send_tick = timer_ticks();
+    (void)send_dhcp_message(1U);
 }
 
 static void dhcp_retry(void) {
-    if (dhcp_state == NET_DHCP_IDLE || dhcp_state == NET_DHCP_BOUND) return;
-    if (timer_ticks() - dhcp_last_send_tick < NET_DHCP_RETRY_TICKS) return;
-    if (dhcp_retry_count >= NET_DHCP_MAX_RETRIES) {
+    const uint64_t now = timer_ticks();
+    if (dhcp_state == NET_DHCP_IDLE) return;
+
+    if (dhcp_state == NET_DHCP_BOUND) {
+        if (dhcp_lease_seconds == NET_DHCP_INFINITE_LEASE) return;
+        if (dhcp_expire_tick != 0U && now >= dhcp_expire_tick) {
+            serial_write("NET: DHCP lease expired; reacquiring IPv4\r\n");
+            dhcp_restart_discovery();
+            return;
+        }
+        if (dhcp_renew_tick != 0U && now >= dhcp_renew_tick) {
+            dhcp_state = NET_DHCP_RENEWING;
+            dhcp_retry_count = 0U;
+            dhcp_last_send_tick = now - NET_DHCP_RETRY_TICKS;
+            (void)send_dhcp_message(3U);
+        }
+        return;
+    }
+
+    if (dhcp_state == NET_DHCP_RENEWING &&
+        dhcp_rebind_tick != 0U && now >= dhcp_rebind_tick) {
+        dhcp_state = NET_DHCP_REBINDING;
+        dhcp_retry_count = 0U;
+        dhcp_last_send_tick = now - NET_DHCP_RETRY_TICKS;
+        serial_write("NET: DHCP T2 reached; rebinding by broadcast\r\n");
+        (void)send_dhcp_message(3U);
+        return;
+    }
+
+    if ((dhcp_state == NET_DHCP_RENEWING ||
+         dhcp_state == NET_DHCP_REBINDING) &&
+        dhcp_expire_tick != 0U && now >= dhcp_expire_tick) {
+        serial_write("NET: DHCP lease expired during renewal\r\n");
+        dhcp_restart_discovery();
+        return;
+    }
+
+    if (now - dhcp_last_send_tick < NET_DHCP_RETRY_TICKS) return;
+    if (dhcp_retry_count >= NET_DHCP_MAX_RETRIES &&
+        (dhcp_state == NET_DHCP_DISCOVERING ||
+         dhcp_state == NET_DHCP_REQUESTING)) {
         dhcp_state = NET_DHCP_DISCOVERING;
         dhcp_retry_count = 0U;
     }
     ++dhcp_retry_count;
     const uint8_t message_type =
-        dhcp_state == NET_DHCP_REQUESTING ? 3U : 1U;
+        (dhcp_state == NET_DHCP_REQUESTING ||
+         dhcp_state == NET_DHCP_RENEWING ||
+         dhcp_state == NET_DHCP_REBINDING) ? 3U : 1U;
     (void)send_dhcp_message(message_type);
 }
 
@@ -1010,7 +1277,7 @@ static void receive_dns(const uint8_t *packet, size_t length,
 
 bool net_dns_resolve(const char *hostname, uint8_t result[4],
                      uint64_t timeout_ticks) {
-    if (!network.ready || dhcp_state != NET_DHCP_BOUND ||
+    if (!dhcp_has_valid_address() ||
         hostname == NULL || result == NULL || timeout_ticks == 0U ||
         ipv4_zero(dns_ipv4)) return false;
 
@@ -1147,6 +1414,7 @@ bool net_init(void) {
     dhcp_transaction_id = 0U;
     dhcp_retry_count = 0U;
     dhcp_last_send_tick = 0U;
+    dhcp_clear_lease();
     dns_query_active = false;
     dns_query_done = false;
     dns_query_success = false;
@@ -1195,14 +1463,7 @@ static void network_handle_link_change(bool link_up) {
     dns_cache_clear();
 
     if (!link_up) {
-        for (size_t i = 0U; i < 4U; ++i) {
-            network.ipv4[i] = 0U;
-            offered_ipv4[i] = 0U;
-            dhcp_server_ipv4[i] = 0U;
-            subnet_mask[i] = 0U;
-            gateway_ipv4[i] = 0U;
-            dns_ipv4[i] = 0U;
-        }
+        dhcp_clear_configuration();
         dhcp_state = NET_DHCP_DISCOVERING;
         dhcp_retry_count = 0U;
         serial_write("NEXUS NETWORK LINK DOWN; CLEARED STALE STATE\r\n");
@@ -1230,22 +1491,7 @@ void net_poll(void) {
         copy_bytes(network.interface_name, device_info.name,
                    sizeof(network.interface_name));
         network.interface_medium = device_info.medium;
-        for (size_t i = 0U; i < 4U; ++i) {
-            network.ipv4[i] = 0U;
-            offered_ipv4[i] = 0U;
-            dhcp_server_ipv4[i] = 0U;
-            subnet_mask[i] = 0U;
-            gateway_ipv4[i] = 0U;
-            dns_ipv4[i] = 0U;
-        }
-        for (size_t i = 0U; i < NET_ARP_CACHE_SIZE; ++i)
-            network.arp[i].valid = false;
-        network.arp_replace = 0U;
-        tcp_connection = (struct net_tcp_connection){0};
-        dns_query_active = false;
-        dns_query_done = true;
-        dns_query_success = false;
-        dns_cache_clear();
+        dhcp_clear_configuration();
         /* Force the existing link transition path to reacquire DHCP. */
         network.link_up = !link_up;
         serial_write("NEXUS NETWORK ADAPTER SELECTED: ");
@@ -1263,11 +1509,55 @@ void net_poll(void) {
     dhcp_retry();
 }
 
+static bool dhcp_has_valid_address(void) {
+    if (!network.ready || ipv4_zero(network.ipv4) ||
+        (dhcp_state != NET_DHCP_BOUND &&
+         dhcp_state != NET_DHCP_RENEWING &&
+         dhcp_state != NET_DHCP_REBINDING)) return false;
+    return dhcp_expire_tick == UINT64_MAX ||
+           (dhcp_expire_tick != 0U && timer_ticks() < dhcp_expire_tick);
+}
+
+static uint32_t dhcp_seconds_until(uint64_t deadline) {
+    if (deadline == UINT64_MAX) return UINT32_MAX;
+    if (deadline == 0U) return 0U;
+    const uint64_t now = timer_ticks();
+    if (now >= deadline) return 0U;
+    const uint64_t remaining = deadline - now;
+    const uint64_t seconds =
+        (remaining + NET_DNS_TICKS_PER_SECOND - 1U) /
+        NET_DNS_TICKS_PER_SECOND;
+    return seconds > UINT32_MAX ? UINT32_MAX : (uint32_t)seconds;
+}
+
+static enum nexus_dhcp_client_state public_dhcp_state(void) {
+    switch (dhcp_state) {
+        case NET_DHCP_DISCOVERING: return NEXUS_DHCP_STATE_DISCOVERING;
+        case NET_DHCP_REQUESTING: return NEXUS_DHCP_STATE_REQUESTING;
+        case NET_DHCP_BOUND: return NEXUS_DHCP_STATE_BOUND;
+        case NET_DHCP_RENEWING: return NEXUS_DHCP_STATE_RENEWING;
+        case NET_DHCP_REBINDING: return NEXUS_DHCP_STATE_REBINDING;
+        case NET_DHCP_IDLE:
+        default: return NEXUS_DHCP_STATE_IDLE;
+    }
+}
+
 bool net_get_info(struct nexus_net_info *info) {
     if (info == NULL || !network.ready) return false;
     info->interface_ready = true;
     info->link_up = network.link_up;
-    info->ipv4_configured = dhcp_state == NET_DHCP_BOUND;
+    info->ipv4_configured = dhcp_has_valid_address();
+    info->dhcp_state = public_dhcp_state();
+    info->dhcp_lease_valid = info->ipv4_configured &&
+                             dhcp_lease_seconds != 0U;
+    info->dhcp_lease_seconds = dhcp_lease_seconds;
+    info->dhcp_t1_seconds = dhcp_t1_seconds;
+    info->dhcp_t2_seconds = dhcp_t2_seconds;
+    info->dhcp_lease_remaining_seconds = info->dhcp_lease_valid
+        ? dhcp_seconds_until(dhcp_expire_tick) : 0U;
+    info->dhcp_renew_in_seconds =
+        (info->dhcp_lease_valid && dhcp_renew_tick != UINT64_MAX)
+            ? dhcp_seconds_until(dhcp_renew_tick) : 0U;
     copy_bytes(info->interface_name, network.interface_name,
                sizeof(info->interface_name));
     copy_bytes(info->mac, network.mac, sizeof(info->mac));
@@ -1310,7 +1600,7 @@ static bool ipv4_is_limited_broadcast(const uint8_t address[4]) {
 bool net_udp_send(const uint8_t destination_ipv4[4],
                   uint16_t source_port, uint16_t destination_port,
                   const void *payload, uint16_t payload_length) {
-    if (!network.ready || dhcp_state != NET_DHCP_BOUND ||
+    if (!dhcp_has_valid_address() ||
         destination_ipv4 == NULL ||
         (payload_length != 0U && payload == NULL) || payload_length > 1400U) {
         return false;
@@ -1536,7 +1826,7 @@ static void receive_tcp(const uint8_t *segment, size_t length,
 
 bool net_tcp_connect(const uint8_t remote_ipv4[4], uint16_t remote_port,
                      uint64_t timeout_ticks) {
-    if (!network.ready || dhcp_state != NET_DHCP_BOUND ||
+    if (!dhcp_has_valid_address() ||
         remote_ipv4 == NULL || ipv4_zero(remote_ipv4) ||
         remote_port == 0U || timeout_ticks == 0U ||
         tcp_connection.active) return false;

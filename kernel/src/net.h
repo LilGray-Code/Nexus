@@ -7,6 +7,15 @@
 
 #include "netdev.h"
 
+enum nexus_dhcp_client_state {
+    NEXUS_DHCP_STATE_IDLE = 0,
+    NEXUS_DHCP_STATE_DISCOVERING,
+    NEXUS_DHCP_STATE_REQUESTING,
+    NEXUS_DHCP_STATE_BOUND,
+    NEXUS_DHCP_STATE_RENEWING,
+    NEXUS_DHCP_STATE_REBINDING
+};
+
 enum nexus_tcp_receive_result {
     NEXUS_TCP_RECEIVE_ERROR = -1,
     NEXUS_TCP_RECEIVE_TIMEOUT = 0,
@@ -20,6 +29,13 @@ struct nexus_net_info {
     bool interface_ready;
     bool link_up;
     bool ipv4_configured;
+    enum nexus_dhcp_client_state dhcp_state;
+    bool dhcp_lease_valid;
+    uint32_t dhcp_lease_seconds;
+    uint32_t dhcp_t1_seconds;
+    uint32_t dhcp_t2_seconds;
+    uint32_t dhcp_lease_remaining_seconds;
+    uint32_t dhcp_renew_in_seconds;
     uint8_t mac[6];
     uint8_t ipv4[4];
     uint8_t subnet_mask[4];

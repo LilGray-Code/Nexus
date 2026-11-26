@@ -310,7 +310,7 @@ static void add_current_mode(void) {
             mode->current_boot_mode = true;
             if (mode->refresh_hz == 0U)
                 mode->refresh_hz = timing_refresh_for_mode(mode->width, mode->height);
-            display_info.matching_edid_refresh_hz = mode->refresh_hz;
+            display_info.current_refresh_hz = mode->refresh_hz;
             return;
         }
     }
@@ -328,7 +328,7 @@ static void add_current_mode(void) {
             .current_boot_mode = true,
             .firmware_listed = false
         };
-    display_info.matching_edid_refresh_hz = refresh;
+    display_info.current_refresh_hz = refresh;
 }
 
 static uint32_t monitor_matching_refresh(
@@ -424,7 +424,7 @@ static void display_promote_monitor_edid(
     display_info.hdr_static_metadata = monitor->hdr_static_metadata;
     display_info.hdr_eotf_flags = monitor->hdr_eotf_flags;
     display_info.timing_count = monitor->timing_count;
-    display_info.matching_edid_refresh_hz = monitor->matching_edid_refresh_hz;
+    display_info.current_refresh_hz = monitor->matching_edid_refresh_hz;
     for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
         display_info.timings[i] = monitor->timings[i];
 
@@ -496,7 +496,7 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
         if (display_info.modes[i].refresh_hz == 0U)
             display_info.modes[i].refresh_hz = timing_refresh_for_mode(
                 display_info.modes[i].width, display_info.modes[i].height);
-    display_info.matching_edid_refresh_hz = timing_refresh_for_mode(
+    display_info.current_refresh_hz = timing_refresh_for_mode(
         display_info.current_width, display_info.current_height);
     add_edid_timing_modes();
 
@@ -513,7 +513,7 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
         primary->matching_edid_refresh_hz =
             monitor_matching_refresh(primary);
         if (primary->matching_edid_refresh_hz != 0U)
-            display_info.matching_edid_refresh_hz = primary->matching_edid_refresh_hz;
+            display_info.current_refresh_hz = primary->matching_edid_refresh_hz;
         if (framebuffer->edid != NULL && framebuffer->edid_size >= 128U) {
             const uint8_t *edid = (const uint8_t *)framebuffer->edid;
             if (edid[21] != 0U)
@@ -754,7 +754,7 @@ bool nexus_display_apply_mode(size_t index) {
         .height = display_info.current_height,
         .pitch = display_info.current_pitch,
         .bits_per_pixel = display_info.current_bits_per_pixel,
-        .refresh_hz = display_info.matching_edid_refresh_hz,
+        .refresh_hz = display_info.current_refresh_hz,
         .current_boot_mode = true,
         .firmware_listed = true,
         .edid_timing = true
@@ -804,7 +804,7 @@ bool nexus_display_apply_mode(size_t index) {
     display_info.current_height = target.height;
     display_info.current_pitch = target.pitch;
     display_info.current_bits_per_pixel = target.bits_per_pixel;
-    display_info.matching_edid_refresh_hz = target.refresh_hz;
+    display_info.current_refresh_hz = target.refresh_hz;
     for (uint32_t i = 0U; i < display_info.mode_count; ++i)
         display_info.modes[i].current_boot_mode = i == index;
     display_info.last_rollback_succeeded = true;
@@ -826,7 +826,7 @@ bool nexus_display_hdr_output_available(void) {
         .height = display_info.current_height,
         .pitch = display_info.current_pitch,
         .bits_per_pixel = display_info.current_bits_per_pixel,
-        .refresh_hz = display_info.matching_edid_refresh_hz,
+        .refresh_hz = display_info.current_refresh_hz,
         .current_boot_mode = true,
         .firmware_listed = true
     };

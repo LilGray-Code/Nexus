@@ -164,6 +164,46 @@ int main(void) {
     graphics_draw_text(UINT64_MAX - 2U, UINT64_MAX - 2U, "X",
                        UINT32_MAX, 255U, 255U, 255U);
 
+    /* Rotation maps logical coordinates onto the physical framebuffer
+     * while damage remains expressed in physical scanout coordinates.
+     */
+    assert(graphics_set_rotation(1U));
+    assert(graphics_width() == HEIGHT);
+    assert(graphics_height() == WIDTH);
+    assert(graphics_take_damage(&damage));
+    assert(damage.x == 0U && damage.y == 0U &&
+           damage.width == WIDTH && damage.height == HEIGHT);
+    graphics_fill_rect(0U, 0U, 1U, 1U, 255U, 0U, 0U);
+    assert(guarded[1U + WIDTH - 1U] == 0x00FF0000U);
+    assert(graphics_set_rotation(0U));
+
+    /* 2x software scaling expands one logical pixel to a 2x2 physical block. */
+    assert(graphics_set_scale_percent(200U));
+    assert(graphics_width() == WIDTH / 2U);
+    assert(graphics_height() == HEIGHT / 2U);
+    graphics_fill_rect(0U, 0U, 1U, 1U, 0U, 255U, 0U);
+    assert(guarded[1U] == 0x0000FF00U);
+    assert(guarded[2U] == 0x0000FF00U);
+    assert(guarded[1U + WIDTH] == 0x0000FF00U);
+    assert(guarded[2U + WIDTH] == 0x0000FF00U);
+    assert(graphics_set_scale_percent(50U));
+    assert(graphics_width() == WIDTH * 2U);
+    assert(graphics_height() == HEIGHT * 2U);
+
+    /* Night-light and brightness are composed once at the final pixel write. */
+    assert(graphics_set_scale_percent(100U));
+    assert(graphics_set_color_effects(50U, 3000U));
+    graphics_clear(0U, 0U, 255U);
+    const uint8_t warm_dim_blue = (uint8_t)(guarded[1U] & 0xFFU);
+    assert(warm_dim_blue > 0U && warm_dim_blue < 255U);
+    assert(graphics_set_color_effects(100U, 6500U));
+    graphics_clear(0U, 0U, 255U);
+    assert((guarded[1U] & 0xFFU) == 255U);
+
+    assert(graphics_set_color_effects(100U, 6500U));
+    assert(graphics_set_rotation(0U));
+    assert(graphics_set_scale_percent(100U));
+
     assert(guarded[0U] == GUARD);
     assert(guarded[WIDTH * HEIGHT + 1U] == GUARD);
 

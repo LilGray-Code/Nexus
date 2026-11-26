@@ -182,11 +182,12 @@ int main(void) {
     assert(info->monitor_name_valid);
     assert(strcmp(info->monitor_name, "NEXUS PANEL") == 0);
     assert(info->timing_count == 2U);
-    assert(info->timings[0].width == 1920U);
-    assert(info->timings[0].height == 1080U);
+    /* Standard timings are enumerated before detailed descriptors. */
+    assert(info->timings[0].width == 1280U);
+    assert(info->timings[0].height == 800U);
     assert(info->timings[0].refresh_hz == 60U);
-    assert(info->timings[1].width == 1280U);
-    assert(info->timings[1].height == 800U);
+    assert(info->timings[1].width == 1920U);
+    assert(info->timings[1].height == 1080U);
     assert(info->timings[1].refresh_hz == 60U);
     assert(nexus_display_hdr_monitor_supported());
     assert(!nexus_display_hdr_output_available());

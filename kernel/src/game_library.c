@@ -329,7 +329,9 @@ bool nexus_game_library_load(void) {
         return false;
     }
 
-    static const uint8_t magic[8] = GAME_LIBRARY_MAGIC;
+    static const uint8_t magic[8] = {
+        'N', 'X', 'G', 'L', 'I', 'B', '0', '1'
+    };
     for (size_t i = 0U; i < sizeof(magic); ++i) {
         if (library_buffer[i] != magic[i]) {
             last_error = NEXUS_GAME_LIBRARY_ERROR_FORMAT;

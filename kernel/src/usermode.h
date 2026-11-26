@@ -11,7 +11,9 @@
 bool usermode_run_selftest(void);
 bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
                       uint64_t stack_pointer, uint64_t kernel_stack_top,
-                      uint64_t *exit_status);
+                      uint32_t permissions, uint64_t *exit_status);
+uint32_t usermode_current_permissions(void);
+int64_t usermode_sys_app_permissions(void);
 bool usermode_sys_write(uint64_t user_address, uint64_t length);
 /* Copy the most recent native process's bounded write(1, ...) output. */
 size_t usermode_console_output_copy(char *destination, size_t capacity,

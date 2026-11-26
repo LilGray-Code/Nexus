@@ -62,6 +62,11 @@ struct nexus_wifi_driver_ops {
  * and reports only state/results explicitly supplied by that driver. Driver
  * callbacks may report scan/connection completion synchronously before the
  * callback returns; the manager preserves those state transitions.
+ *
+ * The passphrase pointer passed to connect() is valid only during the call.
+ * A driver that needs credentials for an asynchronous authentication exchange
+ * must derive/copy the required key material into driver-owned protected state
+ * before returning. The generic manager never retains the passphrase.
  */
 bool wifi_register_driver(const struct nexus_wifi_driver_ops *ops,
                           void *context);

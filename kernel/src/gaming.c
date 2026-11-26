@@ -331,7 +331,9 @@ static bool shader_cache_header_valid(
     if (bytes == NULL || expected_key == NULL ||
         length < SHADER_CACHE_HEADER_SIZE ||
         payload_length == NULL) return false;
-    static const uint8_t magic[8] = SHADER_CACHE_MAGIC;
+    static const uint8_t magic[8] = {
+        'N', 'X', 'S', 'C', 'A', 'C', 'H', 'E'
+    };
     for (size_t i = 0U; i < sizeof(magic); ++i)
         if (bytes[i] != magic[i]) return false;
     if (read_le32(bytes + 8U) != SHADER_CACHE_VERSION) return false;

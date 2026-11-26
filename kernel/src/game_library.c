@@ -210,13 +210,6 @@ static bool decode_entry(const uint8_t *bytes,
     return game_entry_valid(entry);
 }
 
-static size_t find_entry(const char *game_id) {
-    if (game_id == NULL) return NEXUS_GAME_LIBRARY_MAX_ENTRIES;
-    for (size_t i = 0U; i < entry_count; ++i)
-        if (equal_text(entries[i].game_id, game_id)) return i;
-    return NEXUS_GAME_LIBRARY_MAX_ENTRIES;
-}
-
 static bool equal_text(const char *left, const char *right) {
     if (left == NULL || right == NULL) return false;
     size_t i = 0U;
@@ -225,6 +218,13 @@ static bool equal_text(const char *left, const char *right) {
         ++i;
     }
     return left[i] == right[i];
+}
+
+static size_t find_entry(const char *game_id) {
+    if (game_id == NULL) return NEXUS_GAME_LIBRARY_MAX_ENTRIES;
+    for (size_t i = 0U; i < entry_count; ++i)
+        if (equal_text(entries[i].game_id, game_id)) return i;
+    return NEXUS_GAME_LIBRARY_MAX_ENTRIES;
 }
 
 void nexus_game_library_init(void) {
@@ -473,7 +473,7 @@ bool nexus_game_library_launch(
         last_error = NEXUS_GAME_LIBRARY_ERROR_EXECUTION;
         return false;
     }
-    ++entry->launch_count;
+    if (entry->launch_count != UINT32_MAX) ++entry->launch_count;
     entry->last_played_ticks = timer_ticks();
     *exit_status = result.exit_status;
     /* Execution success must not be revoked by a read-only/missing data disk. */

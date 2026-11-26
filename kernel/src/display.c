@@ -428,8 +428,8 @@ static void display_promote_monitor_edid(
     for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
         display_info.timings[i] = monitor->timings[i];
 
-    /* The selected output, not necessarily the bootloader's framebuffer,
-     * defines the current known-good mode used by the modeset rollback path.
+    /* The selected output, not the bootloader's initial framebuffer,
+     * defines the known-good baseline used by later modeset rollback.
      */
     if (monitor->width != 0U && monitor->height != 0U) {
         const uint64_t bytes_per_pixel =
@@ -440,23 +440,27 @@ static void display_promote_monitor_edid(
             display_info.current_height = monitor->height;
             display_info.current_pitch =
                 (uint64_t)monitor->width * bytes_per_pixel;
-            add_current_mode();
-            display_info.current_refresh_hz =
-                monitor->matching_edid_refresh_hz;
         }
     }
 
-    /* Preserve firmware-provided modes and the active mode, but rebuild
-     * EDID-only variants from the new primary monitor's timing list.
+    /* Keep firmware modes, plus the old active mode only when no EDID
+     * timing list exists. Rebuild the active marker and EDID variants.
      */
     uint32_t retained = 0U;
     for (uint32_t i = 0U; i < display_info.mode_count; ++i) {
         struct nexus_display_mode mode = display_info.modes[i];
-        if (!mode.firmware_listed && !mode.current_boot_mode) continue;
+        if (!mode.firmware_listed &&
+            !(monitor->timing_count == 0U && mode.current_boot_mode))
+            continue;
+        mode.current_boot_mode = false;
         mode.edid_timing = false;
         display_info.modes[retained++] = mode;
     }
     display_info.mode_count = retained;
+
+    if (monitor->width != 0U && monitor->height != 0U)
+        add_current_mode();
+    display_info.current_refresh_hz = monitor->matching_edid_refresh_hz;
     add_edid_timing_modes();
 }
 

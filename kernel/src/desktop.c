@@ -3887,15 +3887,17 @@ static bool browser_build_duckduckgo_search_target(
     char *host, size_t host_capacity, size_t *host_length,
     char *path, size_t path_capacity, size_t *path_length) {
     static const char search_host[] = "html.duckduckgo.com";
+    static const char search_path[] = "/html/";
     if (host == NULL || host_length == NULL || path == NULL ||
         path_length == NULL || sizeof(search_host) > host_capacity ||
-        path_capacity == 0U) return false;
+        sizeof(search_path) > path_capacity) return false;
     for (size_t i = 0U; i < sizeof(search_host); ++i)
         host[i] = search_host[i];
+    for (size_t i = 0U; i < sizeof(search_path); ++i)
+        path[i] = search_path[i];
     *host_length = sizeof(search_host) - 1U;
-    return nexus_browser_search_build_path(
-        browser_address, browser_address_length,
-        path, path_capacity, path_length);
+    *path_length = sizeof(search_path) - 1U;
+    return true;
 }
 
 static bool browser_is_http_redirect(uint16_t status_code) {
@@ -4216,15 +4218,43 @@ browser_retry:
 
     char request[1536];
     size_t request_length = 0U;
-    const bool request_ok =
+    char search_form_body[NEXUS_BROWSER_SEARCH_PATH_MAX];
+    size_t search_form_body_length = 0U;
+    const bool duckduckgo_form_post = search_request && !search_use_bing;
+    const bool form_body_ready = !duckduckgo_form_post ||
+        nexus_browser_search_build_form_body(
+            browser_address, browser_address_length,
+            search_form_body, sizeof(search_form_body),
+            &search_form_body_length);
+    char content_length_text[21];
+    format_u64((uint64_t)search_form_body_length, content_length_text);
+
+    const bool request_ok = form_body_ready &&
         browser_append_text(request, sizeof(request), &request_length,
-                            "GET ") &&
+                            duckduckgo_form_post ? "POST " : "GET ") &&
         browser_append_text(request, sizeof(request), &request_length, path) &&
         browser_append_text(request, sizeof(request), &request_length,
                             " HTTP/1.1\r\nHost: ") &&
         browser_append_text(request, sizeof(request), &request_length, host) &&
-        (search_request
-            ? (search_use_bing
+        (duckduckgo_form_post
+            ? (browser_append_text(request, sizeof(request), &request_length,
+                    "\r\nContent-Type: application/x-www-form-urlencoded\r\n"
+                    "Content-Length: ") &&
+               browser_append_text(request, sizeof(request), &request_length,
+                    content_length_text) &&
+               browser_append_text(request, sizeof(request), &request_length,
+                    "\r\nOrigin: https://html.duckduckgo.com\r\n"
+                    "Referer: https://html.duckduckgo.com/\r\n"
+                    "User-Agent: Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\r\n"
+                    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
+                    "Accept-Language: en-US,en;q=0.8\r\n"
+                    "Accept-Encoding: identity\r\n"
+                    "Sec-Fetch-Dest: document\r\nSec-Fetch-Mode: navigate\r\n"
+                    "Sec-Fetch-Site: same-origin\r\nSec-Fetch-User: ?1\r\n"
+                    "Upgrade-Insecure-Requests: 1\r\n"
+                    "Cache-Control: no-cache\r\nConnection: close\r\n\r\n"))
+            : (search_request
                 ? browser_append_text(request, sizeof(request), &request_length,
                     "\r\nUser-Agent: Mozilla/5.0 (X11; Nexus OS x86_64; rv:128.0) "
                     "Gecko/20100101 NexusBrowser/1.0\r\n"
@@ -4233,27 +4263,23 @@ browser_retry:
                     "Accept-Encoding: identity\r\n"
                     "Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
                 : browser_append_text(request, sizeof(request), &request_length,
-                    "\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\r\n"
-                    "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
-                    "Accept-Language: en-US,en;q=0.8\r\n"
+                    "\r\nUser-Agent: NexusBrowser/0.3\r\n"
+                    "Accept: text/html,text/plain,*/*\r\n"
                     "Accept-Encoding: identity\r\n"
-                    "Referer: https://html.duckduckgo.com/\r\n"
-                    "Sec-Fetch-Dest: document\r\nSec-Fetch-Mode: navigate\r\n"
-                    "Sec-Fetch-Site: same-origin\r\nUpgrade-Insecure-Requests: 1\r\n"
-                    "Cache-Control: no-cache\r\nConnection: close\r\n\r\n"))
-            : browser_append_text(request, sizeof(request), &request_length,
-                "\r\nUser-Agent: NexusBrowser/0.3\r\n"
-                "Accept: text/html,text/plain,*/*\r\n"
-                "Accept-Encoding: identity\r\n"
-                "Cache-Control: no-cache\r\n"
-                "Connection: close\r\n\r\n"));
+                    "Cache-Control: no-cache\r\n"
+                    "Connection: close\r\n\r\n")));
+
     bool request_sent = false;
     if (request_ok) {
         request_sent = use_https
             ? browser_https_send_all(
                 &https, (const unsigned char *)request, request_length)
             : net_tcp_send(request, (uint16_t)request_length);
+        if (request_sent && duckduckgo_form_post) {
+            request_sent = browser_https_send_all(
+                &https, (const unsigned char *)search_form_body,
+                search_form_body_length);
+        }
     }
     if (!request_sent) {
         if (https_open) nexus_https_close(&https);

@@ -1277,6 +1277,7 @@ bool net_init(void) {
         subnet_mask[i] = 0U;
         gateway_ipv4[i] = 0U;
         dns_ipv4[i] = 0U;
+        dhcp_dns_ipv4[i] = 0U;
     }
     dhcp_state = NET_DHCP_IDLE;
     dhcp_option_lease_seconds = 0U;

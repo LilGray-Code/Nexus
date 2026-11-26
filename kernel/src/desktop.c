@@ -124,7 +124,7 @@ static struct nexus_settings desktop_settings = {
     .cursor_size = 1U,
     .mouse_sensitivity_percent = 100U,
     .scroll_speed = 2U,
-    .volume_percent = 80U,
+    .volume_percent = 75U,
     .left_handed_mouse = false,
     .high_contrast = false
 };

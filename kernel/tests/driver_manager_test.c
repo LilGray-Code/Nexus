@@ -2,6 +2,7 @@
 #include "pci.h"
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 static struct nexus_pci_device pci_test_devices[4];
 static uint32_t pci_test_device_count;
@@ -156,7 +157,11 @@ int main(void) {
     /* PCI enumeration records unsupported devices instead of silently
      * discarding them; subsequent full scans do not create duplicates.
      */
-    pci_test_devices[0] = pci;
+    pci_test_devices[0] = (struct nexus_pci_device){
+        .bus = 0U, .slot = 10U, .function = 0U,
+        .class_code = 0x01U, .subclass = 0x06U,
+        .vendor_id = 0xCAFEU, .device_id = 0x1000U
+    };
     pci_test_devices[1] = (struct nexus_pci_device){
         .bus = 0U, .slot = 8U, .function = 0U,
         .class_code = 0x03U, .subclass = 0U,

@@ -15,6 +15,10 @@ enum nexus_wifi_security {
     NEXUS_WIFI_SECURITY_WPA3_SAE
 };
 
+#define NEXUS_WIFI_SECURITY_MASK_OPEN (1U << NEXUS_WIFI_SECURITY_OPEN)
+#define NEXUS_WIFI_SECURITY_MASK_WPA2 (1U << NEXUS_WIFI_SECURITY_WPA2_PSK)
+#define NEXUS_WIFI_SECURITY_MASK_WPA3 (1U << NEXUS_WIFI_SECURITY_WPA3_SAE)
+
 enum nexus_wifi_band {
     NEXUS_WIFI_BAND_UNKNOWN = 0,
     NEXUS_WIFI_BAND_2GHZ,
@@ -48,6 +52,10 @@ struct nexus_wifi_driver_ops {
                     const char *passphrase);
     void (*disconnect)(void *context);
     void (*poll)(void *context);
+    /* Explicit authentication implementations; beacon parsing alone never
+     * implies that a chipset driver implements WPA2 or WPA3.
+     */
+    uint32_t supported_security_mask;
 };
 
 /* The hardware driver owns radio operations; this layer validates requests
@@ -63,6 +71,8 @@ bool wifi_publish_scan_results(const struct nexus_wifi_network *results,
                                size_t count);
 size_t wifi_scan_result_count(void);
 bool wifi_scan_result_at(size_t index, struct nexus_wifi_network *result);
+bool wifi_security_supported(enum nexus_wifi_security security);
+bool wifi_get_connected_network(struct nexus_wifi_network *network);
 bool wifi_connect(const struct nexus_wifi_network *network,
                   const char *passphrase);
 void wifi_report_connected(void);

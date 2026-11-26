@@ -83,7 +83,6 @@ static uint8_t subnet_mask[4];
 static uint8_t gateway_ipv4[4];
 static uint8_t dns_ipv4[4];
 static uint8_t dhcp_dns_ipv4[4];
-static uint8_t dns_override_ipv4[4];
 static bool dns_manual_override;
 static uint32_t dhcp_transaction_id;
 static uint64_t dhcp_last_send_tick;
@@ -149,6 +148,7 @@ static uint16_t tcp_next_port = 49152U;
 
 static bool ipv4_next_hop(const uint8_t destination[4], uint8_t next_hop[4]);
 static void tcp_retry_pending_syn(void);
+static void dns_cache_clear(void);
 
 static uint16_t read_be16(const uint8_t *p) {
     return (uint16_t)(((uint16_t)p[0] << 8) | p[1]);
@@ -603,7 +603,8 @@ static bool send_dhcp_message(uint8_t message_type) {
                                         NET_DHCP_CLIENT_PORT,
                                         NET_DHCP_SERVER_PORT,
                                         packet, cursor);
-    if (sent) dhcp_last_send_tick = timer_ticks();
+    /* Throttle retries even when a transient transmit failure occurs. */
+    dhcp_last_send_tick = timer_ticks();
     return sent;
 }
 
@@ -697,11 +698,12 @@ static void dhcp_accept_lease(void) {
 }
 
 static void dhcp_poll_lease(void) {
-    if (dhcp_state != NET_DHCP_BOUND || dhcp_lease_seconds == 0U ||
-        dhcp_lease_start_tick == 0U) return;
+    if ((dhcp_state != NET_DHCP_BOUND &&
+         dhcp_state != NET_DHCP_RENEWING &&
+         dhcp_state != NET_DHCP_REBINDING) ||
+        dhcp_lease_seconds == 0U) return;
 
-    const uint64_t now = timer_ticks();
-    const uint64_t age = now - dhcp_lease_start_tick;
+    const uint64_t age = timer_ticks() - dhcp_lease_start_tick;
     if (age >= dhcp_seconds_to_ticks(dhcp_lease_seconds)) {
         dhcp_clear_lease();
         dhcp_state = NET_DHCP_DISCOVERING;
@@ -710,12 +712,14 @@ static void dhcp_poll_lease(void) {
         if (dhcp_transaction_id == 0U) dhcp_transaction_id = 0x4E585553U;
         (void)send_dhcp_message(1U);
         serial_write("NET: DHCP lease expired; restarting discovery\\r\\n");
-    } else if (age >= dhcp_seconds_to_ticks(dhcp_rebind_seconds)) {
+    } else if (age >= dhcp_seconds_to_ticks(dhcp_rebind_seconds) &&
+               dhcp_state != NET_DHCP_REBINDING) {
         dhcp_state = NET_DHCP_REBINDING;
         dhcp_retry_count = 0U;
         (void)send_dhcp_message(3U);
         serial_write("NET: DHCP lease entering rebind phase\\r\\n");
-    } else if (age >= dhcp_seconds_to_ticks(dhcp_renew_seconds)) {
+    } else if (age >= dhcp_seconds_to_ticks(dhcp_renew_seconds) &&
+               dhcp_state == NET_DHCP_BOUND) {
         dhcp_state = NET_DHCP_RENEWING;
         dhcp_retry_count = 0U;
         (void)send_dhcp_message(3U);
@@ -1334,14 +1338,7 @@ static void network_handle_link_change(bool link_up) {
     dns_cache_clear();
 
     if (!link_up) {
-        for (size_t i = 0U; i < 4U; ++i) {
-            network.ipv4[i] = 0U;
-            offered_ipv4[i] = 0U;
-            dhcp_server_ipv4[i] = 0U;
-            subnet_mask[i] = 0U;
-            gateway_ipv4[i] = 0U;
-            dns_ipv4[i] = 0U;
-        }
+        dhcp_clear_lease();
         dhcp_state = NET_DHCP_DISCOVERING;
         dhcp_retry_count = 0U;
         serial_write("NEXUS NETWORK LINK DOWN; CLEARED STALE STATE\r\n");
@@ -1369,14 +1366,7 @@ void net_poll(void) {
         copy_bytes(network.interface_name, device_info.name,
                    sizeof(network.interface_name));
         network.interface_medium = device_info.medium;
-        for (size_t i = 0U; i < 4U; ++i) {
-            network.ipv4[i] = 0U;
-            offered_ipv4[i] = 0U;
-            dhcp_server_ipv4[i] = 0U;
-            subnet_mask[i] = 0U;
-            gateway_ipv4[i] = 0U;
-            dns_ipv4[i] = 0U;
-        }
+        dhcp_clear_lease();
         for (size_t i = 0U; i < NET_ARP_CACHE_SIZE; ++i)
             network.arp[i].valid = false;
         network.arp_replace = 0U;
@@ -1406,7 +1396,6 @@ void net_poll(void) {
 bool net_set_dns_server(const uint8_t server_ipv4[4]) {
     if (server_ipv4 == NULL || ipv4_zero(server_ipv4) ||
         server_ipv4[0] >= 224U) return false;
-    copy_bytes(dns_override_ipv4, server_ipv4, 4U);
     copy_bytes(dns_ipv4, server_ipv4, 4U);
     dns_manual_override = true;
     dns_cache_clear();

@@ -68,9 +68,27 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
         *base = disk->data_area + (lba - disk->data_base) * 512ULL;
         return true;
     }
-    if (disk->nxfs_base != 0U && lba >= disk->nxfs_base &&
-        lba + count <= disk->nxfs_base + NXFS_TEST_AREA_BLOCKS) {
-        *base = disk->nxfs_area + (lba - disk->nxfs_base) * 512ULL;
+    if (disk->nxfs_base != 0U && lba >= disk->nxfs_base) {
+        const uint64_t relative = lba - disk->nxfs_base;
+        uint64_t compact_lba = relative;
+        if (relative >= 67U) {
+            const uint64_t blocks_per_slot =
+                NEXUS_NXFS_MAX_FILE_BYTES / 512U;
+            const uint64_t data_relative = relative - 67U;
+            const uint64_t slot_bank = data_relative / blocks_per_slot;
+            const uint64_t block_in_slot = data_relative % blocks_per_slot;
+            /* The host fixture stores the first 64 blocks from each of the
+             * 128 NXFS banks. Test files fit inside that bounded prefix;
+             * their large logical gaps are mapped into compact backing RAM.
+             */
+            if (slot_bank >= (uint64_t)NEXUS_NXFS_MAX_FILES * 2U ||
+                block_in_slot + count > 64U) return false;
+            compact_lba = 67U + slot_bank * 64U + block_in_slot;
+        } else if (relative + count > 67U) {
+            return false;
+        }
+        if (compact_lba + count > NXFS_TEST_AREA_BLOCKS) return false;
+        *base = disk->nxfs_area + compact_lba * 512ULL;
         return true;
     }
     if (disk->recovery_base != 0U && lba >= disk->recovery_base &&

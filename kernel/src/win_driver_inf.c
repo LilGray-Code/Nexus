@@ -77,7 +77,7 @@ static bool find_subsystem(const char *p, size_t n,
                            uint16_t *sub_device, uint16_t *sub_vendor) {
     const char marker[] = "SUBSYS_";
     for (size_t i = 0U; i + 15U <= n; ++i) {
-        if ((i == 0U || p[i - 1U] == '&' || p[i - 1U] == '\\\\') &&
+        if ((i == 0U || p[i - 1U] == '&' || p[i - 1U] == '\\') &&
             equal_ci(p + i, marker, 7U)) {
             *sub_device = hex_value(p + i + 7U, 4U);
             *sub_vendor = hex_value(p + i + 11U, 4U);

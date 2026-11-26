@@ -506,7 +506,14 @@ bool memory_allocator_selftest(void) {
            after.total_bytes == memory_total_bytes() &&
            after.free_bytes == memory_free_bytes() &&
            after.used_bytes <= after.total_bytes &&
-           after.region_count != 0U;
+           after.region_count != 0U &&
+           after.dma_total_bytes + after.dma32_total_bytes +
+               after.normal_total_bytes == after.total_bytes &&
+           after.dma_free_bytes + after.dma32_free_bytes +
+               after.normal_free_bytes == after.free_bytes &&
+           after.dma_free_bytes <= after.dma_total_bytes &&
+           after.dma32_free_bytes <= after.dma32_total_bytes &&
+           after.normal_free_bytes <= after.normal_total_bytes;
 }
 
 void *memory_phys_to_virt(uint64_t physical_address) {

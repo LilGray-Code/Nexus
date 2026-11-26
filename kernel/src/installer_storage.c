@@ -326,7 +326,11 @@ enum nexus_installer_system_payload_result nexus_installer_deploy_system_payload
         !installer_manifest_append_u32(manifest, sizeof(manifest),
             &manifest_length, chunk_count) ||
         !installer_manifest_append(manifest, sizeof(manifest),
-            &manifest_length, "\nKERNEL_CHUNK_BYTES=1048576\nKERNEL_SIZE=") ||
+            &manifest_length, "\nKERNEL_CHUNK_BYTES=") ||
+        !installer_manifest_append_u32(manifest, sizeof(manifest),
+            &manifest_length, chunk_limit) ||
+        !installer_manifest_append(manifest, sizeof(manifest),
+            &manifest_length, "\nKERNEL_SIZE=") ||
         !installer_manifest_append_u32(manifest, sizeof(manifest),
             &manifest_length, kernel_size) ||
         !installer_manifest_append(manifest, sizeof(manifest),

@@ -9,8 +9,9 @@
 #include "gpt.h"
 
 #define NEXUS_NXFS_MAX_FILES 64U
-#define NEXUS_NXFS_MAX_FILE_BYTES (4U * 1024U * 1024U)
-#define NEXUS_NXFS_LEGACY_FILE_BYTES (1024U * 1024U)
+#define NEXUS_NXFS_MAX_FILE_BYTES (256U * 1024U * 1024U)
+#define NEXUS_NXFS_LEGACY_FILE_BYTES (4U * 1024U * 1024U)
+#define NEXUS_NXFS_OLD_FILE_BYTES (1024U * 1024U)
 #define NEXUS_NXFS_NAME_MAX 32U /* 31 printable characters plus NUL */
 
 struct nexus_nxfs_entry {
@@ -47,6 +48,11 @@ size_t nxfs_entry_count(void);
 const struct nexus_nxfs_entry *nxfs_entry_at(size_t index);
 bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
                     uint32_t offset, uint32_t length, void *buffer);
+/* Transactional bounded-memory writer. Only finish publishes the new entry. */
+bool nxfs_write_file_begin(const char *name, uint32_t expected_length);
+bool nxfs_write_file_append(const void *data, size_t length);
+bool nxfs_write_file_finish(void);
+void nxfs_write_file_abort(void);
 bool nxfs_write_file(const char *name, const void *data, size_t length);
 bool nxfs_rename_file(const char *source_name, const char *destination_name);
 bool nxfs_move_file(const char *source_name, const char *destination_name);

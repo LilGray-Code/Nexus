@@ -140,6 +140,34 @@ static void test_content_disposition_metadata(void) {
 }
 
 
+static void test_header_only_parse_for_streaming(void) {
+    static const uint8_t header[] =
+        "HTTP/1.1 200 OK\\r\\n"
+        "Content-Length: 268435456\\r\\n"
+        "Content-Type: application/zip\\r\\n"
+        "Content-Disposition: attachment; filename=large.zip\\r\\n"
+        "Connection: close\\r\\n\\r\\n";
+    size_t header_length = 0U;
+    struct nexus_http_response response = {0};
+    assert(nexus_http_decode_headers(header, sizeof(header) - 1U,
+                                     &header_length, &response));
+    assert(header_length == sizeof(header) - 1U);
+    assert(response.status_code == 200U);
+    assert(response.has_content_length);
+    assert(response.content_length == 268435456U);
+    assert(response.has_content_type && response.has_content_disposition);
+    assert(strcmp(response.content_type, "application/zip") == 0);
+    assert(strcmp(response.content_disposition,
+                  "attachment; filename=large.zip") == 0);
+    assert(response.body_length == 0U);
+
+    static const uint8_t conflicting[] =
+        "HTTP/1.1 200 OK\\r\\nContent-Length: 1\\r\\n"
+        "Transfer-Encoding: chunked\\r\\n\\r\\n";
+    assert(!nexus_http_decode_headers(conflicting, sizeof(conflicting) - 1U,
+                                      &header_length, &response));
+}
+
 int main(void) {
     test_content_length();
     test_chunked_extensions_and_trailers();
@@ -148,5 +176,6 @@ int main(void) {
     test_capacity_and_malformed_status();
     test_redirect_and_content_type_metadata();
     test_content_disposition_metadata();
+    test_header_only_parse_for_streaming();
     return 0;
 }

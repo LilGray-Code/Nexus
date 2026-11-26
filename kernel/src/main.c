@@ -461,7 +461,19 @@ void kmain(void) {
         serial_write_hex(allocator_stats.free_list_pages);
         serial_write("\r\nAllocation failures: ");
         serial_write_hex(allocator_stats.allocation_failures);
-        serial_write("\r\n");
+        serial_write("\r\nDMA zone total/free bytes: ");
+        serial_write_hex(allocator_stats.dma_total_bytes);
+        serial_write("/");
+        serial_write_hex(allocator_stats.dma_free_bytes);
+        serial_write("\r\nDMA32 zone total/free bytes: ");
+        serial_write_hex(allocator_stats.dma32_total_bytes);
+        serial_write("/");
+        serial_write_hex(allocator_stats.dma32_free_bytes);
+        serial_write("\r\nNormal zone total/free bytes: ");
+        serial_write_hex(allocator_stats.normal_total_bytes);
+        serial_write("/");
+        serial_write_hex(allocator_stats.normal_free_bytes);
+        serial_write("\r\nNEXUS DMA MEMORY ZONE ACCOUNTING READY\r\n");
     }
 
     if (rsdp_request.response == NULL ||

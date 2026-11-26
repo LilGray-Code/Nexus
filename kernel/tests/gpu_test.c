@@ -106,6 +106,20 @@ static void test_nvidia_and_virtio_adapter_names(void) {
     assert(gpu_init());
     assert(gpu_primary_info()->vendor == NEXUS_GPU_VENDOR_VIRTIO);
     assert(!gpu_hardware_acceleration_available());
+    assert(!gpu_primary_info()->virgl_command_submission_ready);
+    gpu_set_virtio_3d_submission_ready(true, 2U);
+    assert(gpu_primary_info()->virgl_command_submission_ready);
+    assert(gpu_primary_info()->virgl_capset_id == 2U);
+    /* A working command channel alone is not a rendered workload. */
+    assert(!gpu_primary_info()->hardware_2d_acceleration);
+    assert(!gpu_primary_info()->hardware_3d_acceleration);
+    assert(!gpu_hardware_acceleration_available());
+    gpu_set_virtio_display_active(true);
+    assert(strcmp(gpu_render_path_name(),
+                  "GPU: VIRTIO HOST SCANOUT / CPU RASTER / VIRGL QUEUE READY") == 0);
+    gpu_set_virtio_3d_submission_ready(false, 0U);
+    assert(!gpu_primary_info()->virgl_command_submission_ready);
+    gpu_set_virtio_display_active(false);
     device_count = 0U;
     assert(!gpu_init());
     assert(gpu_adapter_count() == 0U);

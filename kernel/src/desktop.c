@@ -462,8 +462,10 @@ static bool desktop_theme_is_light(void) {
 }
 
 static void desktop_settings_apply(void) {
-    desktop_text_scale_16_16 =
-        (87381U * desktop_settings.ui_scale_percent + 50U) / 100U;
+    /* Logical display scaling transforms the whole renderer. Do not scale
+     * the font a second time or text would be multiplied twice.
+     */
+    desktop_text_scale_16_16 = 87381U;
     if (nexus_display_get_info() != NULL &&
         nexus_display_set_scale_percent(desktop_settings.ui_scale_percent)) {
         screen_width = graphics_width();

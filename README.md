@@ -104,11 +104,20 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   logical 50–200% display scaling, brightness reduction, and color-temperature
   filtering. These are software transforms: brightness does not control a
   panel's backlight, night light is not a hardware gamma LUT, and these effects
-  do not imply HDR output. The currently active desktop still renders into one
-  framebuffer/scanout; it does not provide independent monitor framebuffers,
-  hotplug recovery, extended-desktop composition, or mirroring. Primary-output
-  and topology changes require a real registered display backend and are
-  rejected when that backend is absent.
+  do not imply HDR output. On VirtIO GPU, the desktop allocates one shared
+  framebuffer large enough for the enabled scanout rectangles and attaches
+  that resource to every enabled output. Distinct, non-overlapping host
+  rectangles provide an extended desktop; duplicate rectangles present the
+  same source region. The VirtIO layout control can switch outputs to a common
+  upper-left mirror rectangle, and it rejects an extended-layout request when
+  the saved host rectangles overlap or exceed the allocated framebuffer.
+  Layout changes are applied output-by-output with rollback; if rollback
+  itself fails, the VirtIO display path is disabled and the desktop attempts
+  to recover onto the firmware framebuffer. Primary-monitor selection updates
+  Nexus's logical primary/selected scanout, but independent per-monitor taskbar
+  placement, separate framebuffers, and hotplug event recovery are not yet
+  implemented. Other display backends expose topology controls only when they
+  register the corresponding real callbacks.
   Mode changes use a test, set, verify, and restore contract. A failed set or
   post-set verification triggers a restore of the last known-good mode and
   verification of that restoration; failed recovery disables further mode

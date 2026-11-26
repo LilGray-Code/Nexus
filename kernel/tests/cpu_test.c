@@ -14,8 +14,7 @@ int main(void) {
     assert(nexus_cpu_get_local_topology(&local_topology));
     assert(local_topology.vendor == info->vendor_kind);
     assert(local_topology.logical_processors_per_core >= 1U);
-    if (local_topology.apic_id_valid)
-        assert(local_topology.apic_id <= UINT32_MAX);
+    assert(local_topology.apic_id_valid);
     if (local_topology.core_id_valid || local_topology.node_id_valid) {
         assert(local_topology.vendor == NEXUS_CPU_VENDOR_AMD ||
                local_topology.vendor == NEXUS_CPU_VENDOR_HYGON);

@@ -10,6 +10,7 @@ on:
       - "kernel/src/display.c"
       - "kernel/src/display.h"
       - "kernel/src/desktop.c"
+      - "kernel/src/main.c"
       - "kernel/Makefile"
       - "kernel/tests/settings_test.c"
       - "kernel/tests/display_test.c"

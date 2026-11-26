@@ -574,7 +574,9 @@ bool vfs_stream_write_append(const void *data, size_t length) {
 bool vfs_stream_write_finish(void) {
     if (!vfs_stream_active) return false;
     vfs_stream_active = false;
-    return nxfs_write_file_finish();
+    if (nxfs_write_file_finish()) return true;
+    nxfs_write_file_abort();
+    return false;
 }
 
 void vfs_stream_write_abort(void) {

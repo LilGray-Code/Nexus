@@ -120,12 +120,6 @@ static bool match_id(const char *id, size_t n,
     return true;
 }
 
-static bool models_section(const char *p, size_t n) {
-    static const char key[] = "models";
-    for (size_t i = 0U; i + sizeof(key) - 1U <= n; ++i)
-        if (equal_ci(p + i, key, sizeof(key) - 1U)) return true;
-    return false;
-}
 
 bool nexus_win_inf_find_match(const char *text, size_t length,
                               const struct nexus_win_device_id *device,
@@ -157,7 +151,7 @@ bool nexus_win_inf_find_match(const char *text, size_t length,
             if (!copy_field(section, name, name_length)) section[0] = '\0';
             continue;
         }
-        if (!models_section(section, 6U)) continue;
+        if (section[0] == '\0') continue;
 
         size_t equals = 0U;
         while (equals < used && p[equals] != '=') ++equals;

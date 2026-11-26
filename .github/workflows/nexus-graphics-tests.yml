@@ -23,6 +23,7 @@ on:
   pull_request:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-hardware-support-foundation
 
 permissions:
   contents: read

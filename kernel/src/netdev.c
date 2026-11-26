@@ -158,16 +158,27 @@ bool netdev_link_up(void) {
 }
 
 bool netdev_get_info(struct nexus_netdev_info *info) {
-    if (info == NULL) return false;
+    if (info == NULL || device_count == 0U) return false;
     const size_t active = select_active_device();
-    if (active >= device_count) return false;
-    *info = devices[active].info;
-    info->link_up = true;
-    info->active = true;
-    info->preferred = active == preferred_device_index;
+    /* Diagnostics remain available while every adapter is link-down. This
+     * fallback is metadata only: send/receive still require a live adapter.
+     */
+    size_t selected = active;
+    if (selected >= device_count) {
+        if (preferred_device_index < device_count)
+            selected = preferred_device_index;
+        else if (active_device_index < device_count)
+            selected = active_device_index;
+        else
+            selected = 0U;
+    }
+    *info = devices[selected].info;
+    info->link_up = device_link_up(&devices[selected]);
+    info->active = selected == active;
+    info->preferred = selected == preferred_device_index;
     info->link_speed_mbps =
-        devices[active].ops.link_speed_mbps != NULL
-            ? devices[active].ops.link_speed_mbps(devices[active].context)
+        info->link_up && devices[selected].ops.link_speed_mbps != NULL
+            ? devices[selected].ops.link_speed_mbps(devices[selected].context)
             : 0U;
     return true;
 }

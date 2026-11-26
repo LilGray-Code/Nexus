@@ -62,6 +62,12 @@ struct nexus_virtio_gpu_3d_info {
     uint32_t capset_id;
     uint32_t capset_max_version;
     uint32_t capset_max_size;
+    bool gfxstream_capset_available;
+    uint32_t gfxstream_capset_max_version;
+    uint32_t gfxstream_capset_max_size;
+    bool venus_capset_available;
+    uint32_t venus_capset_max_version;
+    uint32_t venus_capset_max_size;
     uint64_t last_submitted_fence;
     uint64_t last_completed_fence;
     uint32_t failed_submissions;

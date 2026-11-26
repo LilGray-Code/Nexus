@@ -245,6 +245,8 @@ static uint32_t tracked_resource_count;
 static uint32_t tracked_resource_total_created;
 static uint32_t virgl_clear_commands_fenced;
 static uint32_t virgl_last_clear_resource_id;
+static size_t gpu_find_tracked_resource(uint32_t resource_id);
+static bool gpu_resource_destroy_locked(uint32_t resource_id);
 
 static void zero_bytes(volatile uint8_t *output, size_t length) {
     for (size_t i = 0U; i < length; ++i) output[i] = 0U;
@@ -488,12 +490,21 @@ static bool gpu_virgl_create_context(void) {
 }
 
 static void gpu_virgl_destroy_context(void) {
-    if (!active || !virgl_context_created) return;
+    gpu_resource_table_lock();
+    if (!active || !virgl_context_created) {
+        gpu_resource_table_unlock();
+        return;
+    }
+
+    /* Exclude concurrent create/clear/destroy operations for the entire
+     * lifetime transition. Each helper below assumes this lock is held.
+     */
     for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i) {
         if (tracked_resources[i].allocated)
-            (void)virtio_gpu_3d_resource_destroy(
+            (void)gpu_resource_destroy_locked(
                 tracked_resources[i].resource_id);
     }
+
     const struct virtio_gpu_ctx_destroy destroy = {
         .header = {
             .type = VIRTIO_GPU_CMD_CTX_DESTROY,
@@ -503,10 +514,24 @@ static void gpu_virgl_destroy_context(void) {
             .padding = 0U
         }
     };
-    (void)submit_command(&destroy, sizeof(destroy));
-    virgl_context_created = false;
+    if (submit_command(&destroy, sizeof(destroy))) {
+        virgl_context_created = false;
+        /* A detach failure is recoverable once the context is gone: retry
+         * RESOURCE_UNREF without a context detach to avoid leaking handles.
+         */
+        for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i) {
+            struct virtio_gpu_tracked_resource *resource =
+                &tracked_resources[i];
+            if (!resource->allocated) continue;
+            if (gpu_resource_unref(resource->resource_id)) {
+                *resource = (struct virtio_gpu_tracked_resource){0};
+                if (tracked_resource_count != 0U) --tracked_resource_count;
+            }
+        }
+    }
     virgl_command_submission_ready = false;
     gpu_set_virtio_3d_submission_ready(false, 0U);
+    gpu_resource_table_unlock();
 }
 
 static bool gpu_virgl_start(void) {
@@ -1008,15 +1033,9 @@ bool virtio_gpu_3d_resource_create(
     return true;
 }
 
-bool virtio_gpu_3d_resource_destroy(uint32_t resource_id) {
-    if (!active || !virgl_context_created ||
-        resource_id <= VIRTIO_GPU_RESOURCE_ID) return false;
-    gpu_resource_table_lock();
+static bool gpu_resource_destroy_locked(uint32_t resource_id) {
     const size_t slot = gpu_find_tracked_resource(resource_id);
-    if (slot == VIRTIO_GPU_MAX_3D_RESOURCES) {
-        gpu_resource_table_unlock();
-        return false;
-    }
+    if (slot == VIRTIO_GPU_MAX_3D_RESOURCES) return false;
 
     struct virtio_gpu_tracked_resource *resource = &tracked_resources[slot];
     if (resource->attached) {
@@ -1031,22 +1050,23 @@ bool virtio_gpu_3d_resource_destroy(uint32_t resource_id) {
             .resource_id = resource_id,
             .padding = 0U
         };
-        if (!submit_command(&detach, sizeof(detach))) {
-            gpu_resource_table_unlock();
-            return false;
-        }
+        if (!submit_command(&detach, sizeof(detach))) return false;
         resource->attached = false;
     }
 
-    if (!gpu_resource_unref(resource_id)) {
-        gpu_resource_table_unlock();
-        return false;
-    }
-
+    if (!gpu_resource_unref(resource_id)) return false;
     *resource = (struct virtio_gpu_tracked_resource){0};
     if (tracked_resource_count != 0U) --tracked_resource_count;
-    gpu_resource_table_unlock();
     return true;
+}
+
+bool virtio_gpu_3d_resource_destroy(uint32_t resource_id) {
+    if (!active || !virgl_context_created ||
+        resource_id <= VIRTIO_GPU_RESOURCE_ID) return false;
+    gpu_resource_table_lock();
+    const bool destroyed = gpu_resource_destroy_locked(resource_id);
+    gpu_resource_table_unlock();
+    return destroyed;
 }
 
 bool virtio_gpu_display_get_info(

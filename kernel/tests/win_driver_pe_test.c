@@ -75,6 +75,8 @@ static void test_valid_x64_driver_and_imports(void) {
     assert(info.import_module_count == 1U);
     assert(info.import_symbol_count == 1U);
     assert(strcmp(info.import_modules[0], "NDIS.sys") == 0);
+    assert(info.imports_ndis);
+    assert(!info.imports_wdf && !info.imports_net_adapter_cx);
 }
 
 static void test_rejects_bad_headers(void) {

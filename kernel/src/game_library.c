@@ -438,12 +438,6 @@ bool nexus_game_library_launch(
     }
 
     struct nexus_game_library_entry *entry = &entries[index];
-    if (entry->compatibility.platform != NEXUS_GAME_PLATFORM_NATIVE_NEXUS ||
-        entry->executable_path[0] == '\0') {
-        last_error = NEXUS_GAME_LIBRARY_ERROR_BACKEND;
-        return false;
-    }
-
     struct nexus_game_assessment assessment;
     if (!nexus_gaming_assess(&entry->compatibility, system, &assessment)) {
         last_error = NEXUS_GAME_LIBRARY_ERROR_ARGUMENT;
@@ -453,12 +447,22 @@ bool nexus_game_library_launch(
         last_error = NEXUS_GAME_LIBRARY_ERROR_ANTICHEAT;
         return false;
     }
+    if (assessment.status == NEXUS_GAME_ASSESS_TESTED_UNSUPPORTED) {
+        last_error = NEXUS_GAME_LIBRARY_ERROR_EXECUTION;
+        return false;
+    }
     if (assessment.status == NEXUS_GAME_ASSESS_MISSING_PREREQUISITES) {
         last_error = NEXUS_GAME_LIBRARY_ERROR_PREREQUISITES;
         return false;
     }
-    if (assessment.status == NEXUS_GAME_ASSESS_TESTED_UNSUPPORTED) {
-        last_error = NEXUS_GAME_LIBRARY_ERROR_EXECUTION;
+    /* An explicit untested opt-in does not waive a hardware/driver retest. */
+    if (assessment.status == NEXUS_GAME_ASSESS_NEEDS_RETEST) {
+        last_error = NEXUS_GAME_LIBRARY_ERROR_RETEST;
+        return false;
+    }
+    if (entry->compatibility.platform != NEXUS_GAME_PLATFORM_NATIVE_NEXUS ||
+        entry->executable_path[0] == '\0') {
+        last_error = NEXUS_GAME_LIBRARY_ERROR_BACKEND;
         return false;
     }
     if (!allow_untested &&

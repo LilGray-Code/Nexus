@@ -297,9 +297,10 @@ static bool memory_alloc_dma_page_unlocked(uint64_t max_address_exclusive,
 }
 
 /*
- * Return a page previously handed out by this allocator. The early allocator
- * uses a bounded LIFO free list; it rejects unaligned, foreign, and duplicate
- * frees. SMP synchronization and a larger bitmap allocator are future work.
+ * Return a page previously handed out by this allocator. The bounded LIFO
+ * free list rejects unaligned, foreign, and duplicate frees. Its mutations are
+ * serialized by the allocator's IRQ-safe SMP ticket lock; a bitmap-backed
+ * allocator with per-zone/per-CPU caches remains future work.
  */
 static bool memory_free_page_unlocked(uint64_t physical_address) {
     note_free_request();
@@ -343,8 +344,9 @@ static bool memory_free_page_unlocked(uint64_t physical_address) {
 /*
  * Allocate a physically contiguous run from one usable memory region. This
  * is used for scanout backing that a paravirtual GPU needs to DMA as one
- * guest-memory entry. The early allocator is single-CPU and bump-pointer
- * based, so the run is never assembled from unrelated freed pages.
+ * guest-memory entry. The shared region bump pointer is protected by the
+ * allocator lock, so concurrent CPUs cannot overlap contiguous allocations.
+ * Runs are not assembled from unrelated reclaimed pages.
  */
 static bool memory_alloc_contiguous_pages_unlocked(uint64_t page_count,
                                    uint64_t max_address_exclusive,

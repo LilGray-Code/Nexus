@@ -157,6 +157,7 @@ void graphics_fill_gradient(
     uint8_t bottom_right_red, uint8_t bottom_right_green,
     uint8_t bottom_right_blue) {
     if (!initialized || width == 0U || height == 0U ||
+        width > UINT32_MAX || height > UINT32_MAX ||
         x >= active_surface.width || y >= active_surface.height) return;
 
     const uint64_t gradient_width = width;

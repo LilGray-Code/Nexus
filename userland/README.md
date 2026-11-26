@@ -49,7 +49,7 @@ directory descriptors.
 `nexus_write_all()` for retrying valid short writes,
 `nexus_read_file()` for joining partial reads into a caller-owned buffer,
 `nexus_write_file()` for the VFS-backed file-write syscall, `nexus_puts()`
-for console output, and `nexus_printf()` for bounded formatted output.
+for console output, and `nexus_printf()` for bounded formatted output, and a 64 KiB bootstrap heap with\n`nexus_malloc()`, `nexus_free()`, `nexus_calloc()`, and `nexus_realloc()`.
 
 `nexus_read_file()` requires an explicit buffer capacity. It returns
 `-NEXUS_EFBIG` if the file does not fit, closes the descriptor on success and

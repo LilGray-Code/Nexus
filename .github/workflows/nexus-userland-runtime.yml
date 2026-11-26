@@ -1,0 +1,36 @@
+name: Nexus Userland Runtime
+
+on:
+  push:
+    branches:
+      - nexus-native-app-bootstrap-heap
+    paths:
+      - "userland/**"
+      - ".github/workflows/nexus-userland-runtime.yml"
+  pull_request:
+    paths:
+      - "userland/**"
+      - ".github/workflows/nexus-userland-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  userland-runtime:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run host-side SDK runtime and heap tests
+        run: make -C userland test
+      - name: Build the freestanding native SDK and sample
+        run: make -C userland
+      - name: Verify static ELF output
+        run: |
+          readelf -h build/userland/HELLO.ELF | grep -q 'Class:.*ELF64'
+          readelf -h build/userland/HELLO.ELF | grep -q 'Type:.*EXEC'
+          readelf -h build/userland/HELLO.ELF | grep -q 'Machine:.*X86-64'
+          if readelf -lW build/userland/HELLO.ELF | grep -Eq 'INTERP|DYNAMIC|TLS'; then
+            echo "Native SDK sample unexpectedly requires dynamic runtime support"
+            exit 1
+          fi

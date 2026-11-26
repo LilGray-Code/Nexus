@@ -242,6 +242,63 @@ static void test_partial_console_writes_and_errors(void) {
     assert(nexus_write_all(1, NULL, 1U) == -NEXUS_EINVAL);
 }
 
+static void test_bounded_heap_allocator(void) {
+    nexus_heap_init();
+    nexus_heap_init(); /* initialization is idempotent */
+
+    uint8_t *first = (uint8_t *)nexus_malloc(80U);
+    void *middle = nexus_malloc(160U);
+    void *last = nexus_malloc(64U);
+    assert(first != NULL && middle != NULL && last != NULL);
+    assert(((uintptr_t)first % _Alignof(max_align_t)) == 0U);
+    assert(((uintptr_t)middle % _Alignof(max_align_t)) == 0U);
+    assert(((uintptr_t)last % _Alignof(max_align_t)) == 0U);
+    for (size_t i = 0U; i < 80U; ++i) first[i] = (uint8_t)(i ^ 0x5AU);
+
+    nexus_free(middle);
+    void *reused = nexus_malloc(96U);
+    assert(reused == middle);
+    nexus_free(reused);
+    nexus_free(first);
+    nexus_free(last);
+    nexus_free(NULL);
+    nexus_free(first); /* double-free is ignored */
+
+    /* Adjacent free blocks coalesce into a large reusable extent. */
+    void *large = nexus_malloc(60U * 1024U);
+    assert(large != NULL);
+    nexus_free(large);
+
+    uint8_t *original = (uint8_t *)nexus_malloc(32U);
+    assert(original != NULL);
+    for (size_t i = 0U; i < 32U; ++i) original[i] = (uint8_t)(i + 1U);
+    uint8_t *grown = (uint8_t *)nexus_realloc(original, 256U);
+    assert(grown != NULL);
+    for (size_t i = 0U; i < 32U; ++i)
+        assert(grown[i] == (uint8_t)(i + 1U));
+    uint8_t *shrunk = (uint8_t *)nexus_realloc(grown, 16U);
+    assert(shrunk == grown);
+    for (size_t i = 0U; i < 16U; ++i)
+        assert(shrunk[i] == (uint8_t)(i + 1U));
+    nexus_free(shrunk);
+
+    uint8_t *zeroed = (uint8_t *)nexus_calloc(32U, sizeof(uint32_t));
+    assert(zeroed != NULL);
+    for (size_t i = 0U; i < 32U * sizeof(uint32_t); ++i)
+        assert(zeroed[i] == 0U);
+    nexus_free(zeroed);
+
+    assert(nexus_malloc(0U) == NULL);
+    assert(nexus_calloc(SIZE_MAX, 2U) == NULL);
+    assert(nexus_malloc(128U * 1024U) == NULL);
+    void *from_null = nexus_realloc(NULL, 24U);
+    assert(from_null != NULL);
+    nexus_free(from_null);
+    assert(nexus_realloc(NULL, 0U) == NULL);
+    assert(nexus_realloc((void *)(uintptr_t)1U, 32U) == NULL);
+    nexus_free((void *)(uintptr_t)1U);
+}
+
 int main(void) {
     assert(nexus_abi_version() == NEXUS_SYSCALL_ABI_VERSION);
     test_runtime_permissions_query();
@@ -251,5 +308,6 @@ int main(void) {
     test_file_write_and_readback();
     test_formatted_console_output();
     test_partial_console_writes_and_errors();
+    test_bounded_heap_allocator();
     return 0;
 }

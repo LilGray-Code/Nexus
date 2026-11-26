@@ -157,7 +157,7 @@ browser-engine support.
 1. **Native platform hardening:** permission UI and protected grant storage,
    production signature/key management, ABI compatibility tests, app lifecycle
    and crash reporting.
-2. **System libraries:** stable libc subset, allocator, thread and process
+2. **System libraries:** stable libc subset, kernel-backed allocator, thread and process
    APIs, file/directory APIs, dynamic loader design, ELF symbol/version and
    relocation support, shared-library cache, dependency solver and ABI testing.
 3. **Runtime packaging:** signed library/runtime bundles, version pinning,

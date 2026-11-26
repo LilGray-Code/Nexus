@@ -186,9 +186,16 @@ bool nexus_driver_manager_probe_device(
     return nexus_driver_manager_probe_device_report(device, NULL) ==
            NEXUS_DRIVER_PROBE_ACTIVE;
 }
-bool nexus_driver_manager_probe_pci_device(
-    const struct nexus_pci_device *device) {
-    if (device == NULL) return false;
+enum nexus_driver_probe_outcome nexus_driver_manager_probe_pci_device_report(
+    const struct nexus_pci_device *device,
+    struct nexus_driver_probe_report *report) {
+    if (device == NULL) {
+        struct nexus_driver_probe_report invalid = {
+            .outcome = NEXUS_DRIVER_PROBE_INVALID
+        };
+        if (report != NULL) *report = invalid;
+        return NEXUS_DRIVER_PROBE_INVALID;
+    }
     const struct nexus_driver_device generic = {
         .bus = NEXUS_DRIVER_BUS_PCI,
         .vendor_id = device->vendor_id, .device_id = device->device_id,
@@ -199,7 +206,13 @@ bool nexus_driver_manager_probe_pci_device(
         .segment_group = device->segment_group,
         .native_device = device
     };
-    return nexus_driver_manager_probe_device(&generic);
+    return nexus_driver_manager_probe_device_report(&generic, report);
+}
+
+bool nexus_driver_manager_probe_pci_device(
+    const struct nexus_pci_device *device) {
+    return nexus_driver_manager_probe_pci_device_report(device, NULL) ==
+           NEXUS_DRIVER_PROBE_ACTIVE;
 }
 
 bool nexus_driver_manager_remove_device(

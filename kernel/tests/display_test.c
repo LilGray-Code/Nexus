@@ -210,6 +210,7 @@ int main(void) {
     assert(nexus_display_monitor_at(1U) != NULL);
     assert(nexus_display_monitor_at(1U)->edid_valid);
     assert(nexus_display_monitor_at(1U)->dpi_x != 0U);
+    assert(nexus_display_monitor_at(1U)->current_refresh_hz == 60U);
     assert(!nexus_display_set_primary_monitor(1U));
     assert(!nexus_display_set_primary_monitor(99U));
     assert(!nexus_display_topology_available());

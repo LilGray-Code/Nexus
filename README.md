@@ -14,7 +14,9 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
 - CPU discovery identifies Intel, AMD, Hygon, Centaur/VIA, Zhaoxin, and
   Transmeta CPUID vendors, records family/model/stepping and topology, and
-  reports Intel hybrid bootstrap-core type plus nominal base/maximum/bus
+  records APIC ID plus Intel performance/efficiency/other core class for each
+  online logical CPU. It reports Intel hybrid bootstrap-core type and nominal
+  base/maximum/bus
   frequency values when CPUID exposes them. CPUID.6 thermal and HWP/Turbo
   capabilities are recorded as advertised support only; Nexus does not yet
   read live temperatures, change CPU P-states, or implement vendor-specific

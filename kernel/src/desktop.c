@@ -3253,11 +3253,36 @@ static void draw_shell(void) {
                             112U, 28U, 7U, 105U, 133U, 160U);
         graphics_draw_text(text_x + 451U, text_y + 408U, "SAVE  F6",
                            1U, 245U, 250U, 255U);
-        graphics_draw_text(text_x, text_y + 406U,
-                           browser_download_ready
-                               ? "VERIFIED FILE READY TO SAVE"
-                               : "STREAM VERIFIED HTTPS DOWNLOADS UP TO 256 MiB",
-                           1U, 170U, 191U, 211U);
+        if (browser_download_transfer_active) {
+            char progress[96];
+            char number[24];
+            size_t used = 0U;
+            progress[0] = '\0';
+            hardware_append_text(progress, sizeof(progress), &used,
+                                 "DOWNLOADING ");
+            format_u64(browser_download_progress_percent, number);
+            hardware_append_text(progress, sizeof(progress), &used, number);
+            hardware_append_text(progress, sizeof(progress), &used, "%  ");
+            format_u64(browser_download_progress_bytes, number);
+            hardware_append_text(progress, sizeof(progress), &used, number);
+            if (browser_download_progress_total != 0U) {
+                hardware_append_text(progress, sizeof(progress), &used, " / ");
+                format_u64(browser_download_progress_total, number);
+                hardware_append_text(progress, sizeof(progress), &used, number);
+            }
+            hardware_append_text(progress, sizeof(progress), &used,
+                                 " BYTES  F7 CANCEL");
+            graphics_draw_text(text_x, text_y + 406U, progress,
+                               1U, 239U, 247U, 255U);
+        } else {
+            graphics_draw_text(text_x, text_y + 406U,
+                               browser_download_ready
+                                   ? (browser_download_checksum_verified
+                                       ? "FILE READY; SERVER SHA-256 VERIFIED"
+                                       : "FILE READY; LOCAL SHA-256 CALCULATED")
+                                   : "STREAM UP TO THE MOUNTED DATA FILE LIMIT",
+                               1U, 170U, 191U, 211U);
+        }
     } else {
         graphics_draw_text(text_x, text_y, "SYSTEM STATUS",
                            2, 239, 249, 255);
@@ -4511,22 +4536,14 @@ static void browser_save_current_download(void) {
         browser_set_status("No verified HTTPS file is ready to save");
         return;
     }
-    /* Downloading is a file-management operation too. Mount installed Nexus
-     * Data on demand so the user does not have to open Files first.
-     */
     scan_files_once();
-    if (!vfs_current_directory_writable()) {
-        browser_set_status("Current folder is read-only; choose Nexus Data in Files");
-        return;
-    }
-    if (browser_download_length > NEXUS_BROWSER_BODY_CAPACITY) {
-        browser_set_status("Download exceeds the in-memory save limit; large files stream automatically");
+    if (!vfs_nxfs_writable() || !vfs_current_directory_writable()) {
+        browser_set_status("A writable persistent Nexus Data volume is required for downloads");
         return;
     }
     const uint32_t data_file_limit = nxfs_get_max_file_bytes();
-    if (vfs_nxfs_writable() && data_file_limit != 0U &&
-        browser_download_length > data_file_limit) {
-        browser_set_status("The mounted Data volume has a smaller per-file limit; use a larger Data volume for this download");
+    if (data_file_limit == 0U || browser_download_length > data_file_limit) {
+        browser_set_status("Download exceeds the mounted Data volume per-file capacity");
         return;
     }
 
@@ -4545,12 +4562,24 @@ static void browser_save_current_download(void) {
         return;
     }
 
-    if (!vfs_write_file(target, browser_body_buffer, browser_download_length)) {
-        browser_set_status(vfs_nxfs_writable()
-            ? "Save failed: Nexus Data storage is full or unavailable"
-            : (browser_download_length > NEXUS_VFS_RAM_MAX_FILE_SIZE
-                ? "Persistent Nexus Data is needed for downloads over 4 KiB"
-                : "Save failed: no writable Nexus Data or RAM storage"));
+    if (!vfs_stream_write_begin(target, (uint32_t)browser_download_length)) {
+        browser_set_status("Could not start a transactional persistent download");
+        return;
+    }
+    size_t offset = 0U;
+    bool write_ok = true;
+    while (offset < browser_download_length) {
+        size_t amount = browser_download_length - offset;
+        if (amount > NEXUS_VFS_READ_CHUNK) amount = NEXUS_VFS_READ_CHUNK;
+        if (!vfs_stream_write_append(browser_body_buffer + offset, amount)) {
+            write_ok = false;
+            break;
+        }
+        offset += amount;
+    }
+    if (!write_ok || !vfs_stream_write_finish()) {
+        vfs_stream_write_abort();
+        browser_set_status("Persistent save failed; incomplete file was not published");
         return;
     }
 
@@ -4558,16 +4587,17 @@ static void browser_save_current_download(void) {
     serial_write(target);
     serial_write(" bytes=");
     serial_write_hex(browser_download_length);
-    serial_write(vfs_nxfs_writable()
-        ? " persistent\r\n" : " volatile RAM\r\n");
+    serial_write(" persistent; SHA-256=");
+    serial_write(browser_download_sha256_hex);
+    serial_write("\\r\\n");
 
     char message[80] = "SAVED: ";
     size_t used = 7U;
     for (size_t i = 0U; target[i] != '\0' &&
          used < sizeof(message) - 1U; ++i)
         message[used++] = target[i];
-    const char *storage = vfs_nxfs_writable()
-        ? " TO NEXUS DATA" : " TO RAM ONLY";
+    const char *storage = browser_download_checksum_verified
+        ? " DATA / SHA-256 OK" : " DATA / SHA-256 CALCULATED";
     for (size_t i = 0U; storage[i] != '\0' &&
          used < sizeof(message) - 1U; ++i)
         message[used++] = storage[i];
@@ -5340,6 +5370,7 @@ static void browser_navigate(bool record_history) {
     browser_download_ready = false;
     browser_download_length = 0U;
     browser_download_transfer_active = false;
+    browser_download_job = (struct nexus_download_job){0};
     browser_download_progress_bytes = 0U;
     browser_download_progress_total = 0U;
     browser_download_progress_percent = 0U;
@@ -5754,6 +5785,20 @@ browser_retry:
             parsed.has_content_disposition ? parsed.content_disposition : NULL,
             parsed.has_content_type ? parsed.content_type : NULL,
             browser_download_name)) {
+        if (!nexus_download_job_begin(
+                &browser_download_job, NEXUS_DOWNLOAD_MAX_BYTES, true,
+                (uint32_t)parsed.body_length,
+                parsed.has_sha256_digest ? parsed.sha256_digest : NULL) ||
+            !nexus_download_job_append(&browser_download_job, body,
+                                      parsed.body_length) ||
+            !nexus_download_job_finish(&browser_download_job)) {
+            browser_set_status("Download SHA-256 or length verification failed");
+            return;
+        }
+        browser_download_checksum_verified =
+            browser_download_job.checksum_verified;
+        (void)nexus_download_sha256_hex(
+            browser_download_job.actual_sha256, browser_download_sha256_hex);
         browser_download_ready = true;
         browser_download_length = parsed.body_length;
     }

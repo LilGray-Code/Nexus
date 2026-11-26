@@ -331,6 +331,18 @@ static void add_current_mode(void) {
     display_info.current_refresh_hz = refresh;
 }
 
+static uint32_t monitor_matching_refresh(
+    const struct nexus_display_monitor *monitor) {
+    if (monitor == NULL || monitor->width == 0U || monitor->height == 0U)
+        return 0U;
+    for (uint32_t i = 0U; i < monitor->timing_count; ++i) {
+        const struct nexus_display_timing *timing = &monitor->timings[i];
+        if (timing->width == monitor->width &&
+            timing->height == monitor->height) return timing->refresh_hz;
+    }
+    return 0U;
+}
+
 static void monitor_copy_edid(struct nexus_display_monitor *monitor,
                               const struct nexus_display_info *parsed) {
     if (monitor == NULL || parsed == NULL) return;
@@ -412,6 +424,7 @@ static void display_promote_monitor_edid(
     display_info.hdr_static_metadata = monitor->hdr_static_metadata;
     display_info.hdr_eotf_flags = monitor->hdr_eotf_flags;
     display_info.timing_count = monitor->timing_count;
+    display_info.current_refresh_hz = monitor->current_refresh_hz;
     for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
         display_info.timings[i] = monitor->timings[i];
 
@@ -497,6 +510,10 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     primary->height = (uint32_t)framebuffer->height;
     if (display_info.edid_valid) {
         monitor_copy_edid(primary, &display_info);
+        primary->current_refresh_hz =
+            monitor_matching_refresh(primary);
+        if (primary->current_refresh_hz != 0U)
+            display_info.current_refresh_hz = primary->current_refresh_hz;
         if (framebuffer->edid != NULL && framebuffer->edid_size >= 128U) {
             const uint8_t *edid = (const uint8_t *)framebuffer->edid;
             if (edid[21] != 0U)
@@ -549,6 +566,7 @@ bool nexus_display_add_monitor(uint32_t id, bool connected,
         struct nexus_display_info parsed = {0};
         if (parse_edid_into(&parsed, edid, edid_length)) {
             monitor_copy_edid(&monitor, &parsed);
+            monitor.current_refresh_hz = monitor_matching_refresh(&monitor);
             if (edid[21] != 0U)
                 monitor.dpi_x = (uint16_t)(((uint64_t)width * 254U) /
                                             ((uint32_t)edid[21] * 100U));

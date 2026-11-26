@@ -154,10 +154,15 @@ Catalog and package signatures use an Ed25519 verifier callback keyed by
 pinned key ID; the verifier is mandatory and missing verification fails
 closed. **A production Ed25519 provider and release public key are not yet
 shipped**, and the host tests use only a non-cryptographic mock verifier. The
-Store is not yet connected to this package pipeline. Steam, Discord,
-Spotify, GitHub, VS Code, and itch.io remain website shortcuts. Four
-verified system-pack demos can now be launched directly from the Store, but
-they are immutable examples rather than user-installable NUP packages. See
+Store is not yet connected to this package pipeline. Steam, Discord, Spotify,
+GitHub, VS Code, itch.io, Microsoft 365, Gmail, Google Drive, YouTube, Zoom,
+Slack, WhatsApp Web, and Notion are listed as official HTTPS website shortcuts,
+not native desktop installations. Five bundled Nexus ELF demos can be launched
+directly from the Store, but they are immutable examples rather than
+user-installable NUP packages. Verified HTTPS browser downloads and native
+package payloads are currently limited to 4 MiB per file; newly formatted
+NXFS volumes use the larger file geometry, while existing 1 MiB volumes
+remain compatible at their original limit. See
 [`docs/development/SOFTWARE-ECOSYSTEM.md`](docs/development/SOFTWARE-ECOSYSTEM.md)
 for the format and trust requirements. The [Steam/game compatibility roadmap](docs/development/STEAM-COMPATIBILITY-ROADMAP.md) lists the Linux ABI, process model, audio, 3D, filesystem, and runtime work that still blocks Steam titles.
 

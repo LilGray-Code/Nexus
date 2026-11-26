@@ -1,10 +1,41 @@
 #include "wifi_pci.h"
 #include "pci.h"
 #include "win_driver_inf.h"
+#include "win_driver_package.h"
 
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+
+static void pe16(uint8_t *p, size_t at, uint16_t v) {
+    p[at] = (uint8_t)v; p[at + 1U] = (uint8_t)(v >> 8);
+}
+static void pe32(uint8_t *p, size_t at, uint32_t v) {
+    for (size_t i = 0U; i < 4U; ++i) p[at + i] = (uint8_t)(v >> (8U * i));
+}
+static void pe64(uint8_t *p, size_t at, uint64_t v) {
+    for (size_t i = 0U; i < 8U; ++i) p[at + i] = (uint8_t)(v >> (8U * i));
+}
+static void make_test_driver(uint8_t image[0x400]) {
+    memset(image, 0, 0x400U);
+    pe16(image, 0U, 0x5A4DU); pe32(image, 0x3CU, 0x80U);
+    pe32(image, 0x80U, 0x00004550U); pe16(image, 0x84U, 0x8664U);
+    pe16(image, 0x86U, 1U); pe16(image, 0x94U, 240U);
+    pe16(image, 0x96U, 0x2000U);
+    const size_t opt = 0x98U;
+    pe16(image, opt, 0x020BU); pe32(image, opt + 16U, 0x1000U);
+    pe64(image, opt + 24U, 0x180000000ULL);
+    pe32(image, opt + 32U, 0x1000U); pe32(image, opt + 36U, 0x200U);
+    pe32(image, opt + 56U, 0x2000U); pe32(image, opt + 60U, 0x200U);
+    pe16(image, opt + 68U, 1U); pe16(image, opt + 70U, 0x0100U);
+    pe32(image, opt + 108U, 16U);
+    const size_t sec = opt + 240U;
+    memcpy(image + sec, ".text", 5U);
+    pe32(image, sec + 8U, 0x200U); pe32(image, sec + 12U, 0x1000U);
+    pe32(image, sec + 16U, 0x200U); pe32(image, sec + 20U, 0x200U);
+    pe32(image, sec + 36U, 0x60000020U);
+}
 
 static struct nexus_pci_device devices[4];
 static uint32_t count;
@@ -57,6 +88,22 @@ int main(void) {
                                       sizeof(intel_inf) - 1U, &match));
     assert(strcmp(match.install_section, "Install") == 0);
     assert(match.specificity == 3U);
+
+    static const char package_inf[] =
+        "[Manufacturer]\\r\\n"
+        "Maker=Models,NTamd64\\r\\n"
+        "[Models.NTamd64]\\r\\n"
+        "Wireless=Install, PCI\\\\VEN_8086&DEV_2723&SUBSYS_00248086&REV_01\\r\\n";
+    uint8_t driver_image[0x400];
+    make_test_driver(driver_image);
+    struct nexus_win_driver_package_assessment assessment;
+    assert(wifi_pci_assess_windows_package(
+        0U, package_inf, sizeof(package_inf) - 1U,
+        driver_image, sizeof(driver_image), &assessment));
+    assert(assessment.pe_valid);
+    assert(assessment.profile == NEXUS_WIN_WIFI_PROFILE_NOT_NDIS);
+    assert(strcmp(assessment.inf_match.install_section, "Install") == 0);
+
     assert(!wifi_pci_match_windows_inf(1U, intel_inf,
                                        sizeof(intel_inf) - 1U, &match));
 

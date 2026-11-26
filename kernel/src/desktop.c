@@ -2350,13 +2350,14 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 170U, content_y + 50U, number,
                                1U, 239U, 247U, 255U);
             if (display != NULL && display->current_refresh_hz != 0U) {
-                format_labeled_u64("REFRESH: ", display->current_refresh_hz,
-                                   line);
+                format_labeled_u64("MATCHING EDID RATE: ",
+                                   display->current_refresh_hz, line);
                 graphics_draw_text(text_x + 300U, content_y + 50U, line,
                                    1U, 171U, 191U, 211U);
             } else {
                 graphics_draw_text(text_x + 300U, content_y + 50U,
-                    "REFRESH: NOT REPORTED", 1U, 171U, 191U, 211U);
+                    "MATCHING EDID RATE: NOT REPORTED",
+                    1U, 171U, 191U, 211U);
             }
 
             if (display != NULL) {

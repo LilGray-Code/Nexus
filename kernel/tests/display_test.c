@@ -294,12 +294,12 @@ int main(void) {
     assert(!nexus_display_set_primary_monitor(0U));
     assert(nexus_display_get_info()->primary_monitor_id == 1U);
     fake.fail_primary = false;
-    const size_t mode_1600 = find_mode(info, 1600U, 900U, 0U);
+    const size_t mode_index_1600 = find_mode(info, 1600U, 900U, 0U);
     const size_t mode_1280 = find_mode(info, 1280U, 800U, 60U);
 
     /* Preflight rejection must not mutate scanout or invoke rollback. */
     fake.fail_test_width = 1600U;
-    assert(!nexus_display_apply_mode(mode_1600));
+    assert(!nexus_display_apply_mode(mode_index_1600));
     info = nexus_display_get_info();
     assert(info->last_mode_change_failed);
     assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_TEST);
@@ -308,7 +308,7 @@ int main(void) {
     assert(fake.restore_calls == 0U);
     fake.fail_test_width = 0U;
 
-    assert(nexus_display_apply_mode(mode_1600));
+    assert(nexus_display_apply_mode(mode_index_1600));
     info = nexus_display_get_info();
     assert(info->current_width == 1600U);
     assert(info->current_height == 900U);
@@ -348,7 +348,7 @@ int main(void) {
     assert(!info->last_rollback_succeeded);
     assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_ROLLBACK);
     assert(!info->mode_set_available);
-    assert(!nexus_display_apply_mode(mode_1600));
+    assert(!nexus_display_apply_mode(mode_index_1600));
 
     /* A failed GPU modeset can recover to the original firmware framebuffer
      * and must restore the matching monitor model, not retain stale VirtIO data.
@@ -366,7 +366,7 @@ int main(void) {
     assert(!nexus_display_topology_available());
     assert(!nexus_display_primary_selection_available());
     assert(!nexus_display_set_primary_monitor(0U));
-    assert(!nexus_display_apply_mode(mode_1600));
+    assert(!nexus_display_apply_mode(mode_index_1600));
 
     uint8_t bad_extension_edid[256];
     memcpy(bad_extension_edid, edid, sizeof(bad_extension_edid));

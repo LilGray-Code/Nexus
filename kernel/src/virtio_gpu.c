@@ -1251,6 +1251,59 @@ bool virtio_gpu_display_set_primary(uint32_t scanout_id) {
     return true;
 }
 
+bool virtio_gpu_display_set_mode(uint32_t scanout_id,
+                                 uint32_t width, uint32_t height) {
+    if (!active || !display_inventory.valid || active_scanout_count != 1U ||
+        scanout_id >= display_inventory.scanout_count ||
+        !display_inventory.scanouts[scanout_id].enabled ||
+        width == 0U || height == 0U ||
+        (uint64_t)width > width_pixels ||
+        (uint64_t)height > height_pixels) return false;
+
+    const struct nexus_virtio_gpu_scanout_info *scanout =
+        &display_inventory.scanouts[scanout_id];
+    const uint32_t x = scanout->x;
+    const uint32_t y = scanout->y;
+    if ((uint64_t)x + width > width_pixels ||
+        (uint64_t)y + height > height_pixels ||
+        !gpu_set_scanout_rectangle(scanout_id, x, y, width, height))
+        return false;
+
+    display_inventory.scanouts[scanout_id].width = width;
+    display_inventory.scanouts[scanout_id].height = height;
+    current_scanout_rect_width[scanout_id] = width;
+    current_scanout_rect_height[scanout_id] = height;
+    return true;
+}
+
+bool virtio_gpu_display_verify_mode(uint32_t scanout_id,
+                                    uint32_t width, uint32_t height) {
+    if (!active || !display_inventory.valid ||
+        scanout_id >= display_inventory.scanout_count ||
+        width == 0U || height == 0U) return false;
+
+    const struct virtio_gpu_header request =
+        make_header(VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
+    uint8_t response[sizeof(struct virtio_gpu_resp_display_info)];
+    uint32_t response_type = 0U, response_length = 0U;
+    if (!submit_command_raw(&request, sizeof(request),
+                            &response_type, &response_length,
+                            response, sizeof(response)) ||
+        response_type != VIRTIO_GPU_RESP_OK_DISPLAY_INFO ||
+        response_length < sizeof(struct virtio_gpu_resp_display_info))
+        return false;
+
+    const size_t offset = sizeof(struct virtio_gpu_header) +
+        (size_t)scanout_id * sizeof(struct virtio_gpu_display_one);
+    if (scanout_id >= device_scanout_count ||
+        offset + sizeof(struct virtio_gpu_display_one) > response_length)
+        return false;
+
+    return read_le32(response + offset + 16U) != 0U &&
+           read_le32(response + offset + 8U) == width &&
+           read_le32(response + offset + 12U) == height;
+}
+
 bool virtio_gpu_display_set_topology(uint32_t topology) {
     if (!active || !display_inventory.valid || active_scanout_count < 2U ||
         (topology != NEXUS_VIRTIO_GPU_TOPOLOGY_EXTENDED &&

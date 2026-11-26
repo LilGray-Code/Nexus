@@ -52,7 +52,9 @@ The metadata file uses fixed-width little-endian records and a SHA-256 payload c
 
 The first launch backend is intentionally narrow: native Nexus static ELF files with a simple root filename. Steam, Proton and Wine records fail with an explicit not-implemented backend result instead of being passed to the native ELF loader. An untested native title requires an explicit caller opt-in before launch.
 
-The library API is a backend foundation in this increment; it is not yet wired into a dedicated graphical game-library page or Steam client.
+The desktop terminal exposes `games` to list titles and their current assessment, and `game ID` to launch a title. First use registers the bundled `ARCADE.ELF` Nexus Breakout entry only when the metadata file is absent; an invalid/corrupt metadata file is left untouched. The caller's explicit launch command is the opt-in to run an untested native title. The launch command still uses the synchronous bounded native ELF runner.
+
+The library API is not yet wired into a dedicated graphical game-library page, game download/depot manager or Steam client. The current metadata database does not download or install commercial game content.
 
 ### Shader-cache foundation
 
@@ -65,7 +67,7 @@ The library API is a backend foundation in this increment; it is not yet wired i
 
 ### Tests
 
-New host tests exercise capability classification, Direct3D mapping, anti-cheat blocking, hardware-specific verification, shader-cache identity/round-trip/corruption, game-library persistence/checksum handling, test evidence and safe launch restrictions.
+New host tests exercise capability classification (including actual CPUID-backed Steam CPU prerequisite reporting), Direct3D mapping, anti-cheat blocking, hardware-specific verification, shader-cache identity/round-trip/corruption, game-library persistence/checksum handling, test evidence and safe launch restrictions. The full kernel workflow compiles the feature mask and game manager into the BIOS/UEFI kernel.
 
 ## 3. Why Steam and Proton are not a simple installer package
 

@@ -107,6 +107,7 @@ static uint64_t desktop_virtio_backing_width;
 static uint64_t desktop_virtio_backing_height;
 static bool desktop_ready;
 static bool installer_session_mode;
+static uint32_t desktop_display_monitor_selection;
 
 static void desktop_virtio_recover_firmware_framebuffer(void) {
     if (!desktop_virtio_gpu_active || virtio_gpu_active()) return;
@@ -2552,18 +2553,28 @@ static void draw_shell(void) {
                 format_labeled_u64("MONITORS: ", display->monitor_count, line);
                 graphics_draw_text(text_x + 300U, content_y + 76U, line,
                                    1U, 142U, 174U, 199U);
-                uint32_t monitor_lines = 0U;
-                for (uint32_t i = 0U;
-                     i < display->monitor_count && monitor_lines < 2U; ++i) {
+                if (display->monitor_count != 0U) {
+                    if (desktop_display_monitor_selection >=
+                        display->monitor_count)
+                        desktop_display_monitor_selection = 0U;
                     const struct nexus_display_monitor *monitor =
-                        &display->monitors[i];
-                    if (!monitor->present) continue;
+                        &display->monitors[desktop_display_monitor_selection];
                     size_t used = 0U;
                     line[0] = '\0';
+                    hardware_append_text(line, sizeof(line), &used, "OUTPUT ");
+                    format_u64(monitor->id, number);
+                    hardware_append_text(line, sizeof(line), &used, number);
+                    hardware_append_text(line, sizeof(line), &used, ": ");
                     hardware_append_text(line, sizeof(line), &used,
                         monitor->monitor_name_valid ? monitor->monitor_name :
                         (monitor->edid_valid
                             ? "EDID NAME NOT PROVIDED" : "EDID UNAVAILABLE"));
+                    if (!monitor->connected)
+                        hardware_append_text(line, sizeof(line), &used,
+                                             " [DISCONNECTED]");
+                    else if (!monitor->enabled)
+                        hardware_append_text(line, sizeof(line), &used,
+                                             " [DISABLED]");
                     if (monitor->primary)
                         hardware_append_text(line, sizeof(line), &used,
                                              " [PRIMARY]");
@@ -2576,10 +2587,18 @@ static void draw_shell(void) {
                         hardware_append_text(line, sizeof(line), &used, number);
                         hardware_append_text(line, sizeof(line), &used, " DPI");
                     }
-                    graphics_draw_text(text_x + 300U,
-                        content_y + 96U + (uint64_t)monitor_lines * 16U,
+                    graphics_draw_text(text_x + 300U, content_y + 96U,
                         line, 1U, 171U, 191U, 211U);
-                    ++monitor_lines;
+                    desktop_settings_draw_button(text_x + 300U,
+                        content_y + 112U, 74U, 24U, "PREV",
+                        desktop_display_monitor_selection == 0U);
+                    desktop_settings_draw_button(text_x + 382U,
+                        content_y + 112U, 74U, 24U, "NEXT",
+                        desktop_display_monitor_selection + 1U >=
+                            display->monitor_count);
+                    graphics_draw_text(text_x + 466U, content_y + 120U,
+                        "CLICK OUTPUT TO MAKE PRIMARY",
+                        1U, 171U, 191U, 211U);
                 }
 
                 graphics_draw_text(text_x, content_y + 132U,
@@ -3437,6 +3456,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
             discovered.selected_scanout < discovered.scanout_count)
             (void)nexus_display_set_primary_monitor(
                 discovered.selected_scanout);
+        desktop_display_monitor_selection =
+            discovered.selected_scanout < discovered.scanout_count
+                ? discovered.selected_scanout : 0U;
         const struct nexus_display_monitor *primary_monitor =
             desktop_virtio_primary_monitor();
         if (desktop_virtio_active_monitor_count() == 1U &&
@@ -6780,26 +6802,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     }
                 }
             } else if (settings_page == SETTINGS_DISPLAY) {
-                if (py >= content_y + 96U && py < content_y + 128U &&
+                if (py >= content_y + 96U && py < content_y + 112U &&
                     px >= sx + 300U) {
-                    const uint64_t row = (py - (content_y + 96U)) / 16U;
-                    uint32_t visible_row = 0U;
                     const struct nexus_display_info *display =
                         nexus_display_get_info();
-                    if (display != NULL) {
-                        for (uint32_t i = 0U;
-                             i < display->monitor_count && visible_row <= row;
-                             ++i) {
-                            const struct nexus_display_monitor *monitor =
-                                &display->monitors[i];
-                            if (!monitor->present) continue;
-                            if (visible_row == row) {
-                                (void)nexus_display_set_primary_monitor(
-                                    monitor->id);
-                                break;
-                            }
-                            ++visible_row;
-                        }
+                    if (display != NULL &&
+                        desktop_display_monitor_selection <
+                            display->monitor_count) {
+                        const struct nexus_display_monitor *monitor =
+                            &display->monitors[
+                                desktop_display_monitor_selection];
+                        (void)nexus_display_set_primary_monitor(monitor->id);
+                    }
+                } else if (py >= content_y + 112U &&
+                           py < content_y + 136U && px >= sx + 300U) {
+                    const struct nexus_display_info *display =
+                        nexus_display_get_info();
+                    const uint64_t relative_x = px - (sx + 300U);
+                    if (display != NULL && relative_x < 74U) {
+                        if (desktop_display_monitor_selection > 0U)
+                            --desktop_display_monitor_selection;
+                    } else if (display != NULL && relative_x >= 82U &&
+                               relative_x < 156U &&
+                               desktop_display_monitor_selection + 1U <
+                                   display->monitor_count) {
+                        ++desktop_display_monitor_selection;
                     }
                 } else if (py >= content_y + 96U &&
                            py < content_y + 128U && px >= sx &&

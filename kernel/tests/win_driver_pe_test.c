@@ -86,6 +86,8 @@ static void test_valid_x64_driver_and_imports(void) {
     assert(strcmp(info.import_modules[0], "NDIS.sys") == 0);
     assert(info.imports_ndis);
     assert(info.ndis_v6_miniport);
+    assert(nexus_win_pe_classify_wifi_driver(&info) ==
+           NEXUS_WIN_WIFI_PROFILE_NDIS6_CANDIDATE);
     assert(info.ndis_import_count == 1U);
     assert(strcmp(info.ndis_import_names[0], "NdisMRegisterMiniportDriver") == 0);
     assert(!info.imports_wdf && !info.imports_net_adapter_cx);
@@ -128,6 +130,8 @@ static void test_relocation_validation_and_type_reporting(void) {
     assert(info.has_relocations);
     assert(!info.relocations_supported);
     assert(info.relocation_count == 0U);
+    assert(nexus_win_pe_classify_wifi_driver(&info) ==
+           NEXUS_WIN_WIFI_PROFILE_UNSUPPORTED_RELOCATIONS);
 
     make_valid_driver();
     put32(0x404U, UINT32_MAX);
@@ -161,8 +165,33 @@ static void test_valid_image_without_imports(void) {
     assert(info.import_module_count == 0U);
 }
 
+
+static void test_wifi_driver_profile_classification(void) {
+    make_valid_driver();
+    struct nexus_win_pe_info info;
+    assert(nexus_win_pe_inspect(image, sizeof(image), &info));
+    info.imports_wdf = true;
+    assert(nexus_win_pe_classify_wifi_driver(&info) ==
+           NEXUS_WIN_WIFI_PROFILE_REQUIRES_WDF);
+    info.imports_net_adapter_cx = true;
+    assert(nexus_win_pe_classify_wifi_driver(&info) ==
+           NEXUS_WIN_WIFI_PROFILE_REQUIRES_NETADAPTERCX);
+    info.imports_wdf = false;
+    info.imports_net_adapter_cx = false;
+    info.ndis_v6_miniport = false;
+    assert(nexus_win_pe_classify_wifi_driver(&info) ==
+           NEXUS_WIN_WIFI_PROFILE_LEGACY_OR_UNKNOWN_NDIS);
+    info.ndis_v6_miniport = true;
+    info.ndis_imports_truncated = true;
+    assert(nexus_win_pe_classify_wifi_driver(&info) ==
+           NEXUS_WIN_WIFI_PROFILE_INCOMPLETE_IMPORTS);
+    assert(nexus_win_pe_classify_wifi_driver(NULL) ==
+           NEXUS_WIN_WIFI_PROFILE_INVALID);
+}
+
 int main(void) {
     test_valid_x64_driver_and_imports();
+    test_wifi_driver_profile_classification();
     test_rejects_bad_headers();
     test_rejects_bad_imports();
     test_relocation_validation_and_type_reporting();

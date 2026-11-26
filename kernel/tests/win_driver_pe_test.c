@@ -97,18 +97,18 @@ static void test_rejects_bad_imports(void) {
     put32(0x30CU, 0xFFFFFFF0U);
     assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
     make_valid_driver();
-    put64(0x348U, 0x1180U);
-    put64(0x350U, 0x1180U);
+    put32(0x300U, 0x15F8U);
+    put64(0x7F8U, 0x1180U);
     assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
     make_valid_driver();
-    put32(0x7CU, 0U);
+    put32(0x110U, 0U);
     assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
 }
 
 static void test_valid_image_without_imports(void) {
     make_valid_driver();
-    put32(0xF8U, 0U);
-    put32(0xFCU, 0U);
+    put32(0x110U, 0U);
+    put32(0x114U, 0U);
     struct nexus_win_pe_info info;
     assert(nexus_win_pe_inspect(image, sizeof(image), &info));
     assert(info.import_module_count == 0U);

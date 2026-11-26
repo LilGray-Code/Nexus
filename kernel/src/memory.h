@@ -20,6 +20,12 @@ struct memory_allocator_stats {
     uint64_t pages_freed_total;
     uint64_t free_list_pages;
     uint64_t region_count;
+    uint64_t dma_total_bytes;
+    uint64_t dma_free_bytes;
+    uint64_t dma32_total_bytes;
+    uint64_t dma32_free_bytes;
+    uint64_t normal_total_bytes;
+    uint64_t normal_free_bytes;
 };
 
 bool memory_init(const struct limine_memmap_response *map,

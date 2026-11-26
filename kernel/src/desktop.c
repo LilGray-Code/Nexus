@@ -3406,7 +3406,11 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
             discovered.selected_scanout < discovered.scanout_count)
             (void)nexus_display_set_primary_monitor(
                 discovered.selected_scanout);
-        if (desktop_virtio_active_monitor_count() == 1U)
+        const struct nexus_display_monitor *primary_monitor =
+            desktop_virtio_primary_monitor();
+        if (desktop_virtio_active_monitor_count() == 1U &&
+            primary_monitor != NULL && primary_monitor->timing_count != 0U &&
+            primary_monitor->matching_edid_refresh_hz != 0U)
             (void)nexus_display_register_mode_backend(
                 &desktop_virtio_mode_backend, NULL);
     }

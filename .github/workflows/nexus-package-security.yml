@@ -7,6 +7,7 @@ on:
     paths:
       - "kernel/src/package.c"
       - "kernel/src/package.h"
+      - "kernel/include/nexus/app.h"
       - "kernel/src/sha256.c"
       - "kernel/src/sha256.h"
       - "kernel/tests/package_test.c"
@@ -30,7 +31,8 @@ jobs:
       - name: Compile package tests with strict warnings
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/package.c kernel/src/sha256.c \
+            -Ikernel/include -Ikernel/src \
+            kernel/src/package.c kernel/src/sha256.c \
             kernel/tests/package_test.c \
             -o /tmp/nexus-package-security-test
 

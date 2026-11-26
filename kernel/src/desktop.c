@@ -110,15 +110,15 @@ static void desktop_virtio_recover_firmware_framebuffer(void) {
     if (!desktop_virtio_gpu_active || virtio_gpu_active()) return;
 
     desktop_virtio_gpu_active = false;
-    desktop_render_surface = desktop_firmware_surface;
-    if (!graphics_init(&desktop_firmware_surface)) {
-        serial_write("DESKTOP: VirtIO scanout recovery failed; firmware framebuffer is unavailable\\r\\n");
-        return;
-    }
-
     gpu_set_virtio_display_active(false);
     gpu_set_firmware_framebuffer_active(true);
     (void)nexus_display_register_topology_backend(NULL, NULL);
+    desktop_render_surface = desktop_firmware_surface;
+    if (!graphics_init(&desktop_firmware_surface)) {
+        serial_write("DESKTOP: VirtIO scanout recovery failed; firmware framebuffer is unavailable\r\n");
+        return;
+    }
+
     const struct nexus_display_info *display = nexus_display_get_info();
     if (display != NULL) {
         (void)nexus_display_set_rotation(
@@ -135,7 +135,7 @@ static void desktop_virtio_recover_firmware_framebuffer(void) {
         pointer_x = (int64_t)(screen_width - 1U);
     if (screen_height != 0U && (uint64_t)pointer_y >= screen_height)
         pointer_y = (int64_t)(screen_height - 1U);
-    serial_write("DESKTOP: VirtIO display command path lost; restored firmware framebuffer desktop\\r\\n");
+    serial_write("DESKTOP: VirtIO display command path lost; restored firmware framebuffer desktop\r\n");
 }
 
 static bool desktop_virtio_set_topology(
@@ -3265,6 +3265,10 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         }
         (void)nexus_display_register_topology_backend(
             &desktop_virtio_topology_backend, NULL);
+        if (discovered.valid &&
+            discovered.selected_scanout < discovered.scanout_count)
+            (void)nexus_display_set_primary_monitor(
+                discovered.selected_scanout);
     }
     serial_write(desktop_virtio_gpu_active
         ? "DESKTOP: VirtIO GPU 2D backend initialized\\r\\n"

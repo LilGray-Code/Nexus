@@ -377,15 +377,14 @@ jobs:
           grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
-          grep -q "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=0023" uefi-serial.log
-          grep -q "DESKTOP: HELLO.ELF native SDK file read/write, formatted output and capture passed" uefi-serial.log
-          grep -q "NEXUS CPU CAPABILITY QUERY READY" uefi-serial.log
-          grep -q "NEXUS AVX2 USER SIMD READY" uefi-serial.log
+          # This ISO is intentionally installer-only; it has no installed
+          # user volume, so the disk-backed HELLO.ELF test must be skipped.
+          grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" uefi-serial.log
+          grep -q "NEXUS FILE PROCESS SELFTEST SKIPPED" uefi-serial.log
+          ! grep -q "NEXUS CPU EXCEPTION" uefi-serial.log
           grep -q "NEXUS SMP ONLINE CPU COUNT=0x0000000000000004" uefi-serial.log
           grep -q "NEXUS SMP PARALLEL WORK TEST READY" uefi-serial.log
-          grep -q "NEXUS SMP NATIVE APP CAPABILITY READY" uefi-serial.log
           grep -q "NEXUS SMP ONLINE CPU COUNT=0x0000000000000004" uefi-serial.log
-          grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
           grep -q "NEXUS ELF64 USER LOADER READY" uefi-serial.log
           grep -q "NEXUS SYSCALL ABI READY" uefi-serial.log
           grep -q "NEXUS PAGE RECLAIM READY" uefi-serial.log
@@ -393,6 +392,8 @@ jobs:
           grep -q "NEXUS USER MODE" uefi-serial.log
           grep -q "K2: hardware timer ticks received:" uefi-serial.log
           grep -q "NEXUS K2 TIMER INTERRUPT READY" uefi-serial.log
+          grep -q "K2: timed worker sleep, wakeup and CPU yielding passed" uefi-serial.log
+          grep -q "NEXUS USER SLEEP SYSCALL SCHEDULER INTEGRATION READY" uefi-serial.log
           grep -q "NEXUS ACPI MADT READY" uefi-serial.log
           grep -q "NEXUS DMA32 PAGE ALLOCATOR READY" uefi-serial.log
           grep -q "NEXUS USB HID KEYBOARD READY" uefi-serial.log

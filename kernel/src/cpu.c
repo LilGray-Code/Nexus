@@ -385,6 +385,10 @@ bool nexus_cpu_decode_amd_topology(
         maximum_extended_leaf < 0x8000001EU ||
         (extended_feature_ecx & (1U << 22)) == 0U) return false;
 
+    const uint32_t threads_per_core =
+        ((topology_ebx >> 8) & 0xFFU) + 1U;
+    if (threads_per_core > UINT8_MAX) return false;
+
     topology->vendor = vendor;
     topology->topology_extensions_supported = true;
     topology->apic_id = topology_eax;
@@ -395,9 +399,6 @@ bool nexus_cpu_decode_amd_topology(
     topology->node_id_valid = true;
     topology->nodes_per_processor_raw =
         (uint8_t)((topology_ecx >> 8) & 0x07U);
-    const uint32_t threads_per_core =
-        ((topology_ebx >> 8) & 0xFFU) + 1U;
-    if (threads_per_core > UINT8_MAX) return false;
     topology->logical_processors_per_core = (uint8_t)threads_per_core;
     return true;
 }

@@ -23,6 +23,8 @@ static bool inject_bad_ack_once;
 static bool bad_ack_injected;
 static uint8_t last_data_payload[NET_TCP_MAX_PAYLOAD];
 static size_t last_data_payload_length;
+static unsigned icmp_requests;
+static bool drop_icmp_echo_replies;
 static unsigned dns_request_count;
 static unsigned dns_reply_on_request;
 static unsigned dhcp_request_count;
@@ -30,6 +32,8 @@ static uint8_t last_dhcp_frame[NET_MAX_FRAME];
 static size_t last_dhcp_frame_length;
 
 static void queue_dns_test_udp_reply(uint16_t transaction_id);
+static void queue_icmp_test_reply(const uint8_t *request_ip,
+                                  size_t request_ip_length);
 
 static void inject_tcp_test_segment(uint32_t sequence,
                                     uint32_t acknowledgement,
@@ -149,6 +153,18 @@ bool netdev_send_frame(const void *frame_data, size_t length) {
     const size_t ip_header = (size_t)(ip[0] & 0x0FU) * 4U;
     if (ip_header < NET_IPV4_HEADER ||
         length < NET_ETHERNET_HEADER + ip_header) return true;
+    if (ip[9] == IP_PROTOCOL_ICMP) {
+        if (length < NET_ETHERNET_HEADER + ip_header +
+                     NET_ICMP_HEADER + NET_ICMP_PAYLOAD) return true;
+        const uint8_t *icmp = ip + ip_header;
+        if (icmp[0] == ICMP_ECHO_REQUEST && icmp[1] == 0U &&
+            checksum(icmp, NET_ICMP_HEADER + NET_ICMP_PAYLOAD) == 0U) {
+            ++icmp_requests;
+            if (!drop_icmp_echo_replies)
+                queue_icmp_test_reply(ip, read_be16(ip + 2U));
+        }
+        return true;
+    }
     if (ip[9] == IP_PROTOCOL_UDP) {
         if (length < NET_ETHERNET_HEADER + ip_header + NET_UDP_HEADER)
             return true;
@@ -226,6 +242,9 @@ static void setup_network(void) {
     last_sent_frame_length = 0U;
     syn_transmissions = 0U;
     data_transmissions = 0U;
+    icmp_requests = 0U;
+    drop_icmp_echo_replies = false;
+    icmp_ping = (struct net_icmp_ping){0};
     last_data_sequence = 0U;
     attempts_for_sequence = 0U;
     have_data_sequence = false;
@@ -510,6 +529,45 @@ static size_t dns_test_append_name(uint8_t *packet, size_t offset,
     }
     packet[offset++] = 0U;
     return offset;
+}
+
+static void queue_icmp_test_reply(const uint8_t *request_ip,
+                                  size_t request_ip_length) {
+    assert(request_ip != NULL && request_ip_length >= NET_IPV4_HEADER +
+           NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const size_t ip_header = (size_t)(request_ip[0] & 0x0FU) * 4U;
+    const size_t ip_total = read_be16(request_ip + 2U);
+    assert(ip_header >= NET_IPV4_HEADER && ip_total <= request_ip_length &&
+           ip_total == ip_header + NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const uint8_t *request = request_ip + ip_header;
+    assert(request[0] == ICMP_ECHO_REQUEST && request[1] == 0U &&
+           checksum(request, ip_total - ip_header) == 0U);
+
+    uint8_t frame[NET_MAX_FRAME] = {0};
+    copy_bytes(frame, network.mac, 6U);
+    copy_bytes(frame + 6U, remote_mac, 6U);
+    write_be16(frame + 12U, ETHERTYPE_IPV4);
+    uint8_t *ip = frame + NET_ETHERNET_HEADER;
+    ip[0] = 0x45U;
+    write_be16(ip + 2U, (uint16_t)(NET_IPV4_HEADER +
+        NET_ICMP_HEADER + NET_ICMP_PAYLOAD));
+    write_be16(ip + 4U, 0x1234U);
+    ip[8] = 49U;
+    ip[9] = IP_PROTOCOL_ICMP;
+    copy_bytes(ip + 12U, remote_ip, 4U);
+    copy_bytes(ip + 16U, network.ipv4, 4U);
+    write_be16(ip + 10U, checksum(ip, NET_IPV4_HEADER));
+    uint8_t *reply = ip + NET_IPV4_HEADER;
+    copy_bytes(reply, request, NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    reply[0] = ICMP_ECHO_REPLY;
+    write_be16(reply + 2U, 0U);
+    write_be16(reply + 2U,
+               checksum(reply, NET_ICMP_HEADER + NET_ICMP_PAYLOAD));
+
+    queued_frame_length = NET_ETHERNET_HEADER + NET_IPV4_HEADER +
+                          NET_ICMP_HEADER + NET_ICMP_PAYLOAD;
+    copy_bytes(queued_frame, frame, queued_frame_length);
+    queued_frame_ready = true;
 }
 
 static void queue_dns_test_udp_reply(uint16_t transaction_id) {
@@ -842,6 +900,33 @@ static void test_tcp_reassembles_multiple_queued_segments(void) {
     assert(tcp_connection.reorder_length == 0U);
 }
 
+static void test_icmp_echo_diagnostic_round_trip_and_timeout(void) {
+    setup_network();
+    uint8_t reply_ttl = 0U;
+    assert(net_ping(remote_ip, 50U, &reply_ttl));
+    assert(reply_ttl == 49U);
+    assert(icmp_requests == 1U);
+    assert(!icmp_ping.active && icmp_ping.done && icmp_ping.success);
+    assert(last_sent_frame_length == NET_ETHERNET_HEADER +
+           NET_IPV4_HEADER + NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const uint8_t *ip = last_sent_frame + NET_ETHERNET_HEADER;
+    assert(ip[9] == IP_PROTOCOL_ICMP);
+    assert(checksum(ip, NET_IPV4_HEADER) == 0U);
+    assert(read_be16(ip + 2U) == NET_IPV4_HEADER +
+           NET_ICMP_HEADER + NET_ICMP_PAYLOAD);
+    const uint8_t *icmp = ip + NET_IPV4_HEADER;
+    assert(icmp[0] == ICMP_ECHO_REQUEST && icmp[1] == 0U);
+    assert(checksum(icmp, NET_ICMP_HEADER + NET_ICMP_PAYLOAD) == 0U);
+
+    drop_icmp_echo_replies = true;
+    reply_ttl = 0xAAU;
+    assert(!net_ping(remote_ip, 5U, &reply_ttl));
+    assert(reply_ttl == 0xAAU);
+    assert(icmp_requests == 2U);
+    assert(!icmp_ping.active);
+    assert(!net_ping(remote_ip, 0U, NULL));
+}
+
 static void test_receive_wait_reports_timeout_data_and_eof(void) {
     setup_network();
     assert(net_tcp_connect(remote_ip, 443U, 300U));
@@ -903,6 +988,7 @@ int main(void) {
     assert(!net_tcp_send(&byte, 1U));
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
+    test_icmp_echo_diagnostic_round_trip_and_timeout();
     test_receive_wait_reports_timeout_data_and_eof();
     test_tcp_advertised_window_tracks_buffer_and_updates();
     test_tcp_out_of_order_reassembly_and_ack();

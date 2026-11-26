@@ -27,6 +27,7 @@
 #define NEXUS_SYS_GAMEPAD_POLL 13ULL
 #define NEXUS_SYS_AUDIO_WRITE 14ULL
 #define NEXUS_SYS_CPU_INFO 15ULL
+#define NEXUS_SYS_APP_PERMISSIONS 16ULL
 #define NEXUS_SYSCALL_ABI_VERSION 1ULL
 
 /* CPU capabilities exposed to apps; AVX flags mean OS XSAVE/YMM state is live. */

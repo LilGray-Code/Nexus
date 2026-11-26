@@ -41,6 +41,7 @@ scheduler. It is single scheduling domain on the BSP; the APs run their SMP
 work loop separately. There are no priorities, cancellation, wait queues,
 per-CPU idle threads, process/address-space context switching, FPU/SIMD context
 switching, scheduler-aware blocking I/O, or scheduler locks suitable for SMP.
-The synchronous user-process runner and user-mode sleep syscall are not yet
-integrated with worker blocking. General preemption must remain disabled around
+The synchronous user-process runner is not yet an independently scheduled
+process, but its sleep syscall now blocks the current scheduler context through
+this timer-based API instead of polling the tick counter. General preemption must remain disabled around
 kernel subsystems that are not proven re-entrant or interrupt-safe.

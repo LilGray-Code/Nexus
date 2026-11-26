@@ -103,6 +103,8 @@ static uint64_t screen_height;
 static struct nexus_graphics_surface desktop_firmware_surface;
 static struct nexus_graphics_surface desktop_render_surface;
 static bool desktop_virtio_gpu_active;
+static uint64_t desktop_virtio_backing_width;
+static uint64_t desktop_virtio_backing_height;
 static bool desktop_ready;
 static bool installer_session_mode;
 
@@ -138,6 +140,134 @@ static void desktop_virtio_recover_firmware_framebuffer(void) {
         pointer_y = (int64_t)(screen_height - 1U);
     serial_write("DESKTOP: VirtIO display command path lost; restored firmware framebuffer desktop\r\n");
 }
+
+static const struct nexus_display_monitor *
+desktop_virtio_primary_monitor(void) {
+    const struct nexus_display_info *display = nexus_display_get_info();
+    if (display == NULL) return NULL;
+    for (uint32_t i = 0U; i < display->monitor_count; ++i) {
+        const struct nexus_display_monitor *monitor = &display->monitors[i];
+        if (monitor->id == display->primary_monitor_id &&
+            monitor->connected && monitor->enabled) return monitor;
+    }
+    return NULL;
+}
+
+static uint32_t desktop_virtio_active_monitor_count(void) {
+    const struct nexus_display_info *display = nexus_display_get_info();
+    if (display == NULL) return 0U;
+    uint32_t count = 0U;
+    for (uint32_t i = 0U; i < display->monitor_count; ++i)
+        if (display->monitors[i].connected && display->monitors[i].enabled)
+            ++count;
+    return count;
+}
+
+static bool desktop_virtio_mode_test(
+    void *context, const struct nexus_display_mode *mode) {
+    (void)context;
+    if (!desktop_virtio_gpu_active || !virtio_gpu_active() || mode == NULL ||
+        desktop_virtio_active_monitor_count() != 1U ||
+        mode->bits_per_pixel != 32U ||
+        mode->width == 0U || mode->height == 0U ||
+        mode->width > desktop_virtio_backing_width ||
+        mode->height > desktop_virtio_backing_height ||
+        mode->width > UINT32_MAX || mode->height > UINT32_MAX)
+        return false;
+
+    const struct nexus_display_monitor *monitor =
+        desktop_virtio_primary_monitor();
+    if (monitor == NULL ||
+        monitor->matching_edid_refresh_hz == 0U ||
+        mode->refresh_hz != monitor->matching_edid_refresh_hz)
+        return false;
+
+    bool advertised = false;
+    for (uint32_t i = 0U; i < monitor->timing_count; ++i) {
+        const struct nexus_display_timing *timing = &monitor->timings[i];
+        if (timing->width == mode->width &&
+            timing->height == mode->height &&
+            timing->refresh_hz == mode->refresh_hz) {
+            advertised = true;
+            break;
+        }
+    }
+    return advertised;
+}
+
+static bool desktop_virtio_rebuild_mode_surface(uint64_t width,
+                                                 uint64_t height) {
+    if (width == 0U || height == 0U ||
+        width > desktop_virtio_backing_width ||
+        height > desktop_virtio_backing_height) return false;
+    desktop_render_surface.width = width;
+    desktop_render_surface.height = height;
+    if (!graphics_init(&desktop_render_surface)) return false;
+
+    const struct nexus_display_info *display = nexus_display_get_info();
+    if (display != NULL) {
+        (void)nexus_display_set_rotation(
+            (enum nexus_display_rotation)display->upright_rotation);
+        (void)nexus_display_set_scale_percent(display->scale_percent);
+        (void)nexus_display_set_brightness_percent(
+            display->brightness_percent);
+        (void)nexus_display_set_color_temperature(
+            display->color_temperature_kelvin);
+    }
+    screen_width = graphics_width();
+    screen_height = graphics_height();
+    if (screen_width != 0U && (uint64_t)pointer_x >= screen_width)
+        pointer_x = (int64_t)(screen_width - 1U);
+    if (screen_height != 0U && (uint64_t)pointer_y >= screen_height)
+        pointer_y = (int64_t)(screen_height - 1U);
+    return true;
+}
+
+static bool desktop_virtio_mode_set(
+    void *context, const struct nexus_display_mode *mode) {
+    (void)context;
+    const struct nexus_display_monitor *monitor =
+        desktop_virtio_primary_monitor();
+    if (monitor == NULL || mode == NULL ||
+        !virtio_gpu_display_set_mode(monitor->id,
+            (uint32_t)mode->width, (uint32_t)mode->height)) {
+        desktop_virtio_recover_firmware_framebuffer();
+        return false;
+    }
+    return desktop_virtio_rebuild_mode_surface(mode->width, mode->height);
+}
+
+static bool desktop_virtio_mode_restore(
+    void *context, const struct nexus_display_mode *mode) {
+    (void)context;
+    if (mode == NULL) return false;
+    const struct nexus_display_monitor *monitor =
+        desktop_virtio_primary_monitor();
+    if (monitor == NULL || !virtio_gpu_display_set_mode(monitor->id,
+            (uint32_t)mode->width, (uint32_t)mode->height)) {
+        desktop_virtio_recover_firmware_framebuffer();
+        return false;
+    }
+    return desktop_virtio_rebuild_mode_surface(mode->width, mode->height);
+}
+
+static bool desktop_virtio_mode_verify(
+    void *context, const struct nexus_display_mode *mode) {
+    (void)context;
+    const struct nexus_display_monitor *monitor =
+        desktop_virtio_primary_monitor();
+    return monitor != NULL && mode != NULL &&
+        virtio_gpu_display_verify_mode(monitor->id,
+            (uint32_t)mode->width, (uint32_t)mode->height);
+}
+
+static const struct nexus_display_mode_backend
+    desktop_virtio_mode_backend = {
+        .test_mode = desktop_virtio_mode_test,
+        .set_mode = desktop_virtio_mode_set,
+        .restore_mode = desktop_virtio_mode_restore,
+        .verify_mode = desktop_virtio_mode_verify
+    };
 
 static bool desktop_virtio_set_topology(
     void *context, enum nexus_display_topology topology) {

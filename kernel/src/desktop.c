@@ -2574,8 +2574,11 @@ static void draw_shell(void) {
                     1U, 231U, 183U, 127U);
                 if (display->mode_set_available) {
                     graphics_draw_text(text_x, content_y + 170U,
-                        "MODE SWITCH: TEST / SET / VERIFY / ROLLBACK READY",
+                        "RESOLUTION SWITCH: DEVICE VERIFY / ROLLBACK READY",
                         1U, 108U, 216U, 229U);
+                    graphics_draw_text(text_x, content_y + 188U,
+                        "REFRESH RATE: FIXED TO MATCHING EDID RATE",
+                        1U, 171U, 191U, 211U);
                 } else {
                     graphics_draw_text(text_x, content_y + 170U,
                         "MODE SWITCH: NO VERIFIED GPU MODESET BACKEND",

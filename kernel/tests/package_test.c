@@ -296,12 +296,23 @@ int main(void) {
     installed_image->data[3] ^= 1U;
     assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                       NULL, &installed));
-    assert(installed.permissions ==
+    assert(installed.requested_permissions ==
            (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
+    assert(installed.granted_permissions == 0U);
     uint64_t exit_status = UINT64_MAX;
     assert(nexus_package_launch("DEMO", mock_ed25519_verify, NULL, &exit_status));
     assert(strcmp(launched_path, "APPS/DEMO-1.0.0.ELF") == 0);
-    assert(exit_status == 42U);
+    assert(exit_status == 42U && launched_permissions == 0U);
+    assert(!nexus_package_set_permissions(
+        "DEMO", NEXUS_APP_PERMISSION_ALL, mock_ed25519_verify, NULL));
+    assert(nexus_package_set_permissions(
+        "DEMO", NEXUS_APP_PERMISSION_FILE_READ |
+                NEXUS_APP_PERMISSION_DISPLAY, mock_ed25519_verify, NULL));
+    assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
+                                      NULL, &installed));
+    assert(installed.granted_permissions ==
+           (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
+    assert(nexus_package_launch("DEMO", mock_ed25519_verify, NULL, &exit_status));
     assert(launched_permissions ==
            (NEXUS_APP_PERMISSION_FILE_READ | NEXUS_APP_PERMISSION_DISPLAY));
     assert(!nexus_package_launch("DEMO", NULL, NULL, &exit_status));
@@ -317,12 +328,15 @@ int main(void) {
         assert(false);
     }
     assert(strcmp(installed.version, "1.0.1") == 0);
+    assert(installed.requested_permissions == NEXUS_APP_PERMISSION_FILE_READ);
+    assert(installed.granted_permissions == 0U);
     assert(mock_find("APPS/DEMO-1.0.1.ELF") != NULL);
     assert(mock_find("APPS/DEMO-1.0.0.ELF") == NULL);
     assert(nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                       NULL, &installed));
     assert(nexus_package_uninstall("DEMO", mock_ed25519_verify, NULL));
     assert(mock_find("APPS/DEMO.NPK") == NULL);
+    assert(mock_find("APPS/DEMO.NPA") == NULL);
     assert(mock_find("APPS/DEMO-1.0.1.ELF") == NULL);
     assert(!nexus_package_is_installed("DEMO", mock_ed25519_verify,
                                        NULL, NULL));

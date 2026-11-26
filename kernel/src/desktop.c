@@ -2546,7 +2546,7 @@ static void draw_shell(void) {
                 }
                 if (shown == 0U)
                     graphics_draw_text(text_x + 12U, content_y + 96U,
-                        "NO EDID DETAILED TIMINGS", 1U,
+                        "NO EDID TIMINGS REPORTED", 1U,
                         171U, 191U, 211U);
 
                 format_labeled_u64("MONITORS: ", display->monitor_count, line);

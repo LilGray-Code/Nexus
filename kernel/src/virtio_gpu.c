@@ -344,7 +344,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     if (query_display_info()) {
         serial_write("VIRTIO GPU: enabled scanouts discovered=");
         serial_write_hex(display_info.enabled_scanout_count);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
         for (uint32_t i = 0U; i < NEXUS_VIRTIO_GPU_MAX_SCANOUTS; ++i) {
             const struct nexus_virtio_gpu_scanout *scanout =
                 &display_info.scanouts[i];
@@ -359,10 +359,10 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
             serial_write_hex(scanout->width);
             serial_write("x");
             serial_write_hex(scanout->height);
-            serial_write("\\r\\n");
+            serial_write("\r\n");
         }
     } else {
-        serial_write("VIRTIO GPU: display-info query unavailable; retaining one boot scanout\\r\\n");
+        serial_write("VIRTIO GPU: display-info query unavailable; retaining one boot scanout\r\n");
     }
 
     *render_surface = *firmware_surface;

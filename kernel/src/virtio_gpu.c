@@ -671,7 +671,6 @@ static bool gpu_query_display_info(uint64_t preferred_width,
     }
 
     selected_scanout_id = have_enabled ? selected : VIRTIO_GPU_SCANOUT_ID;
-    active_scanout_count = have_enabled ? enabled_count : 0U;
     display_inventory.selected_scanout = selected_scanout_id;
     serial_write("VIRTIO GPU: scanouts discovered/enabled/selected=");
     serial_write_hex(display_inventory.scanout_count);
@@ -679,6 +678,7 @@ static bool gpu_query_display_info(uint64_t preferred_width,
     uint32_t enabled_count = 0U;
     for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i)
         if (display_inventory.scanouts[i].enabled) ++enabled_count;
+    active_scanout_count = enabled_count;
     serial_write_hex(enabled_count);
     serial_write("/");
     serial_write_hex(selected_scanout_id);

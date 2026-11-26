@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #define NEXUS_APP_ABI_VERSION 1U
+#define NEXUS_APP_MAX_SLEEP_TICKS 500U
 
 #define NEXUS_APP_SYS_EXIT 1ULL
 #define NEXUS_APP_SYS_WRITE 2ULL
@@ -208,7 +209,12 @@ static inline int64_t nexus_app_ticks(void) {
     return nexus_app_syscall3(NEXUS_APP_SYS_CLOCK_TICKS, 0U, 0U, 0U);
 }
 
-/* Wait for timer ticks; current kernel timer runs at 100 Hz. */
+/*
+ * Block this application context for at least the requested timer ticks.
+ * Sleeping yields execution to other scheduler work instead of busy-waiting.
+ * The current timer runs at 100 Hz and the maximum request is five seconds.
+ * Returns zero on success or a negative errno value.
+ */
 static inline int64_t nexus_app_sleep_ticks(uint64_t ticks) {
     return nexus_app_syscall3(NEXUS_APP_SYS_SLEEP_TICKS, ticks, 0U, 0U);
 }

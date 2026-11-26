@@ -13,7 +13,7 @@ kernel workers, timer-driven preemption tests, and deadline-based sleeping.
   the timer-IRQ preemption path to resume that worker at its interrupted point.
 - Round-robin selection skips sleeping and finished workers. Finished slots
   can be reused after the worker has switched away from its stack.
-- The PIT tick calls `scheduler_timer_tick()`, which changes expired workers
+- The PIT tick calls `scheduler_timer_tick()`, which changes expired scheduler contexts
   from sleeping to runnable. It does not context-switch inside the wakeup scan.
 - `scheduler_sleep_ticks()` blocks a current worker until the requested
   deadline and yields to another runnable worker or the BSP main/idle context.
@@ -32,6 +32,10 @@ The boot tests cover:
 - Full sixteen-worker capacity, overflow rejection, and finished-slot reuse.
 - A worker sleeping for three PIT ticks while an observer worker receives CPU
   time; the sleeper must resume only after its deadline.
+- The BSP main context sleeping while no worker is runnable, then waking on a PIT
+  interrupt.
+- A ring-3 native test program invoking the sleep syscall while a kernel worker
+  runs on the freed CPU time, then resuming the user syscall.
 - Timer-driven switching between two CPU-bound workers without explicit yields.
 
 ## Deliberate limits

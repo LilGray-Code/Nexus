@@ -240,6 +240,12 @@ static void copy_bytes(volatile uint8_t *output, const uint8_t *input,
     for (size_t i = 0U; i < length; ++i) output[i] = input[i];
 }
 
+static void copy_from_volatile(uint8_t *output,
+                               const volatile uint8_t *input,
+                               size_t length) {
+    for (size_t i = 0U; i < length; ++i) output[i] = input[i];
+}
+
 static uint32_t read_le32(const volatile uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
            ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
@@ -283,11 +289,15 @@ static struct virtio_gpu_header make_header(uint32_t type) {
 static bool submit_command_raw(const void *command,
                                size_t command_length,
                                uint32_t *response_type,
-                               uint32_t *response_length) {
+                               uint32_t *response_length,
+                               void *response_payload,
+                               size_t response_payload_capacity) {
     if (!active || command == NULL || command_length == 0U ||
         command_length > VIRTIO_GPU_COMMAND_BYTES ||
         command_memory == NULL || response_type == NULL ||
-        response_length == NULL) return false;
+        response_length == NULL ||
+        (response_payload == NULL && response_payload_capacity != 0U))
+        return false;
 
     gpu_command_queue_lock();
     zero_bytes(command_memory, command_length);
@@ -315,6 +325,15 @@ static bool submit_command_raw(const void *command,
         gpu_command_queue_unlock();
         return false;
     }
+    if (response_payload != NULL) {
+        if (actual_response_length > response_payload_capacity) {
+            gpu_command_queue_unlock();
+            return false;
+        }
+        copy_from_volatile((uint8_t *)response_payload,
+            command_memory + VIRTIO_GPU_RESPONSE_OFFSET,
+            actual_response_length);
+    }
     *response_type =
         read_le32(command_memory + VIRTIO_GPU_RESPONSE_OFFSET);
     *response_length = actual_response_length;
@@ -325,7 +344,8 @@ static bool submit_command_raw(const void *command,
 static bool submit_command(const void *command, size_t command_length) {
     uint32_t response_type = 0U, response_length = 0U;
     if (!submit_command_raw(command, command_length,
-                            &response_type, &response_length)) return false;
+                            &response_type, &response_length,
+                            NULL, 0U)) return false;
     if (response_type != VIRTIO_GPU_RESP_OK_NODATA) {
         serial_write("VIRTIO GPU: device rejected command type=");
         serial_write_hex(response_type);
@@ -355,15 +375,15 @@ static bool gpu_virgl_query_capset(void) {
             .padding = 0U
         };
         uint32_t response_type = 0U, response_length = 0U;
+        uint8_t response[sizeof(struct virtio_gpu_resp_capset_info)];
         if (!submit_command_raw(&request, sizeof(request),
-                                &response_type, &response_length))
+                                &response_type, &response_length,
+                                response, sizeof(response)))
             return false;
         if (response_type != VIRTIO_GPU_RESP_OK_CAPSET_INFO)
             break;
         if (response_length < sizeof(struct virtio_gpu_resp_capset_info))
             return false;
-        const volatile uint8_t *response =
-            command_memory + VIRTIO_GPU_RESPONSE_OFFSET;
         const uint32_t id = read_le32(response + 24U);
         const uint32_t version = read_le32(response + 28U);
         const uint32_t size = read_le32(response + 32U);
@@ -481,8 +501,10 @@ static bool gpu_query_display_info(uint64_t preferred_width,
     const struct virtio_gpu_header request =
         make_header(VIRTIO_GPU_CMD_GET_DISPLAY_INFO);
     uint32_t response_type = 0U, response_length = 0U;
+    uint8_t response[sizeof(struct virtio_gpu_resp_display_info)];
     if (!submit_command_raw(&request, sizeof(request),
-                            &response_type, &response_length) ||
+                            &response_type, &response_length,
+                            response, sizeof(response)) ||
         response_type != VIRTIO_GPU_RESP_OK_DISPLAY_INFO ||
         response_length < sizeof(struct virtio_gpu_resp_display_info)) {
         display_inventory.valid = false;
@@ -491,8 +513,6 @@ static bool gpu_query_display_info(uint64_t preferred_width,
         return false;
     }
 
-    const volatile uint8_t *response =
-        command_memory + VIRTIO_GPU_RESPONSE_OFFSET;
     display_inventory = (struct nexus_virtio_gpu_display_info){0};
     display_inventory.valid = true;
     display_inventory.scanout_count = NEXUS_VIRTIO_GPU_MAX_SCANOUTS;

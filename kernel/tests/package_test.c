@@ -202,6 +202,9 @@ static void reset_mock(void) {
     fail_write_path[0] = '\0';
 }
 
+_Static_assert(NEXUS_PACKAGE_MAX_PAYLOAD == (4U * 1024U * 1024U),
+               "native Store package payload limit must be 4 MiB");
+
 int main(void) {
     uint8_t package[512];
     const uint8_t first_payload[4] = {'E', 'L', 'F', '!'};

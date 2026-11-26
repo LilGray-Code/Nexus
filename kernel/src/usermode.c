@@ -1,3 +1,4 @@
+#include "scheduler.h"
 #include "usermode.h"
 
 #include "elf64.h"
@@ -627,14 +628,10 @@ int64_t usermode_sys_sleep_ticks(uint64_t ticks) {
     if (ticks > 500U) return -NEXUS_EINVAL;
     if (ticks == 0U) return 0;
 
-    const uint64_t start = timer_ticks();
-    while (timer_ticks() - start < ticks) {
-        /*
-         * The interrupt gate enters with IF clear. STI;HLT allows timer,
-         * keyboard, and mouse IRQs to run; CLI restores the syscall handler's
-         * expected interrupt state immediately after wakeup.
-         */
-        __asm__ volatile ("sti; hlt; cli" : : : "memory");
-    }
-    return 0;
+    /*
+     * A syscall runs on the caller's kernel execution context. Blocking that
+     * context lets other Nexus kernel workers run, then the timer wakeup
+     * resumes this syscall with the original interrupt state preserved.
+     */
+    return scheduler_sleep_ticks(ticks) ? 0 : -NEXUS_EINVAL;
 }

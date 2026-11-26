@@ -1,0 +1,35 @@
+name: Nexus system settings regression tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/settings.c"
+      - "kernel/src/settings.h"
+      - "kernel/tests/settings_test.c"
+      - ".github/workflows/nexus-settings-tests.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+
+permissions:
+  contents: read
+
+jobs:
+  settings-host-tests:
+    name: Settings persistence and validation
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Compile settings model with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/settings.c \
+            kernel/tests/settings_test.c \
+            -o /tmp/nexus-settings-test
+
+      - name: Run settings persistence tests
+        run: /tmp/nexus-settings-test

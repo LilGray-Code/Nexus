@@ -12,6 +12,20 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 ## What is implemented
 
 - A freestanding x86-64 kernel, booted by Limine in UEFI or legacy BIOS mode.
+- CPU discovery identifies Intel, AMD, Hygon, Centaur/VIA, Zhaoxin, and
+  Transmeta CPUID vendors, records family/model/stepping and topology, and
+  reports Intel hybrid bootstrap-core type plus nominal base/maximum/bus
+  frequency values when CPUID exposes them. CPUID.6 thermal and HWP/Turbo
+  capabilities are recorded as advertised support only; Nexus does not yet
+  read live temperatures, change CPU P-states, or implement vendor-specific
+  thermal/fan/power policy.
+- PCI graphics inventory distinguishes explicitly catalogued Intel Arc
+  Alchemist and Battlemage, Xe-LPG, Xe2, and Xe3 identifiers, and retains
+  AMD Radeon and NVIDIA display controllers as vendor-classified devices.
+  It also decodes assigned PCI BAR addresses and attributes without probing
+  or modifying them. This is discovery/resource inventory only: Intel, AMD,
+  and NVIDIA command engines are not initialized, no native 3D driver is
+  shipped for those devices, and their 2D/3D acceleration flags remain false.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal, and
   Installer views, plus keyboard and mouse input. The shell supports movable,
   resizable app windows, left/right edge snapping, top-edge maximize, minimize,

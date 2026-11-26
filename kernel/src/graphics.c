@@ -87,17 +87,29 @@ static uint32_t pack_rgb(uint8_t red, uint8_t green, uint8_t blue) {
     return r | g | b;
 }
 
-static uint8_t graphics_lerp_channel(uint8_t first, uint8_t last,
-                                          uint64_t position,
-                                          uint64_t extent) {
-    if (extent <= 1U || position == 0U) return first;
-    if (position >= extent - 1U) return last;
+static uint64_t graphics_gradient_step(uint64_t extent) {
+    if (extent <= 1U) return 0U;
     const uint64_t denominator = extent - 1U;
-    const uint64_t inverse = denominator - position;
-    const uint64_t value = (uint64_t)first * inverse +
-                           (uint64_t)last * position +
-                           denominator / 2U;
-    return (uint8_t)(value / denominator);
+    return (65536U + denominator / 2U) / denominator;
+}
+
+static uint32_t graphics_gradient_weight(uint64_t position,
+                                        uint64_t extent,
+                                        uint64_t step) {
+    if (extent <= 1U || position == 0U) return 0U;
+    if (position >= extent - 1U) return 65536U;
+    if (step == 0U)
+        return (uint32_t)((position * 65536U) / (extent - 1U));
+    const uint64_t weight = position * step;
+    return weight > 65536U ? 65536U : (uint32_t)weight;
+}
+
+static uint8_t graphics_lerp_channel_weight(uint8_t first, uint8_t last,
+                                            uint32_t weight) {
+    const uint32_t inverse = 65536U - weight;
+    const uint32_t value = (uint32_t)first * inverse +
+                           (uint32_t)last * weight + 32768U;
+    return (uint8_t)(value >> 16);
 }
 
 bool graphics_init(const struct nexus_graphics_surface *surface) {
@@ -168,30 +180,33 @@ void graphics_fill_gradient(
         height = active_surface.height - y;
     graphics_mark_damage(x, y, width, height);
 
+    const uint64_t x_step = graphics_gradient_step(gradient_width);
+    const uint64_t y_step = graphics_gradient_step(gradient_height);
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
     for (uint64_t row = 0U; row < height; ++row) {
-        const uint8_t left_red = graphics_lerp_channel(
-            top_left_red, bottom_left_red, row, gradient_height);
-        const uint8_t left_green = graphics_lerp_channel(
-            top_left_green, bottom_left_green, row, gradient_height);
-        const uint8_t left_blue = graphics_lerp_channel(
-            top_left_blue, bottom_left_blue, row, gradient_height);
-        const uint8_t right_red = graphics_lerp_channel(
-            top_right_red, bottom_right_red, row, gradient_height);
-        const uint8_t right_green = graphics_lerp_channel(
-            top_right_green, bottom_right_green, row, gradient_height);
-        const uint8_t right_blue = graphics_lerp_channel(
-            top_right_blue, bottom_right_blue, row, gradient_height);
-        volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
+        const uint32_t y_weight =
+            graphics_gradient_weight(row, gradient_height, y_step);
+        const uint8_t left_red = graphics_lerp_channel_weight(
+            top_left_red, bottom_left_red, y_weight);
+        const uint8_t left_green = graphics_lerp_channel_weight(
+            top_left_green, bottom_left_green, y_weight);
+        const uint8_t left_blue = graphics_lerp_channel_weight(
+            top_left_blue, bottom_left_blue, y_weight);
+        const uint8_t right_red = graphics_lerp_channel_weight(
+            top_right_red, bottom_right_red, y_weight);
+        const uint8_t right_green = graphics_lerp_channel_weight(
+            top_right_green, bottom_right_green, y_weight);
+        const uint8_t right_blue = graphics_lerp_channel_weight(
+            top_right_blue, bottom_right_blue, y_weight);
+        volatile uint32_t *destination = (volatile uint32_t *)(uintptr_t)
             (base + (y + row) * active_surface.pitch + x * 4U);
         for (uint64_t column = 0U; column < width; ++column) {
-            pixels[column] = pack_rgb(
-                graphics_lerp_channel(left_red, right_red, column,
-                                      gradient_width),
-                graphics_lerp_channel(left_green, right_green, column,
-                                      gradient_width),
-                graphics_lerp_channel(left_blue, right_blue, column,
-                                      gradient_width));
+            const uint32_t x_weight = graphics_gradient_weight(
+                column, gradient_width, x_step);
+            destination[column] = pack_rgb(
+                graphics_lerp_channel_weight(left_red, right_red, x_weight),
+                graphics_lerp_channel_weight(left_green, right_green, x_weight),
+                graphics_lerp_channel_weight(left_blue, right_blue, x_weight));
         }
     }
 }
@@ -223,15 +238,30 @@ bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
 
     graphics_mark_damage(x, y, copy_width, copy_height);
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
+    const bool native_xrgb = active_surface.red_mask_size == 8U &&
+        active_surface.red_mask_shift == 16U &&
+        active_surface.green_mask_size == 8U &&
+        active_surface.green_mask_shift == 8U &&
+        active_surface.blue_mask_size == 8U &&
+        active_surface.blue_mask_shift == 0U;
     for (uint64_t row = 0U; row < copy_height; ++row) {
         const uint32_t *source = pixels + (size_t)row * stride_pixels;
-        volatile uint32_t *destination = (volatile uint32_t *)(void *)(
+        uint32_t *destination = (uint32_t *)(uintptr_t)(
             base + (y + row) * active_surface.pitch + x * 4U);
-        for (uint64_t column = 0U; column < copy_width; ++column) {
-            const uint32_t pixel = source[column];
-            destination[column] = pack_rgb(
-                (uint8_t)(pixel >> 16), (uint8_t)(pixel >> 8),
-                (uint8_t)pixel);
+        if (native_xrgb) {
+            size_t remaining = (size_t)copy_width;
+            __asm__ volatile ("cld; rep movsl"
+                              : "+D"(destination), "+S"(source),
+                                "+c"(remaining)
+                              :
+                              : "memory", "cc");
+        } else {
+            for (uint64_t column = 0U; column < copy_width; ++column) {
+                const uint32_t pixel = source[column];
+                destination[column] = pack_rgb(
+                    (uint8_t)(pixel >> 16), (uint8_t)(pixel >> 8),
+                    (uint8_t)pixel);
+            }
         }
     }
     return true;
@@ -286,6 +316,10 @@ void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
                          uint8_t blue, uint8_t alpha) {
     if (!initialized || alpha == 0U || x >= active_surface.width ||
         y >= active_surface.height || width == 0U || height == 0U) return;
+    if (alpha == 255U) {
+        graphics_fill_rect(x, y, width, height, red, green, blue);
+        return;
+    }
     if (width > active_surface.width - x)
         width = active_surface.width - x;
     if (height > active_surface.height - y)

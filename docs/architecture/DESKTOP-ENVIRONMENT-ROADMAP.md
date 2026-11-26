@@ -11,7 +11,7 @@ The desktop remains a freestanding, framebuffer-driven kernel shell. The impleme
 - **Quick Settings:** Provides theme, high-contrast, wallpaper and volume controls plus a truthful wired/network DHCP status line. The service uses the existing persisted Nexus desktop preferences for supported settings.
 - **Notification center:** Adds a bounded 12-entry notification ring, unread tracking, newest-first display, mark-read and clear behavior. Notifications are currently volatile and do not yet provide a general application notification permission/API.
 - **Clipboard:** Adds a bounded 8-entry text history with a 255-byte item limit, duplicate suppression, clear and newest-first retrieval. Ctrl+C and Ctrl+V work for supported text fields in Files, the Browser and Terminal; Ctrl+Shift+V opens the history panel. This is a shell-level text clipboard, not a binary/image clipboard or a shared userspace clipboard daemon.
-- **Search primitives:** Adds a bounded, case-insensitive search API over app, file and setting metadata, prioritizing title-prefix matches. The Files view retains its own search. A unified interactive global search surface and full-volume index are not yet connected.
+- **Global search:** Win+S opens a keyboard-driven search surface over app entries, common settings and the current Files directory listing. Results are case-insensitive, bounded and ranked with title-prefix matches first; selecting an app opens it, selecting a file opens Files with that name filtered, and selecting a setting opens Settings. The Files view retains its own search. The index is current-directory only, not a recursive or full-volume index.
 - **Themes and accessibility:** Existing dark/light themes, 8 accent colors, 4 gradient wallpapers, high-contrast mode, UI scale, cursor size, mouse sensitivity, scroll speed and left-handed mouse support remain. Quick Settings exposes common controls.
 
 ## Keyboard shortcuts
@@ -23,6 +23,7 @@ The desktop remains a freestanding, framebuffer-driven kernel shell. The impleme
 | Ctrl + Shift + Q | Quick Settings |
 | Ctrl + Shift + N | Notification Center |
 | Ctrl + Shift + V | Clipboard History |
+| Win + S | Search apps, files and settings |
 | Ctrl + C / Ctrl + V | Copy / paste supported text |
 
 ## Performance design

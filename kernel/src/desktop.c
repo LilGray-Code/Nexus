@@ -2100,198 +2100,283 @@ static void draw_shell(void) {
                            "PRESS ESC TO RETURN HOME",
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_SETTINGS) {
-        graphics_blend_round_rect(text_x + 284U, text_y - 2U, 82U, 24U, 5U,
-            settings_hardware_page ? 47U : 25U,
-            settings_hardware_page ? 94U : 41U,
-            settings_hardware_page ? 117U : 64U, 245U);
-        graphics_round_rect(text_x + 284U, text_y - 2U, 82U, 24U, 5U,
-            desktop_accent_palette[desktop_settings.accent][0],
-            desktop_accent_palette[desktop_settings.accent][1],
-            desktop_accent_palette[desktop_settings.accent][2]);
-        graphics_draw_text(text_x + 292U, text_y + 6U, "HARDWARE",
-                           1U, 239U, 247U, 255U);
-        graphics_blend_round_rect(text_x + 374U, text_y - 2U, 82U, 24U, 5U,
-            settings_hardware_page ? 25U : 47U,
-            settings_hardware_page ? 41U : 94U,
-            settings_hardware_page ? 64U : 117U, 245U);
-        graphics_round_rect(text_x + 374U, text_y - 2U, 82U, 24U, 5U,
-            desktop_accent_palette[desktop_settings.accent][0],
-            desktop_accent_palette[desktop_settings.accent][1],
-            desktop_accent_palette[desktop_settings.accent][2]);
-        graphics_draw_text(text_x + 382U, text_y + 6U, "PERSONAL",
-                           1U, 239U, 247U, 255U);
-        if (settings_hardware_page) {
-            graphics_draw_text(text_x, text_y, "HARDWARE OVERVIEW",
-                               2U, 239U, 249U, 255U);
-            graphics_draw_text(text_x, text_y + 26U,
-                "DEVICE IDENTIFIERS, CAPABILITIES AND ACTIVE DRIVER STATE",
-                1U, 170U, 191U, 211U);
-            desktop_draw_hardware_overview(text_x, text_y + 46U);
-        } else {
-        graphics_draw_text(text_x, text_y, "PERSONALIZATION",
-                           2U, 239U, 249U, 255U);
-        graphics_draw_text(text_x, text_y + 26U,
-                           "THEME AND ACCENT APPLY IMMEDIATELY",
-                           1U, 170U, 191U, 211U);
-
-        const uint64_t theme_y = text_y + 42U;
-        const bool light_theme = desktop_theme_is_light();
-        graphics_blend_round_rect(text_x, theme_y, 116U, 32U, 8U,
-            light_theme ? 37U : 43U, light_theme ? 57U : 63U,
-            light_theme ? 75U : 83U, 245U);
-        graphics_round_rect(text_x, theme_y, 116U, 32U, 8U,
-            !light_theme ? 45U : 95U, !light_theme ? 177U : 115U,
-            !light_theme ? 202U : 135U);
-        graphics_draw_text(text_x + 14U, theme_y + 12U, "DARK",
-                           1U, 239U, 247U, 255U);
-        graphics_blend_round_rect(text_x + 128U, theme_y, 116U, 32U, 8U,
-            light_theme ? 202U : 43U, light_theme ? 222U : 63U,
-            light_theme ? 237U : 83U, 245U);
-        graphics_round_rect(text_x + 128U, theme_y, 116U, 32U, 8U,
-            light_theme ? 45U : 95U, light_theme ? 177U : 115U,
-            light_theme ? 202U : 135U);
-        graphics_draw_text(text_x + 142U, theme_y + 12U, "LIGHT",
-                           1U,
-            light_theme ? 38U : 239U,
-            light_theme ? 56U : 247U,
-            light_theme ? 77U : 255U);
-
-        graphics_draw_text(text_x, text_y + 86U, "ACCENT COLOR",
-                           1U, 170U, 191U, 211U);
-        static const char *const accent_names[4] = {
-            "CYAN", "VIOLET", "GREEN", "AMBER"
+        static const char *const tab_labels[SETTINGS_PAGE_COUNT] = {
+            "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "DEVICES"
         };
-        for (size_t i = 0U; i < 4U; ++i) {
-            const uint64_t swatch_x = text_x + (uint64_t)i * 78U;
-            graphics_blend_round_rect(swatch_x, text_y + 104U, 62U, 25U, 6U,
-                desktop_accent_palette[i][0],
-                desktop_accent_palette[i][1],
-                desktop_accent_palette[i][2], 250U);
-            graphics_round_rect(swatch_x, text_y + 104U, 62U, 25U, 6U,
-                i == desktop_settings.accent ? 255U : 91U,
-                i == desktop_settings.accent ? 255U : 111U,
-                i == desktop_settings.accent ? 255U : 135U);
-            graphics_draw_text(swatch_x + 3U, text_y + 136U,
-                               accent_names[i], 1U,
-                light_theme ? 57U : 220U,
-                light_theme ? 73U : 235U,
-                light_theme ? 91U : 247U);
+        const uint64_t tab_y = text_y - 2U;
+        for (size_t tab = 0U; tab < SETTINGS_PAGE_COUNT; ++tab) {
+            const uint64_t tab_x = text_x + (uint64_t)tab * 80U;
+            desktop_settings_draw_button(tab_x, tab_y, 74U, 25U,
+                                         tab_labels[tab],
+                                         settings_page == (enum desktop_settings_page)tab);
         }
 
-        graphics_blend_round_rect(text_x, text_y + 158U, 320U, 44U, 8U,
-            light_theme ? 233U : 23U,
-            light_theme ? 240U : 40U,
-            light_theme ? 247U : 62U, 244U);
-        desktop_draw_accent(text_x, text_y + 158U, 4U, 44U);
-        graphics_draw_text(text_x + 14U, text_y + 168U,
-                           "LIVE PREVIEW - NEXUS WORKSPACE",
-                           1U,
-            light_theme ? 43U : 239U,
-            light_theme ? 60U : 247U,
-            light_theme ? 80U : 255U);
-        graphics_draw_text(text_x + 14U, text_y + 184U,
-                           "Window chrome, taskbar and launcher updated",
-                           1U,
-            light_theme ? 79U : 170U,
-            light_theme ? 96U : 191U,
-            light_theme ? 119U : 211U);
+        const uint64_t content_y = text_y + 42U;
+        const bool light_theme = desktop_theme_is_light();
+        if (settings_page == SETTINGS_PERSONAL) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "PERSONALIZATION", "Make the Nexus workspace match your style.");
+            graphics_draw_text(text_x, content_y + 60U, "COLOR THEME",
+                               1U, 142U, 174U, 199U);
+            desktop_settings_draw_button(text_x, content_y + 77U,
+                112U, 30U, "DARK",
+                desktop_settings.theme == NEXUS_SETTINGS_THEME_DARK);
+            desktop_settings_draw_button(text_x + 122U, content_y + 77U,
+                112U, 30U, "LIGHT",
+                desktop_settings.theme == NEXUS_SETTINGS_THEME_LIGHT);
 
-        graphics_draw_text(text_x, text_y + 222U, "SYSTEM SNAPSHOT",
-                           1U, 133U, 164U, 190U);
-        char line[64];
-        format_labeled_u64("TOTAL MEMORY: ", memory_total_bytes(), line);
-        graphics_draw_text(text_x, text_y + 246U, line,
-                           1U, 233U, 243U, 252U);
-        format_labeled_u64("FREE MEMORY: ", memory_free_bytes(), line);
-        graphics_draw_text(text_x, text_y + 268U, line,
-                           1U, 170U, 225U, 190U);
-        format_labeled_u64("UPTIME: ", timer_ticks() / 100U, line);
-        graphics_draw_text(text_x + 220U, text_y + 268U, line,
-                           1U, 170U, 225U, 190U);
-
-        struct nexus_net_info info;
-        if (net_get_info(&info) && info.interface_ready) {
-            const char *status = !info.link_up ? "LINK DOWN"
-                : (info.ipv4_configured ? "CONNECTED" : "WAITING FOR DHCP");
-            graphics_draw_text(text_x, text_y + 298U, "NETWORK",
-                               1U, 133U, 164U, 190U);
-            graphics_draw_text(text_x + 76U, text_y + 298U, status,
-                               1U, info.link_up ? 108U : 239U,
-                               info.link_up ? 216U : 177U,
-                               info.link_up ? 229U : 119U);
-        } else {
-            graphics_draw_text(text_x, text_y + 298U,
-                               "NETWORK: NO ADAPTER DETECTED",
-                               1U, 239U, 177U, 119U);
-        }
-        const char *wifi_status = "NO PCI RADIO DETECTED";
-        if (wifi_available()) {
-            switch (wifi_get_state()) {
-                case NEXUS_WIFI_READY: wifi_status = "RADIO READY"; break;
-                case NEXUS_WIFI_SCANNING: wifi_status = "SCANNING"; break;
-                case NEXUS_WIFI_CONNECTING: wifi_status = "CONNECTING"; break;
-                case NEXUS_WIFI_CONNECTED: wifi_status = "CONNECTED"; break;
-                case NEXUS_WIFI_FAILED: wifi_status = "RADIO ERROR"; break;
-                default: wifi_status = "RADIO UNAVAILABLE"; break;
+            graphics_draw_text(text_x, content_y + 124U, "ACCENT COLOR",
+                               1U, 142U, 174U, 199U);
+            static const char *const accent_names[NEXUS_SETTINGS_ACCENT_COUNT] = {
+                "CYAN", "VIOLET", "GREEN", "AMBER",
+                "ROSE", "BLUE", "LIME", "ORCHID"
+            };
+            for (size_t i = 0U; i < NEXUS_SETTINGS_ACCENT_COUNT; ++i) {
+                const uint64_t col = (uint64_t)(i % 4U);
+                const uint64_t row = (uint64_t)(i / 4U);
+                const uint64_t x = text_x + col * 82U;
+                const uint64_t y = content_y + 140U + row * 34U;
+                graphics_blend_round_rect(x, y, 74U, 27U, 6U,
+                    desktop_accent_palette[i][0],
+                    desktop_accent_palette[i][1],
+                    desktop_accent_palette[i][2], 245U);
+                graphics_round_rect(x, y, 74U, 27U, 6U,
+                    i == desktop_settings.accent ? 255U : 76U,
+                    i == desktop_settings.accent ? 255U : 91U,
+                    i == desktop_settings.accent ? 255U : 115U);
+                graphics_draw_text(x + 7U, y + 10U, accent_names[i],
+                    1U, 12U, 29U, 45U);
             }
-        } else if (wifi_pci_candidate_count() != 0U) {
-            wifi_status = "DEVICE FOUND - CHIPSET DRIVER NEEDED";
-        }
-        graphics_draw_text(text_x, text_y + 310U, "WI-FI:",
-                           1U, 133U, 164U, 190U);
-        graphics_draw_text(text_x + 52U, text_y + 310U,
-                           wifi_status, 1U,
-                           wifi_available() ? 108U : 239U,
-                           wifi_available() ? 216U : 177U,
-                           wifi_available() ? 229U : 119U);
 
-        const char *storage_status = vfs_nxfs_mounted()
-            ? (vfs_nxfs_writable() ? "PERSISTENT NXFS READY"
-                                   : "NXFS READ ONLY")
-            : (nexus_boot_pack_ready()
-                ? "BUNDLED SYSTEM FILES / RAM OVERLAY"
-                : (vfs_has_filesystem() ? "VOLATILE RAM STORAGE"
-                                        : "NO USER STORAGE"));
-        graphics_draw_text(text_x, text_y + 322U, storage_status,
-                           1U, 170U, 225U, 190U);
-        graphics_draw_text(text_x, text_y + 350U,
-            desktop_preferences_persistent
-                ? "PERSONALIZATION SAVED TO NEXUS DATA"
-                : (desktop_preferences_saved
-                    ? "PERSONALIZATION SAVED TO RAM ONLY"
-                    : "PERSONALIZATION NOT SAVED"),
-            1U, desktop_preferences_persistent ? 119U : 239U,
-            desktop_preferences_persistent ? 229U : 177U,
-            desktop_preferences_persistent ? 190U : 119U);
-        const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
-        graphics_draw_text(text_x, text_y + 372U, "PROCESSOR:",
-                           1U, 133U, 164U, 190U);
-        graphics_draw_text(text_x + 76U, text_y + 372U,
-                           cpu->brand[0] != '\0' ? cpu->brand
-                                                  : "CPU INVENTORY UNAVAILABLE",
-                           1U, 233U, 243U, 252U);
-        format_labeled_u64("CPU CORES: ",
-                           cpu->physical_cores_per_package, line);
-        graphics_draw_text(text_x, text_y + 390U, line,
-                           1U, 170U, 225U, 190U);
-        graphics_draw_text(text_x + 166U, text_y + 390U,
-                           nexus_cpu_feature_level_label(), 1U,
-                           108U, 216U, 229U);
-
-        char adapter_count_text[21];
-        format_u64(gpu_adapter_count(), adapter_count_text);
-        graphics_draw_text(text_x, text_y + 408U, "DISPLAY ADAPTER:",
-                           1U, 133U, 164U, 190U);
-        graphics_draw_text(text_x + 102U, text_y + 408U,
-                           gpu_primary_name(), 1U,
-                           233U, 243U, 252U);
-        graphics_draw_text(text_x + 330U, text_y + 408U,
-                           "COUNT:", 1U, 133U, 164U, 190U);
-        graphics_draw_text(text_x + 378U, text_y + 408U,
-                           adapter_count_text, 1U, 170U, 225U, 190U);
-        graphics_draw_text(text_x, text_y + 426U,
-                           gpu_render_path_name(), 1U,
-                           108U, 216U, 229U);
+            graphics_draw_text(text_x, content_y + 218U, "WALLPAPER",
+                               1U, 142U, 174U, 199U);
+            static const char *const wallpaper_names[NEXUS_SETTINGS_WALLPAPER_COUNT] = {
+                "AURORA", "OCEAN", "FOREST", "SUNSET"
+            };
+            for (size_t i = 0U; i < NEXUS_SETTINGS_WALLPAPER_COUNT; ++i)
+                desktop_settings_draw_button(text_x + (uint64_t)i * 92U,
+                    content_y + 234U, 84U, 29U, wallpaper_names[i],
+                    desktop_settings.wallpaper == i);
+            graphics_blend_round_rect(text_x + 390U, content_y + 72U,
+                242U, 184U, 12U,
+                light_theme ? 232U : 18U,
+                light_theme ? 240U : 35U,
+                light_theme ? 248U : 58U, 245U);
+            graphics_fill_gradient(text_x + 404U, content_y + 86U,
+                214U, 78U,
+                desktop_accent_palette[desktop_settings.accent][0],
+                desktop_accent_palette[desktop_settings.accent][1],
+                desktop_accent_palette[desktop_settings.accent][2],
+                23U, 67U, 116U, 8U, 25U, 48U, 44U, 88U, 132U);
+            graphics_blend_round_rect(text_x + 404U, content_y + 174U,
+                214U, 64U, 8U,
+                light_theme ? 248U : 29U,
+                light_theme ? 250U : 48U,
+                light_theme ? 253U : 72U, 245U);
+            graphics_draw_text(text_x + 416U, content_y + 190U,
+                "NEXUS WORKSPACE", 1U,
+                light_theme ? 38U : 239U,
+                light_theme ? 54U : 247U,
+                light_theme ? 75U : 255U);
+            graphics_draw_text(text_x + 416U, content_y + 208U,
+                "LIVE APPEARANCE PREVIEW", 1U,
+                light_theme ? 87U : 171U,
+                light_theme ? 103U : 192U,
+                light_theme ? 126U : 211U);
+            graphics_draw_text(text_x, content_y + 287U,
+                desktop_preferences_persistent
+                    ? "SETTINGS SAVED TO NEXUS DATA"
+                    : (desktop_preferences_saved
+                        ? "SETTINGS SAVED TO RAM ONLY"
+                        : "SETTINGS WILL BE SAVED WHEN YOU CHANGE AN OPTION"),
+                1U, desktop_preferences_persistent ? 109U : 229U,
+                desktop_preferences_persistent ? 219U : 186U,
+                desktop_preferences_persistent ? 181U : 130U);
+        } else if (settings_page == SETTINGS_DISPLAY) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "DISPLAY", "Screen mode is supplied by firmware; workspace controls are live.");
+            char width_text[64], height_text[64];
+            format_labeled_u64("WIDTH: ", screen_width, width_text);
+            format_labeled_u64("HEIGHT: ", screen_height, height_text);
+            graphics_blend_round_rect(text_x, content_y + 58U,
+                300U, 58U, 8U, light_theme ? 235U : 24U,
+                light_theme ? 241U : 42U, light_theme ? 248U : 66U, 245U);
+            graphics_draw_text(text_x + 12U, content_y + 70U,
+                width_text, 1U, 239U, 247U, 255U);
+            graphics_draw_text(text_x + 160U, content_y + 70U,
+                height_text, 1U, 239U, 247U, 255U);
+            graphics_draw_text(text_x, content_y + 128U, "INTERFACE SCALE",
+                               1U, 142U, 174U, 199U);
+            static const uint8_t scales[5] = {80U, 90U, 100U, 110U, 120U};
+            for (size_t i = 0U; i < 5U; ++i) {
+                char label[8] = {'0','0','0','%', '\\0'};
+                label[0] = (char)('0' + scales[i] / 100U);
+                label[1] = (char)('0' + (scales[i] / 10U) % 10U);
+                label[2] = (char)('0' + scales[i] % 10U);
+                desktop_settings_draw_button(text_x + (uint64_t)i * 68U,
+                    content_y + 145U, 62U, 30U, label,
+                    desktop_settings.ui_scale_percent == scales[i]);
+            }
+            graphics_draw_text(text_x, content_y + 196U, "POINTER SIZE",
+                               1U, 142U, 174U, 199U);
+            for (uint8_t i = 1U; i <= 3U; ++i) {
+                const char *label = i == 1U ? "SMALL" : (i == 2U ? "NORMAL" : "LARGE");
+                desktop_settings_draw_button(text_x + (uint64_t)(i - 1U) * 104U,
+                    content_y + 213U, 96U, 30U, label,
+                    desktop_settings.cursor_size == i);
+            }
+            graphics_draw_text(text_x, content_y + 270U,
+                "RENDER PATH:", 1U, 142U, 174U, 199U);
+            graphics_draw_text(text_x + 102U, content_y + 270U,
+                gpu_render_path_name(), 1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x, content_y + 296U,
+                "RESOLUTION CHANGES REQUIRE A DISPLAY MODESET DRIVER.",
+                1U, 231U, 183U, 127U);
+        } else if (settings_page == SETTINGS_INPUT) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "INPUT", "Tune pointer movement and mouse behavior.");
+            graphics_draw_text(text_x, content_y + 66U, "MOUSE SENSITIVITY",
+                               1U, 142U, 174U, 199U);
+            static const uint8_t speeds[7] = {
+                50U, 75U, 100U, 125U, 150U, 175U, 200U
+            };
+            for (size_t i = 0U; i < 7U; ++i) {
+                char label[8] = {
+                    (char)('0' + speeds[i] / 100U),
+                    (char)('0' + (speeds[i] / 10U) % 10U),
+                    (char)('0' + speeds[i] % 10U), '%', '\\0'
+                };
+                desktop_settings_draw_button(text_x + (uint64_t)i * 70U,
+                    content_y + 83U, 64U, 30U, label,
+                    desktop_settings.mouse_sensitivity_percent == speeds[i]);
+            }
+            graphics_draw_text(text_x, content_y + 140U, "SCROLL SPEED",
+                               1U, 142U, 174U, 199U);
+            for (uint8_t i = 1U; i <= 5U; ++i) {
+                char label[8] = {'S','L','O','W',' ','\0','\0','\0'};
+                if (i == 1U) label[0] = '1';
+                else {
+                    label[0] = 'S'; label[1] = 'P'; label[2] = 'E';
+                    label[3] = 'E'; label[4] = 'D';
+                    label[5] = (char)('0' + i); label[6] = '\\0';
+                }
+                desktop_settings_draw_button(text_x + (uint64_t)(i - 1U) * 82U,
+                    content_y + 157U, 74U, 30U, label,
+                    desktop_settings.scroll_speed == i);
+            }
+            graphics_draw_text(text_x, content_y + 216U, "MOUSE HANDEDNESS",
+                               1U, 142U, 174U, 199U);
+            desktop_settings_draw_button(text_x, content_y + 233U,
+                170U, 32U,
+                desktop_settings.left_handed_mouse
+                    ? "LEFT-HANDED" : "RIGHT-HANDED",
+                desktop_settings.left_handed_mouse);
+            graphics_draw_text(text_x + 194U, content_y + 244U,
+                "PRIMARY BUTTON SWAPS", 1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 289U,
+                "KEYBOARD LAYOUT: US QWERTY", 1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x, content_y + 313U,
+                "USB AND PS/2 KEYBOARDS USE THE SAME INPUT PATH.",
+                1U, 142U, 174U, 199U);
+        } else if (settings_page == SETTINGS_ACCESSIBILITY) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "ACCESSIBILITY", "Improve readability and pointer visibility.");
+            graphics_draw_text(text_x, content_y + 66U, "HIGH CONTRAST MODE",
+                               1U, 142U, 174U, 199U);
+            desktop_settings_draw_button(text_x, content_y + 83U,
+                160U, 32U,
+                desktop_settings.high_contrast ? "HIGH CONTRAST ON" : "HIGH CONTRAST OFF",
+                desktop_settings.high_contrast);
+            graphics_draw_text(text_x, content_y + 143U, "TEXT SIZE PRESETS",
+                               1U, 142U, 174U, 199U);
+            desktop_settings_draw_button(text_x, content_y + 160U,
+                100U, 30U, "STANDARD",
+                desktop_settings.ui_scale_percent == 100U);
+            desktop_settings_draw_button(text_x + 112U, content_y + 160U,
+                100U, 30U, "LARGE",
+                desktop_settings.ui_scale_percent == 110U);
+            desktop_settings_draw_button(text_x + 224U, content_y + 160U,
+                100U, 30U, "EXTRA LARGE",
+                desktop_settings.ui_scale_percent == 120U);
+            graphics_draw_text(text_x, content_y + 220U, "POINTER SIZE",
+                               1U, 142U, 174U, 199U);
+            for (uint8_t i = 1U; i <= 3U; ++i) {
+                desktop_settings_draw_button(text_x + (uint64_t)(i - 1U) * 104U,
+                    content_y + 237U, 96U, 30U,
+                    i == 1U ? "SMALL" : (i == 2U ? "NORMAL" : "LARGE"),
+                    desktop_settings.cursor_size == i);
+            }
+            graphics_draw_text(text_x, content_y + 296U,
+                "LARGE TEXT AND POINTER CHANGES APPLY IMMEDIATELY.",
+                1U, 108U, 216U, 229U);
+        } else if (settings_page == SETTINGS_SYSTEM) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "SYSTEM", "Sound, connectivity and system status.");
+            graphics_draw_text(text_x, content_y + 66U, "MASTER VOLUME",
+                               1U, 142U, 174U, 199U);
+            static const uint8_t volumes[5] = {0U, 25U, 50U, 75U, 100U};
+            for (size_t i = 0U; i < 5U; ++i) {
+                char label[8] = {
+                    (char)('0' + volumes[i] / 100U),
+                    (char)('0' + (volumes[i] / 10U) % 10U),
+                    (char)('0' + volumes[i] % 10U), '%', '\\0'
+                };
+                desktop_settings_draw_button(text_x + (uint64_t)i * 82U,
+                    content_y + 83U, 74U, 30U, label,
+                    desktop_settings.volume_percent == volumes[i]);
+            }
+            graphics_draw_text(text_x, content_y + 137U,
+                ac97_is_ready()
+                    ? "AC97 AUDIO DEVICE READY - MASTER VOLUME CONTROL ENABLED"
+                    : "NO COMPATIBLE AC97 AUDIO DEVICE - VOLUME SAVED FOR LATER",
+                1U, ac97_is_ready() ? 108U : 231U,
+                ac97_is_ready() ? 216U : 183U,
+                ac97_is_ready() ? 229U : 127U);
+            struct nexus_net_info info;
+            const char *network_status = "NO NETWORK ADAPTER";
+            if (net_get_info(&info) && info.interface_ready)
+                network_status = !info.link_up ? "ETHERNET LINK DOWN"
+                    : (info.ipv4_configured ? "ETHERNET CONNECTED"
+                                            : "ETHERNET WAITING FOR DHCP");
+            graphics_draw_text(text_x, content_y + 184U, "NETWORK",
+                               1U, 142U, 174U, 199U);
+            graphics_draw_text(text_x + 84U, content_y + 184U,
+                network_status, 1U, 108U, 216U, 229U);
+            const char *wifi_status = "WI-FI NOT DETECTED";
+            if (wifi_available()) {
+                switch (wifi_get_state()) {
+                    case NEXUS_WIFI_READY: wifi_status = "RADIO READY"; break;
+                    case NEXUS_WIFI_SCANNING: wifi_status = "SCANNING"; break;
+                    case NEXUS_WIFI_CONNECTING: wifi_status = "CONNECTING"; break;
+                    case NEXUS_WIFI_CONNECTED: wifi_status = "CONNECTED"; break;
+                    case NEXUS_WIFI_FAILED: wifi_status = "RADIO ERROR"; break;
+                    default: wifi_status = "RADIO UNAVAILABLE"; break;
+                }
+            } else if (wifi_pci_candidate_count() != 0U) {
+                wifi_status = "DEVICE FOUND - DRIVER NEEDED";
+            }
+            graphics_draw_text(text_x, content_y + 211U, "WI-FI",
+                               1U, 142U, 174U, 199U);
+            graphics_draw_text(text_x + 84U, content_y + 211U,
+                wifi_status, 1U, 108U, 216U, 229U);
+            char mem_line[64];
+            format_labeled_u64("FREE MEMORY: ", memory_free_bytes(), mem_line);
+            graphics_draw_text(text_x, content_y + 252U,
+                mem_line, 1U, 231U, 239U, 247U);
+            format_labeled_u64("UPTIME: ", timer_ticks() / 100U, mem_line);
+            graphics_draw_text(text_x, content_y + 276U,
+                mem_line, 1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 310U,
+                desktop_preferences_persistent
+                    ? "PREFERENCES ARE STORED ON NEXUS DATA"
+                    : "PREFERENCES ARE NOT YET STORED PERSISTENTLY",
+                1U, desktop_preferences_persistent ? 108U : 231U,
+                desktop_preferences_persistent ? 216U : 183U,
+                desktop_preferences_persistent ? 229U : 127U);
+        } else {
+            desktop_settings_draw_heading(text_x, content_y,
+                "DEVICES", "Detected hardware, active driver path and capabilities.");
+            desktop_draw_hardware_overview(text_x, content_y + 58U);
         }
     } else if (active_view == DESKTOP_STORE) {
         graphics_draw_text_aa(text_x, text_y, "NEXUS APP STORE",

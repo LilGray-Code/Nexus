@@ -33,3 +33,13 @@ jobs:
 
       - name: Run framebuffer safety regressions
         run: /tmp/nexus-graphics-test
+
+      - name: Compile the XRGB8888 blit fast path with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
+            -Ikernel/src kernel/src/graphics.c \\
+            kernel/tests/graphics_blit_test.c \\
+            -o /tmp/nexus-graphics-blit-test
+
+      - name: Run XRGB8888 blit and row-padding regressions
+        run: /tmp/nexus-graphics-blit-test

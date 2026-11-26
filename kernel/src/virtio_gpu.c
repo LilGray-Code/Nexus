@@ -1429,6 +1429,8 @@ bool virtio_gpu_display_set_topology(uint32_t topology) {
         }
         display_inventory.scanouts[i].x = x;
         display_inventory.scanouts[i].y = y;
+        display_inventory.scanouts[i].width = width;
+        display_inventory.scanouts[i].height = height;
         current_scanout_rect_width[i] = width;
         current_scanout_rect_height[i] = height;
     }

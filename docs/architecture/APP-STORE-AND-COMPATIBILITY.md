@@ -29,6 +29,8 @@ Spotify. It also does not currently support arbitrary Windows PE executables.
 A Store label saying that a website shortcut is installed must never be
 interpreted as the native client being installed or runnable.
 
+The browser currently buffers verified HTTPS downloads up to 4 MiB per file. New NXFS Data volumes support 4 MiB files; existing 1 MiB NXFS volumes remain readable and writable at their original limit. Formatting a Data volume smaller than the new-format geometry falls back to the legacy 1 MiB limit. The signed native package parser accepts payloads up to 4 MiB, but Store-to-package installation still requires a production pinned-key publisher verifier and download-to-install transaction.
+
 The early native userland can load a constrained static x86-64 ELF executable,
 but the system does not yet provide a full POSIX runtime, dynamic linker,
 shared-library ABI, GUI application SDK, background process/service model,

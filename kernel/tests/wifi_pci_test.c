@@ -90,10 +90,10 @@ int main(void) {
     assert(match.specificity == 3U);
 
     static const char package_inf[] =
-        "[Manufacturer]\\r\\n"
-        "Maker=Models,NTamd64\\r\\n"
-        "[Models.NTamd64]\\r\\n"
-        "Wireless=Install, PCI\\\\VEN_8086&DEV_2723&SUBSYS_00248086&REV_01\\r\\n";
+        "[Manufacturer]\r\n"
+        "Maker=Models,NTamd64\r\n"
+        "[Models.NTamd64]\r\n"
+        "Wireless=Install, PCI\\VEN_8086&DEV_2723&SUBSYS_00248086&REV_01\r\n";
     uint8_t driver_image[0x400];
     make_test_driver(driver_image);
     struct nexus_win_driver_package_assessment assessment;

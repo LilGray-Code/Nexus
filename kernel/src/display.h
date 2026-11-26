@@ -146,6 +146,7 @@ bool nexus_display_add_monitor(uint32_t id, bool connected,
                                uint32_t width, uint32_t height,
                                const uint8_t *edid, size_t edid_length);
 bool nexus_display_set_primary_monitor(uint32_t id);
+bool nexus_display_primary_selection_available(void);
 /* Extended/mirror layouts require a backend capable of programming all outputs. */
 bool nexus_display_set_topology(enum nexus_display_topology topology);
 bool nexus_display_topology_available(void);

@@ -447,6 +447,19 @@ bool nexus_game_library_launch(
         last_error = NEXUS_GAME_LIBRARY_ERROR_ANTICHEAT;
         return false;
     }
+    /* This increment only launches native Nexus executables. Preserve a
+     * specific anti-cheat diagnosis above, then reject other guest platforms
+     * explicitly until Wine/Proton/Linux runtimes are actually implemented.
+     */
+    if (entry->compatibility.platform != NEXUS_GAME_PLATFORM_NATIVE_NEXUS ||
+        entry->executable_path[0] == '\0') {
+        last_error = NEXUS_GAME_LIBRARY_ERROR_BACKEND;
+        return false;
+    }
+    if (assessment.status == NEXUS_GAME_ASSESS_INVALID) {
+        last_error = NEXUS_GAME_LIBRARY_ERROR_ARGUMENT;
+        return false;
+    }
     if (assessment.status == NEXUS_GAME_ASSESS_TESTED_UNSUPPORTED) {
         last_error = NEXUS_GAME_LIBRARY_ERROR_EXECUTION;
         return false;
@@ -460,15 +473,15 @@ bool nexus_game_library_launch(
         last_error = NEXUS_GAME_LIBRARY_ERROR_RETEST;
         return false;
     }
-    if (entry->compatibility.platform != NEXUS_GAME_PLATFORM_NATIVE_NEXUS ||
-        entry->executable_path[0] == '\0') {
-        last_error = NEXUS_GAME_LIBRARY_ERROR_BACKEND;
+    if (assessment.status == NEXUS_GAME_ASSESS_READY_TO_TEST &&
+        !allow_untested) {
+        last_error = NEXUS_GAME_LIBRARY_ERROR_UNTESTED;
         return false;
     }
-    if (!allow_untested &&
+    if (assessment.status != NEXUS_GAME_ASSESS_READY_TO_TEST &&
         assessment.status != NEXUS_GAME_ASSESS_VERIFIED &&
         assessment.status != NEXUS_GAME_ASSESS_PLAYABLE_LIMITATIONS) {
-        last_error = NEXUS_GAME_LIBRARY_ERROR_UNTESTED;
+        last_error = NEXUS_GAME_LIBRARY_ERROR_ARGUMENT;
         return false;
     }
 

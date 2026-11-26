@@ -1,4 +1,5 @@
 #include "download.h"
+#include "nxfs.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -38,6 +39,9 @@ static void test_collision_suffix_stays_before_extension(void) {
     assert(nexus_download_unique_name("APP.ZIP", 12U, name));
     assert(strcmp(name, "APP_12.ZIP") == 0);
 }
+
+_Static_assert(NEXUS_NXFS_MAX_FILE_BYTES == (4U * 1024U * 1024U),
+               "browser and persistent download limit must be 4 MiB");
 
 int main(void) {
     test_url_filename_and_query_removal();

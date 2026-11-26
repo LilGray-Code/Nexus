@@ -33,6 +33,21 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   or modifying them. This is discovery/resource inventory only: Intel, AMD,
   and NVIDIA command engines are not initialized, no native 3D driver is
   shipped for those devices, and their 2D/3D acceleration flags remain false.
+- VirtIO GPU continues to provide a real 2D resource/scanout/transfer command
+  path, but the desktop pixels are still rasterized by the CPU and uploaded
+  through TRANSFER_TO_HOST_2D; this is host scanout, not accelerated desktop
+  rendering. When a VirtIO GPU advertises VIRGL and returns a supported Virgl
+  capset, the driver now negotiates optional VIRGL/CONTEXT_INIT features,
+  creates a Virgl context, and exposes a bounded 64 KiB command-stream submit
+  path. Every submit requests a fence and waits for the matching completion
+  response. Boot sends a Virgl NOP as a command-channel smoke test. This proves
+  only context creation and command/fence transport, not successful 3D drawing:
+  the kernel still does not create render targets, compile shaders, execute a
+  draw workload, or present GPU-rendered frames. The 2D/3D acceleration flags
+  therefore remain false. There is no Vulkan ICD, OpenGL/Mesa Gallium frontend,
+  shader compiler, userspace graphics ABI, asynchronous GPU scheduler, or
+  general GPU memory manager yet; Venus/Vulkan capsets are not exposed as a
+  working Vulkan implementation.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal, and
   Installer views, plus keyboard and mouse input. The shell supports movable,
   resizable app windows, left/right edge snapping, top-edge maximize, minimize,

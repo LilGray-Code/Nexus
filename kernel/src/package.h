@@ -69,8 +69,9 @@ bool nexus_package_verify(const void *package_bytes, size_t package_length,
                           struct nexus_package_manifest *manifest);
 /*
  * Install one static ELF64 app into the writable NXFS Data volume. Signed
- * PERMISSIONS= metadata controls the optional syscalls granted at launch;
- * legacy packages receive no optional capabilities.
+ * PERMISSIONS= metadata lists the publisher's requested capabilities; a
+ * separate local approval record grants a subset at launch. Legacy packages
+ * and packages without a local approval record receive no optional caps.
  * The signed .NPK receipt is committed only after the executable is present.
  */
 bool nexus_package_install(const void *package_bytes, size_t package_length,

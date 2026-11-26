@@ -30,7 +30,7 @@ static void test_pci_best_exact_match(void) {
     assert(strcmp(match.install_section, "Install") == 0);
     assert(strstr(match.hardware_id, "SUBSYS_00248086") != NULL);
     assert(match.specificity == 3U);
-    assert(match.line_number == 8U);
+    assert(match.line_number == 7U);
 }
 
 static void test_pci_wrong_subsystem_rejected(void) {

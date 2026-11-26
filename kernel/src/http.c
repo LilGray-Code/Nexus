@@ -236,6 +236,191 @@ bool nexus_http_decode_headers(const uint8_t *wire, size_t wire_length,
     return true;
 }
 
+enum nexus_http_chunk_state {
+    NEXUS_HTTP_CHUNK_SIZE = 0,
+    NEXUS_HTTP_CHUNK_SIZE_LF,
+    NEXUS_HTTP_CHUNK_DATA,
+    NEXUS_HTTP_CHUNK_DATA_CR,
+    NEXUS_HTTP_CHUNK_DATA_LF,
+    NEXUS_HTTP_CHUNK_TRAILER,
+    NEXUS_HTTP_CHUNK_TRAILER_LF,
+    NEXUS_HTTP_CHUNK_DONE,
+    NEXUS_HTTP_CHUNK_FAILED
+};
+
+void nexus_http_chunked_decoder_init(
+    struct nexus_http_chunked_decoder *decoder, uint32_t maximum_bytes) {
+    if (decoder == NULL) return;
+    *decoder = (struct nexus_http_chunked_decoder){0};
+    decoder->maximum_bytes = maximum_bytes;
+    decoder->state = NEXUS_HTTP_CHUNK_SIZE;
+}
+
+static int http_hex_digit(uint8_t value) {
+    if (value >= '0' && value <= '9') return (int)(value - '0');
+    if (value >= 'a' && value <= 'f') return (int)(value - 'a' + 10U);
+    if (value >= 'A' && value <= 'F') return (int)(value - 'A' + 10U);
+    return -1;
+}
+
+bool nexus_http_chunked_decoder_feed(
+    struct nexus_http_chunked_decoder *decoder,
+    const uint8_t *input, size_t input_length, size_t *input_used,
+    uint8_t *output, size_t output_capacity, size_t *output_length,
+    bool *complete) {
+    if (decoder == NULL || input_used == NULL || output_length == NULL ||
+        complete == NULL || (input_length != 0U && input == NULL) ||
+        (output_capacity != 0U && output == NULL) ||
+        decoder->state == NEXUS_HTTP_CHUNK_FAILED)
+        return false;
+
+    size_t consumed = 0U;
+    size_t produced = 0U;
+    *complete = decoder->state == NEXUS_HTTP_CHUNK_DONE;
+    while (consumed < input_length &&
+           decoder->state != NEXUS_HTTP_CHUNK_DONE) {
+        const uint8_t ch = input[consumed];
+        switch (decoder->state) {
+        case NEXUS_HTTP_CHUNK_SIZE: {
+            if (ch == '\r') {
+                if (!decoder->line_has_digits) goto malformed;
+                decoder->state = NEXUS_HTTP_CHUNK_SIZE_LF;
+                ++consumed;
+                break;
+            }
+            if (ch == ';') {
+                if (!decoder->line_has_digits ||
+                    decoder->line_extension) goto malformed;
+                decoder->line_extension = true;
+                ++decoder->line_length;
+                ++consumed;
+                break;
+            }
+            if (decoder->line_extension) {
+                if (!((ch >= 0x20U && ch <= 0x7EU) || ch == '\t'))
+                    goto malformed;
+                if (decoder->line_length >= NEXUS_HTTP_CHUNK_LINE_MAX)
+                    goto malformed;
+                ++decoder->line_length;
+                ++consumed;
+                break;
+            }
+            {
+                const int digit = http_hex_digit(ch);
+                if (digit < 0 || decoder->line_length >= 8U)
+                    goto malformed;
+                if (decoder->chunk_value >
+                    (UINT32_MAX - (uint32_t)digit) / 16U)
+                    goto malformed;
+                decoder->chunk_value =
+                    decoder->chunk_value * 16U + (uint32_t)digit;
+                decoder->line_has_digits = true;
+                ++decoder->line_length;
+                ++consumed;
+            }
+            break;
+        }
+        case NEXUS_HTTP_CHUNK_SIZE_LF:
+            if (ch != '\n') goto malformed;
+            ++consumed;
+            if (decoder->chunk_value == 0U) {
+                decoder->state = NEXUS_HTTP_CHUNK_TRAILER;
+                decoder->line_length = 0U;
+                decoder->line_has_colon = false;
+            } else {
+                if (decoder->decoded_bytes > decoder->maximum_bytes ||
+                    decoder->chunk_value >
+                        decoder->maximum_bytes - decoder->decoded_bytes)
+                    goto malformed;
+                decoder->chunk_remaining = decoder->chunk_value;
+                decoder->state = NEXUS_HTTP_CHUNK_DATA;
+            }
+            break;
+        case NEXUS_HTTP_CHUNK_DATA: {
+            if (produced == output_capacity) {
+                goto output_full;
+            }
+            size_t amount = input_length - consumed;
+            const size_t output_room = output_capacity - produced;
+            if (amount > output_room) amount = output_room;
+            if (amount > decoder->chunk_remaining)
+                amount = decoder->chunk_remaining;
+            for (size_t i = 0U; i < amount; ++i)
+                output[produced + i] = input[consumed + i];
+            consumed += amount;
+            produced += amount;
+            decoder->decoded_bytes += (uint32_t)amount;
+            decoder->chunk_remaining -= (uint32_t)amount;
+            if (decoder->chunk_remaining == 0U)
+                decoder->state = NEXUS_HTTP_CHUNK_DATA_CR;
+            break;
+        }
+        case NEXUS_HTTP_CHUNK_DATA_CR:
+            if (ch != '\r') goto malformed;
+            ++consumed;
+            decoder->state = NEXUS_HTTP_CHUNK_DATA_LF;
+            break;
+        case NEXUS_HTTP_CHUNK_DATA_LF:
+            if (ch != '\n') goto malformed;
+            ++consumed;
+            decoder->state = NEXUS_HTTP_CHUNK_SIZE;
+            decoder->chunk_value = 0U;
+            decoder->line_length = 0U;
+            decoder->line_has_digits = false;
+            decoder->line_extension = false;
+            break;
+        case NEXUS_HTTP_CHUNK_TRAILER:
+            if (ch == '\r') {
+                if (decoder->line_length != 0U &&
+                    !decoder->line_has_colon) goto malformed;
+                ++consumed;
+                decoder->state = NEXUS_HTTP_CHUNK_TRAILER_LF;
+                break;
+            }
+            if ((ch < 0x20U && ch != '\t') || ch >= 0x7FU ||
+                decoder->line_length >= NEXUS_HTTP_CHUNK_LINE_MAX)
+                goto malformed;
+            if (ch == ':') {
+                if (decoder->line_length == 0U) goto malformed;
+                decoder->line_has_colon = true;
+            }
+            ++decoder->line_length;
+            ++consumed;
+            break;
+        case NEXUS_HTTP_CHUNK_TRAILER_LF:
+            if (ch != '\n') goto malformed;
+            ++consumed;
+            if (decoder->line_length == 0U) {
+                decoder->state = NEXUS_HTTP_CHUNK_DONE;
+                *complete = true;
+            } else {
+                decoder->state = NEXUS_HTTP_CHUNK_TRAILER;
+                decoder->line_length = 0U;
+                decoder->line_has_colon = false;
+            }
+            break;
+        case NEXUS_HTTP_CHUNK_DONE:
+            *complete = true;
+            goto output_full;
+        default:
+            goto malformed;
+        }
+    }
+
+output_full:
+    *input_used = consumed;
+    *output_length = produced;
+    *complete = decoder->state == NEXUS_HTTP_CHUNK_DONE;
+    return true;
+
+malformed:
+    decoder->state = NEXUS_HTTP_CHUNK_FAILED;
+    *input_used = consumed;
+    *output_length = produced;
+    *complete = false;
+    return false;
+}
+
 bool nexus_http_decode_response(const uint8_t *wire, size_t wire_length,
                                 uint8_t *body, size_t body_capacity,
                                 struct nexus_http_response *response) {

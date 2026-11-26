@@ -160,8 +160,12 @@ bool virtio_pci_open(const struct nexus_pci_device *pci,
     /* Device config may be optional for a given class, but its capability
      * must be mapped so drivers can validate and read its fixed header.
      */
+    /* VirtIO-GPU's configuration includes num_scanouts and num_capsets
+     * after the first two event registers. Map the complete 16-byte common
+     * prefix when present; smaller configs remain valid for other devices.
+     */
     const uint32_t device_map_length =
-        device_length > 8U ? 8U : device_length;
+        device_length > 16U ? 16U : device_length;
     if (!map_bar_region(pci, device_bar, device_offset,
                         device_map_length,
                         &device->device_config, NULL)) return false;

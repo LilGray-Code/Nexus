@@ -23,6 +23,8 @@ struct mock_disk {
 
 static struct mock_disk disk;
 
+static struct sparse_block *find_block(uint64_t lba, bool create);
+
 static uint32_t test_crc32(const uint8_t *data, size_t length) {
     uint32_t crc = 0xFFFFFFFFU;
     for (size_t i = 0U; i < length; ++i) {
@@ -54,7 +56,6 @@ static void force_legacy_superblocks(void) {
     }
 }
 
-static struct sparse_block *find_block(uint64_t lba, bool create);
 
 static struct sparse_block *find_block(uint64_t lba, bool create) {
     struct sparse_block *free_slot = NULL;

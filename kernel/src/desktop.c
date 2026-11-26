@@ -100,18 +100,54 @@ static bool store_installed[NEXUS_STORE_MAX_APPS];
 static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
 static uint64_t screen_height;
+static void desktop_virtio_recover_firmware_framebuffer(void) {
+    if (!desktop_virtio_gpu_active || virtio_gpu_active()) return;
+
+    desktop_virtio_gpu_active = false;
+    desktop_render_surface = desktop_firmware_surface;
+    if (!graphics_init(&desktop_firmware_surface)) {
+        serial_write("DESKTOP: VirtIO scanout recovery failed; firmware framebuffer is unavailable\\r\\n");
+        return;
+    }
+
+    gpu_set_virtio_display_active(false);
+    gpu_set_firmware_framebuffer_active(true);
+    (void)nexus_display_register_topology_backend(NULL, NULL);
+    const struct nexus_display_info *display = nexus_display_get_info();
+    if (display != NULL) {
+        (void)nexus_display_set_rotation(
+            (enum nexus_display_rotation)display->upright_rotation);
+        (void)nexus_display_set_scale_percent(display->scale_percent);
+        (void)nexus_display_set_brightness_percent(
+            display->brightness_percent);
+        (void)nexus_display_set_color_temperature(
+            display->color_temperature_kelvin);
+    }
+    screen_width = graphics_width();
+    screen_height = graphics_height();
+    if (screen_width != 0U && (uint64_t)pointer_x >= screen_width)
+        pointer_x = (int64_t)(screen_width - 1U);
+    if (screen_height != 0U && (uint64_t)pointer_y >= screen_height)
+        pointer_y = (int64_t)(screen_height - 1U);
+    serial_write("DESKTOP: VirtIO display command path lost; restored firmware framebuffer desktop\\r\\n");
+}
+
 static bool desktop_virtio_set_topology(
     void *context, enum nexus_display_topology topology) {
     (void)context;
-    return virtio_gpu_display_set_topology(
+    const bool changed = virtio_gpu_display_set_topology(
         topology == NEXUS_DISPLAY_TOPOLOGY_MIRRORED
             ? NEXUS_VIRTIO_GPU_TOPOLOGY_MIRRORED
             : NEXUS_VIRTIO_GPU_TOPOLOGY_EXTENDED);
+    desktop_virtio_recover_firmware_framebuffer();
+    return changed;
 }
 
 static bool desktop_virtio_set_primary(void *context, uint32_t monitor_id) {
     (void)context;
-    return virtio_gpu_display_set_primary(monitor_id);
+    const bool selected = virtio_gpu_display_set_primary(monitor_id);
+    desktop_virtio_recover_firmware_framebuffer();
+    return selected;
 }
 
 static const struct nexus_display_topology_backend

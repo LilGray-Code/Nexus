@@ -1276,14 +1276,37 @@ static void draw_shell(void) {
         /* Four-corner interpolation replaces several overlapping full-screen
          * fills with one high-quality software pass on the active display surface.
          */
-        if (desktop_theme_is_light()) {
-            graphics_fill_gradient(0U, 0U, width, height,
-                244U, 247U, 252U, 230U, 238U, 247U,
-                232U, 237U, 245U, 220U, 229U, 241U);
+        static const uint8_t dark_wallpapers[NEXUS_SETTINGS_WALLPAPER_COUNT][12] = {
+            {5U, 11U, 25U, 12U, 35U, 63U, 13U, 29U, 59U, 14U, 38U, 68U},
+            {4U, 20U, 43U, 6U, 61U, 89U, 8U, 42U, 75U, 13U, 72U, 108U},
+            {6U, 24U, 27U, 15U, 62U, 54U, 11U, 46U, 42U, 23U, 82U, 65U},
+            {28U, 13U, 39U, 89U, 38U, 61U, 46U, 24U, 53U, 115U, 55U, 63U}
+        };
+        static const uint8_t light_wallpapers[NEXUS_SETTINGS_WALLPAPER_COUNT][12] = {
+            {244U, 247U, 252U, 230U, 238U, 247U, 232U, 237U, 245U, 220U, 229U, 241U},
+            {235U, 246U, 252U, 209U, 236U, 246U, 217U, 241U, 249U, 197U, 229U, 245U},
+            {240U, 248U, 242U, 220U, 241U, 220U, 224U, 243U, 231U, 207U, 235U, 218U},
+            {252U, 242U, 235U, 245U, 222U, 216U, 249U, 231U, 226U, 237U, 207U, 210U}
+        };
+        const uint8_t *wallpaper = desktop_theme_is_light()
+            ? light_wallpapers[desktop_settings.wallpaper]
+            : dark_wallpapers[desktop_settings.wallpaper];
+        if (desktop_settings.high_contrast) {
+            if (desktop_theme_is_light()) {
+                graphics_fill_gradient(0U, 0U, width, height,
+                    255U, 255U, 255U, 238U, 238U, 238U,
+                    238U, 238U, 238U, 220U, 220U, 220U);
+            } else {
+                graphics_fill_gradient(0U, 0U, width, height,
+                    0U, 0U, 0U, 12U, 12U, 12U,
+                    12U, 12U, 12U, 24U, 24U, 24U);
+            }
         } else {
             graphics_fill_gradient(0U, 0U, width, height,
-                5U, 11U, 25U, 12U, 35U, 63U,
-                13U, 29U, 59U, 14U, 38U, 68U);
+                wallpaper[0], wallpaper[1], wallpaper[2],
+                wallpaper[3], wallpaper[4], wallpaper[5],
+                wallpaper[6], wallpaper[7], wallpaper[8],
+                wallpaper[9], wallpaper[10], wallpaper[11]);
         }
         /* Layered accent glows add depth without repeated full-screen fills. */
         /* Subtle layered accent glows add depth while remaining software-rendered. */
@@ -1354,23 +1377,33 @@ static void draw_shell(void) {
             (height - top_bar - bottom_bar - panel_height) / 2U;
     }
 
+    const uint8_t panel_background = desktop_settings.high_contrast
+        ? (desktop_theme_is_light() ? 255U : 0U)
+        : (desktop_theme_is_light() ? 245U : 17U);
+    const uint8_t panel_border = desktop_settings.high_contrast
+        ? (desktop_theme_is_light() ? 0U : 255U)
+        : (desktop_theme_is_light() ? 164U : 61U);
+    const uint8_t panel_header = desktop_settings.high_contrast
+        ? (desktop_theme_is_light() ? 238U : 8U)
+        : (desktop_theme_is_light() ? 220U : 25U);
     graphics_fill_rect(panel_x + 6U, panel_y + 8U, panel_width,
-                       panel_height, 1U, 4U, 13U);
+                       panel_height,
+                       desktop_settings.high_contrast ? 0U : 1U,
+                       desktop_settings.high_contrast ? 0U : 4U,
+                       desktop_settings.high_contrast ? 0U : 13U);
     graphics_blend_round_rect(panel_x, panel_y, panel_width, panel_height,
-                              12U, 17U, 28U, 47U, 224U);
-    graphics_round_rect(panel_x, panel_y, panel_width, panel_height,
-                          12U,
-        desktop_theme_is_light() ? 164U : 61U,
-        desktop_theme_is_light() ? 183U : 99U,
-        desktop_theme_is_light() ? 205U : 133U);
+        12U, panel_background, panel_background, panel_background,
+        desktop_settings.high_contrast ? 255U : 242U);
+    graphics_round_rect(panel_x, panel_y, panel_width, panel_height, 12U,
+        panel_border,
+        desktop_settings.high_contrast ? panel_border
+            : (desktop_theme_is_light() ? 183U : 99U),
+        desktop_settings.high_contrast ? panel_border
+            : (desktop_theme_is_light() ? 205U : 133U));
     graphics_round_rect(panel_x, panel_y, panel_width, 40U, 12U,
-        desktop_theme_is_light() ? 220U : 25U,
-        desktop_theme_is_light() ? 229U : 42U,
-        desktop_theme_is_light() ? 240U : 66U);
+        panel_header, panel_header, panel_header);
     graphics_fill_rect(panel_x, panel_y + 12U, panel_width, 28U,
-        desktop_theme_is_light() ? 220U : 25U,
-        desktop_theme_is_light() ? 229U : 42U,
-        desktop_theme_is_light() ? 240U : 66U);
+        panel_header, panel_header, panel_header);
     desktop_draw_accent(panel_x, panel_y + 39U, panel_width, 1U);
     desktop_draw_accent(panel_x + 9U, panel_y + 12U, 16U, 16U);
 
@@ -1383,9 +1416,15 @@ static void draw_shell(void) {
     if (active_view == DESKTOP_STORE) window_title = "NEXUS APP STORE";
     graphics_draw_text_aa(panel_x + 33U, panel_y + 15U, window_title,
                            98304U,
-                       desktop_theme_is_light() ? 41U : 234U,
-                       desktop_theme_is_light() ? 59U : 244U,
-                       desktop_theme_is_light() ? 80U : 252U);
+                       desktop_settings.high_contrast
+                           ? (desktop_theme_is_light() ? 0U : 255U)
+                           : (desktop_theme_is_light() ? 41U : 234U),
+                       desktop_settings.high_contrast
+                           ? (desktop_theme_is_light() ? 0U : 255U)
+                           : (desktop_theme_is_light() ? 59U : 244U),
+                       desktop_settings.high_contrast
+                           ? (desktop_theme_is_light() ? 0U : 255U)
+                           : (desktop_theme_is_light() ? 80U : 252U));
     /* Custom window controls; close is wired to the shell input handler. */
     if (!installer_session_mode) {
         const uint64_t controls_x = panel_x + panel_width - 66U;
@@ -2832,9 +2871,14 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 static void draw_pointer(void) {
     const uint64_t x = (uint64_t)pointer_x;
     const uint64_t y = (uint64_t)pointer_y;
-    graphics_fill_rect(x, y, 2U, 15U, 245, 250, 255);
-    graphics_fill_rect(x + 1U, y + 1U, 2U, 11U, 245, 250, 255);
-    graphics_fill_rect(x + 2U, y + 5U, 5U, 2U, 245, 250, 255);
+    const uint64_t scale = desktop_settings.cursor_size;
+    const uint8_t outline = desktop_settings.high_contrast ? 255U : 6U;
+    graphics_fill_rect(x, y, 3U * scale, 18U * scale,
+                       outline, outline, outline);
+    graphics_fill_rect(x + scale, y + scale, 2U * scale, 15U * scale,
+                       245U, 250U, 255U);
+    graphics_fill_rect(x + 2U * scale, y + 6U * scale, 6U * scale,
+                       2U * scale, 245U, 250U, 255U);
 
     struct nexus_graphics_damage damage;
     if (desktop_virtio_gpu_active &&
@@ -6397,6 +6441,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
         }
         if (event->mouse_wheel != 0) {
+            uint32_t steps = (uint32_t)(
+                event->mouse_wheel > 0 ? event->mouse_wheel
+                                       : -(int32_t)event->mouse_wheel);
+            steps *= desktop_settings.scroll_speed;
+            if (steps > 20U) steps = 20U;
             const struct nexus_input_event wheel_key = {
                 .type = NEXUS_INPUT_KEYBOARD,
                 .scancode = event->mouse_wheel > 0 ? 0x49U : 0x51U,
@@ -6405,7 +6454,8 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 .mouse_dy = 0,
                 .mouse_wheel = 0
             };
-            desktop_handle_input(&wheel_key);
+            for (uint32_t i = 0U; i < steps; ++i)
+                desktop_handle_input(&wheel_key);
             return;
         }
         draw_shell();

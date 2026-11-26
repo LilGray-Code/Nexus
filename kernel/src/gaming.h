@@ -91,6 +91,7 @@ enum nexus_game_assessment_status {
 #define NEXUS_GAME_CAP_GPU_FENCE_SYNC             (1ULL << 32)
 #define NEXUS_GAME_CAP_USER_THREADS               (1ULL << 33)
 #define NEXUS_GAME_CAP_USER_PROCESS_MULTITASKING  (1ULL << 34)
+#define NEXUS_GAME_CAP_VIDEO_DECODE               (1ULL << 35)
 
 struct nexus_gaming_system_capabilities {
     uint64_t available;

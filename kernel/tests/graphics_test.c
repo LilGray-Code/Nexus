@@ -117,6 +117,14 @@ int main(void) {
            ((antialiased_edge >> 16) & 0xFFU) <= 128U);
     assert(guarded[1U + 7U] == 0x00FF0000U);
 
+    /* The desktop's 4/3 scale must also blend fractional glyph edges. */
+    graphics_clear(0U, 0U, 0U);
+    graphics_draw_text_aa(5U, 0U, "A", 87381U, 255U, 0U, 0U);
+    const uint32_t desktop_scale_edge = guarded[1U + 6U];
+    assert(((desktop_scale_edge >> 16) & 0xFFU) >= 168U &&
+           ((desktop_scale_edge >> 16) & 0xFFU) <= 172U);
+    assert(guarded[1U + 7U] == 0x00FF0000U);
+
     /* Extreme text scale and origin must remain clipped to the surface. */
     graphics_draw_text(0U, 0U, "NEXUS", UINT32_MAX, 255U, 255U, 255U);
     graphics_draw_text_aa(0U, 0U, "NEXUS", UINT32_MAX,

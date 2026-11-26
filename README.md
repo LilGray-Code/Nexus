@@ -21,12 +21,24 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   placement, Win+E for Files, Win+I for
   Settings, Win+D for Home, and Ctrl+Esc or the Windows key for Start. The Start
   launcher supports typed app search, Up/Down selection, and Enter to launch.
-  The shell also includes a six-section Settings application: Personalization
-  (dark/light theme, eight accent palettes, four wallpaper presets), Display
-  (firmware-selected resolution readout, 80–120% text sizing, pointer size),
-  Input (mouse speed, scroll speed, handedness), Accessibility (high contrast,
+  The shell includes a twelve-category Settings application with a five-tab
+  viewport and previous/next navigation: Personalization (dark/light theme,
+  eight accent palettes, four wallpaper presets), Display (active framebuffer,
+  EDID monitor name and detailed timings, firmware mode inventory, 80–120%
+  text sizing, pointer size, and truthful HDR/modeset capability status), Input
+  (mouse speed, scroll speed, handedness), Accessibility (high contrast,
   larger text and pointer), System (AC'97 master volume when supported, network
-  status, memory and uptime), and Devices (detected hardware and driver state).
+  status, memory and uptime), Devices (detected hardware and driver state),
+  Network (Ethernet/Wi-Fi status and scan when a radio driver is registered),
+  Storage (block-device inventory), Power (platform power capability status),
+  Security (runtime trust and protection status), Applications (native app and
+  catalog status), and About (CPU, framebuffer, memory, uptime and renderer).
+  Display discovery validates bootloader-provided EDID checksums, reads monitor
+  names and detailed timings, derives advertised refresh rates, inventories
+  firmware-listed modes, and recognizes CTA HDR static-metadata advertisements.
+  This is capability discovery only: no general GPU mode-setting driver or HDR
+  output/color pipeline is shipped. Resolution and refresh-rate changes remain
+  disabled until a driver registers safe test/apply/restore callbacks.
   Theme, wallpaper, text sizing, mouse controls, accessibility, and volume
   preferences use a versioned, checksum-validated `NEXUS.CFG` record in the
   root of the NXFS Data volume. Settings or Files performs the existing explicit

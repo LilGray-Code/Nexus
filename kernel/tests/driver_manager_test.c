@@ -46,7 +46,22 @@ int main(void) {
         .class_code = 0x02U, .subclass = 0U, .programming_interface = 0U,
         .vendor_id = 0x8086U, .device_id = 0x100EU
     };
-    assert(nexus_driver_manager_probe_pci_device(&pci));
+    struct nexus_driver_probe_report report;
+    const struct nexus_driver_device generic = {
+        .bus = NEXUS_DRIVER_BUS_PCI,
+        .vendor_id = pci.vendor_id, .device_id = pci.device_id,
+        .class_code = pci.class_code, .subclass = pci.subclass,
+        .programming_interface = pci.programming_interface,
+        .bus_number = pci.bus, .slot = pci.slot, .function = pci.function,
+        .segment_group = pci.segment_group, .native_device = &pci
+    };
+    assert(nexus_driver_manager_probe_device_report(&generic, &report) ==
+           NEXUS_DRIVER_PROBE_ACTIVE);
+    assert(report.outcome == NEXUS_DRIVER_PROBE_ACTIVE);
+    assert(report.matching_driver_count == 2U);
+    assert(report.attempted_driver_count == 2U);
+    assert(report.failed_driver_count == 1U);
+    assert(report.active_driver_name[0] == 't');
     assert(failed_probe_count == 1U && successful_probe_count == 1U);
     assert(nexus_driver_manager_binding_count() == 2U);
     struct nexus_driver_binding_info info;
@@ -80,7 +95,39 @@ int main(void) {
     assert(remove_count == 2U);
 
     pci.vendor_id = 0x1234U;
-    assert(!nexus_driver_manager_probe_pci_device(&pci));
+    const struct nexus_driver_device unknown = {
+        .bus = NEXUS_DRIVER_BUS_PCI,
+        .vendor_id = pci.vendor_id, .device_id = pci.device_id,
+        .class_code = pci.class_code, .subclass = pci.subclass,
+        .programming_interface = pci.programming_interface,
+        .bus_number = pci.bus, .slot = pci.slot, .function = pci.function,
+        .segment_group = pci.segment_group, .native_device = &pci
+    };
+    assert(nexus_driver_manager_probe_device_report(&unknown, &report) ==
+           NEXUS_DRIVER_PROBE_NO_MATCH);
+    assert(report.matching_driver_count == 0U);
+    assert(report.attempted_driver_count == 0U);
     assert(nexus_driver_manager_binding_count() == 4U);
+
+    struct nexus_driver_device invalid = unknown;
+    invalid.bus = (enum nexus_driver_bus)0;
+    assert(nexus_driver_manager_probe_device_report(&invalid, &report) ==
+           NEXUS_DRIVER_PROBE_INVALID);
+
+    struct nexus_driver_descriptor failing =
+        make_driver("test-fail-only", 200, fail_probe,
+                    (void *)(uintptr_t)0x11U);
+    failing.match.device_id = 0x100FU;
+    assert(nexus_driver_manager_register(&failing));
+    struct nexus_driver_device unsupported_variant = unknown;
+    unsupported_variant.vendor_id = 0x8086U;
+    unsupported_variant.device_id = 0x100FU;
+    assert(nexus_driver_manager_probe_device_report(
+               &unsupported_variant, &report) ==
+           NEXUS_DRIVER_PROBE_ALL_FAILED);
+    assert(report.matching_driver_count == 1U);
+    assert(report.attempted_driver_count == 1U);
+    assert(report.failed_driver_count == 1U);
+    assert(nexus_driver_manager_binding_count() == 5U);
     return 0;
 }

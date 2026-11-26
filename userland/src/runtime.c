@@ -12,7 +12,11 @@
 #define NEXUS_RUNTIME_WRITE_CHUNK 128U
 
 static bool runtime_cpu_features_loaded;
-static uint64_t runtime_cpu_feature_flags;
+/*
+ * SSE2 is part of the x86-64 baseline. Keep that safe fallback in initialized
+ * data; successful CPUID/OSXSAVE discovery replaces it with the full mask.
+ */
+static uint64_t runtime_cpu_feature_flags = NEXUS_CPU_FEATURE_SSE2;
 
 static uint64_t runtime_cpu_features(void) {
     if (!runtime_cpu_features_loaded) {

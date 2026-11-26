@@ -46,6 +46,8 @@ struct nexus_gpu_info {
     bool firmware_framebuffer_active;
     bool hardware_2d_acceleration;
     bool hardware_3d_acceleration;
+    bool virgl_command_submission_ready;
+    uint32_t virgl_capset_id;
     enum nexus_gpu_vendor vendor;
     enum nexus_gpu_family family;
     const char *family_name;
@@ -82,5 +84,6 @@ const char *gpu_render_path_name(void);
 bool gpu_hardware_acceleration_available(void);
 void gpu_set_firmware_framebuffer_active(bool active);
 void gpu_set_virtio_display_active(bool active);
+void gpu_set_virtio_3d_submission_ready(bool ready, uint32_t capset_id);
 
 #endif

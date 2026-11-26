@@ -474,7 +474,10 @@ bool nexus_display_set_primary_monitor(uint32_t id) {
         if (monitor->id == id && monitor->connected && monitor->enabled)
             found = true;
     }
-    if (!found) return false;
+    if (!found || !display_backend_registered ||
+        display_backend.set_primary_monitor == NULL ||
+        !display_backend.set_primary_monitor(display_backend_context, id))
+        return false;
     display_info.primary_monitor_id = id;
     for (uint32_t i = 0U; i < display_info.monitor_count; ++i)
         display_info.monitors[i].primary =

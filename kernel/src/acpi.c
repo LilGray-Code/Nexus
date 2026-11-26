@@ -510,7 +510,7 @@ bool acpi_init(const void *rsdp_address) {
     if (find_and_parse_hpet(&root)) {
         serial_write("ACPI: validated HPET system-memory block at ");
         serial_write_hex(topology.hpet_physical_address);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
     }
 
     /* MCFG is optional: legacy PCI configuration remains available when the

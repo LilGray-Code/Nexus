@@ -194,7 +194,7 @@ int main(void) {
     assert(!nexus_display_set_scale_percent(20U));
     assert(!nexus_display_set_color_temperature(0U));
 
-    assert(nexus_display_add_monitor(1U, true, 1024, 0,
+    assert(nexus_display_add_monitor(1U, true, true, 1024, 0,
                                     1920U, 1080U, edid, sizeof(edid)));
     assert(info->monitor_count == 2U);
     assert(nexus_display_monitor_at(1U) != NULL);

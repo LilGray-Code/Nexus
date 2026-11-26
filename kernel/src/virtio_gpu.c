@@ -786,6 +786,13 @@ static bool gpu_create_resource(void) {
         }
     }
 
+    if (!attached_scanout && display_inventory.valid) {
+        /* A valid device-reported inventory with no active output must not
+         * silently bind scanout 0 and turn on a disconnected monitor.
+         */
+        return false;
+    }
+
     if (!attached_scanout) {
         const struct virtio_gpu_set_scanout set = {
             .header = make_header(VIRTIO_GPU_CMD_SET_SCANOUT),

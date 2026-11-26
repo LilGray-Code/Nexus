@@ -18,6 +18,8 @@ on:
       - "kernel/src/gpu.h"
       - "kernel/src/virtio_gpu.c"
       - "kernel/src/virtio_gpu.h"
+      - "kernel/src/virtio_pci.c"
+      - "kernel/src/virtio_pci.h"
       - "kernel/src/virgl_protocol.c"
       - "kernel/src/virgl_protocol.h"
       - "kernel/tests/virgl_protocol_test.c"

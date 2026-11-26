@@ -450,6 +450,20 @@ void kmain(void) {
     serial_write_hex(first_page);
     serial_write("\r\n");
 
+    struct memory_allocator_stats allocator_stats;
+    if (memory_get_allocator_stats(&allocator_stats)) {
+        serial_write("NEXUS MEMORY ALLOCATOR DIAGNOSTICS READY\r\n");
+        serial_write("Physical memory regions: ");
+        serial_write_hex(allocator_stats.region_count);
+        serial_write("\r\nLargest unallocated extent bytes: ");
+        serial_write_hex(allocator_stats.largest_unallocated_extent_bytes);
+        serial_write("\r\nReclaimed free-list pages: ");
+        serial_write_hex(allocator_stats.free_list_pages);
+        serial_write("\r\nAllocation failures: ");
+        serial_write_hex(allocator_stats.allocation_failures);
+        serial_write("\r\n");
+    }
+
     if (rsdp_request.response == NULL ||
         !acpi_init(rsdp_request.response->address)) {
         serial_write("ERROR: ACPI RSDP/MADT discovery failed\r\n");

@@ -34,6 +34,24 @@ static bool nxfs_install_authorized;
 static const struct nexus_block_device *nxfs_install_device;
 static struct nexus_nxfs_entry nxfs_entries[NEXUS_NXFS_MAX_FILES];
 static uint8_t nxfs_io_buffer[NXFS_BLOCK_MAX];
+struct nxfs_stream_state {
+    bool active;
+    size_t slot;
+    uint8_t bank;
+    uint32_t expected;
+    uint32_t received;
+    uint32_t next_block;
+    uint32_t buffered;
+    uint32_t crc;
+    char name[NEXUS_NXFS_NAME_MAX];
+};
+static struct nxfs_stream_state nxfs_stream;
+static const uint32_t nxfs_file_limit_tiers[] = {
+    NEXUS_NXFS_MAX_FILE_BYTES, 128U * 1024U * 1024U,
+    64U * 1024U * 1024U, 32U * 1024U * 1024U,
+    16U * 1024U * 1024U, 8U * 1024U * 1024U,
+    NEXUS_NXFS_LEGACY_FILE_BYTES, NEXUS_NXFS_OLD_FILE_BYTES
+};
 
 static uint32_t read_le32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
@@ -314,6 +332,36 @@ static void encode_superblock(uint8_t *buffer, uint64_t partition_blocks) {
     write_le32(buffer + 60U, crc32_bytes(buffer, 60U));
 }
 
+static bool nxfs_file_limit_known(uint32_t limit) {
+    for (size_t i = 0U;
+         i < sizeof(nxfs_file_limit_tiers) / sizeof(nxfs_file_limit_tiers[0]);
+         ++i)
+        if (nxfs_file_limit_tiers[i] == limit) return true;
+    return false;
+}
+
+static uint64_t nxfs_required_blocks(uint32_t limit) {
+    const uint64_t blocks_per_slot =
+        ((uint64_t)limit + nxfs_block_size - 1U) / nxfs_block_size;
+    return (uint64_t)NXFS_DATA_LBA +
+        (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * blocks_per_slot;
+}
+
+static bool nxfs_select_format_limit(uint64_t partition_blocks) {
+    for (size_t i = 0U;
+         i < sizeof(nxfs_file_limit_tiers) / sizeof(nxfs_file_limit_tiers[0]);
+         ++i) {
+        const uint32_t limit = nxfs_file_limit_tiers[i];
+        if (partition_blocks >= nxfs_required_blocks(limit)) {
+            nxfs_max_file_bytes = limit;
+            nxfs_blocks_per_slot = (limit + nxfs_block_size - 1U) /
+                                   nxfs_block_size;
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool validate_superblock(const uint8_t *buffer,
                                 uint64_t partition_blocks,
                                 uint32_t *max_file_bytes,
@@ -321,8 +369,7 @@ static bool validate_superblock(const uint8_t *buffer,
     if (buffer == NULL || max_file_bytes == NULL ||
         blocks_per_slot == NULL) return false;
     const uint32_t stored_limit = read_le32(buffer + 20U);
-    if (stored_limit != NEXUS_NXFS_MAX_FILE_BYTES &&
-        stored_limit != NEXUS_NXFS_LEGACY_FILE_BYTES) return false;
+    if (!nxfs_file_limit_known(stored_limit)) return false;
     const uint32_t stored_blocks =
         (stored_limit + nxfs_block_size - 1U) / nxfs_block_size;
     const uint64_t required_blocks = (uint64_t)NXFS_DATA_LBA +
@@ -442,19 +489,7 @@ bool nxfs_format(const struct nexus_block_device *device,
         nxfs_device = NULL;
         return false;
     }
-    nxfs_max_file_bytes = NEXUS_NXFS_MAX_FILE_BYTES;
-    nxfs_blocks_per_slot =
-        (nxfs_max_file_bytes + nxfs_block_size - 1U) / nxfs_block_size;
-    uint64_t required_blocks = (uint64_t)NXFS_DATA_LBA +
-        (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * nxfs_blocks_per_slot;
-    if (partition_blocks < required_blocks) {
-        nxfs_max_file_bytes = NEXUS_NXFS_LEGACY_FILE_BYTES;
-        nxfs_blocks_per_slot =
-            (nxfs_max_file_bytes + nxfs_block_size - 1U) / nxfs_block_size;
-        required_blocks = (uint64_t)NXFS_DATA_LBA +
-            (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * nxfs_blocks_per_slot;
-    }
-    if (partition_blocks < required_blocks) {
+    if (!nxfs_select_format_limit(partition_blocks)) {
         nxfs_device = NULL;
         nxfs_max_file_bytes = 0U;
         nxfs_blocks_per_slot = 0U;
@@ -463,6 +498,7 @@ bool nxfs_format(const struct nexus_block_device *device,
 
     nxfs_mounted = false;
     nxfs_busy = false;
+    nxfs_stream = (struct nxfs_stream_state){0};
     zero_bytes(nxfs_entries, sizeof(nxfs_entries));
     zero_bytes(nxfs_io_buffer, nxfs_block_size);
 
@@ -565,6 +601,7 @@ bool nxfs_mount(const struct nexus_block_device *device,
     blockdev_nexus_data_write_disable(nxfs_device);
     nxfs_mounted = false;
     nxfs_busy = false;
+    nxfs_stream = (struct nxfs_stream_state){0};
     nxfs_device = NULL;
     zero_bytes(nxfs_entries, sizeof(nxfs_entries));
 
@@ -712,11 +749,10 @@ bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
     return true;
 }
 
-bool nxfs_write_file(const char *name, const void *data, size_t length) {
+bool nxfs_write_file_begin(const char *name, uint32_t expected_length) {
     char normalized[NEXUS_NXFS_NAME_MAX];
     if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
-        length > nxfs_max_file_bytes ||
-        (length != 0U && data == NULL) ||
+        expected_length > nxfs_max_file_bytes ||
         !normalize_name(name, normalized) ||
         !parent_directory_exists(normalized)) return false;
 
@@ -733,41 +769,101 @@ bool nxfs_write_file(const char *name, const void *data, size_t length) {
     }
     if (slot >= NEXUS_NXFS_MAX_FILES) return false;
 
-    nxfs_busy = true;
-    const uint8_t bank = nxfs_entries[slot].used
+    nxfs_stream = (struct nxfs_stream_state){0};
+    nxfs_stream.active = true;
+    nxfs_stream.slot = slot;
+    nxfs_stream.bank = nxfs_entries[slot].used
         ? (uint8_t)(nxfs_entries[slot].bank ^ 1U) : 0U;
+    nxfs_stream.expected = expected_length;
+    nxfs_stream.crc = 0xFFFFFFFFU;
+    for (size_t i = 0U; i < NEXUS_NXFS_NAME_MAX; ++i)
+        nxfs_stream.name[i] = normalized[i];
+    nxfs_busy = true;
+    zero_bytes(nxfs_io_buffer, nxfs_block_size);
+    return true;
+}
+
+bool nxfs_write_file_append(const void *data, size_t length) {
+    if (!nxfs_stream.active || !nxfs_busy ||
+        (length != 0U && data == NULL) ||
+        length > (size_t)(nxfs_stream.expected - nxfs_stream.received))
+        return false;
     const uint8_t *input = (const uint8_t *)data;
-    const uint32_t blocks = (uint32_t)(
-        (length + nxfs_block_size - 1U) / nxfs_block_size);
     size_t consumed = 0U;
-    for (uint32_t block = 0U; block < blocks; ++block) {
-        zero_bytes(nxfs_io_buffer, nxfs_block_size);
-        size_t amount = length - consumed;
-        if (amount > nxfs_block_size) amount = nxfs_block_size;
-        if (amount != 0U) copy_bytes(nxfs_io_buffer, input + consumed, amount);
-        if (!nxfs_write_block(data_lba(slot, bank) + block, nxfs_io_buffer)) {
-            nxfs_busy = false;
+    while (consumed < length) {
+        const size_t room = nxfs_block_size - nxfs_stream.buffered;
+        const size_t amount = length - consumed < room
+            ? length - consumed : room;
+        copy_bytes(nxfs_io_buffer + nxfs_stream.buffered,
+                   input + consumed, amount);
+        nxfs_stream.crc = crc32_update(nxfs_stream.crc,
+                                       input + consumed, amount);
+        nxfs_stream.buffered += (uint32_t)amount;
+        nxfs_stream.received += (uint32_t)amount;
+        consumed += amount;
+        if (nxfs_stream.buffered == nxfs_block_size) {
+            if (nxfs_stream.next_block >= nxfs_blocks_per_slot ||
+                !nxfs_write_block(
+                    data_lba(nxfs_stream.slot, nxfs_stream.bank) +
+                    nxfs_stream.next_block, nxfs_io_buffer)) {
+                nxfs_write_file_abort();
+                return false;
+            }
+            ++nxfs_stream.next_block;
+            nxfs_stream.buffered = 0U;
+            zero_bytes(nxfs_io_buffer, nxfs_block_size);
+        }
+    }
+    return true;
+}
+
+bool nxfs_write_file_finish(void) {
+    if (!nxfs_stream.active || !nxfs_busy ||
+        nxfs_stream.received != nxfs_stream.expected) return false;
+    if (nxfs_stream.buffered != 0U) {
+        if (nxfs_stream.next_block >= nxfs_blocks_per_slot ||
+            !nxfs_write_block(
+                data_lba(nxfs_stream.slot, nxfs_stream.bank) +
+                nxfs_stream.next_block, nxfs_io_buffer)) {
+            nxfs_write_file_abort();
             return false;
         }
-        consumed += amount;
     }
     if (!nxfs_flush()) {
-        nxfs_busy = false;
+        nxfs_write_file_abort();
         return false;
     }
 
     struct nexus_nxfs_entry entry = {0};
     entry.used = true;
-    entry.bank = bank;
-    entry.size = (uint32_t)length;
-    entry.data_crc = crc32_bytes((const uint8_t *)data, length);
-    entry.generation = nxfs_entries[slot].generation + 1U;
+    entry.bank = nxfs_stream.bank;
+    entry.size = nxfs_stream.expected;
+    entry.data_crc = ~nxfs_stream.crc;
+    entry.generation = nxfs_entries[nxfs_stream.slot].generation + 1U;
     for (size_t i = 0U; i < NEXUS_NXFS_NAME_MAX; ++i)
-        entry.name[i] = normalized[i];
-
+        entry.name[i] = nxfs_stream.name[i];
+    const size_t slot = nxfs_stream.slot;
+    nxfs_stream = (struct nxfs_stream_state){0};
     nxfs_busy = false;
-    if (!commit_entry(slot, &entry)) return false;
-    return true;
+    return commit_entry(slot, &entry);
+}
+
+void nxfs_write_file_abort(void) {
+    nxfs_stream = (struct nxfs_stream_state){0};
+    nxfs_busy = false;
+    if (nxfs_block_size <= NXFS_BLOCK_MAX)
+        zero_bytes(nxfs_io_buffer, nxfs_block_size);
+}
+
+bool nxfs_write_file(const char *name, const void *data, size_t length) {
+    if (length > UINT32_MAX ||
+        (length != 0U && data == NULL) ||
+        !nxfs_write_file_begin(name, (uint32_t)length)) return false;
+    if (!nxfs_write_file_append(data, length)) {
+        nxfs_write_file_abort();
+        return false;
+    }
+    return nxfs_write_file_finish();
 }
 
 /*
@@ -1045,6 +1141,7 @@ void nxfs_unmount(void) {
     blockdev_nexus_data_write_disable(nxfs_device);
     nxfs_mounted = false;
     nxfs_busy = false;
+    nxfs_stream = (struct nxfs_stream_state){0};
     nxfs_device = NULL;
     zero_bytes(nxfs_entries, sizeof(nxfs_entries));
 }

@@ -81,7 +81,7 @@ struct nexus_display_info {
     uint8_t red_bits;
     uint8_t green_bits;
     uint8_t blue_bits;
-    uint32_t matching_edid_refresh_hz;
+    uint32_t current_refresh_hz;
     uint32_t firmware_mode_count;
     uint32_t mode_count;
     uint32_t timing_count;

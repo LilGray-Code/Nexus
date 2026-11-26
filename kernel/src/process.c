@@ -169,9 +169,8 @@ bool process_spawn_elf_with_permissions(
 
 bool process_spawn_elf(const char *name, const void *image, size_t image_size,
                        uint32_t *pid) {
-    /* Legacy in-tree demos are trusted, immutable system applications. */
-    return process_spawn_elf_with_permissions(
-        name, image, image_size, NEXUS_APP_PERMISSION_ALL, pid);
+    /* Direct raw-ELF execution is untrusted and starts with no optional caps. */
+    return process_spawn_elf_with_permissions(name, image, image_size, 0U, pid);
 }
 
 bool process_run(uint32_t pid, uint64_t *exit_status) {
@@ -283,8 +282,7 @@ static bool process_execute_file_internal(
 bool process_execute_file(const char *name,
                           struct nexus_process_result *result,
                           enum nexus_process_error *error) {
-    return process_execute_file_internal(
-        name, result, error, false, NEXUS_APP_PERMISSION_ALL);
+    return process_execute_file_internal(name, result, error, false, 0U);
 }
 
 bool process_execute_root_file(const char *name,

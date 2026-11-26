@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define NEXUS_DOWNLOAD_NAME_MAX 32U
+#define NEXUS_DOWNLOAD_MAX_BYTES (256U * 1024U * 1024U)
 
 /*
  * Build a safe, flat VFS filename from Content-Disposition or the URL path.

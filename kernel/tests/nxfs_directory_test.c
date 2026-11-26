@@ -54,6 +54,8 @@ static void force_legacy_superblocks(void) {
     }
 }
 
+static struct sparse_block *find_block(uint64_t lba, bool create);
+
 static struct sparse_block *find_block(uint64_t lba, bool create) {
     struct sparse_block *free_slot = NULL;
     for (size_t i = 0U; i < TEST_SPARSE_BLOCKS; ++i) {

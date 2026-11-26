@@ -42,6 +42,8 @@ static void make_valid_driver(void) {
     put32(opt + 108U, 16U);
     put32(opt + 120U, 0x1100U);
     put32(opt + 124U, 40U);
+    put32(opt + 152U, 0x1200U);
+    put32(opt + 156U, 12U);
 
     const size_t section = opt + 240U;
     memcpy(image + section, ".rdata", 6U);
@@ -58,6 +60,10 @@ static void make_valid_driver(void) {
     put64(0x348U, 0U);
     put64(0x360U, 0x1180U);
     put64(0x368U, 0U);
+    put32(0x400U, 0x1000U);
+    put32(0x404U, 12U);
+    put16(0x408U, 0xA008U);
+    put16(0x40AU, 0U);
     put16(0x380U, 0U);
     memcpy(image + 0x382U, "NdisMRegisterMiniportDriver", 28U);
     image[0x39EU] = 0U;
@@ -71,6 +77,8 @@ static void test_valid_x64_driver_and_imports(void) {
     assert(info.section_count == 1U);
     assert(info.entry_point_rva == 0x1000U);
     assert(info.image_size == 0x2000U);
+    assert(info.has_relocations && info.relocations_supported);
+    assert(info.relocation_count == 1U);
     assert(info.is_dll && info.nx_compatible);
     assert(info.import_module_count == 1U);
     assert(info.import_symbol_count == 1U);
@@ -110,6 +118,21 @@ static void test_rejects_bad_imports(void) {
     assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
 }
 
+
+static void test_relocation_validation_and_type_reporting(void) {
+    make_valid_driver();
+    struct nexus_win_pe_info info;
+    put16(0x408U, 0x3008U);
+    assert(nexus_win_pe_inspect(image, sizeof(image), &info));
+    assert(info.has_relocations);
+    assert(!info.relocations_supported);
+    assert(info.relocation_count == 0U);
+
+    make_valid_driver();
+    put32(0x404U, UINT32_MAX);
+    assert(!nexus_win_pe_inspect(image, sizeof(image), &info));
+}
+
 static void test_valid_image_without_imports(void) {
     make_valid_driver();
     put32(0x110U, 0U);
@@ -123,6 +146,7 @@ int main(void) {
     test_valid_x64_driver_and_imports();
     test_rejects_bad_headers();
     test_rejects_bad_imports();
+    test_relocation_validation_and_type_reporting();
     test_valid_image_without_imports();
     puts("NEXUS WINDOWS PE DRIVER INSPECTION TESTS PASSED");
     return 0;

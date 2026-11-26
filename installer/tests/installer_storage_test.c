@@ -74,8 +74,14 @@ static bool mock_range(struct mock_disk *disk, uint64_t lba,
         const uint64_t relative = lba - disk->nxfs_base;
         uint64_t compact_lba = relative;
         if (relative >= 67U) {
-            const uint64_t blocks_per_slot =
-                NEXUS_NXFS_MAX_FILE_BYTES / 512U;
+            uint32_t stored_limit =
+                (uint32_t)disk->nxfs_area[20U] |
+                ((uint32_t)disk->nxfs_area[21U] << 8) |
+                ((uint32_t)disk->nxfs_area[22U] << 16) |
+                ((uint32_t)disk->nxfs_area[23U] << 24);
+            if (stored_limit == 0U)
+                stored_limit = NEXUS_NXFS_MAX_FILE_BYTES;
+            const uint64_t blocks_per_slot = stored_limit / 512U;
             const uint64_t data_relative = relative - 67U;
             const uint64_t slot_bank = data_relative / blocks_per_slot;
             const uint64_t block_in_slot = data_relative % blocks_per_slot;

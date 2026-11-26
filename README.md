@@ -64,8 +64,10 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   or present GPU-rendered frames. The 2D/3D acceleration flags therefore remain
   false. There is no Vulkan ICD, OpenGL/Mesa Gallium frontend,
   shader compiler, userspace graphics ABI, asynchronous GPU scheduler, or
-  general GPU memory manager yet; Venus/Vulkan capsets are not exposed as a
-  working Vulkan implementation.
+  general GPU memory manager yet. The driver records advertised Venus and
+  gfxstream capsets when present, but does not create those context types or
+  implement their Vulkan/GLES streaming protocols; capset detection is not
+  Vulkan compatibility or Vulkan API support.
 - A framebuffer desktop with Home, Files, Browser, Settings, Terminal, and
   Installer views, plus keyboard and mouse input. The shell supports movable,
   resizable app windows, left/right edge snapping, top-edge maximize, minimize,

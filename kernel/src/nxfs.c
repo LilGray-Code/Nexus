@@ -850,8 +850,9 @@ bool nxfs_write_file_finish(void) {
         entry.name[i] = nxfs_stream.name[i];
     const size_t slot = nxfs_stream.slot;
     nxfs_stream = (struct nxfs_stream_state){0};
+    const bool committed = commit_entry(slot, &entry);
     nxfs_busy = false;
-    return commit_entry(slot, &entry);
+    return committed;
 }
 
 void nxfs_write_file_abort(void) {

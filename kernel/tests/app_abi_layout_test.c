@@ -3,6 +3,10 @@
 #include <stddef.h>
 
 _Static_assert(NEXUS_APP_ABI_VERSION == 1U, "app ABI major version");
+_Static_assert(NEXUS_APP_SYS_PERMISSIONS == 16ULL,
+               "capability query syscall number is stable");
+_Static_assert(NEXUS_APP_PERMISSION_ALL == 0x3FU,
+               "capability mask values are stable");
 _Static_assert(sizeof(struct nexus_app_input_event) == 12U,
                "input event layout is stable");
 _Static_assert(offsetof(struct nexus_app_input_event, scancode) == 2U,
@@ -27,6 +31,7 @@ int main(void) {
            NEXUS_APP_SYS_SLEEP_TICKS == 12ULL &&
            NEXUS_APP_SYS_GAMEPAD_POLL == 13ULL &&
            NEXUS_APP_SYS_AUDIO_WRITE == 14ULL &&
+           NEXUS_APP_SYS_PERMISSIONS == 16ULL &&
            NEXUS_APP_AUDIO_SAMPLE_RATE_HZ == 48000U &&
            NEXUS_APP_AUDIO_MAX_FRAMES == 1024U ? 0 : 1;
 }

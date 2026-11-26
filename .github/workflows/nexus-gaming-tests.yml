@@ -1,0 +1,52 @@
+name: Nexus PC gaming foundation tests
+
+on:
+  push:
+    branches:
+      - nexus-pc-gaming-foundation
+    paths:
+      - "kernel/src/gaming.c"
+      - "kernel/src/gaming.h"
+      - "kernel/src/game_library.c"
+      - "kernel/src/game_library.h"
+      - "kernel/tests/gaming_test.c"
+      - "kernel/tests/game_library_test.c"
+      - ".github/workflows/nexus-gaming-tests.yml"
+  pull_request:
+    branches:
+      - nexus-professional-graphics-foundation
+
+permissions:
+  contents: read
+
+jobs:
+  gaming-host-tests:
+    name: Gaming compatibility, library and cache contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Compile gaming capability and shader cache tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src \
+            kernel/src/sha256.c \
+            kernel/src/gaming.c \
+            kernel/tests/gaming_test.c \
+            -o /tmp/nexus-gaming-test
+
+      - name: Run capability, Direct3D mapping, anti-cheat and shader cache tests
+        run: /tmp/nexus-gaming-test
+
+      - name: Compile persistent game library tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src \
+            kernel/src/sha256.c \
+            kernel/src/game_library.c \
+            kernel/tests/game_library_test.c \
+            -o /tmp/nexus-game-library-test
+
+      - name: Run game library, compatibility evidence and launch policy tests
+        run: /tmp/nexus-game-library-test

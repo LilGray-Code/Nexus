@@ -37,15 +37,98 @@ static struct nexus_graphics_surface active_surface;
 static bool initialized;
 static struct nexus_graphics_damage pending_damage;
 static bool pending_damage_valid;
+static uint32_t output_rotation;
+static uint8_t output_scale_percent = 100U;
+static uint8_t output_brightness_percent = 100U;
+static uint16_t output_color_temperature_kelvin = 6500U;
+
+static uint64_t graphics_logical_width(void) {
+    if (!initialized || output_scale_percent == 0U) return 0U;
+    const uint64_t base =
+        (output_rotation == 1U || output_rotation == 3U)
+            ? active_surface.height : active_surface.width;
+    return (base * 100U) / output_scale_percent;
+}
+
+static uint64_t graphics_logical_height(void) {
+    if (!initialized || output_scale_percent == 0U) return 0U;
+    const uint64_t base =
+        (output_rotation == 1U || output_rotation == 3U)
+            ? active_surface.width : active_surface.height;
+    return (base * 100U) / output_scale_percent;
+}
+
+static void graphics_map_scaled_point(uint64_t sx, uint64_t sy,
+                                      uint64_t *px, uint64_t *py) {
+    switch (output_rotation) {
+        case 1U:
+            *px = active_surface.width - 1U - sy;
+            *py = sx;
+            break;
+        case 2U:
+            *px = active_surface.width - 1U - sx;
+            *py = active_surface.height - 1U - sy;
+            break;
+        case 3U:
+            *px = sy;
+            *py = active_surface.height - 1U - sx;
+            break;
+        default:
+            *px = sx;
+            *py = sy;
+            break;
+    }
+}
+
+static void graphics_write_pixel(uint64_t x, uint64_t y, uint32_t color) {
+    const uint64_t sx0 = (x * output_scale_percent) / 100U;
+    const uint64_t sy0 = (y * output_scale_percent) / 100U;
+    uint64_t sx1 = ((x + 1U) * output_scale_percent) / 100U;
+    uint64_t sy1 = ((y + 1U) * output_scale_percent) / 100U;
+    if (sx1 <= sx0) sx1 = sx0 + 1U;
+    if (sy1 <= sy0) sy1 = sy0 + 1U;
+    volatile uint32_t *base =
+        (volatile uint32_t *)active_surface.address;
+    for (uint64_t sy = sy0; sy < sy1; ++sy) {
+        for (uint64_t sx = sx0; sx < sx1; ++sx) {
+            uint64_t px = 0U, py = 0U;
+            graphics_map_scaled_point(sx, sy, &px, &py);
+            if (px < active_surface.width && py < active_surface.height)
+                base[(py * active_surface.pitch) / 4U + px] = color;
+        }
+    }
+}
+
+static uint32_t graphics_read_pixel(uint64_t x, uint64_t y) {
+    const uint64_t sx = (x * output_scale_percent) / 100U;
+    const uint64_t sy = (y * output_scale_percent) / 100U;
+    uint64_t px = 0U, py = 0U;
+    graphics_map_scaled_point(sx, sy, &px, &py);
+    volatile const uint32_t *base =
+        (volatile const uint32_t *)active_surface.address;
+    return base[(py * active_surface.pitch) / 4U + px];
+}
+
+static bool graphics_direct_mapping(void) {
+    return output_rotation == 0U && output_scale_percent == 100U;
+}
 
 static void graphics_mark_damage(uint64_t x, uint64_t y,
                                  uint64_t width, uint64_t height) {
-    if (!initialized || x >= active_surface.width ||
-        y >= active_surface.height || width == 0U || height == 0U) return;
-    if (width > active_surface.width - x)
-        width = active_surface.width - x;
-    if (height > active_surface.height - y)
-        height = active_surface.height - y;
+    if (!initialized || x >= graphics_logical_width() ||
+        y >= graphics_logical_height() || width == 0U || height == 0U)
+        return;
+    if (output_rotation != 0U || output_scale_percent != 100U) {
+        pending_damage = (struct nexus_graphics_damage){
+            0U, 0U, active_surface.width, active_surface.height
+        };
+        pending_damage_valid = true;
+        return;
+    }
+    if (width > graphics_logical_width() - x)
+        width = graphics_logical_width() - x;
+    if (height > graphics_logical_height() - y)
+        height = graphics_logical_height() - y;
 
     if (!pending_damage_valid) {
         pending_damage = (struct nexus_graphics_damage){x, y, width, height};
@@ -75,14 +158,38 @@ static uint32_t channel_mask(uint8_t size, uint8_t shift) {
 }
 
 static uint32_t pack_rgb(uint8_t red, uint8_t green, uint8_t blue) {
+    uint32_t r8 = red, g8 = green, b8 = blue;
+    if (output_color_temperature_kelvin != 6500U) {
+        const uint32_t kelvin = output_color_temperature_kelvin;
+        uint32_t red_gain = 255U;
+        uint32_t green_gain;
+        uint32_t blue_gain;
+        if (kelvin < 6600U) {
+            green_gain = 160U + ((kelvin - 1000U) * 95U) / 5600U;
+            blue_gain = kelvin <= 1900U ? 0U :
+                ((kelvin - 1900U) * 255U) / 4700U;
+        } else {
+            const uint32_t excess = kelvin - 6600U;
+            red_gain = 255U - (excess * 48U) / 3400U;
+            green_gain = 255U - (excess * 20U) / 3400U;
+            blue_gain = 255U;
+        }
+        r8 = (r8 * red_gain) / 255U;
+        g8 = (g8 * green_gain) / 255U;
+        b8 = (b8 * blue_gain) / 255U;
+    }
+    r8 = (r8 * output_brightness_percent) / 100U;
+    g8 = (g8 * output_brightness_percent) / 100U;
+    b8 = (b8 * output_brightness_percent) / 100U;
+
     const uint32_t rmax = (1U << active_surface.red_mask_size) - 1U;
     const uint32_t gmax = (1U << active_surface.green_mask_size) - 1U;
     const uint32_t bmax = (1U << active_surface.blue_mask_size) - 1U;
-    const uint32_t r = ((uint32_t)red * rmax / 255U)
+    const uint32_t r = (r8 * rmax / 255U)
                        << active_surface.red_mask_shift;
-    const uint32_t g = ((uint32_t)green * gmax / 255U)
+    const uint32_t g = (g8 * gmax / 255U)
                        << active_surface.green_mask_shift;
-    const uint32_t b = ((uint32_t)blue * bmax / 255U)
+    const uint32_t b = (b8 * bmax / 255U)
                        << active_surface.blue_mask_shift;
     return r | g | b;
 }
@@ -139,6 +246,10 @@ bool graphics_init(const struct nexus_graphics_surface *surface) {
     }
 
     active_surface = *surface;
+    output_rotation = 0U;
+    output_scale_percent = 100U;
+    output_brightness_percent = 100U;
+    output_color_temperature_kelvin = 6500U;
     pending_damage_valid = false;
     pending_damage = (struct nexus_graphics_damage){0};
     initialized = true;
@@ -146,11 +257,45 @@ bool graphics_init(const struct nexus_graphics_surface *surface) {
 }
 
 uint64_t graphics_width(void) {
-    return initialized ? active_surface.width : 0U;
+    return graphics_logical_width();
 }
 
 uint64_t graphics_height(void) {
-    return initialized ? active_surface.height : 0U;
+    return graphics_logical_height();
+}
+
+bool graphics_set_rotation(uint32_t rotation) {
+    if (!initialized || rotation > 3U) return false;
+    output_rotation = rotation;
+    pending_damage = (struct nexus_graphics_damage){
+        0U, 0U, active_surface.width, active_surface.height
+    };
+    pending_damage_valid = true;
+    return true;
+}
+
+bool graphics_set_scale_percent(uint8_t percent) {
+    if (!initialized || percent < 50U || percent > 200U) return false;
+    output_scale_percent = percent;
+    pending_damage = (struct nexus_graphics_damage){
+        0U, 0U, active_surface.width, active_surface.height
+    };
+    pending_damage_valid = true;
+    return true;
+}
+
+bool graphics_set_color_effects(uint8_t brightness_percent,
+                                uint16_t color_temperature_kelvin) {
+    if (!initialized || brightness_percent > 100U ||
+        color_temperature_kelvin < 1000U ||
+        color_temperature_kelvin > 10000U) return false;
+    output_brightness_percent = brightness_percent;
+    output_color_temperature_kelvin = color_temperature_kelvin;
+    pending_damage = (struct nexus_graphics_damage){
+        0U, 0U, active_surface.width, active_surface.height
+    };
+    pending_damage_valid = true;
+    return true;
 }
 
 bool graphics_take_damage(struct nexus_graphics_damage *damage) {
@@ -170,14 +315,14 @@ void graphics_fill_gradient(
     uint8_t bottom_right_blue) {
     if (!initialized || width == 0U || height == 0U ||
         width > UINT32_MAX || height > UINT32_MAX ||
-        x >= active_surface.width || y >= active_surface.height) return;
+        x >= graphics_logical_width() || y >= graphics_logical_height()) return;
 
     const uint64_t gradient_width = width;
     const uint64_t gradient_height = height;
-    if (width > active_surface.width - x)
-        width = active_surface.width - x;
-    if (height > active_surface.height - y)
-        height = active_surface.height - y;
+    if (width > graphics_logical_width() - x)
+        width = graphics_logical_width() - x;
+    if (height > graphics_logical_height() - y)
+        height = graphics_logical_height() - y;
     graphics_mark_damage(x, y, width, height);
 
     const uint64_t x_step = graphics_gradient_step(gradient_width);
@@ -198,15 +343,22 @@ void graphics_fill_gradient(
             top_right_green, bottom_right_green, y_weight);
         const uint8_t right_blue = graphics_lerp_channel_weight(
             top_right_blue, bottom_right_blue, y_weight);
-        volatile uint32_t *destination = (volatile uint32_t *)(uintptr_t)
-            (base + (y + row) * active_surface.pitch + x * 4U);
         for (uint64_t column = 0U; column < width; ++column) {
             const uint32_t x_weight = graphics_gradient_weight(
                 column, gradient_width, x_step);
-            destination[column] = pack_rgb(
+            const uint32_t color = pack_rgb(
                 graphics_lerp_channel_weight(left_red, right_red, x_weight),
                 graphics_lerp_channel_weight(left_green, right_green, x_weight),
                 graphics_lerp_channel_weight(left_blue, right_blue, x_weight));
+            if (graphics_direct_mapping() &&
+                output_brightness_percent == 100U &&
+                output_color_temperature_kelvin == 6500U) {
+                volatile uint32_t *destination = (volatile uint32_t *)(uintptr_t)
+                    (base + (y + row) * active_surface.pitch + (x + column) * 4U);
+                *destination = color;
+            } else {
+                graphics_write_pixel(x + column, y + row, color);
+            }
         }
     }
 }
@@ -219,7 +371,7 @@ bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
                             uint64_t height, const uint32_t *pixels,
                             size_t stride_pixels) {
     if (!initialized || pixels == NULL || width == 0U || height == 0U ||
-        x >= active_surface.width || y >= active_surface.height ||
+        x >= graphics_logical_width() || y >= graphics_logical_height() ||
         stride_pixels < width ||
         width > (uint64_t)(SIZE_MAX / sizeof(uint32_t)) ||
         stride_pixels > SIZE_MAX / sizeof(uint32_t) ||
@@ -229,16 +381,19 @@ bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
         return false;
     }
 
-    const uint64_t copy_width = width < active_surface.width - x
-        ? width : active_surface.width - x;
-    const uint64_t copy_height = height < active_surface.height - y
-        ? height : active_surface.height - y;
+    const uint64_t copy_width = width < graphics_logical_width() - x
+        ? width : graphics_logical_width() - x;
+    const uint64_t copy_height = height < graphics_logical_height() - y
+        ? height : graphics_logical_height() - y;
     if (copy_width == 0U || copy_height == 0U ||
         copy_width > SIZE_MAX / sizeof(uint32_t)) return false;
 
     graphics_mark_damage(x, y, copy_width, copy_height);
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
-    const bool native_xrgb = active_surface.red_mask_size == 8U &&
+    const bool native_xrgb = graphics_direct_mapping() &&
+        output_brightness_percent == 100U &&
+        output_color_temperature_kelvin == 6500U &&
+        active_surface.red_mask_size == 8U &&
         active_surface.red_mask_shift == 16U &&
         active_surface.green_mask_size == 8U &&
         active_surface.green_mask_shift == 8U &&
@@ -258,9 +413,9 @@ bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
         } else {
             for (uint64_t column = 0U; column < copy_width; ++column) {
                 const uint32_t pixel = source[column];
-                destination[column] = pack_rgb(
+                graphics_write_pixel(x + column, y + row, pack_rgb(
                     (uint8_t)(pixel >> 16), (uint8_t)(pixel >> 8),
-                    (uint8_t)pixel);
+                    (uint8_t)pixel));
             }
         }
     }
@@ -270,16 +425,22 @@ bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
 void graphics_fill_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,
                         uint8_t blue) {
-    if (!initialized || x >= active_surface.width ||
-        y >= active_surface.height || width == 0U || height == 0U) return;
+    if (!initialized || x >= graphics_logical_width() ||
+        y >= graphics_logical_height() || width == 0U || height == 0U) return;
 
-    const uint64_t available_width = active_surface.width - x;
-    const uint64_t available_height = active_surface.height - y;
+    const uint64_t available_width = graphics_logical_width() - x;
+    const uint64_t available_height = graphics_logical_height() - y;
     if (width > available_width) width = available_width;
     if (height > available_height) height = available_height;
 
     graphics_mark_damage(x, y, width, height);
     const uint32_t color = pack_rgb(red, green, blue);
+    if (!graphics_direct_mapping()) {
+        for (uint64_t row = 0U; row < height; ++row)
+            for (uint64_t column = 0U; column < width; ++column)
+                graphics_write_pixel(x + column, y + row, color);
+        return;
+    }
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
     /*
      * REP STOSD uses the CPU's optimized string-store path for solid fills.
@@ -314,18 +475,36 @@ static uint8_t blend_channel(uint8_t source, uint8_t destination,
 void graphics_blend_rect(uint64_t x, uint64_t y, uint64_t width,
                          uint64_t height, uint8_t red, uint8_t green,
                          uint8_t blue, uint8_t alpha) {
-    if (!initialized || alpha == 0U || x >= active_surface.width ||
-        y >= active_surface.height || width == 0U || height == 0U) return;
+    if (!initialized || alpha == 0U || x >= graphics_logical_width() ||
+        y >= graphics_logical_height() || width == 0U || height == 0U) return;
     if (alpha == 255U) {
         graphics_fill_rect(x, y, width, height, red, green, blue);
         return;
     }
-    if (width > active_surface.width - x)
-        width = active_surface.width - x;
-    if (height > active_surface.height - y)
-        height = active_surface.height - y;
+    if (width > graphics_logical_width() - x)
+        width = graphics_logical_width() - x;
+    if (height > graphics_logical_height() - y)
+        height = graphics_logical_height() - y;
 
     graphics_mark_damage(x, y, width, height);
+    if (!graphics_direct_mapping()) {
+        for (uint64_t row = 0U; row < height; ++row) {
+            for (uint64_t column = 0U; column < width; ++column) {
+                const uint32_t old = graphics_read_pixel(x + column, y + row);
+                graphics_write_pixel(x + column, y + row, pack_rgb(
+                    blend_channel(red, unpack_channel(old,
+                        active_surface.red_mask_size,
+                        active_surface.red_mask_shift), alpha),
+                    blend_channel(green, unpack_channel(old,
+                        active_surface.green_mask_size,
+                        active_surface.green_mask_shift), alpha),
+                    blend_channel(blue, unpack_channel(old,
+                        active_surface.blue_mask_size,
+                        active_surface.blue_mask_shift), alpha)));
+            }
+        }
+        return;
+    }
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
     for (uint64_t row = 0U; row < height; ++row) {
         volatile uint32_t *pixels = (volatile uint32_t *)(uintptr_t)
@@ -374,8 +553,8 @@ static void graphics_circle_internal(
     if (!initialized || radius > NEXUS_GRAPHICS_CIRCLE_MAX_RADIUS ||
         (blend && alpha == 0U)) return;
 
-    const uint64_t surface_width = active_surface.width;
-    const uint64_t surface_height = active_surface.height;
+    const uint64_t surface_width = graphics_logical_width();
+    const uint64_t surface_height = graphics_logical_height();
     if (center_y >= surface_height &&
         center_y - surface_height >= radius) return;
 
@@ -479,12 +658,12 @@ static void graphics_rounded_rect_internal(
     uint64_t x, uint64_t y, uint64_t width, uint64_t height,
     uint32_t radius, uint8_t red, uint8_t green, uint8_t blue,
     uint8_t alpha, bool blend) {
-    if (!initialized || x >= active_surface.width ||
-        y >= active_surface.height || width == 0U || height == 0U) return;
-    if (width > active_surface.width - x)
-        width = active_surface.width - x;
-    if (height > active_surface.height - y)
-        height = active_surface.height - y;
+    if (!initialized || x >= graphics_logical_width() ||
+        y >= graphics_logical_height() || width == 0U || height == 0U) return;
+    if (width > graphics_logical_width() - x)
+        width = graphics_logical_width() - x;
+    if (height > graphics_logical_height() - y)
+        height = graphics_logical_height() - y;
     if (radius > 256U) radius = 256U;
     if ((uint64_t)radius * 2U > width) radius = (uint32_t)(width / 2U);
     if ((uint64_t)radius * 2U > height) radius = (uint32_t)(height / 2U);
@@ -577,14 +756,14 @@ void graphics_clear(uint8_t red, uint8_t green, uint8_t blue) {
 void graphics_draw_rect(uint64_t x, uint64_t y, uint64_t width,
                         uint64_t height, uint8_t red, uint8_t green,
                         uint8_t blue) {
-    if (!initialized || x >= active_surface.width ||
-        y >= active_surface.height || width == 0U || height == 0U) return;
+    if (!initialized || x >= graphics_logical_width() ||
+        y >= graphics_logical_height() || width == 0U || height == 0U) return;
 
     /* Clip before computing the far edges so hostile dimensions cannot wrap. */
-    if (width > active_surface.width - x)
-        width = active_surface.width - x;
-    if (height > active_surface.height - y)
-        height = active_surface.height - y;
+    if (width > graphics_logical_width() - x)
+        width = graphics_logical_width() - x;
+    if (height > graphics_logical_height() - y)
+        height = graphics_logical_height() - y;
 
     graphics_fill_rect(x, y, width, 1U, red, green, blue);
     if (height > 1U)
@@ -607,12 +786,12 @@ void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
                         uint32_t scale, uint8_t red, uint8_t green,
                         uint8_t blue) {
     if (!initialized || text == NULL || scale == 0U ||
-        x >= active_surface.width || y >= active_surface.height) return;
+        x >= graphics_logical_width() || y >= graphics_logical_height()) return;
 
     const uint32_t color = pack_rgb(red, green, blue);
     volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
-    const uint64_t max_advance = active_surface.width - x;
-    const uint64_t max_height = active_surface.height - y;
+    const uint64_t max_advance = graphics_logical_width() - x;
+    const uint64_t max_height = graphics_logical_height() - y;
 
     for (size_t index = 0U; text[index] != '\0'; ++index) {
         /* Check multiplication before calculating the character position. */
@@ -636,10 +815,8 @@ void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
                     for (uint32_t sx = 0U; sx < scale; ++sx) {
                         const uint64_t px_offset = glyph_x + sx;
                         if (px_offset >= max_advance) break;
-                        volatile uint32_t *pixel = (volatile uint32_t *)(uintptr_t)
-                            (base + (y + py_offset) * active_surface.pitch +
-                             (x + px_offset) * 4U);
-                        *pixel = color;
+                        graphics_write_pixel(x + px_offset,
+                                              y + py_offset, color);
                     }
                 }
             }
@@ -653,19 +830,17 @@ void graphics_draw_text(uint64_t x, uint64_t y, const char *text,
 static void graphics_blend_text_pixel(uint64_t x, uint64_t y,
                                       uint8_t red, uint8_t green,
                                       uint8_t blue, uint8_t alpha) {
-    if (alpha == 0U || x >= active_surface.width ||
-        y >= active_surface.height) return;
-    volatile uint8_t *base = (volatile uint8_t *)active_surface.address;
-    volatile uint32_t *pixel = (volatile uint32_t *)(uintptr_t)
-        (base + y * active_surface.pitch + x * 4U);
-    const uint32_t old = *pixel;
-    *pixel = pack_rgb(
+    if (alpha == 0U || x >= graphics_logical_width() ||
+        y >= graphics_logical_height()) return;
+    const uint32_t old = graphics_read_pixel(x, y);
+    const uint32_t color = pack_rgb(
         blend_channel(red, unpack_channel(old,
             active_surface.red_mask_size, active_surface.red_mask_shift), alpha),
         blend_channel(green, unpack_channel(old,
             active_surface.green_mask_size, active_surface.green_mask_shift), alpha),
         blend_channel(blue, unpack_channel(old,
             active_surface.blue_mask_size, active_surface.blue_mask_shift), alpha));
+    graphics_write_pixel(x, y, color);
 }
 
 /* The 5x7 glyph bitmap is scaled as fractional rectangles. Pixel coverage is
@@ -677,14 +852,14 @@ void graphics_draw_text_aa(uint64_t x, uint64_t y, const char *text,
                            uint8_t green, uint8_t blue) {
     const uint32_t one = 1U << 16;
     const uint32_t maximum_scale = 4U << 16;
-    if (!initialized || text == NULL || x >= active_surface.width ||
-        y >= active_surface.height || scale_16_16 < one ||
+    if (!initialized || text == NULL || x >= graphics_logical_width() ||
+        y >= graphics_logical_height() || scale_16_16 < one ||
         scale_16_16 > maximum_scale ||
-        active_surface.width > (UINT64_MAX >> 16) ||
-        active_surface.height > (UINT64_MAX >> 16)) return;
+        graphics_logical_width() > (UINT64_MAX >> 16) ||
+        graphics_logical_height() > (UINT64_MAX >> 16)) return;
 
-    const uint64_t max_width = active_surface.width - x;
-    const uint64_t max_height = active_surface.height - y;
+    const uint64_t max_width = graphics_logical_width() - x;
+    const uint64_t max_height = graphics_logical_height() - y;
     const uint64_t max_width_fp = max_width << 16;
     const uint64_t max_height_fp = max_height << 16;
 

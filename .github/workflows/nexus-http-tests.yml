@@ -43,7 +43,7 @@ jobs:
       - name: Compile safe download filename tests
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/download.c kernel/tests/download_test.c \
-            -o /tmp/nexus-download-test
+            -Ikernel/src kernel/src/download.c kernel/src/sha256.c \
+            kernel/tests/download_test.c -o /tmp/nexus-download-test
       - name: Run safe download filename tests
         run: /tmp/nexus-download-test

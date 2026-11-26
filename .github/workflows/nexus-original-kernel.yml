@@ -377,10 +377,17 @@ jobs:
           grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" uefi-serial.log
           grep -q "NEXUS RAMFS READY" uefi-serial.log
           grep -q "NEXUS PROCESS MANAGER READY" uefi-serial.log
-          # This ISO is intentionally installer-only; it has no installed
-          # user volume, so the disk-backed HELLO.ELF test must be skipped.
+          # The CI image attaches disposable NVMe/AHCI test volumes. The
+          # installer-mode boot therefore exercises the disk-backed native
+          # ELF process and its file-write/output-capture ABI end to end.
           grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" uefi-serial.log
-          grep -q "NEXUS FILE PROCESS SELFTEST SKIPPED" uefi-serial.log
+          grep -q "NEXUS FILE EXEC OK; SDK FILE IO/WRITE OK; FORMAT=0023" uefi-serial.log
+          grep -q "DESKTOP: HELLO.ELF native SDK file read/write, formatted output and capture passed" uefi-serial.log
+          grep -q "NEXUS CPU CAPABILITY QUERY READY" uefi-serial.log
+          grep -q "NEXUS AVX2 USER SIMD READY" uefi-serial.log
+          grep -q "NEXUS SMP NATIVE APP CAPABILITY READY" uefi-serial.log
+          grep -q "NEXUS FILE PROCESS SELFTEST READY" uefi-serial.log
+          ! grep -q "NEXUS FILE PROCESS SELFTEST SKIPPED" uefi-serial.log
           ! grep -q "NEXUS CPU EXCEPTION" uefi-serial.log
           grep -q "NEXUS SMP ONLINE CPU COUNT=0x0000000000000004" uefi-serial.log
           grep -q "NEXUS SMP PARALLEL WORK TEST READY" uefi-serial.log

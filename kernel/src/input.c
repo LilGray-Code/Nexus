@@ -28,6 +28,7 @@ static volatile uint8_t gamepad_tail;
 static volatile uint8_t event_head;
 static volatile uint8_t event_tail;
 static volatile uint32_t event_drop_count;
+static volatile bool download_cancel_requested;
 static uint8_t mouse_packet[4];
 static uint8_t mouse_packet_index;
 static uint8_t mouse_packet_length = PS2_MOUSE_PACKET_STANDARD;
@@ -184,6 +185,9 @@ void input_test_keyboard_scancode(uint8_t scancode) {
 #endif
 
 static void queue_event(const struct nexus_input_event *event) {
+    if (event != NULL && event->type == NEXUS_INPUT_KEYBOARD &&
+        event->scancode == 0x41U)
+        download_cancel_requested = true;
     const uint8_t next = (uint8_t)((event_tail + 1U) & INPUT_EVENT_QUEUE_MASK);
     if (next == event_head) {
         /* Preserve queued key/button transitions and make overload observable. */
@@ -219,6 +223,7 @@ bool input_init(void) {
     event_head = 0;
     event_tail = 0;
     event_drop_count = 0U;
+    download_cancel_requested = false;
     gamepad_head = 0U;
     gamepad_tail = 0U;
     mouse_packet_index = 0U;
@@ -366,6 +371,14 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
 
 uint32_t input_dropped_event_count(void) {
     return event_drop_count;
+}
+
+bool input_take_download_cancel_request(void) {
+    const uint64_t flags = input_interrupt_save();
+    const bool requested = download_cancel_requested;
+    download_cancel_requested = false;
+    input_interrupt_restore(flags);
+    return requested;
 }
 
 bool input_pop_event(struct nexus_input_event *event) {

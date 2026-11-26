@@ -45,6 +45,11 @@ bool vfs_mount_root_nxfs(const struct nexus_block_device *device,
 bool vfs_nxfs_mounted(void);
 bool vfs_nxfs_writable(void);
 bool vfs_save_ram_file_to_nxfs(const char *name);
+/* Persistent current-directory streaming writes; no RAM-sized file buffer. */
+bool vfs_stream_write_begin(const char *name, uint32_t expected_length);
+bool vfs_stream_write_append(const void *data, size_t length);
+bool vfs_stream_write_finish(void);
+void vfs_stream_write_abort(void);
 bool vfs_write_file(const char *name, const void *data, size_t length);
 /* Root-scoped config/data I/O ignores the current directory but never writes FAT32. */
 bool vfs_write_root_file(const char *name, const void *data, size_t length);

@@ -33,7 +33,7 @@
 
 static uint32_t lapic_ids[NEXUS_SMP_MAX_CPUS];
 static volatile uint32_t cpu_online[NEXUS_SMP_MAX_CPUS];
-static volatile uint8_t cpu_core_type[NEXUS_SMP_MAX_CPUS];
+static struct nexus_cpu_local_topology cpu_topologies[NEXUS_SMP_MAX_CPUS];
 static uint32_t expected_cpu_count = 1U;
 static volatile uint32_t online_cpu_count = 1U;
 static bool smp_initialized;
@@ -203,7 +203,9 @@ static void smp_ap_entry(struct limine_mp_info *info) {
         for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
     }
 
-    cpu_core_type[slot] = (uint8_t)nexus_cpu_get_local_core_type();
+    if (!nexus_cpu_get_local_topology(&cpu_topologies[slot])) {
+        for (;;) __asm__ volatile ("cli; hlt" ::: "memory");
+    }
     __atomic_store_n(&cpu_online[slot], 1U, __ATOMIC_RELEASE);
     __atomic_add_fetch(&online_cpu_count, 1U, __ATOMIC_RELEASE);
     for (;;) {
@@ -217,11 +219,15 @@ bool nexus_smp_init(struct limine_mp_response *response) {
     online_cpu_count = 1U;
     for (uint32_t slot = 0U; slot < NEXUS_SMP_MAX_CPUS; ++slot) {
         cpu_online[slot] = 0U;
-        cpu_core_type[slot] = (uint8_t)NEXUS_CPU_CORE_TYPE_UNKNOWN;
+        cpu_topologies[slot] = (struct nexus_cpu_local_topology){
+            .vendor = NEXUS_CPU_VENDOR_UNKNOWN,
+            .core_type = NEXUS_CPU_CORE_TYPE_UNKNOWN,
+            .logical_processors_per_core = 1U
+        };
         lapic_ids[slot] = 0U;
     }
     cpu_online[0] = 1U;
-    cpu_core_type[0] = (uint8_t)nexus_cpu_get_local_core_type();
+    (void)nexus_cpu_get_local_topology(&cpu_topologies[0]);
     lapic_ids[0] = (uint32_t)read_msr(IA32_APIC_BASE_MSR);
     work_active = 0U;
     work_next = 0U;
@@ -310,9 +316,22 @@ bool nexus_smp_cpu_info_at(uint32_t cpu_slot,
         cpu_slot >= expected_cpu_count) return false;
     const bool online =
         __atomic_load_n(&cpu_online[cpu_slot], __ATOMIC_ACQUIRE) != 0U;
+    const struct nexus_cpu_local_topology *topology =
+        &cpu_topologies[cpu_slot];
     info->apic_id = lapic_ids[cpu_slot];
-    info->core_type =
-        (enum nexus_cpu_core_type)cpu_core_type[cpu_slot];
+    info->cpuid_apic_id = topology->apic_id;
+    info->core_id = topology->core_id;
+    info->node_id = topology->node_id;
+    info->vendor = topology->vendor;
+    info->core_type = topology->core_type;
+    info->logical_processors_per_core =
+        topology->logical_processors_per_core;
+    info->nodes_per_processor_raw = topology->nodes_per_processor_raw;
+    info->cpuid_apic_id_valid = topology->apic_id_valid;
+    info->core_id_valid = topology->core_id_valid;
+    info->node_id_valid = topology->node_id_valid;
+    info->topology_extensions_supported =
+        topology->topology_extensions_supported;
     info->online = online;
     return true;
 }

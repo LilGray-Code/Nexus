@@ -730,7 +730,11 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
             result->version[i] = manifest.version[i];
         for (size_t i = 0U; i < sizeof(result->executable_path); ++i)
             result->executable_path[i] = executable[i];
-        result->permissions = manifest.permissions;
+        result->requested_permissions = manifest.permissions;
+        uint32_t stored_grants = 0U;
+        if (!package_read_permission_record(manifest.id, &stored_grants))
+            return false;
+        result->granted_permissions = stored_grants & manifest.permissions;
     }
     return true;
 }

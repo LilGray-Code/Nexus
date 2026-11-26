@@ -62,8 +62,16 @@ jobs:
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/include -Ikernel/src kernel/src/display.c \
-            kernel/tests/display_test.c -o /tmp/nexus-display-test
+            kernel/src/graphics.c kernel/tests/display_test.c \
+            -o /tmp/nexus-display-test
           /tmp/nexus-display-test
+
+      - name: Test framebuffer drawing and display transforms
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/graphics.c kernel/tests/graphics_test.c \
+            -o /tmp/nexus-graphics-test
+          /tmp/nexus-graphics-test
 
       - name: Test CPU vendor, hybrid-core and power capability discovery
         run: |

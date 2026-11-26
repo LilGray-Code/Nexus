@@ -9,6 +9,7 @@ struct netdev_state {
 static struct netdev_state devices[NEXUS_NETDEV_MAX_DEVICES];
 static size_t device_count;
 static size_t active_device_index;
+static size_t preferred_device_index = NEXUS_NETDEV_MAX_DEVICES;
 
 static void copy_bytes(void *destination, const void *source, size_t length) {
     uint8_t *out = (uint8_t *)destination;
@@ -47,16 +48,26 @@ static bool device_link_up(const struct netdev_state *device) {
 static size_t select_active_device(void) {
     if (device_count == 0U) return NEXUS_NETDEV_MAX_DEVICES;
     if (active_device_index >= device_count) active_device_index = 0U;
+
+    /* Prefer the user's selected adapter whenever its physical link returns. */
+    if (preferred_device_index < device_count &&
+        device_link_up(&devices[preferred_device_index])) {
+        active_device_index = preferred_device_index;
+        return active_device_index;
+    }
+
     if (device_link_up(&devices[active_device_index]))
         return active_device_index;
 
     for (size_t i = 0U; i < device_count; ++i) {
         if (device_link_up(&devices[i])) {
             active_device_index = i;
-            break;
+            return active_device_index;
         }
     }
-    return active_device_index;
+
+    /* Never send through a stale/down interface when no adapter is linked. */
+    return NEXUS_NETDEV_MAX_DEVICES;
 }
 
 void netdev_init(void) {
@@ -64,6 +75,7 @@ void netdev_init(void) {
         devices[i] = (struct netdev_state){0};
     device_count = 0U;
     active_device_index = 0U;
+    preferred_device_index = NEXUS_NETDEV_MAX_DEVICES;
 }
 
 bool netdev_register(const char *name, enum nexus_netdev_medium medium,
@@ -106,10 +118,33 @@ size_t netdev_count(void) {
     return device_count;
 }
 
+bool netdev_select_device(size_t index) {
+    if (index >= device_count || !device_link_up(&devices[index]))
+        return false;
+    preferred_device_index = index;
+    active_device_index = index;
+    return true;
+}
+
+void netdev_use_automatic_device(void) {
+    preferred_device_index = NEXUS_NETDEV_MAX_DEVICES;
+}
+
+size_t netdev_active_index(void) {
+    return select_active_device();
+}
+
 bool netdev_get_info_at(size_t index, struct nexus_netdev_info *info) {
     if (index >= device_count || info == NULL) return false;
+    const size_t active = select_active_device();
     *info = devices[index].info;
     info->link_up = device_link_up(&devices[index]);
+    info->active = index == active;
+    info->preferred = index == preferred_device_index;
+    info->link_speed_mbps =
+        devices[index].ops.link_speed_mbps != NULL && info->link_up
+            ? devices[index].ops.link_speed_mbps(devices[index].context)
+            : 0U;
     return true;
 }
 
@@ -127,17 +162,32 @@ bool netdev_get_info(struct nexus_netdev_info *info) {
     const size_t active = select_active_device();
     if (active >= device_count) return false;
     *info = devices[active].info;
-    info->link_up = device_link_up(&devices[active]);
+    info->link_up = true;
+    info->active = true;
+    info->preferred = active == preferred_device_index;
+    info->link_speed_mbps =
+        devices[active].ops.link_speed_mbps != NULL
+            ? devices[active].ops.link_speed_mbps(devices[active].context)
+            : 0U;
     return true;
 }
 
 bool netdev_send_frame(const void *frame, size_t length) {
     const size_t active = select_active_device();
-    if (active >= device_count || frame == NULL ||
-        length < NEXUS_NETDEV_MIN_FRAME ||
-        length > devices[active].info.max_frame_size) return false;
-    return devices[active].ops.send_frame(
-        devices[active].context, frame, length);
+    if (active >= device_count) return false;
+    struct netdev_state *device = &devices[active];
+    if (frame == NULL || length < NEXUS_NETDEV_MIN_FRAME ||
+        length > device->info.max_frame_size) {
+        ++device->info.tx_errors;
+        return false;
+    }
+    if (!device->ops.send_frame(device->context, frame, length)) {
+        ++device->info.tx_errors;
+        return false;
+    }
+    ++device->info.tx_frames;
+    device->info.tx_bytes += length;
+    return true;
 }
 
 bool netdev_receive_frame(void *buffer, size_t capacity, size_t *length) {
@@ -145,17 +195,20 @@ bool netdev_receive_frame(void *buffer, size_t capacity, size_t *length) {
     const size_t active = select_active_device();
     if (active >= device_count || buffer == NULL || length == NULL ||
         capacity < NEXUS_NETDEV_MIN_FRAME) return false;
-    if (capacity > devices[active].info.max_frame_size)
-        capacity = devices[active].info.max_frame_size;
-    if (!devices[active].ops.receive_frame(devices[active].context, buffer,
-                                            capacity, length)) {
+    struct netdev_state *device = &devices[active];
+    if (capacity > device->info.max_frame_size)
+        capacity = device->info.max_frame_size;
+    if (!device->ops.receive_frame(device->context, buffer, capacity, length)) {
         *length = 0U;
-        return false;
+        return false; /* No frame available is not a receive error. */
     }
     /* A driver must never report bytes outside the caller's buffer. */
     if (*length < NEXUS_NETDEV_MIN_FRAME || *length > capacity) {
         *length = 0U;
+        ++device->info.rx_errors;
         return false;
     }
+    ++device->info.rx_frames;
+    device->info.rx_bytes += *length;
     return true;
 }

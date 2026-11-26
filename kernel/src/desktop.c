@@ -2604,7 +2604,11 @@ static void draw_shell(void) {
                         "MODE SWITCH: NO VERIFIED GPU MODESET BACKEND",
                         1U, 231U, 183U, 127U);
                 }
-                if (display->last_mode_change_failed) {
+                if (display->firmware_fallback_active) {
+                    graphics_draw_text(text_x, content_y + 188U,
+                        "FIRMWARE FRAMEBUFFER RECOVERY ACTIVE",
+                        1U, 108U, 216U, 229U);
+                } else if (display->last_mode_change_failed) {
                     graphics_draw_text(text_x, content_y + 188U,
                         display->last_rollback_succeeded
                             ? "LAST CHANGE FAILED; PREVIOUS MODE RESTORED"

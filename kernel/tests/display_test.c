@@ -315,6 +315,6 @@ int main(void) {
     info = nexus_display_get_info();
     assert(info->mode_count == 1U);
     assert(info->modes[0].current_boot_mode);
-    assert(info->matching_edid_refresh_hz == 0U);
+    assert(info->current_refresh_hz == 0U);
     return 0;
 }

@@ -401,9 +401,17 @@ bool memory_allocator_selftest(void) {
     if (!memory_alloc_page(&reused) || reused != first ||
         !memory_page_is_allocated(reused)) return false;
     if (!memory_free_page(second) || !memory_free_page(reused)) return false;
-    return !memory_page_is_allocated(first) &&
-           !memory_page_is_allocated(second) &&
-           memory_allocator_validate();
+    if (memory_page_is_allocated(first) ||
+        memory_page_is_allocated(second) ||
+        !memory_allocator_validate()) return false;
+
+    /* Exercise the contiguous DMA-backing path and its all-or-nothing free. */
+    uint64_t contiguous = 0U;
+    if (!memory_alloc_contiguous_pages(1U, 0U, &contiguous) ||
+        !memory_page_is_allocated(contiguous) ||
+        !memory_free_contiguous_pages(contiguous, 1U) ||
+        memory_page_is_allocated(contiguous)) return false;
+    return memory_allocator_validate();
 }
 
 void *memory_phys_to_virt(uint64_t physical_address) {

@@ -24,6 +24,7 @@
 #define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D 0x0105U
 #define VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING 0x0106U
 #define VIRTIO_GPU_CMD_GET_CAPSET_INFO 0x0108U
+#define VIRTIO_GPU_CMD_GET_EDID 0x010AU
 #define VIRTIO_GPU_CMD_CTX_CREATE 0x0200U
 #define VIRTIO_GPU_CMD_CTX_DESTROY 0x0201U
 #define VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE 0x0202U
@@ -34,7 +35,9 @@
 #define VIRTIO_GPU_RESP_OK_DISPLAY_INFO 0x1101U
 #define VIRTIO_GPU_RESP_ERR_UNSPEC 0x1200U
 #define VIRTIO_GPU_RESP_OK_CAPSET_INFO 0x1102U
+#define VIRTIO_GPU_RESP_OK_EDID 0x1104U
 #define VIRTIO_GPU_F_VIRGL (1U << 0)
+#define VIRTIO_GPU_F_EDID (1U << 1)
 #define VIRTIO_GPU_F_CONTEXT_INIT (1U << 4)
 #define VIRTIO_GPU_FLAG_FENCE (1U << 0)
 #define VIRTIO_GPU_CAPSET_VIRGL 1U
@@ -47,7 +50,7 @@
 #define VIRTIO_GPU_COMMAND_TIMEOUT 200U
 #define VIRTIO_GPU_COMMAND_BYTES 65536U
 #define VIRTIO_GPU_RESPONSE_OFFSET VIRTIO_GPU_COMMAND_BYTES
-#define VIRTIO_GPU_RESPONSE_CAPACITY 512U
+#define VIRTIO_GPU_RESPONSE_CAPACITY 1088U
 #define VIRTIO_GPU_COMMAND_POOL_PAGES \
     ((VIRTIO_GPU_RESPONSE_OFFSET + 4096U + NEXUS_PAGE_SIZE - 1U) / \
      NEXUS_PAGE_SIZE)
@@ -239,6 +242,25 @@ struct virtio_gpu_tracked_resource {
     uint32_t resource_id;
     struct nexus_virtio_gpu_3d_resource_desc description;
 };
+
+
+struct virtio_gpu_get_edid {
+    struct virtio_gpu_header header;
+    uint32_t scanout;
+    uint32_t padding;
+} __attribute__((packed));
+
+struct virtio_gpu_resp_edid {
+    struct virtio_gpu_header header;
+    uint32_t size;
+    uint32_t padding;
+    uint8_t edid[1024];
+} __attribute__((packed));
+
+_Static_assert(sizeof(struct virtio_gpu_get_edid) == 32U,
+               "VirtIO GPU GET_EDID request ABI");
+_Static_assert(sizeof(struct virtio_gpu_resp_edid) == 1056U,
+               "VirtIO GPU EDID response ABI");
 static struct virtio_gpu_tracked_resource
     tracked_resources[VIRTIO_GPU_MAX_3D_RESOURCES];
 static uint32_t tracked_resource_count;
@@ -742,7 +764,8 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     }
 
     const uint32_t optional_gpu_features =
-        (1U << VIRTIO_GPU_F_VIRGL) | (1U << VIRTIO_GPU_F_CONTEXT_INIT);
+        (1U << VIRTIO_GPU_F_VIRGL) | (1U << VIRTIO_GPU_F_EDID) |
+        (1U << VIRTIO_GPU_F_CONTEXT_INIT);
     if (!virtio_pci_open(pci, 0U, optional_gpu_features, &transport)) {
         serial_write("VIRTIO GPU: modern PCI capability negotiation unavailable\r\n");
         return false;
@@ -1086,6 +1109,43 @@ bool virtio_gpu_display_get_info(
     struct nexus_virtio_gpu_display_info *info) {
     if (info == NULL || !display_inventory.valid) return false;
     *info = display_inventory;
+    return true;
+}
+
+bool virtio_gpu_display_get_edid(uint32_t scanout_id,
+                                 uint8_t *edid, size_t edid_capacity,
+                                 size_t *edid_length) {
+    if (!active || edid == NULL || edid_length == NULL ||
+        edid_capacity < 128U ||
+        (transport.features & ((uint64_t)1U << VIRTIO_GPU_F_EDID)) == 0U ||
+        scanout_id >= device_scanout_count) return false;
+
+    const struct virtio_gpu_get_edid request = {
+        .header = make_header(VIRTIO_GPU_CMD_GET_EDID),
+        .scanout = scanout_id,
+        .padding = 0U
+    };
+    uint8_t response[sizeof(struct virtio_gpu_resp_edid)];
+    uint32_t response_type = 0U, response_length = 0U;
+    if (!submit_command_raw(&request, sizeof(request),
+                            &response_type, &response_length,
+                            response, sizeof(response)) ||
+        response_type != VIRTIO_GPU_RESP_OK_EDID ||
+        response_length < offsetof(struct virtio_gpu_resp_edid, edid))
+        return false;
+
+    const uint32_t size = read_le32(
+        (const volatile uint8_t *)response +
+        offsetof(struct virtio_gpu_resp_edid, size));
+    if (size < 128U || size > sizeof(((struct virtio_gpu_resp_edid *)0)->edid) ||
+        (size % 128U) != 0U ||
+        size > response_length -
+            offsetof(struct virtio_gpu_resp_edid, edid) ||
+        size > edid_capacity) return false;
+
+    for (uint32_t i = 0U; i < size; ++i)
+        edid[i] = response[offsetof(struct virtio_gpu_resp_edid, edid) + i];
+    *edid_length = size;
     return true;
 }
 

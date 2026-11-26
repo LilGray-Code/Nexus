@@ -110,7 +110,7 @@ size_t usb_hid_keyboard_decode_state(struct nexus_usb_keyboard_state *state,
 
     for (size_t i = 2U; i < 8U; ++i) {
         const uint8_t usage = report[i];
-        if (usage == 0U || (have_previous_report &&
+        if (usage == 0U || (state->have_previous_report &&
                             report_has_usage(state->previous_report, usage))) {
             continue;
         }

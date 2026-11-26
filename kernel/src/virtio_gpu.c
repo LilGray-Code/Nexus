@@ -680,6 +680,50 @@ static bool gpu_query_display_info(uint64_t preferred_width,
     return have_enabled;
 }
 
+static bool gpu_compute_display_extent(uint64_t preferred_width,
+                                      uint64_t preferred_height,
+                                      uint64_t *extent_width,
+                                      uint64_t *extent_height) {
+    if (extent_width == NULL || extent_height == NULL ||
+        preferred_width == 0U || preferred_height == 0U) return false;
+
+    uint64_t rightmost = 0U;
+    uint64_t bottommost = 0U;
+    uint32_t active_scanouts = 0U;
+    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
+        const struct nexus_virtio_gpu_scanout_info *scanout =
+            &display_inventory.scanouts[i];
+        if (!scanout->enabled || scanout->width == 0U ||
+            scanout->height == 0U) continue;
+        const uint64_t right = (uint64_t)scanout->x + scanout->width;
+        const uint64_t bottom = (uint64_t)scanout->y + scanout->height;
+        if (right > rightmost) rightmost = right;
+        if (bottom > bottommost) bottommost = bottom;
+        ++active_scanouts;
+    }
+
+    if (active_scanouts == 0U) {
+        *extent_width = preferred_width;
+        *extent_height = preferred_height;
+        return true;
+    }
+
+    /* Scanout rectangles are expressed in the common resource coordinate
+     * space. Keep the advertised host positions to build an extended desktop;
+     * identical/overlapping rectangles continue to mirror the same pixels.
+     */
+    if (rightmost < preferred_width) rightmost = preferred_width;
+    if (bottommost < preferred_height) bottommost = preferred_height;
+    if (rightmost == 0U || bottommost == 0U ||
+        rightmost > 16384U || bottommost > 16384U ||
+        rightmost > UINT64_MAX / 4U ||
+        bottommost > UINT64_MAX / (rightmost * 4U) ||
+        rightmost * bottommost * 4U > UINT32_MAX) return false;
+    *extent_width = rightmost;
+    *extent_height = bottommost;
+    return true;
+}
+
 static bool gpu_create_resource(void) {
     const struct virtio_gpu_create_2d create = {
         .header = make_header(VIRTIO_GPU_CMD_RESOURCE_CREATE_2D),
@@ -702,14 +746,38 @@ static bool gpu_create_resource(void) {
     };
     if (!submit_command(&backing, sizeof(backing))) return false;
 
-    const struct virtio_gpu_set_scanout scanout = {
-        .header = make_header(VIRTIO_GPU_CMD_SET_SCANOUT),
-        .rectangle = {0U, 0U, (uint32_t)width_pixels,
-                      (uint32_t)height_pixels},
-        .scanout_id = selected_scanout_id,
-        .resource_id = VIRTIO_GPU_RESOURCE_ID
-    };
-    return submit_command(&scanout, sizeof(scanout));
+    bool attached_scanout = false;
+    if (display_inventory.valid) {
+        for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
+            const struct nexus_virtio_gpu_scanout_info *scanout =
+                &display_inventory.scanouts[i];
+            if (!scanout->enabled || scanout->width == 0U ||
+                scanout->height == 0U) continue;
+            const struct virtio_gpu_set_scanout set = {
+                .header = make_header(VIRTIO_GPU_CMD_SET_SCANOUT),
+                .rectangle = {
+                    scanout->x, scanout->y,
+                    scanout->width, scanout->height
+                },
+                .scanout_id = i,
+                .resource_id = VIRTIO_GPU_RESOURCE_ID
+            };
+            if (!submit_command(&set, sizeof(set))) return false;
+            attached_scanout = true;
+        }
+    }
+
+    if (!attached_scanout) {
+        const struct virtio_gpu_set_scanout set = {
+            .header = make_header(VIRTIO_GPU_CMD_SET_SCANOUT),
+            .rectangle = {0U, 0U, (uint32_t)width_pixels,
+                          (uint32_t)height_pixels},
+            .scanout_id = selected_scanout_id,
+            .resource_id = VIRTIO_GPU_RESOURCE_ID
+        };
+        if (!submit_command(&set, sizeof(set))) return false;
+    }
+    return true;
 }
 
 bool virtio_gpu_start(uint64_t width, uint64_t height,
@@ -719,6 +787,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     virgl_feature_negotiated = false;
     virgl_context_created = false;
     virgl_command_submission_ready = false;
+    virgl_smoke_test_in_progress = false;
     virgl_capset_id = 0U;
     virgl_capset_max_version = 0U;
     virgl_capset_max_size = 0U;
@@ -732,7 +801,6 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     venus_capset_available = false;
     venus_capset_max_version = 0U;
     venus_capset_max_size = 0U;
-    virgl_smoke_test_in_progress = false;
     selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
     device_scanout_count = 0U;
     device_capset_count = 0U;
@@ -745,6 +813,7 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i)
         tracked_resources[i] = (struct virtio_gpu_tracked_resource){0};
     gpu_set_virtio_3d_submission_ready(false, 0U);
+
     if (firmware_surface == NULL || render_surface == NULL ||
         width == 0U || height == 0U ||
         width > 4096U || height > 2160U ||
@@ -780,35 +849,14 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     }
     if (!virtio_pci_finish(&transport)) return false;
 
-    const uint64_t total_bytes = width * height * 4U;
-    framebuffer_pages = (total_bytes + NEXUS_PAGE_SIZE - 1U) /
-                        NEXUS_PAGE_SIZE;
-    if (total_bytes > UINT32_MAX || framebuffer_pages == 0U ||
-        !memory_alloc_contiguous_pages(framebuffer_pages, 0x100000000ULL,
-                                       &framebuffer_physical)) {
-        virtio_pci_fail(&transport);
-        serial_write("VIRTIO GPU: contiguous DMA framebuffer allocation failed\r\n");
-        return false;
-    }
-    framebuffer_memory =
-        (volatile uint8_t *)memory_phys_to_virt(framebuffer_physical);
-    if (framebuffer_memory == NULL) {
-        (void)memory_free_contiguous_pages(framebuffer_physical,
-                                           framebuffer_pages);
-        framebuffer_pages = 0U;
-        virtio_pci_fail(&transport);
-        return false;
-    }
-    for (uint64_t i = 0U; i < framebuffer_pages * NEXUS_PAGE_SIZE; ++i)
-        framebuffer_memory[i] = 0U;
-
+    /* Allocate the command queue before querying outputs; all later
+     * framebuffer dimensions are derived from the device's scanout rectangles.
+     */
     command_pages = VIRTIO_GPU_COMMAND_POOL_PAGES;
     if (!memory_alloc_contiguous_pages(command_pages, 0x100000000ULL,
                                        &command_physical)) {
-        (void)memory_free_contiguous_pages(framebuffer_physical,
-                                           framebuffer_pages);
-        framebuffer_pages = 0U;
         virtio_pci_fail(&transport);
+        serial_write("VIRTIO GPU: command DMA pool allocation failed\r\n");
         return false;
     }
     command_memory =
@@ -817,37 +865,85 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
         (void)memory_free_contiguous_pages(command_physical, command_pages);
         command_physical = 0U;
         command_pages = 0U;
-        (void)memory_free_contiguous_pages(framebuffer_physical,
-                                           framebuffer_pages);
-        framebuffer_pages = 0U;
         virtio_pci_fail(&transport);
         return false;
     }
     zero_bytes(command_memory,
                VIRTIO_GPU_RESPONSE_OFFSET + VIRTIO_GPU_RESPONSE_CAPACITY);
 
-    width_pixels = width;
-    height_pixels = height;
-    pitch_bytes = width * 4U;
     active = true;
     (void)gpu_query_display_info(width, height);
+    uint64_t desktop_width = width;
+    uint64_t desktop_height = height;
+    if (!gpu_compute_display_extent(width, height,
+                                    &desktop_width, &desktop_height)) {
+        active = false;
+        virtio_pci_fail(&transport);
+        (void)memory_free_contiguous_pages(command_physical, command_pages);
+        command_physical = 0U;
+        command_pages = 0U;
+        command_memory = NULL;
+        serial_write("VIRTIO GPU: combined scanout dimensions exceed safe framebuffer bounds\r\n");
+        return false;
+    }
+
+    width_pixels = desktop_width;
+    height_pixels = desktop_height;
+    pitch_bytes = desktop_width * 4U;
+    const uint64_t total_bytes = pitch_bytes * desktop_height;
+    framebuffer_pages = (total_bytes + NEXUS_PAGE_SIZE - 1U) /
+                        NEXUS_PAGE_SIZE;
+    if (total_bytes > UINT32_MAX || framebuffer_pages == 0U ||
+        !memory_alloc_contiguous_pages(framebuffer_pages, 0x100000000ULL,
+                                       &framebuffer_physical)) {
+        active = false;
+        virtio_pci_fail(&transport);
+        (void)memory_free_contiguous_pages(command_physical, command_pages);
+        command_physical = 0U;
+        command_pages = 0U;
+        command_memory = NULL;
+        serial_write("VIRTIO GPU: contiguous extended-desktop framebuffer allocation failed\r\n");
+        return false;
+    }
+    framebuffer_memory =
+        (volatile uint8_t *)memory_phys_to_virt(framebuffer_physical);
+    if (framebuffer_memory == NULL) {
+        (void)memory_free_contiguous_pages(framebuffer_physical,
+                                           framebuffer_pages);
+        framebuffer_pages = 0U;
+        (void)memory_free_contiguous_pages(command_physical, command_pages);
+        command_physical = 0U;
+        command_pages = 0U;
+        command_memory = NULL;
+        active = false;
+        virtio_pci_fail(&transport);
+        return false;
+    }
+    for (uint64_t i = 0U; i < framebuffer_pages * NEXUS_PAGE_SIZE; ++i)
+        framebuffer_memory[i] = 0U;
+
     if (!gpu_create_resource()) {
         active = false;
         virtio_pci_fail(&transport);
         (void)memory_free_contiguous_pages(command_physical, command_pages);
         command_physical = 0U;
         command_pages = 0U;
+        command_memory = NULL;
         (void)memory_free_contiguous_pages(framebuffer_physical,
                                            framebuffer_pages);
         framebuffer_pages = 0U;
+        framebuffer_physical = 0U;
         framebuffer_memory = NULL;
+        serial_write("VIRTIO GPU: unable to attach the shared desktop resource to every scanout\r\n");
         return false;
     }
 
     *render_surface = *firmware_surface;
     render_surface->address = framebuffer_memory;
+    render_surface->width = width_pixels;
+    render_surface->height = height_pixels;
     render_surface->pitch = pitch_bytes;
-    serial_write("VIRTIO GPU: 2D resource attached; CPU raster buffer now drives GPU scanout\r\n");
+    serial_write("VIRTIO GPU: shared desktop framebuffer attached to discovered scanouts\r\n");
     (void)gpu_virgl_start();
     return true;
 }

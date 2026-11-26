@@ -64,6 +64,15 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   root preferences while nested in NXFS/FAT32 directories and verify remount
   retention.
 - PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support, plus generic USB HID gamepad polling for up to four controllers with bounded report parsing and hotplug/disconnect events. Composite controllers, USB hubs, arbitrary HID formats, and native Bluetooth pairing are not yet supported.
+- A normalized physical-memory allocator that coalesces firmware memory
+  ranges, allocates ordinary, DMA-limited, and contiguous pages, tracks
+  ownership/accounting, and rejects invalid or duplicate frees. Allocator
+  operations and queries are serialized by an IRQ-safe FIFO ticket lock so
+  BSP and AP contexts can use the shared allocator without handing out the
+  same page concurrently. A host pthread stress test and a boot-time SMP
+  allocate/free self-test have been added. This is still a bootstrap
+  bump-pointer allocator with a bounded reclaimed-page list, not yet a buddy
+  allocator, bitmap allocator, or per-zone/per-CPU cache design.
 - NVMe and AHCI/SATA block-device support. The AHCI driver identifies ATA disks
   and supports guarded installer writes when the device provides flush support.
 - GPT, FAT32, NXFS, and a virtual filesystem layer.

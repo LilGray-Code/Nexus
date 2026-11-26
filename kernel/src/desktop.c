@@ -2283,13 +2283,13 @@ static void draw_shell(void) {
             if (display != NULL && display->current_refresh_hz != 0U) {
                 format_labeled_u64("CURRENT REFRESH: ",
                     display->current_refresh_hz, line);
+                graphics_draw_text(text_x, content_y + 80U, line,
+                                   1U, 171U, 191U, 211U);
             } else {
                 graphics_draw_text(text_x, content_y + 80U,
                     "CURRENT REFRESH: NOT REPORTED",
                     1U, 171U, 191U, 211U);
             }
-            graphics_draw_text(text_x, content_y + 80U, line,
-                               1U, 171U, 191U, 211U);
 
             if (display != NULL) {
                 format_labeled_u64("FIRMWARE MODES: ",
@@ -2689,7 +2689,7 @@ static void draw_shell(void) {
                 "ED25519 VERIFIER AND RELEASE TRUST KEY.",
                 1U, 171U, 191U, 211U);
         } else if (settings_page == SETTINGS_ABOUT) {
-            char line[96], number[24];
+            char line[96];
             desktop_settings_draw_heading(text_x, content_y,
                 "ABOUT NEXUS", "System identity and live hardware summary.");
             graphics_draw_text(text_x, content_y + 66U,

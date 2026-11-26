@@ -347,6 +347,8 @@ bool nexus_cpu_init(void) {
         cpu_info.core_id_valid = local_topology.core_id_valid;
         cpu_info.node_id = local_topology.node_id;
         cpu_info.node_id_valid = local_topology.node_id_valid;
+        cpu_info.amd_nodes_per_processor_raw =
+            local_topology.nodes_per_processor_raw;
         cpu_info.topology_extensions_supported =
             local_topology.topology_extensions_supported;
     }
@@ -455,9 +457,8 @@ bool nexus_cpu_get_local_topology(
             topology->core_id_valid = true;
             topology->node_id = node_ecx & 0xFFU;
             topology->node_id_valid = true;
-            /* Store the standardized NodesPerProcessor encoding verbatim
-             * in the caller's reserved field through cpu_info in init below.
-             */
+            topology->nodes_per_processor_raw =
+                (uint8_t)((node_ecx >> 8) & 0x07U);
             const uint32_t threads_per_core =
                 ((core_ebx >> 8) & 0xFFU) + 1U;
             if (threads_per_core <= UINT8_MAX) {

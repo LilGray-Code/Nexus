@@ -17,6 +17,8 @@
 #include "browser_history.h"
 #include "download.h"
 #include "app_store.h"
+#include "gaming.h"
+#include "game_library.h"
 #include "boot_pack.h"
 #include "nxfs.h"
 
@@ -5123,6 +5125,50 @@ static void browser_history_navigate(bool forward) {
     browser_navigate(false);
 }
 
+static bool desktop_gaming_initialized;
+
+static void desktop_gaming_init(void) {
+    if (desktop_gaming_initialized) return;
+    nexus_game_library_init();
+    const bool loaded = nexus_game_library_load();
+    if (!loaded &&
+        nexus_game_library_last_error() == NEXUS_GAME_LIBRARY_ERROR_NOT_FOUND) {
+        /* Register the bundled first-party game once. This is game metadata,
+         * not a Steam depot or a claim about Windows game compatibility.
+         */
+        const struct nexus_game_library_entry built_in = {
+            .game_id = "NEXUS_BREAKOUT",
+            .title = "Nexus Breakout",
+            .executable_path = "ARCADE.ELF",
+            .game_version = "1.0",
+            .compatibility = {
+                .platform = NEXUS_GAME_PLATFORM_NATIVE_NEXUS,
+                .graphics_api = NEXUS_GAME_GRAPHICS_NONE,
+                .anticheat = NEXUS_GAME_ANTICHEAT_NONE,
+                .compatibility = NEXUS_GAME_COMPAT_UNTESTED,
+                .additional_required_capabilities =
+                    NEXUS_GAME_CAP_DISPLAY_2D
+            }
+        };
+        if (nexus_game_library_upsert(&built_in))
+            (void)nexus_game_library_save();
+    }
+    /* A corrupt database is left untouched for recovery; never overwrite it
+     * with a default list just because validation failed.
+     */
+    desktop_gaming_initialized = true;
+}
+
+static void desktop_terminal_copy_message(const char *message) {
+    size_t i = 0U;
+    if (message == NULL) message = "";
+    while (message[i] != '\0' && i < sizeof(terminal_output) - 1U) {
+        terminal_output[i] = message[i];
+        ++i;
+    }
+    terminal_output[i] = '\0';
+}
+
 static void terminal_execute(void) {
     terminal_output[0] = '\0';
     if (terminal_input_length == 0U) return;
@@ -5130,9 +5176,98 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME clear";
+        const char *s = "help about games game ID mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
+    } else if (terminal_input[0] == 'g' && terminal_input[1] == 'a' &&
+               terminal_input[2] == 'm' && terminal_input[3] == 'e' &&
+               terminal_input[4] == 's' && terminal_input[5] == '\0') {
+        desktop_gaming_init();
+        struct nexus_gaming_system_capabilities capabilities;
+        nexus_gaming_query_system(&capabilities);
+        size_t out = 0U;
+        for (size_t index = 0U;
+             index < nexus_game_library_count(); ++index) {
+            const struct nexus_game_library_entry *entry =
+                nexus_game_library_at(index);
+            if (entry == NULL) continue;
+            struct nexus_game_assessment assessment;
+            if (!nexus_gaming_assess(
+                    &entry->compatibility, &capabilities, &assessment))
+                continue;
+            const char *status =
+                nexus_game_assessment_name(assessment.status);
+            const char *fields[] = {
+                entry->game_id, " - ", entry->title, " [", status, "]; "
+            };
+            for (size_t field = 0U;
+                 field < sizeof(fields) / sizeof(fields[0]); ++field) {
+                for (size_t k = 0U;
+                     fields[field][k] != '\0' &&
+                     out < sizeof(terminal_output) - 1U; ++k)
+                    terminal_output[out++] = fields[field][k];
+            }
+            if (out >= sizeof(terminal_output) - 1U) break;
+        }
+        if (out == 0U)
+            desktop_terminal_copy_message(
+                nexus_game_library_last_error() ==
+                    NEXUS_GAME_LIBRARY_ERROR_FORMAT ||
+                nexus_game_library_last_error() ==
+                    NEXUS_GAME_LIBRARY_ERROR_CHECKSUM
+                    ? "game library is corrupt; metadata was not overwritten"
+                    : "no games registered");
+        else
+            terminal_output[out] = '\0';
+    } else if (terminal_input[0] == 'g' && terminal_input[1] == 'a' &&
+               terminal_input[2] == 'm' && terminal_input[3] == 'e' &&
+               terminal_input[4] == ' ') {
+        desktop_gaming_init();
+        struct nexus_gaming_system_capabilities capabilities;
+        nexus_gaming_query_system(&capabilities);
+        uint64_t exit_status = 0U;
+        if (nexus_game_library_launch(
+                terminal_input + 5, &capabilities, true, &exit_status)) {
+            char number[21];
+            format_u64(exit_status, number);
+            size_t out = 0U;
+            const char *prefix = "game exited with status ";
+            while (prefix[out] != '\0' &&
+                   out < sizeof(terminal_output) - 1U) {
+                terminal_output[out] = prefix[out];
+                ++out;
+            }
+            for (size_t i = 0U; number[i] != '\0' &&
+                 out < sizeof(terminal_output) - 1U; ++i)
+                terminal_output[out++] = number[i];
+            terminal_output[out] = '\0';
+        } else {
+            const char *message = "game launch failed";
+            switch (nexus_game_library_last_error()) {
+                case NEXUS_GAME_LIBRARY_ERROR_NOT_FOUND:
+                    message = "game ID not found; type games";
+                    break;
+                case NEXUS_GAME_LIBRARY_ERROR_BACKEND:
+                    message = "Steam/Proton/Wine launch backend not implemented";
+                    break;
+                case NEXUS_GAME_LIBRARY_ERROR_PREREQUISITES:
+                    message = "game requires unavailable runtime or graphics features";
+                    break;
+                case NEXUS_GAME_LIBRARY_ERROR_ANTICHEAT:
+                    message = "anti-cheat provider path is unavailable";
+                    break;
+                case NEXUS_GAME_LIBRARY_ERROR_UNTESTED:
+                    message = "game is not verified";
+                    break;
+                case NEXUS_GAME_LIBRARY_ERROR_STORAGE:
+                    message = "game library storage is unavailable";
+                    break;
+                default:
+                    message = "native game executable could not run";
+                    break;
+            }
+            desktop_terminal_copy_message(message);
+        }
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
                terminal_input[2]=='o' && terminal_input[3]=='u' &&
                terminal_input[4]=='t' && terminal_input[5]=='\0') {

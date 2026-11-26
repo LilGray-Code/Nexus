@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #define PROCESS_KERNEL_STACK_SIZE 16384U
-#define PROCESS_MAX_IMAGE_SIZE (1024U * 1024U)
+#define PROCESS_MAX_IMAGE_SIZE (4U * 1024U * 1024U)
 
 struct nexus_process {
     uint32_t pid;

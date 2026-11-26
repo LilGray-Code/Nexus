@@ -535,7 +535,8 @@ const struct nexus_display_mode *nexus_display_mode_at(size_t index) {
 bool nexus_display_register_mode_backend(
     const struct nexus_display_mode_backend *backend, void *context) {
     if (backend == NULL || backend->test_mode == NULL ||
-        backend->set_mode == NULL || backend->restore_mode == NULL) {
+        backend->set_mode == NULL || backend->restore_mode == NULL ||
+        backend->verify_mode == NULL) {
         display_backend = (struct nexus_display_mode_backend){0};
         display_backend_context = NULL;
         display_backend_registered = false;
@@ -549,9 +550,18 @@ bool nexus_display_register_mode_backend(
     return true;
 }
 
+static bool rollback_known_good_mode(const struct nexus_display_mode *previous) {
+    if (previous == NULL ||
+        !display_backend.restore_mode(display_backend_context, previous))
+        return false;
+    return display_backend.verify_mode(display_backend_context, previous);
+}
+
 bool nexus_display_apply_mode(size_t index) {
     if (!display_info.initialized || !display_backend_registered ||
-        index >= display_info.mode_count) return false;
+        !display_info.mode_set_available || index >= display_info.mode_count)
+        return false;
+
     const struct nexus_display_mode previous = {
         .width = display_info.current_width,
         .height = display_info.current_height,
@@ -559,22 +569,47 @@ bool nexus_display_apply_mode(size_t index) {
         .bits_per_pixel = display_info.current_bits_per_pixel,
         .refresh_hz = display_info.current_refresh_hz,
         .current_boot_mode = true,
-        .firmware_listed = true
+        .firmware_listed = true,
+        .edid_timing = true
     };
     const struct nexus_display_mode target = display_info.modes[index];
-    if (target.width == previous.width && target.height == previous.height &&
+    display_info.last_mode_change_failed = false;
+    display_info.last_failure_stage = NEXUS_DISPLAY_FAILURE_NONE;
+    display_info.last_rollback_succeeded = true;
+
+    if (target.width == previous.width &&
+        target.height == previous.height &&
         target.bits_per_pixel == previous.bits_per_pixel &&
         target.refresh_hz == previous.refresh_hz)
         return true;
 
-    if (!display_backend.test_mode(display_backend_context, &target))
+    if (!display_backend.test_mode(display_backend_context, &target)) {
+        display_info.last_mode_change_failed = true;
+        display_info.last_failure_stage = NEXUS_DISPLAY_FAILURE_TEST;
         return false;
+    }
 
     if (!display_backend.set_mode(display_backend_context, &target)) {
+        display_info.last_mode_change_failed = true;
+        display_info.last_failure_stage = NEXUS_DISPLAY_FAILURE_SET;
         display_info.last_rollback_succeeded =
-            display_backend.restore_mode(display_backend_context, &previous);
-        if (!display_info.last_rollback_succeeded)
+            rollback_known_good_mode(&previous);
+        if (!display_info.last_rollback_succeeded) {
+            display_info.last_failure_stage = NEXUS_DISPLAY_FAILURE_ROLLBACK;
             display_info.mode_set_available = false;
+        }
+        return false;
+    }
+
+    if (!display_backend.verify_mode(display_backend_context, &target)) {
+        display_info.last_mode_change_failed = true;
+        display_info.last_failure_stage = NEXUS_DISPLAY_FAILURE_VERIFY;
+        display_info.last_rollback_succeeded =
+            rollback_known_good_mode(&previous);
+        if (!display_info.last_rollback_succeeded) {
+            display_info.last_failure_stage = NEXUS_DISPLAY_FAILURE_ROLLBACK;
+            display_info.mode_set_available = false;
+        }
         return false;
     }
 

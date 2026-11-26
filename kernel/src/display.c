@@ -714,6 +714,8 @@ bool nexus_display_apply_mode(size_t index) {
     display_info.current_pitch = target.pitch;
     display_info.current_bits_per_pixel = target.bits_per_pixel;
     display_info.current_refresh_hz = target.refresh_hz;
+    for (uint32_t i = 0U; i < display_info.mode_count; ++i)
+        display_info.modes[i].current_boot_mode = i == index;
     display_info.last_rollback_succeeded = true;
     return true;
 }

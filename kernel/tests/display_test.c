@@ -11,6 +11,8 @@ struct fake_backend {
     uint64_t fail_width;
     uint64_t fail_verify_width;
     bool fail_restore;
+    uint32_t primary_monitor_id;
+    bool fail_primary;
     unsigned test_calls;
     unsigned set_calls;
     unsigned verify_calls;
@@ -49,6 +51,13 @@ static bool fake_verify(void *context,
     return mode != NULL && mode->width != backend->fail_verify_width &&
            mode->width == backend->current_width &&
            mode->height == backend->current_height;
+}
+
+static bool fake_primary(void *context, uint32_t monitor_id) {
+    struct fake_backend *backend = context;
+    if (backend->fail_primary) return false;
+    backend->primary_monitor_id = monitor_id;
+    return true;
 }
 
 static bool fake_hdr(void *context, const struct nexus_display_mode *mode) {
@@ -184,7 +193,7 @@ int main(void) {
     assert(nexus_display_monitor_at(1U) != NULL);
     assert(nexus_display_monitor_at(1U)->edid_valid);
     assert(nexus_display_monitor_at(1U)->dpi_x != 0U);
-    assert(nexus_display_set_primary_monitor(1U));
+    assert(!nexus_display_set_primary_monitor(1U));
     assert(!nexus_display_set_primary_monitor(99U));
     assert(!nexus_display_topology_available());
     assert(!nexus_display_set_topology(NEXUS_DISPLAY_TOPOLOGY_MIRRORED));
@@ -199,10 +208,19 @@ int main(void) {
         .set_mode = fake_set,
         .restore_mode = fake_restore,
         .verify_mode = fake_verify,
-        .supports_hdr = fake_hdr
+        .supports_hdr = fake_hdr,
+        .set_primary_monitor = fake_primary
     };
     assert(nexus_display_register_mode_backend(&backend, &fake));
     assert(nexus_display_hdr_output_available());
+    assert(nexus_display_set_primary_monitor(1U));
+    assert(fake.primary_monitor_id == 1U);
+    assert(nexus_display_monitor_at(0U)->primary == false);
+    assert(nexus_display_monitor_at(1U)->primary);
+    fake.fail_primary = true;
+    assert(!nexus_display_set_primary_monitor(0U));
+    assert(nexus_display_get_info()->primary_monitor_id == 1U);
+    fake.fail_primary = false;
     assert(nexus_display_apply_mode(0U));
     info = nexus_display_get_info();
     assert(info->current_width == 1920U);

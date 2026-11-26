@@ -21,6 +21,7 @@ struct nexus_win_pe_info {
     uint32_t file_alignment;
     uint32_t import_module_count;
     uint32_t import_symbol_count;
+    uint32_t relocation_count;
     char import_modules[NEXUS_WIN_PE_MAX_IMPORT_MODULES]
                        [NEXUS_WIN_PE_MODULE_NAME_MAX];
     char ndis_import_names[NEXUS_WIN_PE_MAX_NDIS_IMPORTS]
@@ -35,6 +36,8 @@ struct nexus_win_pe_info {
     bool imports_net_adapter_cx;
     bool imports_windows_kernel;
     bool imports_hal;
+    bool has_relocations;
+    bool relocations_supported;
 };
 
 /* Inspects, but never maps or executes, a PE32+ AMD64 Windows image.

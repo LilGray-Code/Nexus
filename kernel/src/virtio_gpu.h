@@ -2,6 +2,8 @@
 #define NEXUS_VIRTIO_GPU_H
 
 #include "graphics.h"
+#include "virtio_gpu_protocol.h"
+#include "display_edid.h"
 
 #include <stdbool.h>
 
@@ -17,6 +19,13 @@ bool virtio_gpu_present(void);
 bool virtio_gpu_present_region(uint64_t x, uint64_t y,
                                uint64_t width, uint64_t height);
 bool virtio_gpu_active(void);
+/* Scanout indexes match the VirtIO GPU scanout IDs (0 through 15). */
+uint32_t virtio_gpu_scanout_count(void);
+bool virtio_gpu_scanout_info(
+    uint32_t scanout_id, struct nexus_virtio_gpu_scanout *info);
+/* Returns EDID-derived base-block timings when the device advertises EDID. */
+bool virtio_gpu_edid_info(
+    uint32_t scanout_id, struct nexus_edid_info *info);
 void virtio_gpu_stop(void);
 
 #endif

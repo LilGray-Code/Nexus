@@ -60,10 +60,10 @@ int main(void) {
         guarded[1U + (HEIGHT / 2U) * WIDTH + WIDTH / 2U];
     assert(((gradient_center >> 16) & 0xFFU) >= 120U &&
            ((gradient_center >> 16) & 0xFFU) <= 140U);
-    assert(((gradient_center >> 8) & 0xFFU) >= 100U &&
-           ((gradient_center >> 8) & 0xFFU) <= 120U);
-    assert((gradient_center & 0xFFU) >= 90U &&
-           (gradient_center & 0xFFU) <= 115U);
+    assert(((gradient_center >> 8) & 0xFFU) >= 135U &&
+           ((gradient_center >> 8) & 0xFFU) <= 155U);
+    assert((gradient_center & 0xFFU) >= 140U &&
+           (gradient_center & 0xFFU) <= 165U);
     assert(!graphics_take_damage(&damage));
 
     /* A gradient beyond the lower-right edge is safely clipped. */

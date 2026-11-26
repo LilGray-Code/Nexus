@@ -43,6 +43,39 @@ int main(void) {
            damage.width == 3U && damage.height == 2U);
     assert(!graphics_take_damage(&damage));
 
+    /* Four-corner gradient interpolation reaches exact edge colors and
+     * reports one bounded damage rectangle for the entire raster pass.
+     */
+    graphics_fill_gradient(0U, 0U, WIDTH, HEIGHT,
+        255U, 0U, 0U, 0U, 255U, 0U,
+        0U, 0U, 255U, 255U, 255U, 255U);
+    assert(guarded[1U] == 0x00FF0000U);
+    assert(guarded[1U + WIDTH - 1U] == 0x0000FF00U);
+    assert(guarded[1U + (HEIGHT - 1U) * WIDTH] == 0x000000FFU);
+    assert(guarded[1U + HEIGHT * WIDTH - 1U] == 0x00FFFFFFU);
+    assert(graphics_take_damage(&damage));
+    assert(damage.x == 0U && damage.y == 0U &&
+           damage.width == WIDTH && damage.height == HEIGHT);
+    const uint32_t gradient_center =
+        guarded[1U + (HEIGHT / 2U) * WIDTH + WIDTH / 2U];
+    assert(((gradient_center >> 16) & 0xFFU) >= 120U &&
+           ((gradient_center >> 16) & 0xFFU) <= 140U);
+    assert(((gradient_center >> 8) & 0xFFU) >= 100U &&
+           ((gradient_center >> 8) & 0xFFU) <= 120U);
+    assert((gradient_center & 0xFFU) >= 90U &&
+           (gradient_center & 0xFFU) <= 115U);
+    assert(!graphics_take_damage(&damage));
+
+    /* A gradient beyond the lower-right edge is safely clipped. */
+    graphics_fill_gradient(WIDTH - 2U, HEIGHT - 2U, 16U, 16U,
+        0U, 0U, 0U, 255U, 0U, 0U,
+        0U, 255U, 0U, 0U, 0U, 255U);
+    assert(graphics_take_damage(&damage));
+    assert(damage.x == WIDTH - 2U && damage.y == HEIGHT - 2U &&
+           damage.width == 2U && damage.height == 2U);
+    assert(guarded[0U] == GUARD);
+    assert(guarded[WIDTH * HEIGHT + 1U] == GUARD);
+
     /* Oversized rectangles must clip without wrapping their far edges. */
     graphics_draw_rect(1U, 1U, UINT64_MAX, UINT64_MAX,
                        0U, 255U, 0U);

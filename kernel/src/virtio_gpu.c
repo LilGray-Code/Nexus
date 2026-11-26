@@ -247,6 +247,7 @@ static uint32_t virgl_clear_commands_fenced;
 static uint32_t virgl_last_clear_resource_id;
 static size_t gpu_find_tracked_resource(uint32_t resource_id);
 static bool gpu_resource_destroy_locked(uint32_t resource_id);
+static bool gpu_resource_unref(uint32_t resource_id);
 
 static void zero_bytes(volatile uint8_t *output, size_t length) {
     for (size_t i = 0U; i < length; ++i) output[i] = 0U;

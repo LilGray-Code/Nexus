@@ -20,6 +20,7 @@ static bool have_data_sequence;
 static bool drop_all_data_acks;
 static bool inject_bad_ack_once;
 static bool bad_ack_injected;
+static bool fake_netdev_link = true;
 static uint8_t last_data_payload[NET_TCP_MAX_PAYLOAD];
 static size_t last_data_payload_length;
 static unsigned dns_request_count;
@@ -64,6 +65,27 @@ void serial_write_hex(uint64_t value) {
 }
 
 bool netdev_link_up(void) {
+    return fake_netdev_link;
+}
+
+size_t netdev_count(void) {
+    return 1U;
+}
+
+size_t netdev_active_index(void) {
+    return fake_netdev_link ? 0U : NEXUS_NETDEV_MAX_DEVICES;
+}
+
+bool netdev_get_info_at(size_t index, struct nexus_netdev_info *info) {
+    if (index != 0U || info == NULL) return false;
+    *info = (struct nexus_netdev_info){0};
+    const uint8_t mac[6] = {0x02U,0x10U,0x20U,0x30U,0x40U,0x50U};
+    copy_bytes(info->mac, mac, sizeof(mac));
+    const char name[] = "test0";
+    copy_bytes(info->name, name, sizeof(name));
+    info->medium = NEXUS_NETDEV_MEDIUM_ETHERNET;
+    info->max_frame_size = NET_MAX_FRAME;
+    info->link_up = fake_netdev_link;
     return true;
 }
 
@@ -210,6 +232,7 @@ bool netdev_send_frame(const void *frame_data, size_t length) {
 
 static void setup_network(void) {
     fake_ticks = 0U;
+    fake_netdev_link = true;
     queued_frame_length = 0U;
     queued_frame_ready = false;
     last_sent_frame_length = 0U;
@@ -461,6 +484,23 @@ static void inject_dhcp_ack(uint32_t lease_seconds,
     packet[cursor++] = 255U;
     static const uint8_t source[4] = {192U, 0U, 2U, 1U};
     receive_dhcp(packet, cursor, source);
+}
+
+
+static void test_net_init_recovers_after_cable_insert(void) {
+    fake_netdev_link = false;
+    assert(net_init());
+    assert(network.ready);
+    assert(!network.link_up);
+    assert(dhcp_state == NET_DHCP_DISCOVERING);
+
+    fake_netdev_link = true;
+    net_poll();
+    assert(network.link_up);
+    assert(dhcp_state == NET_DHCP_DISCOVERING);
+    assert(last_sent_frame_length >= NET_ETHERNET_HEADER + NET_IPV4_HEADER +
+                                     NET_UDP_HEADER);
+    assert(read_be16(last_sent_frame + 12U) == ETHERTYPE_IPV4);
 }
 
 static void test_dhcp_lease_renew_rebind_and_expiry(void) {
@@ -764,6 +804,7 @@ int main(void) {
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
     test_receive_wait_reports_timeout_data_and_eof();
+    test_net_init_recovers_after_cable_insert();
     test_dhcp_lease_renew_rebind_and_expiry();
     test_tcp_advertised_window_tracks_buffer_and_updates();
     test_tcp_out_of_order_reassembly_and_ack();

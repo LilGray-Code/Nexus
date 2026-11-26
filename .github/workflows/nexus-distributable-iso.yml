@@ -46,7 +46,7 @@ jobs:
             kernel/tests/app_store_test.c \
             -o /tmp/nexus-app-store-test
           /tmp/nexus-app-store-test
-          grep -q "NEXUS NATIVE DEMOS + OFFICIAL WEB SHORTCUTS" kernel/src/desktop.c
+          grep -q "NATIVE APPS + POPULAR PRODUCTIVITY / WEB APPS" kernel/src/desktop.c
           grep -q "verified system-pack demos can now be launched directly from the Store" README.md
 
       - name: Test signed package and catalog parser contracts

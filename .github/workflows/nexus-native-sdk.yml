@@ -94,8 +94,9 @@ jobs:
           assert data_seg[3] % 4096 == 0, "RW segment must start on a 4 KiB boundary"
           text_page_end = (text_seg[3] + text_seg[6] + 4095) & ~4095
           assert data_seg[3] >= text_page_end, "RX and RW segments share a page"
-          assert data_seg[6] > data_seg[5], "sample must include zero-initialized writable data/BSS"
-          print(f"Validated static x86-64 ELF64 sample with RX + RW/NX segments: {len(image)} bytes")
+          assert data_seg[5] > 0, "sample must include file-backed initialized writable data"
+          assert data_seg[6] > data_seg[5], "sample must include zero-initialized writable BSS"
+          print(f"Validated static x86-64 ELF64 sample with RX + RW/NX data+BSS: {len(image)} bytes")
           PY
 
       - name: Generate disposable GPT and FAT32 image with compiled app

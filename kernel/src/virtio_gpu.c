@@ -6,6 +6,7 @@
 #include "serial.h"
 #include "timer.h"
 #include "virtio_pci.h"
+#include "virgl_protocol.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -228,11 +229,14 @@ struct virtio_gpu_tracked_resource {
     bool allocated;
     bool attached;
     uint32_t resource_id;
+    struct nexus_virtio_gpu_3d_resource_desc description;
 };
 static struct virtio_gpu_tracked_resource
     tracked_resources[VIRTIO_GPU_MAX_3D_RESOURCES];
 static uint32_t tracked_resource_count;
 static uint32_t tracked_resource_total_created;
+static uint32_t virgl_clear_commands_fenced;
+static uint32_t virgl_last_clear_resource_id;
 
 static void zero_bytes(volatile uint8_t *output, size_t length) {
     for (size_t i = 0U; i < length; ++i) output[i] = 0U;
@@ -506,6 +510,8 @@ static bool gpu_virgl_start(void) {
     next_3d_resource_id = VIRTIO_GPU_RESOURCE_ID + 1U;
     tracked_resource_count = 0U;
     tracked_resource_total_created = 0U;
+    virgl_clear_commands_fenced = 0U;
+    virgl_last_clear_resource_id = 0U;
     for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i)
         tracked_resources[i] = (struct virtio_gpu_tracked_resource){0};
     gpu_set_virtio_3d_submission_ready(false, 0U);
@@ -943,7 +949,8 @@ bool virtio_gpu_3d_resource_create(
     tracked_resources[free_slot] = (struct virtio_gpu_tracked_resource){
         .allocated = true,
         .attached = false,
-        .resource_id = id
+        .resource_id = id,
+        .description = *description
     };
     ++tracked_resource_count;
     if (tracked_resource_total_created != UINT32_MAX)
@@ -1023,6 +1030,57 @@ bool virtio_gpu_display_get_info(
     return true;
 }
 
+bool virtio_gpu_3d_clear_rgba32(uint32_t resource_id,
+                               const uint32_t rgba[4],
+                               uint64_t *completed_fence) {
+    if (resource_id <= VIRTIO_GPU_RESOURCE_ID || rgba == NULL ||
+        !active || !virgl_context_created ||
+        !virgl_command_submission_ready) return false;
+
+    gpu_resource_table_lock();
+    const size_t slot = gpu_find_tracked_resource(resource_id);
+    if (slot == VIRTIO_GPU_MAX_3D_RESOURCES) {
+        gpu_resource_table_unlock();
+        return false;
+    }
+    const struct virtio_gpu_tracked_resource *resource =
+        &tracked_resources[slot];
+    const struct nexus_virtio_gpu_3d_resource_desc *description =
+        &resource->description;
+    if (!resource->attached ||
+        description->target != NEXUS_VIRGL_PIPE_TEXTURE_2D ||
+        (description->bind & NEXUS_VIRGL_PIPE_BIND_RENDER_TARGET) == 0U ||
+        description->width == 0U || description->height == 0U ||
+        description->depth != 1U || description->array_size != 1U ||
+        description->last_level != 0U ||
+        description->nr_samples > 1U) {
+        gpu_resource_table_unlock();
+        return false;
+    }
+
+    uint32_t stream[NEXUS_VIRGL_CLEAR_SEQUENCE_DWORDS];
+    size_t stream_dwords = 0U;
+    if (!nexus_virgl_encode_clear_rgba32(
+            stream, NEXUS_VIRGL_CLEAR_SEQUENCE_DWORDS,
+            resource_id, resource_id, description->format,
+            rgba, &stream_dwords)) {
+        gpu_resource_table_unlock();
+        return false;
+    }
+
+    uint64_t fence = 0U;
+    const bool completed = virtio_gpu_3d_submit(
+        stream, stream_dwords * sizeof(stream[0]), &fence);
+    if (completed) {
+        if (virgl_clear_commands_fenced != UINT32_MAX)
+            ++virgl_clear_commands_fenced;
+        virgl_last_clear_resource_id = resource_id;
+        if (completed_fence != NULL) *completed_fence = fence;
+    }
+    gpu_resource_table_unlock();
+    return completed;
+}
+
 bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info) {
     if (info == NULL) return false;
     *info = (struct nexus_virtio_gpu_3d_info){
@@ -1036,7 +1094,9 @@ bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info) {
         .last_completed_fence = virgl_last_completed_fence,
         .failed_submissions = virgl_failed_submissions,
         .resources_allocated = tracked_resource_count,
-        .resources_created_total = tracked_resource_total_created
+        .resources_created_total = tracked_resource_total_created,
+        .clear_commands_fenced = virgl_clear_commands_fenced,
+        .last_clear_resource_id = virgl_last_clear_resource_id
     };
     return true;
 }

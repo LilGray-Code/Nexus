@@ -428,6 +428,24 @@ static void display_promote_monitor_edid(
     for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
         display_info.timings[i] = monitor->timings[i];
 
+    /* The selected output, not necessarily the bootloader's framebuffer,
+     * defines the current known-good mode used by the modeset rollback path.
+     */
+    if (monitor->width != 0U && monitor->height != 0U) {
+        const uint64_t bytes_per_pixel =
+            ((uint64_t)display_info.current_bits_per_pixel + 7U) / 8U;
+        if (bytes_per_pixel != 0U &&
+            monitor->width <= UINT64_MAX / bytes_per_pixel) {
+            display_info.current_width = monitor->width;
+            display_info.current_height = monitor->height;
+            display_info.current_pitch =
+                (uint64_t)monitor->width * bytes_per_pixel;
+            add_current_mode();
+            display_info.current_refresh_hz =
+                monitor->matching_edid_refresh_hz;
+        }
+    }
+
     /* Preserve firmware-provided modes and the active mode, but rebuild
      * EDID-only variants from the new primary monitor's timing list.
      */

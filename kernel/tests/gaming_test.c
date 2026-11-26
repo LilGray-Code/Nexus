@@ -151,6 +151,7 @@ static void test_platform_requirements_and_directx_mapping(void) {
         NEXUS_GAME_GRAPHICS_DIRECT3D_11);
     assert((dx11 & NEXUS_GAME_CAP_DXVK) != 0U);
     assert((dx11 & NEXUS_GAME_CAP_VULKAN) != 0U);
+    assert((dx11 & NEXUS_GAME_CAP_VULKAN_1_4) != 0U);
     assert((dx11 & NEXUS_GAME_CAP_GPU_3D_RENDERING) != 0U);
 
     const uint64_t dx12 = nexus_gaming_platform_requirements(
@@ -159,9 +160,28 @@ static void test_platform_requirements_and_directx_mapping(void) {
     assert((dx12 & NEXUS_GAME_CAP_VKD3D_PROTON) != 0U);
     assert((dx12 & NEXUS_GAME_CAP_VULKAN_1_3) != 0U);
 
+    assert((nexus_gaming_platform_requirements(
+        NEXUS_GAME_PLATFORM_PROTON,
+        NEXUS_GAME_GRAPHICS_NONE) & NEXUS_GAME_CAP_OPENGL) != 0U);
     assert(nexus_gaming_platform_requirements(
         NEXUS_GAME_PLATFORM_NATIVE_NEXUS,
         NEXUS_GAME_GRAPHICS_DIRECT3D_11) == UINT64_MAX);
+
+    game = (struct nexus_game_descriptor){
+        .platform = NEXUS_GAME_PLATFORM_NATIVE_NEXUS,
+        .graphics_api = NEXUS_GAME_GRAPHICS_DIRECT3D_11,
+        .anticheat = NEXUS_GAME_ANTICHEAT_NONE,
+        .compatibility = NEXUS_GAME_COMPAT_UNTESTED
+    };
+    struct nexus_gaming_system_capabilities empty_system = {0};
+    struct nexus_game_assessment invalid_assessment;
+    assert(nexus_gaming_assess(&game, &empty_system, &invalid_assessment));
+    assert(invalid_assessment.status == NEXUS_GAME_ASSESS_INVALID);
+
+    game.graphics_api = NEXUS_GAME_GRAPHICS_NONE;
+    game.compatibility = NEXUS_GAME_COMPAT_UNSUPPORTED;
+    assert(nexus_gaming_assess(&game, &empty_system, &invalid_assessment));
+    assert(invalid_assessment.status == NEXUS_GAME_ASSESS_TESTED_UNSUPPORTED);
 }
 
 static void test_assessment_never_confuses_missing_support_with_verified(void) {

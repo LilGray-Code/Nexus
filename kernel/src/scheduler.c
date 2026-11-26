@@ -20,8 +20,9 @@ struct nexus_thread {
     uintptr_t saved_stack;
     nexus_thread_entry_t entry;
     void *argument;
-    enum nexus_thread_state state;
-    uint64_t wake_tick;
+    /* Updated by timer IRQs; force foreground code to reload these fields. */
+    volatile enum nexus_thread_state state;
+    volatile uint64_t wake_tick;
     bool saved_interrupts_enabled;
     uint8_t stack[NEXUS_THREAD_STACK_SIZE] __attribute__((aligned(16)));
 };

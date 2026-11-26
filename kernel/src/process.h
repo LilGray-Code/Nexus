@@ -32,6 +32,10 @@ struct nexus_process_info {
     enum nexus_process_state state;
     uint64_t exit_status;
     uint32_t permissions;
+    bool crashed;
+    uint64_t fault_vector;
+    uint64_t fault_error_code;
+    uint64_t fault_instruction_pointer;
     char name[NEXUS_PROCESS_NAME_MAX];
 };
 

@@ -1,5 +1,6 @@
 #include "gaming.h"
 #include "ac97.h"
+#include "cpu.h"
 #include "gpu.h"
 #include "graphics.h"
 #include "vfs.h"
@@ -10,6 +11,7 @@
 #include <string.h>
 
 static bool audio_ready;
+static uint64_t detected_cpu_features;
 static uint64_t display_width;
 static uint64_t display_height;
 static struct nexus_gpu_info primary_gpu;
@@ -21,6 +23,9 @@ static size_t cache_size;
 static bool cache_present;
 
 bool ac97_is_ready(void) { return audio_ready; }
+bool nexus_cpu_has_feature(uint64_t feature) {
+    return (detected_cpu_features & feature) == feature;
+}
 uint64_t graphics_width(void) { return display_width; }
 uint64_t graphics_height(void) { return display_height; }
 const struct nexus_gpu_info *gpu_primary_info(void) {
@@ -86,6 +91,7 @@ bool vfs_remove_root_path(const char *path) {
 
 static void reset_fakes(void) {
     audio_ready = false;
+    detected_cpu_features = 0U;
     display_width = 0U;
     display_height = 0U;
     primary_gpu = (struct nexus_gpu_info){0};
@@ -111,6 +117,14 @@ static void test_system_capabilities_are_truthful(void) {
     assert((caps.available & NEXUS_GAME_CAP_VULKAN) == 0U);
     assert((caps.available & NEXUS_GAME_CAP_OPENGL) == 0U);
     assert((caps.available & NEXUS_GAME_CAP_GPU_3D_RENDERING) == 0U);
+    assert((caps.available & NEXUS_GAME_CAP_CPU_CMPXCHG16B) == 0U);
+    assert((caps.available & NEXUS_GAME_CAP_CPU_SSE3) == 0U);
+
+    detected_cpu_features =
+        NEXUS_CPU_FEATURE_CMPXCHG16B | NEXUS_CPU_FEATURE_SSE3;
+    nexus_gaming_query_system(&caps);
+    assert((caps.available & NEXUS_GAME_CAP_CPU_CMPXCHG16B) != 0U);
+    assert((caps.available & NEXUS_GAME_CAP_CPU_SSE3) != 0U);
 
     audio_ready = true;
     display_width = 1920U;

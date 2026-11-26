@@ -50,6 +50,82 @@ static void add_timing(const struct nexus_display_timing *timing) {
     edid_target->timings[edid_target->timing_count++] = *timing;
 }
 
+static void add_simple_timing(uint32_t width, uint32_t height,
+                              uint32_t refresh_hz) {
+    const struct nexus_display_timing timing = {
+        .width = width,
+        .height = height,
+        .refresh_hz = refresh_hz,
+        .pixel_clock_khz = 0U,
+        .interlaced = false
+    };
+    add_timing(&timing);
+}
+
+static void parse_established_timings(const uint8_t *edid) {
+    if (edid == NULL) return;
+    struct established_timing {
+        uint8_t byte_offset;
+        uint8_t bit;
+        uint16_t width;
+        uint16_t height;
+        uint8_t refresh;
+    };
+    static const struct established_timing timings[] = {
+        {35U, 7U, 720U, 400U, 70U}, {35U, 6U, 720U, 400U, 88U},
+        {35U, 5U, 640U, 480U, 60U}, {35U, 4U, 640U, 480U, 67U},
+        {35U, 3U, 640U, 480U, 72U}, {35U, 2U, 640U, 480U, 75U},
+        {35U, 1U, 800U, 600U, 56U}, {35U, 0U, 800U, 600U, 60U},
+        {36U, 7U, 800U, 600U, 72U}, {36U, 6U, 800U, 600U, 75U},
+        {36U, 5U, 832U, 624U, 75U}, {36U, 4U, 1024U, 768U, 87U},
+        {36U, 3U, 1024U, 768U, 60U}, {36U, 2U, 1024U, 768U, 70U},
+        {36U, 1U, 1024U, 768U, 75U}, {36U, 0U, 1280U, 1024U, 75U},
+        {37U, 7U, 1152U, 870U, 75U}
+    };
+    for (size_t i = 0U; i < sizeof(timings) / sizeof(timings[0]); ++i) {
+        const struct established_timing *timing = &timings[i];
+        if ((edid[timing->byte_offset] & (1U << timing->bit)) != 0U)
+            add_simple_timing(timing->width, timing->height,
+                              timing->refresh);
+    }
+}
+
+static void parse_standard_timings(const uint8_t *edid) {
+    if (edid == NULL) return;
+    const bool edid_1_3_or_later =
+        edid[18] > 1U || (edid[18] == 1U && edid[19] >= 3U);
+    for (size_t offset = 38U; offset < 54U; offset += 2U) {
+        const uint8_t horizontal_code = edid[offset];
+        const uint8_t aspect_and_refresh = edid[offset + 1U];
+        if ((horizontal_code == 0x01U && aspect_and_refresh == 0x01U) ||
+            horizontal_code == 0U) continue;
+
+        const uint32_t width =
+            ((uint32_t)horizontal_code + 31U) * 8U;
+        const uint32_t aspect = aspect_and_refresh >> 6;
+        uint32_t numerator = 16U;
+        uint32_t denominator = 10U;
+        switch (aspect) {
+            case 0U:
+                if (!edid_1_3_or_later) {
+                    numerator = 1U;
+                    denominator = 1U;
+                }
+                break;
+            case 1U: numerator = 4U; denominator = 3U; break;
+            case 2U: numerator = 5U; denominator = 4U; break;
+            case 3U: numerator = 16U; denominator = 9U; break;
+            default: continue;
+        }
+        const uint32_t height = (width * denominator) / numerator;
+        const uint32_t refresh =
+            (uint32_t)(aspect_and_refresh & 0x3FU) + 60U;
+        if (width < 256U || height < 200U ||
+            width > 16384U || height > 16384U) continue;
+        add_simple_timing(width, height, refresh);
+    }
+}
+
 static void parse_detailed_timing(const uint8_t *descriptor) {
     if (descriptor == NULL) return;
     const uint32_t pixel_clock_10khz =
@@ -146,6 +222,9 @@ static bool parse_edid(const uint8_t *edid, size_t length) {
         (length % EDID_BLOCK_BYTES) != 0U ||
         !edid_header_valid(edid) || !edid_checksum_valid(edid))
         return false;
+
+    parse_established_timings(edid);
+    parse_standard_timings(edid);
 
     for (uint32_t offset = 54U; offset + 18U <= 126U; offset += 18U) {
         const uint8_t *descriptor = edid + offset;

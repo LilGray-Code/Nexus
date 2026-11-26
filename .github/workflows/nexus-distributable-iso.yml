@@ -1,0 +1,140 @@
+name: Nexus Distributable Original-Kernel ISO
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/**"
+      - "boot/**"
+      - "build/**"
+      - "installer/**"
+      - "toolchain/**"
+      - ".github/workflows/nexus-distributable-iso.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-distributable-iso-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-iso:
+    name: Build and smoke-test the distributable Nexus ISO
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out the original Nexus kernel branch
+        uses: actions/checkout@v4
+
+      - name: Install ISO and emulator dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          timeout -k 10s 8m sudo apt-get install -y --no-install-recommends \
+            build-essential binutils curl git xorriso qemu-system-x86 ovmf \
+            file dosfstools mtools
+
+      - name: Test bundled native and web Store entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/app_store.c \
+            kernel/tests/app_store_test.c \
+            -o /tmp/nexus-app-store-test
+          /tmp/nexus-app-store-test
+          grep -q "NATIVE APPS + POPULAR PRODUCTIVITY / WEB APPS" kernel/src/desktop.c
+          grep -q "Store is not yet connected to this package pipeline" README.md
+
+      - name: Test signed package and catalog parser contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/package.c kernel/src/sha256.c \
+            kernel/tests/package_test.c -o /tmp/nexus-package-test
+          /tmp/nexus-package-test
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
+            kernel/src/catalog.c kernel/src/sha256.c \
+            kernel/tests/catalog_test.c -o /tmp/nexus-catalog-test
+          /tmp/nexus-catalog-test
+
+      - name: Build the non-self-test distributable BIOS and UEFI ISO
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x ./build/build-iso.sh
+          EXTRA_CFLAGS="-DNEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES" \
+            timeout -k 10s 90m ./build/build-iso.sh
+          test -s release/NexusOS-OriginalKernel-x86_64.iso
+          (cd release && sha256sum --check SHA256SUMS.txt)
+          file release/NexusOS-OriginalKernel-x86_64.iso
+
+      - name: Boot-check the distributable ISO with UEFI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-iso-uefi-vars.fd
+          set +e
+          timeout -k 2s 24s qemu-system-x86_64 \
+            -machine q35 -cpu qemu64 -m 512M \
+            -netdev user,id=n0 -device e1000,netdev=n0 \
+            -device virtio-gpu-pci,disable-legacy=on \
+            -audiodev none,id=audio0 -device AC97,audiodev=audio0 \
+            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
+            -drive if=pflash,format=raw,file=/tmp/nexus-iso-uefi-vars.fd \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
+            -boot d -display none -serial file:distributable-uefi.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
+            echo "UEFI QEMU exited unexpectedly: $status"
+            exit "$status"
+          fi
+          cat distributable-uefi.log
+          grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" distributable-uefi.log
+          grep -q "NEXUS INSTALLER SESSION READY" distributable-uefi.log
+          grep -q "NEXUS K0 BOOT COMPLETE" distributable-uefi.log
+          if grep -q "VIRTIO GPU: 2D resource attached; CPU raster buffer now drives GPU scanout" distributable-uefi.log; then
+            echo "UEFI boot used the VirtIO-GPU 2D scanout path."
+          else
+            grep -q "DESKTOP: using firmware framebuffer backend" distributable-uefi.log
+            echo "UEFI boot succeeded with firmware-framebuffer fallback; VirtIO-GPU acceleration was not initialized."
+          fi
+
+      - name: Boot-check the distributable ISO with legacy BIOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          timeout -k 2s 24s qemu-system-x86_64 \
+            -machine pc -cpu max -m 512M \
+            -netdev user,id=n0 -device e1000,netdev=n0 \
+            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
+            -boot d -display none -serial file:distributable-bios.log \
+            -monitor none -no-reboot -no-shutdown
+          status=$?
+          set -e
+          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
+            echo "BIOS QEMU exited unexpectedly: $status"
+            exit "$status"
+          fi
+          cat distributable-bios.log
+          grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" distributable-bios.log
+          grep -q "NEXUS INSTALLER SESSION READY" distributable-bios.log
+          grep -q "NEXUS K0 BOOT COMPLETE" distributable-bios.log
+
+      - name: Upload the distributable Nexus ISO and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexusOS-OriginalKernel-x86_64
+          path: |
+            release/NexusOS-OriginalKernel-x86_64.iso
+            release/SHA256SUMS.txt
+            build/nexus-kernel.elf
+          if-no-files-found: error
+          retention-days: 30

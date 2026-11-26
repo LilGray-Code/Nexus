@@ -470,6 +470,9 @@ bool memory_allocator_validate(void) {
 }
 
 bool memory_allocator_selftest(void) {
+    struct memory_allocator_stats before;
+    if (!memory_get_allocator_stats(&before)) return false;
+
     uint64_t first, second, reused;
     if (!memory_alloc_page(&first) || !memory_alloc_page(&second)) return false;
     if (first == second || !memory_page_is_allocated(first) ||
@@ -489,7 +492,21 @@ bool memory_allocator_selftest(void) {
         !memory_page_is_allocated(contiguous) ||
         !memory_free_contiguous_pages(contiguous, 1U) ||
         memory_page_is_allocated(contiguous)) return false;
-    return memory_allocator_validate();
+
+    struct memory_allocator_stats after;
+    if (!memory_allocator_validate() ||
+        !memory_get_allocator_stats(&after)) return false;
+    return after.allocation_requests >= before.allocation_requests + 4U &&
+           after.allocation_failures == before.allocation_failures &&
+           after.pages_allocated_total >= before.pages_allocated_total + 4U &&
+           after.free_requests >= before.free_requests + 5U &&
+           after.free_failures >= before.free_failures + 1U &&
+           after.pages_freed_total >= before.pages_freed_total + 4U &&
+           after.free_list_pages >= before.free_list_pages + 3U &&
+           after.total_bytes == memory_total_bytes() &&
+           after.free_bytes == memory_free_bytes() &&
+           after.used_bytes <= after.total_bytes &&
+           after.region_count != 0U;
 }
 
 void *memory_phys_to_virt(uint64_t physical_address) {

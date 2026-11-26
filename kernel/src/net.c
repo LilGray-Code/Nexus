@@ -1299,14 +1299,17 @@ bool net_init(void) {
     dns_next_id = 0x4E58U;
     dns_cache_clear();
     struct nexus_netdev_info device_info;
-    if (!netdev_get_info(&device_info)) return false;
+    size_t selected_index = netdev_active_index();
+    if (selected_index >= netdev_count()) selected_index = 0U;
+    if (netdev_count() == 0U ||
+        !netdev_get_info_at(selected_index, &device_info)) return false;
     copy_bytes(network.mac, device_info.mac, sizeof(network.mac));
     copy_bytes(network.interface_name, device_info.name,
                sizeof(network.interface_name));
     network.interface_medium = device_info.medium;
     network.ready = true;
     network.ipv4_id = 1U;
-    network.link_up = netdev_link_up();
+    network.link_up = device_info.link_up;
     dhcp_state = NET_DHCP_DISCOVERING;
     dhcp_transaction_id = 0x4E585553U;
     dhcp_retry_count = 0U;

@@ -68,10 +68,35 @@ static void test_nonmatching_bus_and_bad_input(void) {
     assert(!nexus_win_inf_find_match(inf, sizeof(inf) - 1U, NULL, &match));
 }
 
+
+static void test_utf16le_inf(void) {
+    uint8_t encoded[2U + (sizeof(inf) - 1U) * 2U];
+    encoded[0] = 0xFFU;
+    encoded[1] = 0xFEU;
+    for (size_t i = 0U; i < sizeof(inf) - 1U; ++i) {
+        encoded[2U + i * 2U] = (uint8_t)inf[i];
+        encoded[3U + i * 2U] = 0U;
+    }
+    const struct nexus_win_device_id device = {
+        .bus = NEXUS_WIN_DEVICE_PCI,
+        .vendor_id = 0x8086U, .device_id = 0x2723U,
+        .subsystem_vendor_id = 0x8086U,
+        .subsystem_device_id = 0x0024U, .revision_id = 0x01U
+    };
+    struct nexus_win_inf_match match;
+    assert(nexus_win_inf_find_match((const char *)encoded, sizeof(encoded),
+                                    &device, &match));
+    assert(match.specificity == 3U);
+    assert(strcmp(match.install_section, "Install") == 0);
+    assert(!nexus_win_inf_find_match((const char *)encoded,
+                                    sizeof(encoded) - 1U, &device, &match));
+}
+
 int main(void) {
     test_pci_best_exact_match();
     test_pci_wrong_subsystem_rejected();
     test_usb_match();
+    test_utf16le_inf();
     test_nonmatching_bus_and_bad_input();
     puts("NEXUS WINDOWS INF HARDWARE-ID MATCH TESTS PASSED");
     return 0;

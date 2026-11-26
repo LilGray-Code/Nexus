@@ -24,7 +24,10 @@ $(OUT)/crt0.o: src/crt0.S | $(OUT)
 $(OUT)/runtime.o: src/runtime.c include/nexus/runtime.h include/nexus/syscall.h | $(OUT)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(OUT)/libnexus.a: $(OUT)/runtime.o
+$(OUT)/heap.o: src/heap.c include/nexus/runtime.h | $(OUT)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(OUT)/libnexus.a: $(OUT)/runtime.o $(OUT)/heap.o
 	$(AR) rcs $@ $^
 
 $(OUT)/hello.o: src/hello.c include/nexus/syscall.h include/nexus/runtime.h | $(OUT)
@@ -45,7 +48,7 @@ inspect: $(OUT)/libnexus.a $(OUT)/HELLO.ELF
 test:
 	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
 		-DNEXUS_USERLAND_HOST_TEST -Iinclude \
-		src/runtime.c tests/runtime_test.c -o /tmp/nexus-runtime-test
+		src/runtime.c src/heap.c tests/runtime_test.c -o /tmp/nexus-runtime-test
 	/tmp/nexus-runtime-test
 
 clean:

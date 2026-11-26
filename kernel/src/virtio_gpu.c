@@ -661,7 +661,8 @@ static bool gpu_query_display_info(uint64_t preferred_width,
         current_scanout_rect_height[i] = saved->height;
         saved->enabled = read_le32(response + offset + 16U) != 0U;
         saved->flags = read_le32(response + offset + 20U);
-        if (!saved->enabled) continue;
+        if (!saved->enabled || saved->width == 0U ||
+            saved->height == 0U) continue;
 
         if (!have_enabled) {
             selected = i;
@@ -680,8 +681,12 @@ static bool gpu_query_display_info(uint64_t preferred_width,
     serial_write_hex(display_inventory.scanout_count);
     serial_write("/");
     uint32_t enabled_count = 0U;
-    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i)
-        if (display_inventory.scanouts[i].enabled) ++enabled_count;
+    for (uint32_t i = 0U; i < display_inventory.scanout_count; ++i) {
+        const struct nexus_virtio_gpu_scanout_info *scanout =
+            &display_inventory.scanouts[i];
+        if (scanout->enabled && scanout->width != 0U &&
+            scanout->height != 0U) ++enabled_count;
+    }
     active_scanout_count = enabled_count;
     serial_write_hex(enabled_count);
     serial_write("/");

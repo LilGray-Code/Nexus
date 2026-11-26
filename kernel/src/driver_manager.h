@@ -21,6 +21,20 @@ enum nexus_driver_state {
     NEXUS_DRIVER_STATE_REMOVED
 };
 /* native_device is a borrowed bus-specific pointer, valid only inside probe. */
+enum nexus_driver_probe_outcome {
+    NEXUS_DRIVER_PROBE_INVALID = 0,
+    NEXUS_DRIVER_PROBE_NO_MATCH,
+    NEXUS_DRIVER_PROBE_ACTIVE,
+    NEXUS_DRIVER_PROBE_ALL_FAILED,
+    NEXUS_DRIVER_PROBE_CAPACITY_EXHAUSTED
+};
+struct nexus_driver_probe_report {
+    enum nexus_driver_probe_outcome outcome;
+    size_t matching_driver_count;
+    size_t attempted_driver_count;
+    size_t failed_driver_count;
+    char active_driver_name[NEXUS_DRIVER_NAME_MAX];
+};
 struct nexus_driver_device {
     enum nexus_driver_bus bus;
     uint16_t vendor_id, device_id;

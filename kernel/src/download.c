@@ -2,6 +2,115 @@
 
 #include <stdint.h>
 
+
+static bool download_equal_digest(const uint8_t *left,
+                                  const uint8_t *right) {
+    uint8_t difference = 0U;
+    for (size_t i = 0U; i < NEXUS_SHA256_SIZE; ++i)
+        difference |= (uint8_t)(left[i] ^ right[i]);
+    return difference == 0U;
+}
+
+bool nexus_download_job_begin(
+    struct nexus_download_job *job, uint32_t max_bytes,
+    bool length_known, uint32_t expected_bytes,
+    const uint8_t expected_sha256[NEXUS_SHA256_SIZE]) {
+    if (job == NULL || max_bytes == 0U ||
+        (length_known && expected_bytes > max_bytes) ||
+        (expected_sha256 != NULL && !length_known && max_bytes == 0U))
+        return false;
+
+    *job = (struct nexus_download_job){0};
+    job->state = NEXUS_DOWNLOAD_JOB_ACTIVE;
+    job->maximum_bytes = max_bytes;
+    job->expected_bytes = expected_bytes;
+    job->length_known = length_known;
+    job->has_expected_sha256 = expected_sha256 != NULL;
+    if (expected_sha256 != NULL) {
+        for (size_t i = 0U; i < NEXUS_SHA256_SIZE; ++i)
+            job->expected_sha256[i] = expected_sha256[i];
+    }
+    nexus_sha256_init(&job->hash);
+    return true;
+}
+
+bool nexus_download_job_append(struct nexus_download_job *job,
+                               const void *data, size_t length) {
+    if (job == NULL || job->state != NEXUS_DOWNLOAD_JOB_ACTIVE ||
+        (length != 0U && data == NULL) ||
+        length > (size_t)(job->maximum_bytes - job->received_bytes) ||
+        (job->length_known &&
+         length > (size_t)(job->expected_bytes - job->received_bytes))) {
+        if (job != NULL && job->state == NEXUS_DOWNLOAD_JOB_ACTIVE)
+            nexus_download_job_fail(job);
+        return false;
+    }
+    if (length == 0U) return true;
+    nexus_sha256_update(&job->hash, data, length);
+    job->received_bytes += (uint32_t)length;
+    return true;
+}
+
+bool nexus_download_job_finish(struct nexus_download_job *job) {
+    if (job == NULL || job->state != NEXUS_DOWNLOAD_JOB_ACTIVE)
+        return false;
+    if (job->length_known && job->received_bytes != job->expected_bytes) {
+        nexus_download_job_fail(job);
+        return false;
+    }
+
+    nexus_sha256_final(&job->hash, job->actual_sha256);
+    job->sha256_valid = true;
+    if (job->has_expected_sha256) {
+        job->checksum_verified = download_equal_digest(
+            job->actual_sha256, job->expected_sha256);
+        if (!job->checksum_verified) {
+            job->state = NEXUS_DOWNLOAD_JOB_FAILED;
+            return false;
+        }
+    }
+    job->state = NEXUS_DOWNLOAD_JOB_COMPLETE;
+    return true;
+}
+
+void nexus_download_job_cancel(struct nexus_download_job *job) {
+    if (job == NULL || job->state != NEXUS_DOWNLOAD_JOB_ACTIVE) return;
+    volatile uint8_t *bytes = (volatile uint8_t *)&job->hash;
+    for (size_t i = 0U; i < sizeof(job->hash); ++i) bytes[i] = 0U;
+    job->state = NEXUS_DOWNLOAD_JOB_CANCELLED;
+}
+
+void nexus_download_job_fail(struct nexus_download_job *job) {
+    if (job == NULL) return;
+    volatile uint8_t *bytes = (volatile uint8_t *)&job->hash;
+    for (size_t i = 0U; i < sizeof(job->hash); ++i) bytes[i] = 0U;
+    job->state = NEXUS_DOWNLOAD_JOB_FAILED;
+}
+
+uint32_t nexus_download_job_progress_percent(
+    const struct nexus_download_job *job) {
+    if (job == NULL || job->state == NEXUS_DOWNLOAD_JOB_IDLE)
+        return UINT32_MAX;
+    if (!job->length_known) return UINT32_MAX;
+    if (job->expected_bytes == 0U)
+        return job->state == NEXUS_DOWNLOAD_JOB_COMPLETE ? 100U : 0U;
+    const uint64_t percent =
+        (uint64_t)job->received_bytes * 100U / job->expected_bytes;
+    return percent > 100U ? 100U : (uint32_t)percent;
+}
+
+bool nexus_download_sha256_hex(
+    const uint8_t digest[NEXUS_SHA256_SIZE], char output[65]) {
+    if (digest == NULL || output == NULL) return false;
+    static const char digits[] = "0123456789abcdef";
+    for (size_t i = 0U; i < NEXUS_SHA256_SIZE; ++i) {
+        output[i * 2U] = digits[digest[i] >> 4];
+        output[i * 2U + 1U] = digits[digest[i] & 0x0FU];
+    }
+    output[64] = '\0';
+    return true;
+}
+
 static char upper_ascii(char value) {
     if (value >= 'a' && value <= 'z')
         return (char)(value - 'a' + 'A');

@@ -282,7 +282,7 @@ static uint64_t data_lba(size_t slot, uint8_t bank) {
 static bool verify_entry_data(size_t slot,
                               const struct nexus_nxfs_entry *entry) {
     if (entry == NULL || !entry->used ||
-        entry->size > NEXUS_NXFS_MAX_FILE_BYTES ||
+        entry->size > nxfs_max_file_bytes ||
         entry->bank > 1U) return false;
     if (entry->directory)
         return entry->size == 0U && entry->bank == 0U &&

@@ -24,6 +24,7 @@ struct nexus_game_library_entry {
     struct nexus_game_descriptor compatibility;
     uint32_t launch_count;
     uint64_t last_played_ticks;
+    uint64_t tested_at_ticks;
 };
 
 enum nexus_game_library_error {

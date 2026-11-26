@@ -23,6 +23,7 @@ on:
       - "kernel/src/fpu.h"
       - "kernel/src/main.c"
       - "kernel/src/usermode.S"
+      - "kernel/src/isr.S"
       - "kernel/src/graphics.h"
       - "kernel/src/usermode.c"
       - "kernel/src/usermode.h"
@@ -68,6 +69,7 @@ on:
       - "kernel/src/fpu.h"
       - "kernel/src/main.c"
       - "kernel/src/usermode.S"
+      - "kernel/src/isr.S"
       - "kernel/src/graphics.h"
       - "kernel/src/usermode.c"
       - "kernel/src/usermode.h"
@@ -98,6 +100,7 @@ jobs:
           done
           cc $flags -c kernel/src/catalog.c -o /tmp/nexus-catalog.o
           cc -m64 -c kernel/src/usermode.S -o /tmp/nexus-usermode-entry.o
+          cc -m64 -c kernel/src/isr.S -o /tmp/nexus-isr-entry.o
 
       - name: Test ELF64 static PIE parsing and relocation loading
         run: |

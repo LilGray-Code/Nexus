@@ -400,6 +400,35 @@ static void add_edid_timing_modes(void) {
     }
 }
 
+static void display_promote_monitor_edid(
+    const struct nexus_display_monitor *monitor) {
+    if (monitor == NULL) return;
+    display_info.edid_valid = monitor->edid_valid;
+    display_info.edid_extensions_complete =
+        monitor->edid_extensions_complete;
+    display_info.monitor_name_valid = monitor->monitor_name_valid;
+    for (size_t i = 0U; i < sizeof(display_info.monitor_name); ++i)
+        display_info.monitor_name[i] = monitor->monitor_name[i];
+    display_info.hdr_static_metadata = monitor->hdr_static_metadata;
+    display_info.hdr_eotf_flags = monitor->hdr_eotf_flags;
+    display_info.timing_count = monitor->timing_count;
+    for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
+        display_info.timings[i] = monitor->timings[i];
+
+    /* Preserve firmware-provided modes and the active mode, but rebuild
+     * EDID-only variants from the new primary monitor's timing list.
+     */
+    uint32_t retained = 0U;
+    for (uint32_t i = 0U; i < display_info.mode_count; ++i) {
+        struct nexus_display_mode mode = display_info.modes[i];
+        if (!mode.firmware_listed && !mode.current_boot_mode) continue;
+        mode.edid_timing = false;
+        display_info.modes[retained++] = mode;
+    }
+    display_info.mode_count = retained;
+    add_edid_timing_modes();
+}
+
 bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     display_info = (struct nexus_display_info){0};
     edid_target = NULL;
@@ -527,20 +556,8 @@ bool nexus_display_add_monitor(uint32_t id, bool connected,
                 monitor.dpi_y = (uint16_t)(((uint64_t)height * 254U) /
                                             ((uint32_t)edid[22] * 100U));
         }
-        if (id == display_info.primary_monitor_id) {
-            display_info.edid_valid = monitor.edid_valid;
-            display_info.edid_extensions_complete =
-                monitor.edid_extensions_complete;
-            display_info.monitor_name_valid = monitor.monitor_name_valid;
-            for (size_t i = 0U; i < sizeof(display_info.monitor_name); ++i)
-                display_info.monitor_name[i] = monitor.monitor_name[i];
-            display_info.hdr_static_metadata = monitor.hdr_static_metadata;
-            display_info.hdr_eotf_flags = monitor.hdr_eotf_flags;
-            display_info.timing_count = monitor.timing_count;
-            for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
-                display_info.timings[i] = monitor.timings[i];
-            add_edid_timing_modes();
-        }
+        if (id == display_info.primary_monitor_id)
+            display_promote_monitor_edid(&monitor);
     }
     display_info.monitors[slot] = monitor;
 
@@ -592,6 +609,11 @@ bool nexus_display_set_primary_monitor(uint32_t id) {
     for (uint32_t i = 0U; i < display_info.monitor_count; ++i)
         display_info.monitors[i].primary =
             display_info.monitors[i].id == id;
+    for (uint32_t i = 0U; i < display_info.monitor_count; ++i)
+        if (display_info.monitors[i].id == id) {
+            display_promote_monitor_edid(&display_info.monitors[i]);
+            break;
+        }
     return true;
 }
 

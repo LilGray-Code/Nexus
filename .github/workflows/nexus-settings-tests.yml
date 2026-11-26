@@ -7,7 +7,10 @@ on:
     paths:
       - "kernel/src/settings.c"
       - "kernel/src/settings.h"
+      - "kernel/src/display.c"
+      - "kernel/src/display.h"
       - "kernel/tests/settings_test.c"
+      - "kernel/tests/display_test.c"
       - ".github/workflows/nexus-settings-tests.yml"
   pull_request:
     branches:
@@ -33,3 +36,10 @@ jobs:
 
       - name: Run settings persistence tests
         run: /tmp/nexus-settings-test
+
+      - name: Compile and run EDID, mode-list and rollback tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/include -Ikernel/src kernel/src/display.c \
+            kernel/tests/display_test.c -o /tmp/nexus-display-test
+          /tmp/nexus-display-test

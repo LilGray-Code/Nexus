@@ -1,11 +1,14 @@
 #include "display.h"
 
+#include "graphics.h"
+
 #define EDID_BLOCK_BYTES 128U
 #define EDID_BASE_BYTES 128U
 #define EDID_CTA_TAG 0x02U
 #define EDID_CTA_HDR_STATIC_METADATA 0x06U
 
 static struct nexus_display_info display_info;
+static struct nexus_display_info *edid_target;
 static struct nexus_display_mode_backend display_backend;
 static void *display_backend_context;
 static bool display_backend_registered;
@@ -40,11 +43,11 @@ static void add_timing(const struct nexus_display_timing *timing) {
         timing->refresh_hz == 0U ||
         timing->width > 16384U || timing->height > 16384U) return;
 
-    for (uint32_t i = 0U; i < display_info.timing_count; ++i)
-        if (timing_equal(&display_info.timings[i], timing)) return;
+    for (uint32_t i = 0U; i < edid_target->timing_count; ++i)
+        if (timing_equal(&edid_target->timings[i], timing)) return;
 
-    if (display_info.timing_count >= NEXUS_DISPLAY_MAX_EDID_TIMINGS) return;
-    display_info.timings[display_info.timing_count++] = *timing;
+    if (edid_target->timing_count >= NEXUS_DISPLAY_MAX_EDID_TIMINGS) return;
+    edid_target->timings[edid_target->timing_count++] = *timing;
 }
 
 static void parse_detailed_timing(const uint8_t *descriptor) {
@@ -90,21 +93,21 @@ static void parse_detailed_timing(const uint8_t *descriptor) {
 }
 
 static void parse_monitor_name(const uint8_t *descriptor) {
-    if (descriptor == NULL || display_info.monitor_name_valid ||
+    if (descriptor == NULL || edid_target->monitor_name_valid ||
         descriptor[0] != 0U || descriptor[1] != 0U ||
         descriptor[2] != 0U || descriptor[3] != 0xFCU) return;
 
     size_t length = 0U;
-    for (size_t i = 5U; i < 18U && length < sizeof(display_info.monitor_name) - 1U; ++i) {
+    for (size_t i = 5U; i < 18U && length < sizeof(edid_target->monitor_name) - 1U; ++i) {
         const uint8_t character = descriptor[i];
         if (character == 0U || character == '\n' || character == '\r') break;
         if (character < 0x20U || character > 0x7EU) continue;
-        display_info.monitor_name[length++] = (char)character;
+        edid_target->monitor_name[length++] = (char)character;
     }
-    while (length != 0U && display_info.monitor_name[length - 1U] == ' ')
+    while (length != 0U && edid_target->monitor_name[length - 1U] == ' ')
         --length;
-    display_info.monitor_name[length] = '\0';
-    display_info.monitor_name_valid = length != 0U;
+    edid_target->monitor_name[length] = '\0';
+    edid_target->monitor_name_valid = length != 0U;
 }
 
 static void parse_cta_extension(const uint8_t *block) {
@@ -125,9 +128,9 @@ static void parse_cta_extension(const uint8_t *block) {
             block[cursor] == EDID_CTA_HDR_STATIC_METADATA) {
             const uint8_t eotf = block[cursor + 1U];
             const uint8_t metadata = block[cursor + 2U];
-            display_info.hdr_eotf_flags |= eotf;
+            edid_target->hdr_eotf_flags |= eotf;
             if ((eotf & 0x0CU) != 0U && metadata != 0U)
-                display_info.hdr_static_metadata = true;
+                edid_target->hdr_static_metadata = true;
         }
         cursor += length;
     }
@@ -158,9 +161,9 @@ static bool parse_edid(const uint8_t *edid, size_t length) {
     size_t declared_blocks = (size_t)edid[126] + 1U;
     if (declared_blocks > available_blocks) {
         declared_blocks = available_blocks;
-        display_info.edid_extensions_complete = false;
+        edid_target->edid_extensions_complete = false;
     } else {
-        display_info.edid_extensions_complete = true;
+        edid_target->edid_extensions_complete = true;
     }
 
     for (size_t block = 1U; block < declared_blocks; ++block) {
@@ -246,8 +249,78 @@ static void add_current_mode(void) {
     display_info.current_refresh_hz = refresh;
 }
 
+static void monitor_copy_edid(struct nexus_display_monitor *monitor,
+                              const struct nexus_display_info *parsed) {
+    if (monitor == NULL || parsed == NULL) return;
+    monitor->edid_valid = parsed->edid_valid;
+    monitor->edid_extensions_complete = parsed->edid_extensions_complete;
+    monitor->monitor_name_valid = parsed->monitor_name_valid;
+    for (size_t i = 0U; i < sizeof(monitor->monitor_name); ++i)
+        monitor->monitor_name[i] = parsed->monitor_name[i];
+    monitor->hdr_static_metadata = parsed->hdr_static_metadata;
+    monitor->hdr_eotf_flags = parsed->hdr_eotf_flags;
+    monitor->timing_count = parsed->timing_count;
+    for (uint32_t i = 0U; i < NEXUS_DISPLAY_MAX_EDID_TIMINGS; ++i)
+        monitor->timings[i] = parsed->timings[i];
+}
+
+static bool parse_edid_into(struct nexus_display_info *target,
+                            const uint8_t *edid, size_t length) {
+    if (target == NULL) return false;
+    target->timing_count = 0U;
+    target->monitor_name_valid = false;
+    target->hdr_static_metadata = false;
+    target->hdr_eotf_flags = 0U;
+    target->edid_extensions_complete = false;
+    edid_target = target;
+    const bool valid = parse_edid(edid, length);
+    edid_target = NULL;
+    target->edid_valid = valid;
+    return valid;
+}
+
+static bool mode_matches(const struct nexus_display_mode *mode,
+                         const struct nexus_display_timing *timing,
+                         uint16_t bpp) {
+    return mode->width == timing->width && mode->height == timing->height &&
+           mode->bits_per_pixel == bpp &&
+           mode->refresh_hz == timing->refresh_hz;
+}
+
+static void add_edid_timing_modes(void) {
+    const uint16_t bpp = display_info.current_bits_per_pixel >= 24U
+        ? 32U : display_info.current_bits_per_pixel;
+    const uint64_t bytes_per_pixel = ((uint64_t)bpp + 7U) / 8U;
+    for (uint32_t t = 0U; t < display_info.timing_count; ++t) {
+        const struct nexus_display_timing *timing = &display_info.timings[t];
+        bool found = false;
+        for (uint32_t i = 0U; i < display_info.mode_count; ++i) {
+            struct nexus_display_mode *mode = &display_info.modes[i];
+            if (mode_matches(mode, timing, bpp)) {
+                mode->edid_timing = true;
+                found = true;
+            }
+        }
+        if (found || display_info.mode_count >= NEXUS_DISPLAY_MAX_MODES ||
+            timing->width > UINT64_MAX / bytes_per_pixel) continue;
+        const uint64_t pitch = (uint64_t)timing->width * bytes_per_pixel;
+        display_info.modes[display_info.mode_count++] =
+            (struct nexus_display_mode){
+                .width = timing->width,
+                .height = timing->height,
+                .pitch = pitch,
+                .bits_per_pixel = bpp,
+                .refresh_hz = timing->refresh_hz,
+                .current_boot_mode = false,
+                .firmware_listed = false,
+                .edid_timing = true
+            };
+    }
+}
+
 bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     display_info = (struct nexus_display_info){0};
+    edid_target = NULL;
     display_backend = (struct nexus_display_mode_backend){0};
     display_backend_context = NULL;
     display_backend_registered = false;
@@ -266,12 +339,22 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     display_info.green_bits = framebuffer->green_mask_size;
     display_info.blue_bits = framebuffer->blue_mask_size;
     display_info.last_rollback_succeeded = true;
+    display_info.upright_rotation =
+        framebuffer->upright_rotation <= LIMINE_FRAMEBUFFER_ROTATE_270
+            ? (uint32_t)framebuffer->upright_rotation
+            : LIMINE_FRAMEBUFFER_ROTATE_0;
+    display_info.scale_percent = 100U;
+    display_info.brightness_percent = 100U;
+    display_info.color_temperature_kelvin = 6500U;
+    display_info.software_brightness_available = true;
+    display_info.software_night_light_available = true;
+    display_info.topology = NEXUS_DISPLAY_TOPOLOGY_EXTENDED;
 
     if (framebuffer->edid != NULL &&
         framebuffer->edid_size >= EDID_BASE_BYTES &&
         framebuffer->edid_size <= NEXUS_DISPLAY_MAX_EDID_BYTES) {
-        display_info.edid_valid = parse_edid(
-            (const uint8_t *)framebuffer->edid,
+        display_info.edid_valid = parse_edid_into(
+            &display_info, (const uint8_t *)framebuffer->edid,
             (size_t)framebuffer->edid_size);
     }
 
@@ -288,7 +371,154 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
                 display_info.modes[i].width, display_info.modes[i].height);
     display_info.current_refresh_hz = timing_refresh_for_mode(
         display_info.current_width, display_info.current_height);
+    add_edid_timing_modes();
+
+    struct nexus_display_monitor *primary = &display_info.monitors[0];
+    primary->id = 0U;
+    primary->present = true;
+    primary->connected = true;
+    primary->enabled = true;
+    primary->primary = true;
+    primary->width = (uint32_t)framebuffer->width;
+    primary->height = (uint32_t)framebuffer->height;
+    if (display_info.edid_valid) {
+        monitor_copy_edid(primary, &display_info);
+        if (framebuffer->edid != NULL && framebuffer->edid_size >= 128U) {
+            const uint8_t *edid = (const uint8_t *)framebuffer->edid;
+            if (edid[21] != 0U)
+                primary->dpi_x = (uint16_t)((framebuffer->width * 254U) /
+                                             ((uint32_t)edid[21] * 100U));
+            if (edid[22] != 0U)
+                primary->dpi_y = (uint16_t)((framebuffer->height * 254U) /
+                                             ((uint32_t)edid[22] * 100U));
+        }
+    }
+    display_info.monitor_count = 1U;
+    display_info.primary_monitor_id = 0U;
     display_info.initialized = true;
+    return true;
+}
+
+bool nexus_display_add_monitor(uint32_t id, bool enabled,
+                               int32_t desktop_x, int32_t desktop_y,
+                               uint32_t width, uint32_t height,
+                               const uint8_t *edid, size_t edid_length) {
+    if (!display_info.initialized || width > 16384U || height > 16384U)
+        return false;
+    size_t slot = NEXUS_DISPLAY_MAX_MONITORS;
+    for (size_t i = 0U; i < display_info.monitor_count; ++i) {
+        if (display_info.monitors[i].id == id) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == NEXUS_DISPLAY_MAX_MONITORS) {
+        if (display_info.monitor_count >= NEXUS_DISPLAY_MAX_MONITORS)
+            return false;
+        slot = display_info.monitor_count++;
+    }
+
+    struct nexus_display_monitor monitor = {
+        .id = id,
+        .present = true,
+        .connected = enabled,
+        .enabled = enabled,
+        .primary = id == display_info.primary_monitor_id,
+        .desktop_x = desktop_x,
+        .desktop_y = desktop_y,
+        .width = width,
+        .height = height
+    };
+    if (edid != NULL && edid_length >= EDID_BASE_BYTES &&
+        edid_length <= NEXUS_DISPLAY_MAX_EDID_BYTES) {
+        struct nexus_display_info parsed = {0};
+        if (parse_edid_into(&parsed, edid, edid_length)) {
+            monitor_copy_edid(&monitor, &parsed);
+            if (edid[21] != 0U)
+                monitor.dpi_x = (uint16_t)(((uint64_t)width * 254U) /
+                                            ((uint32_t)edid[21] * 100U));
+            if (edid[22] != 0U)
+                monitor.dpi_y = (uint16_t)(((uint64_t)height * 254U) /
+                                            ((uint32_t)edid[22] * 100U));
+        }
+    }
+    display_info.monitors[slot] = monitor;
+    return true;
+}
+
+const struct nexus_display_monitor *nexus_display_monitor_at(size_t index) {
+    if (!display_info.initialized || index >= display_info.monitor_count)
+        return NULL;
+    return &display_info.monitors[index];
+}
+
+bool nexus_display_set_primary_monitor(uint32_t id) {
+    if (!display_info.initialized) return false;
+    bool found = false;
+    for (uint32_t i = 0U; i < display_info.monitor_count; ++i) {
+        struct nexus_display_monitor *monitor = &display_info.monitors[i];
+        if (monitor->id == id && monitor->connected && monitor->enabled)
+            found = true;
+    }
+    if (!found) return false;
+    display_info.primary_monitor_id = id;
+    for (uint32_t i = 0U; i < display_info.monitor_count; ++i)
+        display_info.monitors[i].primary =
+            display_info.monitors[i].id == id;
+    return true;
+}
+
+bool nexus_display_topology_available(void) {
+    return display_info.initialized && display_info.monitor_count > 1U &&
+           display_backend_registered &&
+           display_backend.set_topology != NULL;
+}
+
+bool nexus_display_set_topology(enum nexus_display_topology topology) {
+    if (!display_info.initialized ||
+        (topology != NEXUS_DISPLAY_TOPOLOGY_EXTENDED &&
+         topology != NEXUS_DISPLAY_TOPOLOGY_MIRRORED) ||
+        !nexus_display_topology_available()) return false;
+    if (!display_backend.set_topology(display_backend_context, topology))
+        return false;
+    display_info.topology = topology;
+    return true;
+}
+
+bool nexus_display_set_rotation(enum nexus_display_rotation rotation) {
+    if (!display_info.initialized ||
+        (rotation != NEXUS_DISPLAY_ROTATE_0 &&
+         rotation != NEXUS_DISPLAY_ROTATE_90 &&
+         rotation != NEXUS_DISPLAY_ROTATE_180 &&
+         rotation != NEXUS_DISPLAY_ROTATE_270)) return false;
+    if (!graphics_set_rotation((uint32_t)rotation)) return false;
+    display_info.upright_rotation = (uint32_t)rotation;
+    return true;
+}
+
+bool nexus_display_set_scale_percent(uint8_t scale_percent) {
+    if (!display_info.initialized || scale_percent < 50U ||
+        scale_percent > 200U) return false;
+    if (!graphics_set_scale_percent(scale_percent)) return false;
+    display_info.scale_percent = scale_percent;
+    return true;
+}
+
+bool nexus_display_set_brightness_percent(uint8_t brightness_percent) {
+    if (!display_info.initialized || brightness_percent > 100U)
+        return false;
+    if (!graphics_set_color_effects(brightness_percent,
+            display_info.color_temperature_kelvin)) return false;
+    display_info.brightness_percent = brightness_percent;
+    return true;
+}
+
+bool nexus_display_set_color_temperature(uint16_t kelvin) {
+    if (!display_info.initialized || kelvin < 1000U || kelvin > 10000U)
+        return false;
+    if (!graphics_set_color_effects(display_info.brightness_percent, kelvin))
+        return false;
+    display_info.color_temperature_kelvin = kelvin;
     return true;
 }
 

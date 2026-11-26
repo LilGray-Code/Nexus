@@ -17,8 +17,9 @@ kernel workers, timer-driven preemption tests, and deadline-based sleeping.
   from sleeping to runnable. It does not context-switch inside the wakeup scan.
 - `scheduler_sleep_ticks()` blocks a current worker until the requested
   deadline and yields to another runnable worker or the BSP main/idle context.
-  The main boot thread deliberately cannot sleep yet because a dedicated
-  per-CPU idle-thread implementation does not exist.
+  The BSP main context may also sleep: when no context is runnable, the
+  scheduler uses an atomic STI;HLT wait on the current stack until a timer
+  interrupt wakes an eligible context.
 - Timer-driven preemption remains explicitly opt-in. The boot test enables it
   for CPU-bound workers and disables it again after validating the timer IRQ
   switch path.

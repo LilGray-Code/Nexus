@@ -82,6 +82,17 @@ static bool rva_to_offset(const struct pe_view *view, uint32_t rva,
     return false;
 }
 
+static bool module_is(const char *module, const char *expected) {
+    size_t i = 0U;
+    while (module[i] != '\0' && expected[i] != '\0') {
+        char a = module[i], b = expected[i];
+        if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+        if (a != b) return false;
+        ++i;
+    }
+    return module[i] == '\0' && expected[i] == '\0';
+}
 static bool parse_imports(const struct pe_view *view, uint32_t import_rva,
                           uint32_t import_size,
                           struct nexus_win_pe_info *info) {
@@ -147,6 +158,13 @@ static bool parse_imports(const struct pe_view *view, uint32_t import_rva,
             ++info->import_symbol_count;
         }
         if (!thunk_terminated) return false;
+        if (module_is(module, "ndis.sys")) info->imports_ndis = true;
+        if (module_is(module, "wdf01000.sys")) info->imports_wdf = true;
+        if (module_is(module, "netadaptercx.sys"))
+            info->imports_net_adapter_cx = true;
+        if (module_is(module, "ntoskrnl.exe"))
+            info->imports_windows_kernel = true;
+        if (module_is(module, "hal.dll")) info->imports_hal = true;
         ++info->import_module_count;
         consumed += PE_IMPORT_DESCRIPTOR_SIZE;
     }

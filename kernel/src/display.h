@@ -131,8 +131,9 @@ const struct nexus_display_mode *nexus_display_mode_at(size_t index);
 const struct nexus_display_monitor *nexus_display_monitor_at(size_t index);
 
 /* Add one VirtIO/other-driver output. EDID is validated before it is retained. */
-bool nexus_display_add_monitor(uint32_t id, bool enabled,
-                               int32_t desktop_x, int32_t desktop_y,
+bool nexus_display_add_monitor(uint32_t id, bool connected,
+                               bool enabled, int32_t desktop_x,
+                               int32_t desktop_y,
                                uint32_t width, uint32_t height,
                                const uint8_t *edid, size_t edid_length);
 bool nexus_display_set_primary_monitor(uint32_t id);

@@ -148,7 +148,7 @@ static bool submit_command_expect(
         serial_write_hex(control_queue.available_index);
         serial_write(" used=");
         serial_write_hex(control_queue.last_used_index);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
         return false;
     }
     const uint32_t response_type =
@@ -159,7 +159,7 @@ static bool submit_command_expect(
         serial_write_hex(response_type);
         serial_write(" length=");
         serial_write_hex(response_length);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
         return false;
     }
     return true;

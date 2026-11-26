@@ -191,6 +191,24 @@ static bool valid_key_id(const char *key_id) {
     return length != 0U;
 }
 
+static bool parse_permission_mask(const char *text,
+                                   uint32_t *permissions) {
+    if (text == NULL || permissions == NULL || text[0] == '\0' ||
+        (text[0] == '0' && text[1] != '\0')) return false;
+    uint32_t value = 0U;
+    for (size_t i = 0U; text[i] != '\0'; ++i) {
+        if (text[i] < '0' || text[i] > '9') return false;
+        const uint32_t digit = (uint32_t)(text[i] - '0');
+        if (digit > NEXUS_APP_PERMISSION_ALL ||
+            value > (NEXUS_APP_PERMISSION_ALL - digit) / 10U)
+            return false;
+        value = value * 10U + digit;
+    }
+    if ((value & ~NEXUS_APP_PERMISSION_ALL) != 0U) return false;
+    *permissions = value;
+    return true;
+}
+
 static bool parse_header(const void *package_bytes, size_t package_length,
                          bool require_payload,
                          struct nexus_package_manifest *manifest) {
@@ -244,8 +262,19 @@ static bool parse_header(const void *package_bytes, size_t package_length,
                     parsed.payload_sha256,
                     sizeof(parsed.payload_sha256))) return false;
 
-    if (!read_line(bytes, package_length, &offset, &start, &line_length) ||
-        !expect_value(bytes, start, line_length, "KEY=", parsed.key_id,
+    if (!read_line(bytes, package_length, &offset, &start, &line_length))
+        return false;
+    if (line_length >= sizeof("PERMISSIONS=") - 1U &&
+        bytes_equal(bytes + start, "PERMISSIONS=",
+                    sizeof("PERMISSIONS=") - 1U)) {
+        if (!expect_value(bytes, start, line_length, "PERMISSIONS=",
+                          temporary, sizeof(temporary)) ||
+            !parse_permission_mask(temporary, &parsed.permissions) ||
+            !read_line(bytes, package_length, &offset, &start, &line_length))
+            return false;
+    }
+    /* Old signed v1 manifests omit this line and remain least-privileged. */
+    if (!expect_value(bytes, start, line_length, "KEY=", parsed.key_id,
                       sizeof(parsed.key_id)) || !valid_key_id(parsed.key_id))
         return false;
 
@@ -481,6 +510,7 @@ bool nexus_package_is_installed(const char *id,
             result->version[i] = manifest.version[i];
         for (size_t i = 0U; i < sizeof(result->executable_path); ++i)
             result->executable_path[i] = executable[i];
+        result->permissions = manifest.permissions;
     }
     return true;
 }
@@ -575,6 +605,7 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
             result->version[i] = manifest.version[i];
         for (size_t i = 0U; i < sizeof(result->executable_path); ++i)
             result->executable_path[i] = executable[i];
+        result->permissions = manifest.permissions;
     }
     return true;
 }
@@ -607,7 +638,9 @@ bool nexus_package_launch(const char *id, nexus_package_signature_verifier verif
     if (!nexus_package_is_installed(id, verifier, verifier_context, &installed)) return false;
     struct nexus_process_result process_result = {0};
     enum nexus_process_error process_error = NEXUS_PROCESS_ERROR_NONE;
-    if (!process_execute_root_file(installed.executable_path, &process_result, &process_error)) return false;
+    if (!process_execute_root_file_with_permissions(
+            installed.executable_path, installed.permissions,
+            &process_result, &process_error)) return false;
     if (exit_status != NULL) *exit_status = process_result.exit_status;
     return true;
 }

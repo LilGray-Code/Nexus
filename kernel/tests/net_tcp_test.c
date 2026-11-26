@@ -226,6 +226,18 @@ static void setup_network(void) {
     dns_reply_on_request = 0U;
 
     network = (struct net_state){0};
+    dhcp_option_lease_seconds = 0U;
+    dhcp_option_renew_seconds = 0U;
+    dhcp_option_rebind_seconds = 0U;
+    dhcp_lease_seconds = 0U;
+    dhcp_renew_seconds = 0U;
+    dhcp_rebind_seconds = 0U;
+    dhcp_lease_start_tick = 0U;
+    dhcp_manual_override = false;
+    for (size_t i = 0U; i < 4U; ++i) {
+        dhcp_dns_ipv4[i] = 0U;
+        dns_ipv4[i] = 0U;
+    }
     network.ready = true;
     network.link_up = true;
     network.interface_medium = NEXUS_NETDEV_MEDIUM_ETHERNET;
@@ -396,6 +408,93 @@ static size_t dns_test_build_bad_pointer_reply(uint8_t *packet) {
     packet[cursor++] = 113U;
     packet[cursor++] = 42U;
     return cursor;
+}
+
+
+static void append_dhcp_test_option(uint8_t *packet, size_t *cursor,
+                                    uint8_t code, const uint8_t *value,
+                                    uint8_t length) {
+    packet[(*cursor)++] = code;
+    packet[(*cursor)++] = length;
+    for (size_t i = 0U; i < length; ++i) packet[(*cursor)++] = value[i];
+}
+
+static void inject_dhcp_ack(uint32_t lease_seconds,
+                            uint32_t renew_seconds,
+                            uint32_t rebind_seconds) {
+    uint8_t packet[NET_DHCP_PACKET_SIZE] = {0};
+    packet[0] = 2U;
+    packet[1] = 1U;
+    packet[2] = 6U;
+    write_be32(packet + 4U, dhcp_transaction_id);
+    packet[16] = 192U; packet[17] = 0U; packet[18] = 2U; packet[19] = 44U;
+    copy_bytes(packet + 28U, network.mac, 6U);
+    packet[236] = 99U; packet[237] = 130U;
+    packet[238] = 83U; packet[239] = 99U;
+    size_t cursor = NET_DHCP_OPTIONS_OFFSET;
+    const uint8_t type = 5U;
+    uint8_t value[4];
+    append_dhcp_test_option(packet, &cursor, 53U, &type, 1U);
+    value[0] = (uint8_t)(lease_seconds >> 24);
+    value[1] = (uint8_t)(lease_seconds >> 16);
+    value[2] = (uint8_t)(lease_seconds >> 8);
+    value[3] = (uint8_t)lease_seconds;
+    append_dhcp_test_option(packet, &cursor, 51U, value, 4U);
+    value[0] = (uint8_t)(renew_seconds >> 24);
+    value[1] = (uint8_t)(renew_seconds >> 16);
+    value[2] = (uint8_t)(renew_seconds >> 8);
+    value[3] = (uint8_t)renew_seconds;
+    append_dhcp_test_option(packet, &cursor, 58U, value, 4U);
+    value[0] = (uint8_t)(rebind_seconds >> 24);
+    value[1] = (uint8_t)(rebind_seconds >> 16);
+    value[2] = (uint8_t)(rebind_seconds >> 8);
+    value[3] = (uint8_t)rebind_seconds;
+    append_dhcp_test_option(packet, &cursor, 59U, value, 4U);
+    const uint8_t mask[4] = {255U, 255U, 255U, 0U};
+    const uint8_t router[4] = {192U, 0U, 2U, 1U};
+    const uint8_t dns[4] = {1U, 1U, 1U, 1U};
+    const uint8_t server[4] = {192U, 0U, 2U, 1U};
+    append_dhcp_test_option(packet, &cursor, 1U, mask, 4U);
+    append_dhcp_test_option(packet, &cursor, 3U, router, 4U);
+    append_dhcp_test_option(packet, &cursor, 6U, dns, 4U);
+    append_dhcp_test_option(packet, &cursor, 54U, server, 4U);
+    packet[cursor++] = 255U;
+    static const uint8_t source[4] = {192U, 0U, 2U, 1U};
+    receive_dhcp(packet, cursor, source);
+}
+
+static void test_dhcp_lease_renew_rebind_and_expiry(void) {
+    setup_network();
+    dhcp_state = NET_DHCP_REQUESTING;
+    dhcp_transaction_id = 0x12345678U;
+    fake_ticks = 100U;
+    inject_dhcp_ack(100U, 50U, 80U);
+    assert(dhcp_state == NET_DHCP_BOUND);
+    assert(dhcp_lease_seconds == 100U);
+    assert(dhcp_renew_seconds == 50U);
+    assert(dhcp_rebind_seconds == 80U);
+    assert(network.ipv4[3] == 44U);
+    assert(dns_ipv4[0] == 1U && dns_ipv4[3] == 1U);
+
+    const uint8_t manual_dns[4] = {8U, 8U, 8U, 8U};
+    assert(net_set_dns_server(manual_dns));
+    assert(dns_ipv4[0] == 8U && dns_ipv4[3] == 8U);
+    net_use_dhcp_dns();
+    assert(dns_ipv4[0] == 1U && dns_ipv4[3] == 1U);
+    const uint8_t bad_dns[4] = {239U, 1U, 1U, 1U};
+    assert(!net_set_dns_server(bad_dns));
+
+    const uint64_t lease_start = dhcp_lease_start_tick;
+    fake_ticks = lease_start + 50U * NET_DNS_TICKS_PER_SECOND - 1U;
+    dhcp_poll_lease();
+    assert(dhcp_state == NET_DHCP_RENEWING);
+    fake_ticks = lease_start + 80U * NET_DNS_TICKS_PER_SECOND - 1U;
+    dhcp_poll_lease();
+    assert(dhcp_state == NET_DHCP_REBINDING);
+    fake_ticks = lease_start + 100U * NET_DNS_TICKS_PER_SECOND - 1U;
+    dhcp_poll_lease();
+    assert(dhcp_state == NET_DHCP_DISCOVERING);
+    assert(ipv4_zero(network.ipv4));
 }
 
 static void test_dns_question_validation_and_cname_chains(void) {
@@ -665,6 +764,7 @@ int main(void) {
     assert(data_transmissions - before_timeout == NET_TCP_MAX_RETRIES + 1U);
     assert(!tcp_connection.active && !tcp_connection.connected);
     test_receive_wait_reports_timeout_data_and_eof();
+    test_dhcp_lease_renew_rebind_and_expiry();
     test_tcp_advertised_window_tracks_buffer_and_updates();
     test_tcp_out_of_order_reassembly_and_ack();
     test_tcp_reassembles_multiple_queued_segments();

@@ -6445,7 +6445,7 @@ static bool desktop_output_contains(const char *output, size_t length,
                                       const char *needle) {
     if (output == NULL || needle == NULL) return false;
     size_t needle_length = 0U;
-    while (needle[needle_length] != '\\0') ++needle_length;
+    while (needle[needle_length] != '\0') ++needle_length;
     if (needle_length == 0U || needle_length > length) return false;
     for (size_t offset = 0U; offset <= length - needle_length; ++offset) {
         size_t i = 0U;

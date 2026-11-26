@@ -665,7 +665,7 @@ void kmain(void) {
     scheduler_sleep_observer_ran = 0U;
     scheduler_sleep_worker_result = 0U;
     scheduler_sleep_elapsed = 0U;
-    if (scheduler_sleep_ticks(1U) ||
+    if (!scheduler_sleep_ticks(1U) ||
         !scheduler_create_thread(scheduler_sleep_worker, NULL) ||
         !scheduler_create_thread(scheduler_sleep_observer, NULL)) {
         serial_write("ERROR: scheduler timed-sleep setup failed\r\n");

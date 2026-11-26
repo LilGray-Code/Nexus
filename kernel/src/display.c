@@ -688,6 +688,11 @@ const struct nexus_display_monitor *nexus_display_monitor_at(size_t index) {
     return &display_info.monitors[index];
 }
 
+bool nexus_display_primary_selection_available(void) {
+    return display_info.initialized && topology_backend_registered &&
+           topology_backend.set_primary_monitor != NULL;
+}
+
 bool nexus_display_set_primary_monitor(uint32_t id) {
     if (!display_info.initialized) return false;
     bool found = false;

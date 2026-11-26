@@ -23,6 +23,37 @@ struct mock_disk {
 
 static struct mock_disk disk;
 
+static uint32_t test_crc32(const uint8_t *data, size_t length) {
+    uint32_t crc = 0xFFFFFFFFU;
+    for (size_t i = 0U; i < length; ++i) {
+        crc ^= data[i];
+        for (unsigned bit = 0U; bit < 8U; ++bit)
+            crc = (crc >> 1) ^
+                ((crc & 1U) != 0U ? 0xEDB88320U : 0U);
+    }
+    return ~crc;
+}
+
+static void test_write_le32(uint8_t *data, uint32_t value) {
+    data[0] = (uint8_t)value;
+    data[1] = (uint8_t)(value >> 8);
+    data[2] = (uint8_t)(value >> 16);
+    data[3] = (uint8_t)(value >> 24);
+}
+
+/* Convert an empty test volume to the original on-disk 1 MiB geometry. */
+static void force_legacy_superblocks(void) {
+    for (uint64_t lba = 0U; lba < 2U; ++lba) {
+        struct sparse_block *block = find_block(lba, false);
+        assert(block != NULL);
+        test_write_le32(block->data + 20U, NEXUS_NXFS_LEGACY_FILE_BYTES);
+        test_write_le32(block->data + 40U,
+            NEXUS_NXFS_LEGACY_FILE_BYTES / TEST_BLOCK_SIZE);
+        test_write_le32(block->data + 60U,
+                        test_crc32(block->data, 60U));
+    }
+}
+
 static struct sparse_block *find_block(uint64_t lba, bool create) {
     struct sparse_block *free_slot = NULL;
     for (size_t i = 0U; i < TEST_SPARSE_BLOCKS; ++i) {
@@ -144,6 +175,26 @@ int main(void) {
 
     assert(nxfs_format(&device, &partition));
     assert(nxfs_is_mounted() && nxfs_is_writable());
+    assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_MAX_FILE_BYTES);
+
+    /* Existing 1 MiB filesystems must keep their original slot geometry. */
+    force_legacy_superblocks();
+    assert(nxfs_mount(&device, &partition));
+    assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_LEGACY_FILE_BYTES);
+    assert(!nxfs_write_file("TOO.BIG", NULL,
+                           (size_t)NEXUS_NXFS_LEGACY_FILE_BYTES + 1U));
+
+    /* A Data partition too small for 4 MiB slots still formats as legacy. */
+    struct nexus_gpt_partition smaller_partition = partition;
+    smaller_partition.last_lba =
+        67U + (uint64_t)NEXUS_NXFS_MAX_FILES * 2U *
+        (NEXUS_NXFS_LEGACY_FILE_BYTES / TEST_BLOCK_SIZE) + 15U;
+    assert(nxfs_format(&device, &smaller_partition));
+    assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_LEGACY_FILE_BYTES);
+
+    /* Restore a large test partition and verify the new 4 MiB format. */
+    assert(nxfs_format(&device, &partition));
+    assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_MAX_FILE_BYTES);
     assert(!nxfs_create_directory("MISSING/CHILD"));
     assert(!nxfs_create_directory("DOCUMENTS//INVALID"));
     assert(!nxfs_create_directory("DOCUMENTS/"));

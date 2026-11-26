@@ -374,6 +374,34 @@ bool nexus_cpu_init(void) {
     return true;
 }
 
+bool nexus_cpu_decode_amd_topology(
+    enum nexus_cpu_vendor vendor, uint32_t maximum_extended_leaf,
+    uint32_t extended_feature_ecx, uint32_t topology_eax,
+    uint32_t topology_ebx, uint32_t topology_ecx,
+    struct nexus_cpu_local_topology *topology) {
+    if (topology == NULL ||
+        (vendor != NEXUS_CPU_VENDOR_AMD &&
+         vendor != NEXUS_CPU_VENDOR_HYGON) ||
+        maximum_extended_leaf < 0x8000001EU ||
+        (extended_feature_ecx & (1U << 22)) == 0U) return false;
+
+    topology->vendor = vendor;
+    topology->topology_extensions_supported = true;
+    topology->apic_id = topology_eax;
+    topology->apic_id_valid = true;
+    topology->core_id = topology_ebx & 0xFFU;
+    topology->core_id_valid = true;
+    topology->node_id = topology_ecx & 0xFFU;
+    topology->node_id_valid = true;
+    topology->nodes_per_processor_raw =
+        (uint8_t)((topology_ecx >> 8) & 0x07U);
+    const uint32_t threads_per_core =
+        ((topology_ebx >> 8) & 0xFFU) + 1U;
+    if (threads_per_core > UINT8_MAX) return false;
+    topology->logical_processors_per_core = (uint8_t)threads_per_core;
+    return true;
+}
+
 bool nexus_cpu_get_local_topology(
     struct nexus_cpu_local_topology *topology) {
     if (topology == NULL) return false;
@@ -456,24 +484,13 @@ bool nexus_cpu_get_local_topology(
              topology->vendor == NEXUS_CPU_VENDOR_HYGON) &&
             topology->topology_extensions_supported &&
             maximum_extended >= 0x8000001EU) {
-            uint32_t extended_apic_id = 0U, core_ebx = 0U;
-            uint32_t node_ecx = 0U;
-            cpuid(0x8000001EU, 0U, &extended_apic_id, &core_ebx,
-                  &node_ecx, NULL);
-            topology->apic_id = extended_apic_id;
-            topology->apic_id_valid = true;
-            topology->core_id = core_ebx & 0xFFU;
-            topology->core_id_valid = true;
-            topology->node_id = node_ecx & 0xFFU;
-            topology->node_id_valid = true;
-            topology->nodes_per_processor_raw =
-                (uint8_t)((node_ecx >> 8) & 0x07U);
-            const uint32_t threads_per_core =
-                ((core_ebx >> 8) & 0xFFU) + 1U;
-            if (threads_per_core <= UINT8_MAX) {
-                topology->logical_processors_per_core =
-                    (uint8_t)threads_per_core;
-            }
+            uint32_t topology_eax = 0U, topology_ebx = 0U;
+            uint32_t topology_ecx = 0U;
+            cpuid(0x8000001EU, 0U, &topology_eax, &topology_ebx,
+                  &topology_ecx, NULL);
+            (void)nexus_cpu_decode_amd_topology(
+                topology->vendor, maximum_extended, extended_ecx,
+                topology_eax, topology_ebx, topology_ecx, topology);
         }
     }
     return true;

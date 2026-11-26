@@ -15,8 +15,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
 - CPU discovery identifies Intel, AMD, Hygon, Centaur/VIA, Zhaoxin, and
   Transmeta CPUID vendors, records family/model/stepping and topology, and
   records APIC ID plus Intel performance/efficiency/other core class for each
-  online logical CPU. It reports Intel hybrid bootstrap-core type and nominal
-  base/maximum/bus
+  online logical CPU. AMD/Hygon systems with CPUID topology extensions also
+  report Extended APIC ID, CoreId, NodeId, nodes-per-processor encoding, and
+  threads per core from CPUID 0x8000001E; package logical-processor count is
+  derived from the advertised core count and SMT width when both are valid.
+  It reports Intel hybrid bootstrap-core type and nominal base/maximum/bus
   frequency values when CPUID exposes them. CPUID.6 thermal and HWP/Turbo
   capabilities are recorded as advertised support only; Nexus does not yet
   read live temperatures, change CPU P-states, or implement vendor-specific

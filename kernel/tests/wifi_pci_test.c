@@ -48,6 +48,8 @@ int main(void) {
     assert(first->subsystem_device_id == 0x0024U);
     assert(second != NULL && second->vendor_id == 0x10ECU);
     static const char intel_inf[] =
+        "[Manufacturer]\r\n"
+        "Intel=Models,NTamd64\r\n"
         "[Models.NTamd64]\r\n"
         "Intel Wi-Fi=Install, PCI\\VEN_8086&DEV_2723&SUBSYS_00248086&REV_01\r\n";
     struct nexus_win_inf_match match;

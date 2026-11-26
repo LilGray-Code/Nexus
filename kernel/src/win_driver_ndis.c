@@ -1,5 +1,7 @@
 #include "win_driver_ndis.h"
 
+#include <stddef.h>
+
 static bool valid_adapter(const struct nexus_ndis_adapter *adapter) {
     return adapter != NULL && adapter->generation != 0U;
 }

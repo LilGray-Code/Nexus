@@ -12,6 +12,8 @@ on:
       - "kernel/src/desktop.c"
       - "kernel/src/cpu.c"
       - "kernel/src/cpu.h"
+      - "kernel/src/smp.c"
+      - "kernel/src/smp.h"
       - "kernel/src/gpu.c"
       - "kernel/src/gpu.h"
       - "kernel/tests/cpu_test.c"

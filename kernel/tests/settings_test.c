@@ -11,7 +11,7 @@ int main(void) {
     assert(settings.theme == NEXUS_SETTINGS_THEME_DARK);
     assert(settings.ui_scale_percent == 100U);
     assert(settings.cursor_size == 1U);
-    assert(settings.volume_percent == 80U);
+    assert(settings.volume_percent == 75U);
 
     uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
     assert(nexus_settings_encode(&settings, record));

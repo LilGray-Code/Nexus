@@ -212,6 +212,40 @@ static void test_header_only_parse_for_streaming(void) {
                                       &header_length, &response));
 }
 
+
+static void test_headers_parse_sha256_content_digest(void) {
+    static const uint8_t headers[] =
+        "HTTP/1.1 200 OK\\r\\n"
+        "Content-Length: 3\\r\\n"
+        "Content-Digest: sha-256=:ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=:"
+        "\\r\\n\\r\\n";
+    static const uint8_t expected[32] = {
+        0xBAU,0x78U,0x16U,0xBFU,0x8FU,0x01U,0xCFU,0xEAU,
+        0x41U,0x41U,0x40U,0xDEU,0x5DU,0xAEU,0x22U,0x23U,
+        0xB0U,0x03U,0x61U,0xA3U,0x96U,0x17U,0x7AU,0x9CU,
+        0xB4U,0x10U,0xFFU,0x61U,0xF2U,0x00U,0x15U,0xADU
+    };
+    struct nexus_http_response response = {0};
+    size_t header_length = 0U;
+    assert(nexus_http_decode_headers(headers, sizeof(headers) - 1U,
+                                     &header_length, &response));
+    assert(response.has_sha256_digest);
+    assert(memcmp(response.sha256_digest, expected, sizeof(expected)) == 0);
+    assert(header_length == sizeof(headers) - 1U);
+}
+
+static void test_headers_reject_malformed_sha256_digest(void) {
+    static const uint8_t headers[] =
+        "HTTP/1.1 200 OK\\r\\n"
+        "Content-Length: 3\\r\\n"
+        "Content-Digest: sha-256=:ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa1=:"
+        "\\r\\n\\r\\n";
+    struct nexus_http_response response = {0};
+    size_t header_length = 0U;
+    assert(!nexus_http_decode_headers(headers, sizeof(headers) - 1U,
+                                      &header_length, &response));
+}
+
 int main(void) {
     test_content_length();
     test_chunked_extensions_and_trailers();

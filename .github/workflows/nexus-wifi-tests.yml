@@ -50,8 +50,8 @@ jobs:
         run: /tmp/nexus-wifi-80211-test
       - name: Compile Windows INF hardware-ID matching tests
         run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
-            -Ikernel/src kernel/src/win_driver_inf.c \\
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/win_driver_inf.c \
             kernel/tests/win_driver_inf_test.c -o /tmp/nexus-win-inf-test
       - name: Run Windows INF hardware-ID matching tests
         run: /tmp/nexus-win-inf-test

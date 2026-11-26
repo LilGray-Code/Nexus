@@ -19,6 +19,8 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   report Extended APIC ID, CoreId, NodeId, nodes-per-processor encoding, and
   threads per core from CPUID 0x8000001E; package logical-processor count is
   derived from the advertised core count and SMT width when both are valid.
+  The AMD topology decoder has synthetic AMD/Hygon regression cases so it can
+  be checked on CI hosts that are not themselves AMD systems.
   It reports Intel hybrid bootstrap-core type and nominal base/maximum/bus
   frequency values when CPUID exposes them. CPUID.6 thermal and HWP/Turbo
   capabilities are recorded as advertised support only; Nexus does not yet

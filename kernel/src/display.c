@@ -282,6 +282,12 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
             add_firmware_mode(framebuffer->modes[i]);
     }
     add_current_mode();
+    for (uint32_t i = 0U; i < display_info.mode_count; ++i)
+        if (display_info.modes[i].refresh_hz == 0U)
+            display_info.modes[i].refresh_hz = timing_refresh_for_mode(
+                display_info.modes[i].width, display_info.modes[i].height);
+    display_info.current_refresh_hz = timing_refresh_for_mode(
+        display_info.current_width, display_info.current_height);
     display_info.initialized = true;
     return true;
 }

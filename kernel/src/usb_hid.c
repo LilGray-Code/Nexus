@@ -4,8 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static uint8_t previous_report[8];
-static bool have_previous_report;
+static struct nexus_usb_keyboard_state default_keyboard_state;
 
 /*
  * Values use bit 8 for an E0/extended Set-1 key. The low byte keeps the
@@ -50,16 +49,23 @@ static bool report_has_usage(const uint8_t report[8], uint8_t usage) {
     return false;
 }
 
-void usb_hid_keyboard_reset(void) {
-    for (size_t i = 0U; i < sizeof(previous_report); ++i)
-        previous_report[i] = 0U;
-    have_previous_report = false;
+void usb_hid_keyboard_state_reset(struct nexus_usb_keyboard_state *state) {
+    if (state == NULL) return;
+    for (size_t i = 0U; i < sizeof(state->previous_report); ++i)
+        state->previous_report[i] = 0U;
+    state->have_previous_report = false;
 }
 
-size_t usb_hid_keyboard_decode(const uint8_t report[8],
-                               uint16_t *scancodes,
-                               size_t capacity) {
-    if (report == NULL || (capacity != 0U && scancodes == NULL)) return 0U;
+void usb_hid_keyboard_reset(void) {
+    usb_hid_keyboard_state_reset(&default_keyboard_state);
+}
+
+size_t usb_hid_keyboard_decode_state(struct nexus_usb_keyboard_state *state,
+                                     const uint8_t report[8],
+                                     uint16_t *scancodes,
+                                     size_t capacity) {
+    if (state == NULL || report == NULL ||
+        (capacity != 0U && scancodes == NULL)) return 0U;
 
     /* HID usage 1..3 indicates ErrorRollOver / POSTFail / ErrorUndefined. */
     for (size_t i = 2U; i < 8U; ++i) {
@@ -68,7 +74,7 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
 
     size_t count = 0U;
     const uint8_t old_modifiers =
-        have_previous_report ? previous_report[0] : 0U;
+        state->have_previous_report ? state->previous_report[0] : 0U;
     const uint8_t changed_modifiers = old_modifiers ^ report[0];
     static const struct {
         uint8_t mask;
@@ -92,9 +98,9 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
         if (count < capacity) scancodes[count++] = code;
     }
 
-    if (have_previous_report) {
+    if (state->have_previous_report) {
         for (size_t i = 2U; i < 8U; ++i) {
-            const uint8_t usage = previous_report[i];
+            const uint8_t usage = state->previous_report[i];
             if (usage == 0U || report_has_usage(report, usage)) continue;
             const uint16_t code = usage_to_set1(usage);
             if (code == 0U || count >= capacity) continue;
@@ -105,7 +111,7 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
     for (size_t i = 2U; i < 8U; ++i) {
         const uint8_t usage = report[i];
         if (usage == 0U || (have_previous_report &&
-                            report_has_usage(previous_report, usage))) {
+                            report_has_usage(state->previous_report, usage))) {
             continue;
         }
         const uint16_t code = usage_to_set1(usage);
@@ -113,22 +119,36 @@ size_t usb_hid_keyboard_decode(const uint8_t report[8],
         scancodes[count++] = code;
     }
 
-    for (size_t i = 0U; i < sizeof(previous_report); ++i)
-        previous_report[i] = report[i];
-    have_previous_report = true;
+    for (size_t i = 0U; i < sizeof(state->previous_report); ++i)
+        state->previous_report[i] = report[i];
+    state->have_previous_report = true;
     return count;
+}
+
+bool usb_hid_mouse_decode_report(const uint8_t *report,
+                                 size_t report_length,
+                                 struct nexus_usb_mouse_event *event) {
+    if (report == NULL || event == NULL || report_length < 3U) return false;
+    event->buttons = (uint8_t)(report[0] & 0x07U);
+    event->dx = (int16_t)(int8_t)report[1];
+    event->dy = (int16_t)-(int16_t)(int8_t)report[2];
+    event->wheel = report_length >= 4U ? (int8_t)report[3] : 0;
+    return true;
 }
 
 bool usb_hid_mouse_decode(const uint8_t report[3],
                           struct nexus_usb_mouse_event *event) {
-    if (report == NULL || event == NULL) return false;
-    event->buttons = (uint8_t)(report[0] & 0x07U);
-    event->dx = (int16_t)(int8_t)report[1];
-    event->dy = (int16_t)-(int16_t)(int8_t)report[2];
-    event->wheel = 0;
-    return true;
+    return usb_hid_mouse_decode_report(report, 3U, event);
 }
 
+
+
+size_t usb_hid_keyboard_decode(const uint8_t report[8],
+                               uint16_t *scancodes,
+                               size_t capacity) {
+    return usb_hid_keyboard_decode_state(&default_keyboard_state, report,
+                                         scancodes, capacity);
+}
 
 /* ---------------- Bounded generic HID game-controller reports ---------------- */
 

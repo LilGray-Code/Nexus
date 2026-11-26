@@ -2,6 +2,7 @@
 #define NEXUS_INPUT_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "usb_hid.h"
 
@@ -25,9 +26,10 @@ void input_keyboard_interrupt(void);
 void input_mouse_interrupt(void);
 /* Called by the boot CPU while draining the single-producer input queue. */
 bool input_pop_event(struct nexus_input_event *event);
-/* Submit a standard eight-byte USB HID boot-keyboard report. */
+void input_usb_keyboard_report_state(struct nexus_usb_keyboard_state *state,
+                                     const uint8_t report[8]);
 void input_usb_keyboard_report(const uint8_t report[8]);
-/* Submit a standard three-byte USB HID boot-mouse report. */
+void input_usb_mouse_report_sized(const uint8_t *report, size_t report_length);
 void input_usb_mouse_report(const uint8_t report[3]);
 /* Submit decoded gamepad state without changing keyboard/mouse event layout. */
 void input_usb_gamepad_event(const struct nexus_usb_gamepad_event *event);

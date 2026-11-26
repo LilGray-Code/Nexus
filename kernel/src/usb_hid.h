@@ -12,12 +12,22 @@ struct nexus_usb_mouse_event {
     int8_t wheel;
 };
 
-/* Decode a standard three-byte USB HID boot-mouse report (no wheel field). */
+struct nexus_usb_keyboard_state {
+    uint8_t previous_report[8];
+    bool have_previous_report;
+};
+
+bool usb_hid_mouse_decode_report(const uint8_t *report, size_t report_length,
+                                 struct nexus_usb_mouse_event *event);
 bool usb_hid_mouse_decode(const uint8_t report[3],
                           struct nexus_usb_mouse_event *event);
 
+void usb_hid_keyboard_state_reset(struct nexus_usb_keyboard_state *state);
+size_t usb_hid_keyboard_decode_state(struct nexus_usb_keyboard_state *state,
+                                     const uint8_t report[8],
+                                     uint16_t *scancodes,
+                                     size_t capacity);
 void usb_hid_keyboard_reset(void);
-/* Capacity is measured in uint16_t output entries, not bytes. */
 size_t usb_hid_keyboard_decode(const uint8_t report[8],
                                uint16_t *scancodes,
                                size_t capacity);

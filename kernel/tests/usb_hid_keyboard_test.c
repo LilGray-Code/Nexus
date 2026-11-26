@@ -109,6 +109,24 @@ static void test_rollover_does_not_poison_state(void) {
     assert(usb_hid_keyboard_decode(report, output, 8U) == 0U);
 }
 
+static void test_independent_keyboard_states(void) {
+    struct nexus_usb_keyboard_state first = {0};
+    struct nexus_usb_keyboard_state second = {0};
+    uint8_t a[8] = {0U,0U,4U,0U,0U,0U,0U,0U};
+    uint8_t b[8] = {0U,0U,5U,0U,0U,0U,0U,0U};
+    uint16_t out[8] = {0U};
+    assert(usb_hid_keyboard_decode_state(&first, a, out, 8U) == 1U);
+    assert(out[0] == 0x1EU);
+    assert(usb_hid_keyboard_decode_state(&second, b, out, 8U) == 1U);
+    assert(out[0] == 0x30U);
+    assert(usb_hid_keyboard_decode_state(&first, a, out, 8U) == 0U);
+    const uint8_t release[8] = {0U};
+    assert(usb_hid_keyboard_decode_state(&second, release, out, 8U) == 1U);
+    assert(out[0] == 0xB0U);
+    usb_hid_keyboard_state_reset(&first);
+    assert(usb_hid_keyboard_decode_state(&first, a, out, 8U) == 1U);
+}
+
 static void test_capacity_and_null_arguments(void) {
     uint8_t report[8] = {0U,0U,4U,5U,6U,7U,8U,9U};
     uint16_t output[2] = {0U};
@@ -201,6 +219,7 @@ int main(void) {
     test_extended_navigation_keypad_and_right_modifiers();
     test_arrows_and_function_keys();
     test_rollover_does_not_poison_state();
+    test_independent_keyboard_states();
     test_capacity_and_null_arguments();
     puts("NEXUS USB HID KEYBOARD DECODER TESTS PASSED");
     return 0;

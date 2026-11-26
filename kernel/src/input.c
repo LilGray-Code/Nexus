@@ -33,6 +33,7 @@ static bool keyboard_e0_prefix;
 static uint8_t keyboard_e1_remaining;
 static bool keyboard_ready;
 static bool mouse_ready;
+static struct nexus_usb_keyboard_state default_input_keyboard_state;
 
 static void queue_event(const struct nexus_input_event *event);
 
@@ -217,6 +218,7 @@ bool input_init(void) {
     mouse_explorer_buttons = false;
     keyboard_e0_prefix = false;
     keyboard_e1_remaining = 0U;
+    usb_hid_keyboard_state_reset(&default_input_keyboard_state);
     keyboard_ready = false;
     mouse_ready = false;
 
@@ -324,11 +326,13 @@ void input_test_mouse_byte(uint8_t value) {
 }
 #endif
 
-void input_usb_keyboard_report(const uint8_t report[8]) {
+void input_usb_keyboard_report_state(struct nexus_usb_keyboard_state *state,
+                                     const uint8_t report[8]) {
+    if (state == NULL || report == NULL) return;
     /* Eight modifier transitions plus six releases and six key makes. */
     uint16_t scancodes[24];
-    const size_t count = usb_hid_keyboard_decode(
-        report, scancodes, sizeof(scancodes) / sizeof(scancodes[0]));
+    const size_t count = usb_hid_keyboard_decode_state(
+        state, report, scancodes, sizeof(scancodes) / sizeof(scancodes[0]));
     const uint64_t interrupt_flags = input_interrupt_save();
     for (size_t i = 0U; i < count; ++i) {
         struct nexus_input_event event = {
@@ -348,6 +352,10 @@ void input_usb_keyboard_report(const uint8_t report[8]) {
     }
 }
 
+void input_usb_keyboard_report(const uint8_t report[8]) {
+    input_usb_keyboard_report_state(&default_input_keyboard_state, report);
+}
+
 bool input_pop_event(struct nexus_input_event *event) {
     if (event == NULL || event_head == event_tail) return false;
     __asm__ volatile ("" : : : "memory");
@@ -357,20 +365,25 @@ bool input_pop_event(struct nexus_input_event *event) {
 }
 
 
-void input_usb_mouse_report(const uint8_t report[3]) {
+void input_usb_mouse_report_sized(const uint8_t *report,
+                                  size_t report_length) {
     struct nexus_usb_mouse_event decoded;
-    if (!usb_hid_mouse_decode(report, &decoded)) return;
-
+    if (!usb_hid_mouse_decode_report(report, report_length, &decoded)) return;
     const uint64_t interrupt_flags = input_interrupt_save();
     const struct nexus_input_event event = {
         .type = NEXUS_INPUT_MOUSE,
         .scancode = 0U,
         .mouse_buttons = decoded.buttons,
         .mouse_dx = decoded.dx,
-        .mouse_dy = decoded.dy
+        .mouse_dy = decoded.dy,
+        .mouse_wheel = decoded.wheel
     };
     queue_event(&event);
     input_interrupt_restore(interrupt_flags);
+}
+
+void input_usb_mouse_report(const uint8_t report[3]) {
+    input_usb_mouse_report_sized(report, 3U);
 }
 
 void input_usb_gamepad_event(const struct nexus_usb_gamepad_event *event) {

@@ -29,6 +29,17 @@ static void test_negative_extreme_is_safe(void) {
     assert(event.dy == 128);
 }
 
+static void test_optional_wheel_report_byte(void) {
+    const uint8_t report[4] = {1U,5U,0xFDU,0xFFU};
+    struct nexus_usb_mouse_event event = {0};
+    assert(usb_hid_mouse_decode_report(report, sizeof(report), &event));
+    assert(event.buttons == 1U && event.dx == 5 && event.dy == 3);
+    assert(event.wheel == -1);
+    assert(usb_hid_mouse_decode_report(report, 3U, &event));
+    assert(event.wheel == 0);
+    assert(!usb_hid_mouse_decode_report(report, 2U, &event));
+}
+
 static void test_invalid_arguments(void) {
     struct nexus_usb_mouse_event event = {0};
     const uint8_t report[3] = {0U, 0U, 0U};
@@ -40,6 +51,7 @@ int main(void) {
     test_signed_motion_and_button_mask();
     test_positive_motion();
     test_negative_extreme_is_safe();
+    test_optional_wheel_report_byte();
     test_invalid_arguments();
     puts("NEXUS USB HID MOUSE DECODER TESTS PASSED");
     return 0;

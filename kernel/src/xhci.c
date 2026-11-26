@@ -16,6 +16,8 @@
 #define XHCI_RING_USABLE        255U
 #define XHCI_MAX_MMIO_PAGES     12U
 #define XHCI_MAX_PORTS          32U
+#define XHCI_MAX_KEYBOARDS       4U
+#define XHCI_MAX_MICE            4U
 #define XHCI_MAX_GAMEPADS        4U
 #define XHCI_MAX_SCRATCHPADS    512U
 #define XHCI_POLL_LIMIT         5000000U
@@ -105,6 +107,7 @@ struct xhci_hid_device {
     uint16_t vendor_id;
     uint16_t product_id;
     struct nexus_usb_gamepad_layout gamepad_layout;
+    struct nexus_usb_keyboard_state keyboard_state;
     uint64_t device_context_physical;
     uint64_t input_context_physical;
     uint64_t report_buffer_physical;
@@ -115,8 +118,6 @@ struct xhci_hid_device {
 
 struct xhci_controller {
     bool initialized;
-    bool keyboard_active;
-    bool mouse_active;
     uint64_t bar_base;
     uint8_t cap_length;
     uint8_t max_slots;
@@ -136,9 +137,8 @@ struct xhci_controller {
     uint64_t erst_physical;
     struct xhci_mmio_mapping mappings[XHCI_MAX_MMIO_PAGES];
     size_t mapping_count;
-    /* One directly attached boot keyboard and one directly attached boot mouse. */
-    struct xhci_hid_device keyboard;
-    struct xhci_hid_device mouse;
+    struct xhci_hid_device keyboards[XHCI_MAX_KEYBOARDS];
+    struct xhci_hid_device mice[XHCI_MAX_MICE];
     struct xhci_hid_device gamepads[XHCI_MAX_GAMEPADS];
 };
 
@@ -951,22 +951,59 @@ static void xhci_release_hid_device(struct xhci_controller *xhci,
     *device = (struct xhci_hid_device){0};
 }
 
+static bool xhci_keyboard_slots_full(const struct xhci_controller *xhci) {
+    if (xhci == NULL) return true;
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
+        if (!xhci->keyboards[i].active) return false;
+    return true;
+}
+
+static bool xhci_mouse_slots_full(const struct xhci_controller *xhci) {
+    if (xhci == NULL) return true;
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
+        if (!xhci->mice[i].active) return false;
+    return true;
+}
+
+static bool xhci_has_keyboard(const struct xhci_controller *xhci) {
+    if (xhci == NULL) return false;
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
+        if (xhci->keyboards[i].active) return true;
+    return false;
+}
+
+static bool xhci_has_mouse(const struct xhci_controller *xhci) {
+    if (xhci == NULL) return false;
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
+        if (xhci->mice[i].active) return true;
+    return false;
+}
+
 static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                                    const struct xhci_hid_device *device) {
     if (xhci == NULL || device == NULL || !device->active) return false;
-    if (device->kind == XHCI_HID_KEYBOARD && !xhci->keyboard_active) {
-        xhci->keyboard = *device;
-        xhci->keyboard_active = true;
-        serial_write("NEXUS USB HID KEYBOARD READY\\r\\n");
-        return true;
-    }
-    if (device->kind == XHCI_HID_MOUSE && !xhci->mouse_active) {
-        xhci->mouse = *device;
-        xhci->mouse_active = true;
-        serial_write("NEXUS USB HID MOUSE READY\\r\\n");
-        return true;
-    }
-    if (device->kind == XHCI_HID_GAMEPAD) {
+    if (device->kind == XHCI_HID_KEYBOARD) {
+        for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i) {
+            if (!xhci->keyboards[i].active) {
+                xhci->keyboards[i] = *device;
+                usb_hid_keyboard_state_reset(&xhci->keyboards[i].keyboard_state);
+                serial_write("NEXUS USB HID KEYBOARD READY slot=");
+                serial_write_hex(device->slot_id);
+                serial_write("\\r\\n");
+                return true;
+            }
+        }
+    } else if (device->kind == XHCI_HID_MOUSE) {
+        for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
+            if (!xhci->mice[i].active) {
+                xhci->mice[i] = *device;
+                serial_write("NEXUS USB HID MOUSE READY slot=");
+                serial_write_hex(device->slot_id);
+                serial_write("\\r\\n");
+                return true;
+            }
+        }
+    } else if (device->kind == XHCI_HID_GAMEPAD) {
         for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {
             if (!xhci->gamepads[i].active) {
                 xhci->gamepads[i] = *device;
@@ -997,6 +1034,21 @@ static void xhci_notify_gamepad_disconnected(
         .hat = 0xFFU
     };
     input_usb_gamepad_event(&event);
+}
+
+static void xhci_drop_hid_device(struct xhci_controller *xhci,
+                                 struct xhci_hid_device *device) {
+    if (xhci == NULL || device == NULL || !device->active) return;
+    if (device->kind == XHCI_HID_KEYBOARD) {
+        const uint8_t release[8] = {0U};
+        input_usb_keyboard_report_state(&device->keyboard_state, release);
+    } else if (device->kind == XHCI_HID_MOUSE) {
+        const uint8_t release[3] = {0U};
+        input_usb_mouse_report(release);
+    } else if (device->kind == XHCI_HID_GAMEPAD) {
+        xhci_notify_gamepad_disconnected(device);
+    }
+    xhci_release_hid_device(xhci, device);
 }
 
 static bool xhci_gamepads_full(const struct xhci_controller *xhci) {
@@ -1146,7 +1198,7 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     xhci->initialized = true;
 
     for (uint8_t port = 1U; port <= xhci->max_ports; ++port) {
-        if (xhci->keyboard_active && xhci->mouse_active &&
+        if (xhci_keyboard_slots_full(xhci) && xhci_mouse_slots_full(xhci) &&
             xhci_gamepads_full(xhci)) break;
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port, &speed)) continue;
@@ -1159,14 +1211,13 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         struct xhci_hid_device device = {0};
         if (!xhci_enumerate_hid_port(xhci, port, speed, &device))
             continue;
-        if (device.kind == XHCI_HID_KEYBOARD) usb_hid_keyboard_reset();
         if (!xhci_attach_hid_device(xhci, &device))
             xhci_release_hid_device(xhci, &device);
     }
     bool any_gamepad = false;
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
         any_gamepad = any_gamepad || xhci->gamepads[i].active;
-    if (!xhci->keyboard_active && !xhci->mouse_active && !any_gamepad) {
+    if (!xhci_has_keyboard(xhci) && !xhci_has_mouse(xhci) && !any_gamepad) {
         serial_write("xHCI: no supported HID input found\\r\\n");
         return false;
     }
@@ -1176,10 +1227,13 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
 
 static bool xhci_device_on_port(const struct xhci_controller *xhci,
                                 uint8_t port_number) {
-    if ((xhci->keyboard_active && xhci->keyboard.active &&
-         xhci->keyboard.port_number == port_number) ||
-        (xhci->mouse_active && xhci->mouse.active &&
-         xhci->mouse.port_number == port_number)) return true;
+    if (xhci == NULL) return false;
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
+        if (xhci->keyboards[i].active &&
+            xhci->keyboards[i].port_number == port_number) return true;
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
+        if (xhci->mice[i].active &&
+            xhci->mice[i].port_number == port_number) return true;
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
         if (xhci->gamepads[i].active &&
             xhci->gamepads[i].port_number == port_number) return true;
@@ -1188,27 +1242,27 @@ static bool xhci_device_on_port(const struct xhci_controller *xhci,
 
 static void xhci_detach_port(struct xhci_controller *xhci,
                              uint8_t port_number) {
-    if (xhci->keyboard_active && xhci->keyboard.active &&
-        xhci->keyboard.port_number == port_number) {
-        /* Synthesize releases so unplugging while a key is held cannot stick. */
-        const uint8_t released_report[8] = {0U};
-        input_usb_keyboard_report(released_report);
-        usb_hid_keyboard_reset();
-        xhci_release_hid_device(xhci, &xhci->keyboard);
-        xhci->keyboard_active = false;
-        serial_write("USB: HID keyboard disconnected from xHCI port ");
-        serial_write_hex(port_number);
-        serial_write("\r\n");
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i) {
+        struct xhci_hid_device *device = &xhci->keyboards[i];
+        if (device->active && device->port_number == port_number) {
+            const uint8_t release[8] = {0U};
+            input_usb_keyboard_report_state(&device->keyboard_state, release);
+            xhci_release_hid_device(xhci, device);
+            serial_write("USB: HID keyboard disconnected from xHCI port ");
+            serial_write_hex(port_number);
+            serial_write("\r\n");
+        }
     }
-    if (xhci->mouse_active && xhci->mouse.active &&
-        xhci->mouse.port_number == port_number) {
-        const uint8_t released_report[3] = {0U};
-        input_usb_mouse_report(released_report);
-        xhci_release_hid_device(xhci, &xhci->mouse);
-        xhci->mouse_active = false;
-        serial_write("USB: HID mouse disconnected from xHCI port ");
-        serial_write_hex(port_number);
-        serial_write("\\r\\n");
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
+        struct xhci_hid_device *device = &xhci->mice[i];
+        if (device->active && device->port_number == port_number) {
+            const uint8_t release[3] = {0U};
+            input_usb_mouse_report(release);
+            xhci_release_hid_device(xhci, device);
+            serial_write("USB: HID mouse disconnected from xHCI port ");
+            serial_write_hex(port_number);
+            serial_write("\r\n");
+        }
     }
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {
         if (xhci->gamepads[i].active &&
@@ -1248,7 +1302,6 @@ static void xhci_handle_port_status_change(struct xhci_controller *xhci,
     if (!xhci_enumerate_hid_port(xhci, port_number, speed, &device))
         return;
 
-    if (device.kind == XHCI_HID_KEYBOARD) usb_hid_keyboard_reset();
     if (!xhci_attach_hid_device(xhci, &device))
         xhci_release_hid_device(xhci, &device);
 }
@@ -1267,13 +1320,11 @@ bool xhci_init(void) {
 }
 
 bool xhci_keyboard_ready(void) {
-    return controller.initialized && controller.keyboard_active &&
-           controller.keyboard.active;
+    return controller.initialized && xhci_has_keyboard(&controller);
 }
 
 bool xhci_mouse_ready(void) {
-    return controller.initialized && controller.mouse_active &&
-           controller.mouse.active;
+    return controller.initialized && xhci_has_mouse(&controller);
 }
 
 bool xhci_gamepads_ready(void) {
@@ -1299,46 +1350,46 @@ void xhci_poll(void) {
         const uint8_t endpoint =
             (uint8_t)((event.control >> 16) & 0x1FU);
         struct xhci_hid_device *device = NULL;
-        if (xhci->keyboard_active &&
-            slot == xhci->keyboard.slot_id &&
-            endpoint == xhci->keyboard.endpoint_id) {
-            device = &xhci->keyboard;
-        } else if (xhci->mouse_active &&
-                   slot == xhci->mouse.slot_id &&
-                   endpoint == xhci->mouse.endpoint_id) {
-            device = &xhci->mouse;
-        } else {
-            for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {
-                if (xhci->gamepads[i].active &&
-                    slot == xhci->gamepads[i].slot_id &&
-                    endpoint == xhci->gamepads[i].endpoint_id) {
-                    device = &xhci->gamepads[i];
-                    break;
-                }
-            }
+        for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS && device == NULL; ++i) {
+            if (xhci->keyboards[i].active &&
+                slot == xhci->keyboards[i].slot_id &&
+                endpoint == xhci->keyboards[i].endpoint_id)
+                device = &xhci->keyboards[i];
+        }
+        for (size_t i = 0U; i < XHCI_MAX_MICE && device == NULL; ++i) {
+            if (xhci->mice[i].active &&
+                slot == xhci->mice[i].slot_id &&
+                endpoint == xhci->mice[i].endpoint_id)
+                device = &xhci->mice[i];
+        }
+        for (size_t i = 0U; i < XHCI_MAX_GAMEPADS && device == NULL; ++i) {
+            if (xhci->gamepads[i].active &&
+                slot == xhci->gamepads[i].slot_id &&
+                endpoint == xhci->gamepads[i].endpoint_id)
+                device = &xhci->gamepads[i];
         }
         if (device == NULL || !device->active) continue;
 
         const uint8_t code = xhci_event_code(&event);
         if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
-            if (device->kind == XHCI_HID_KEYBOARD) {
-                input_usb_keyboard_report(
-                    (const uint8_t *)(uintptr_t)device->report_buffer);
-            } else if (device->kind == XHCI_HID_MOUSE) {
-                input_usb_mouse_report(
-                    (const uint8_t *)(uintptr_t)device->report_buffer);
-            } else if (device->kind == XHCI_HID_GAMEPAD) {
-                const uint32_t residual = event.status & 0x00FFFFFFU;
-                if (residual <= device->max_packet) {
+            const uint32_t residual = event.status & 0x00FFFFFFU;
+            if (residual <= device->max_packet) {
+                const size_t received = (size_t)device->max_packet - residual;
+                const uint8_t *report =
+                    (const uint8_t *)(uintptr_t)device->report_buffer;
+                if (device->kind == XHCI_HID_KEYBOARD) {
+                    if (received >= 8U)
+                        input_usb_keyboard_report_state(&device->keyboard_state,
+                                                        report);
+                } else if (device->kind == XHCI_HID_MOUSE) {
+                    if (received >= 3U)
+                        input_usb_mouse_report_sized(report, received);
+                } else if (device->kind == XHCI_HID_GAMEPAD) {
                     struct nexus_usb_gamepad_event gamepad_event;
-                    const size_t received =
-                        (size_t)device->max_packet - residual;
                     if (usb_hid_gamepad_decode(&device->gamepad_layout,
-                            (const uint8_t *)(uintptr_t)device->report_buffer,
-                            received, device->slot_id, device->vendor_id,
-                            device->product_id, &gamepad_event)) {
+                            report, received, device->slot_id, device->vendor_id,
+                            device->product_id, &gamepad_event))
                         input_usb_gamepad_event(&gamepad_event);
-                    }
                 }
             }
         } else {
@@ -1349,13 +1400,7 @@ void xhci_poll(void) {
                 : "xHCI: USB gamepad transfer failed; code=");
             serial_write_hex(code);
             serial_write("\r\n");
-            device->active = false;
-            if (device->kind == XHCI_HID_KEYBOARD)
-                xhci->keyboard_active = false;
-            else if (device->kind == XHCI_HID_MOUSE)
-                xhci->mouse_active = false;
-            else
-                xhci_notify_gamepad_disconnected(device);
+            xhci_drop_hid_device(xhci, device);
             continue;
         }
         if (!xhci_schedule_interrupt_read(xhci, device)) {
@@ -1364,13 +1409,7 @@ void xhci_poll(void) {
                 : device->kind == XHCI_HID_MOUSE
                 ? "xHCI: unable to re-arm USB mouse endpoint\\r\\n"
                 : "xHCI: unable to re-arm USB gamepad endpoint\\r\\n");
-            device->active = false;
-            if (device->kind == XHCI_HID_KEYBOARD)
-                xhci->keyboard_active = false;
-            else if (device->kind == XHCI_HID_MOUSE)
-                xhci->mouse_active = false;
-            else
-                xhci_notify_gamepad_disconnected(device);
+            xhci_drop_hid_device(xhci, device);
         }
     }
 }

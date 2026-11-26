@@ -515,7 +515,7 @@ bool nxfs_write_file_install(
         nxfs_mounted || !nxfs_partition_type_matches(partition) ||
         partition->first_lba > partition->last_lba ||
         partition->last_lba >= device->block_count ||
-        length > nxfs_max_file_bytes ||
+        length > NEXUS_NXFS_MAX_FILE_BYTES ||
         !blockdev_install_session_begin(device, typed_stable_id,
                                         typed_erase_phrase))
         return false;

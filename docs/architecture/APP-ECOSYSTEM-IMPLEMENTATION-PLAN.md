@@ -22,6 +22,12 @@ The metadata API supports category/search filtering and stable ID lookup. The de
 
 This is a signed catalogue parser and planner, not a hosted public repository or a ratings service. The caller must supply a real Ed25519 verifier connected to pinned repository keys. Host tests use a deterministic test-only verifier; it is not suitable for production.
 
+### Authenticated HTTPS package source
+
+`kernel/src/download_https.c` adapts the download manager to Nexus's verified HTTPS/TLS 1.3 client and built-in Mozilla CA roots. It accepts only HTTPS host/path URLs on port 443, rejects redirects and chunked/ambiguous responses, requires HTTP 200 with an exact Content-Length matching the signed repository size, and streams body bytes without holding the complete object in memory. It preserves pause/resume on the existing connection; retry creates a fresh TLS connection and starts from byte zero. URL parsing, partial header reads, request construction, TLS-verification rejection and HTTP framing are covered by host tests with a mock TLS transport.
+
+The adapter depends on the TLS-enabled kernel build and usable network/CA initialization at runtime. In a TLS-disabled build, the HTTPS stubs fail closed. It does not implement redirects, range requests, concurrent downloads or chunked package responses.
+
 ### Large streaming downloads
 
 \`kernel/src/download_manager.c\` adds a single-transfer NXFS streaming manager. It:

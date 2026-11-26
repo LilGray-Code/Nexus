@@ -128,8 +128,11 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   single-output resolution changes when EDID timings exist: it accepts only
   modes fitting the preallocated shared framebuffer and matching the selected
   monitor's EDID refresh rate, issues SET_SCANOUT, and checks the resulting
-  dimensions with a fresh GET_DISPLAY_INFO response. This does not set or
-  verify a new refresh clock; alternative refresh-rate switching is unavailable.
+  dimensions with a fresh GET_DISPLAY_INFO response. This changes the
+  VirtIO scanout rectangle within the preallocated resource; the host may keep
+  the physical monitor timing and scale that source rectangle to the output.
+  It does not set or verify a new refresh clock; alternative refresh-rate
+  switching and native physical-monitor modesetting are unavailable.
   Multi-output independent mode setting and native Intel/AMD/NVIDIA modeset
   drivers are not implemented. EDID HDR static metadata is discovery only;
   there is no HDR desktop color pipeline or HDR scanout implementation.

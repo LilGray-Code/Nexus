@@ -1,4 +1,4 @@
-name: Nexus system settings regression tests
+name: Nexus hardware, settings and kernel regression tests
 
 on:
   push:
@@ -10,6 +10,12 @@ on:
       - "kernel/src/display.c"
       - "kernel/src/display.h"
       - "kernel/src/desktop.c"
+      - "kernel/src/cpu.c"
+      - "kernel/src/cpu.h"
+      - "kernel/src/gpu.c"
+      - "kernel/src/gpu.h"
+      - "kernel/tests/cpu_test.c"
+      - "kernel/tests/gpu_test.c"
       - "kernel/src/memory.c"
       - "kernel/src/memory.h"
       - "kernel/tests/memory_smp_test.c"
@@ -27,7 +33,7 @@ permissions:
 
 jobs:
   settings-host-tests:
-    name: Settings persistence and validation
+    name: Hardware inventory and system regression tests
     runs-on: ubuntu-24.04
     steps:
       - name: Check out Nexus
@@ -49,6 +55,20 @@ jobs:
             -Ikernel/include -Ikernel/src kernel/src/display.c \
             kernel/tests/display_test.c -o /tmp/nexus-display-test
           /tmp/nexus-display-test
+
+      - name: Test CPU vendor, hybrid-core and power capability discovery
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -Ikernel/src kernel/src/cpu.c kernel/tests/cpu_test.c \
+            -o /tmp/nexus-cpu-test
+          /tmp/nexus-cpu-test
+
+      - name: Test GPU family identification and PCI BAR inventory
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/gpu.c kernel/tests/gpu_test.c \
+            -o /tmp/nexus-gpu-test
+          /tmp/nexus-gpu-test
 
       - name: Stress the SMP-safe physical page allocator
         run: |

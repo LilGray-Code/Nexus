@@ -93,6 +93,10 @@ int main(void) {
     memcpy(edid, header, sizeof(header));
     edid[18] = 1U;
     edid[19] = 4U;
+    edid[21] = 53U; /* 530 mm physical width. */
+    edid[22] = 30U; /* 300 mm physical height. */
+    edid[38] = 129U; /* 1280 pixels, 16:10, 60 Hz standard timing. */
+    edid[39] = 0U;
     edid[126] = 1U;
 
     /* Monitor name descriptor. */
@@ -154,14 +158,17 @@ int main(void) {
     assert(info->edid_extensions_complete);
     assert(info->monitor_name_valid);
     assert(strcmp(info->monitor_name, "NEXUS PANEL") == 0);
-    assert(info->timing_count == 1U);
+    assert(info->timing_count == 2U);
     assert(info->timings[0].width == 1920U);
     assert(info->timings[0].height == 1080U);
     assert(info->timings[0].refresh_hz == 60U);
+    assert(info->timings[1].width == 1280U);
+    assert(info->timings[1].height == 800U);
+    assert(info->timings[1].refresh_hz == 60U);
     assert(nexus_display_hdr_monitor_supported());
     assert(!nexus_display_hdr_output_available());
     assert(info->firmware_mode_count == 2U);
-    assert(info->mode_count == 3U); /* Two firmware modes plus active boot mode. */
+    assert(info->mode_count == 4U); /* Firmware, active and EDID standard modes. */
     assert(info->modes[0].refresh_hz == 60U);
     assert(info->modes[0].edid_timing);
     assert(!info->mode_set_available);

@@ -112,3 +112,8 @@ The metadata assessment API combines the hardware-ID match from the INF with ins
 
 
 The PCI wireless inventory now exposes a per-adapter package assessment entry point. It builds the hardware identity from the discovered PCI function and feeds that identity, the Windows INF, and its candidate `.sys` image into the combined assessor. This connects package inspection to the actual enumerated adapter; it still does not bind the adapter or activate the driver.
+
+
+## Windows NDIS driver compatibility boundary
+
+Nexus now has a bounded Windows PE/INF assessment path and an NDIS adapter lifecycle contract. The lifecycle tracks discovery, package validation, image-mapped, initialization, running, halt, stopped, and failure states; it rejects out-of-order transitions and records initialization/halt status. It is groundwork for a future isolated miniport host, not an NDIS implementation: Nexus still has no PE image mapper/relocator, Windows kernel API shims, NDIS ABI structures/callback dispatcher, IRQL model, DMA-safe packet buffers, or firmware/power-management integration. The IMAGE_MAPPED transition is an explicit future-loader boundary and must only be called after a real loader has completed validation and mapping. No Windows .sys driver is executed by this state machine.

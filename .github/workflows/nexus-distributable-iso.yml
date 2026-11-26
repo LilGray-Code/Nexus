@@ -47,7 +47,7 @@ jobs:
             -o /tmp/nexus-app-store-test
           /tmp/nexus-app-store-test
           grep -q "NATIVE APPS + POPULAR PRODUCTIVITY / WEB APPS" kernel/src/desktop.c
-          grep -q "verified system-pack demos can now be launched directly from the Store" README.md
+          grep -q "Store is not yet connected to this package pipeline" README.md
 
       - name: Test signed package and catalog parser contracts
         shell: bash

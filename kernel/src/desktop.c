@@ -4053,10 +4053,10 @@ static bool browser_content_type_is_binary_download(
          ++i) {
         const char *prefix = document_types[i];
         size_t j = 0U;
-        while (prefix[j] != '\\0' && type[j] != '\\0' &&
+        while (prefix[j] != '\0' && type[j] != '\0' &&
                browser_ascii_lower(type[j]) ==
                browser_ascii_lower(prefix[j])) ++j;
-        if (prefix[j] == '\\0') return false;
+        if (prefix[j] == '\0') return false;
     }
     return true;
 }
@@ -4178,7 +4178,7 @@ static bool browser_https_stream_large_download(
 
     for (size_t i = 0U; i < sizeof(browser_download_name); ++i) {
         browser_download_name[i] = target[i];
-        if (target[i] == '\\0') break;
+        if (target[i] == '\0') break;
     }
     browser_download_length = expected;
     browser_download_ready = false;

@@ -148,8 +148,6 @@ void exception_dispatch(const struct interrupt_frame *frame) {
         usermode_is_active() &&
         usermode_report_exception(frame->vector, frame->error_code,
                                   frame->instruction_pointer)) {
-        struct interrupt_frame *mutable_frame =
-            (struct interrupt_frame *)(uintptr_t)frame;
         serial_write("\\r\\nNEXUS APPLICATION CRASH: vector=");
         serial_write_hex(frame->vector);
         serial_write(" error=");
@@ -157,17 +155,11 @@ void exception_dispatch(const struct interrupt_frame *frame) {
         serial_write(" ip=");
         serial_write_hex(frame->instruction_pointer);
         serial_write("\\r\\n");
-
-        /* Return through the exact trampoline used by SYS_EXIT. It restores
-         * the parent kernel CR3 and stack; the process manager then reclaims
-         * the isolated address space and records the exception.
+        /* exception_common consumes this flag and jumps, rather than iretq,
+         * to the same ring-0 trampoline used by SYS_EXIT. A same-CPL IRETQ
+         * would not pop the privilege-transition RSP/SS slots.
          */
-        mutable_frame->instruction_pointer =
-            (uint64_t)(uintptr_t)nexus_user_return;
-        mutable_frame->code_segment = 0x08U;
-        mutable_frame->user_stack_pointer = gdt_get_kernel_stack();
-        mutable_frame->user_stack_segment = 0x10U;
-        mutable_frame->flags &= ~0x200ULL;
+        usermode_exception_recovered = true;
         return;
     }
 

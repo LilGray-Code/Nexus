@@ -75,6 +75,8 @@ static char usermode_output_buffer[NEXUS_USERMODE_OUTPUT_MAX];
 static size_t usermode_output_length;
 static bool usermode_output_truncated;
 static uint32_t active_app_permissions;
+static bool active_app_execution;
+static struct nexus_usermode_fault_info active_app_fault;
 
 static bool usermode_permission_allowed(uint32_t permission) {
     return (active_app_permissions & permission) == permission;
@@ -86,6 +88,28 @@ uint32_t usermode_current_permissions(void) {
 
 int64_t usermode_sys_app_permissions(void) {
     return (int64_t)active_app_permissions;
+}
+
+bool usermode_is_active(void) {
+    return active_app_execution;
+}
+
+bool usermode_report_exception(uint64_t vector, uint64_t error_code,
+                               uint64_t instruction_pointer) {
+    if (!active_app_execution || active_app_fault.faulted) return false;
+    active_app_fault.faulted = true;
+    active_app_fault.vector = vector;
+    active_app_fault.error_code = error_code;
+    active_app_fault.instruction_pointer = instruction_pointer;
+    usermode_exit_status = UINT64_MAX;
+    usermode_exit_seen = true;
+    return true;
+}
+
+bool usermode_get_fault_info(struct nexus_usermode_fault_info *info) {
+    if (info == NULL) return false;
+    *info = active_app_fault;
+    return active_app_fault.faulted;
 }
 
 static void usermode_output_reset(void) {
@@ -315,13 +339,16 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
     usermode_exit_status = UINT64_MAX;
     usermode_exit_seen = false;
     usermode_write_rejected = false;
+    active_app_fault = (struct nexus_usermode_fault_info){0};
     active_app_permissions = permissions;
+    active_app_execution = true;
 
     nexus_enter_user(root_physical, entry_point, stack_pointer,
                      kernel_stack_top);
 
     const bool exited = usermode_exit_seen;
     const uint64_t status = usermode_exit_status;
+    active_app_execution = false;
     const bool fpu_restored = nexus_fpu_user_end();
     usermode_close_all_files();
     active_app_permissions = 0U;

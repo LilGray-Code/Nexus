@@ -27,6 +27,7 @@ static const struct nexus_block_device *nxfs_device;
 static struct nexus_gpt_partition nxfs_partition;
 static uint32_t nxfs_block_size;
 static uint32_t nxfs_blocks_per_slot;
+static uint32_t nxfs_max_file_bytes;
 static bool nxfs_mounted;
 static bool nxfs_busy;
 static bool nxfs_install_authorized;
@@ -254,7 +255,7 @@ static bool decode_entry(const uint8_t record[NXFS_ENTRY_BYTES],
     entry->data_crc = read_le32(record + 16U);
     entry->generation = read_le64(record + 20U);
     if (!entry->used) return true;
-    if (entry->size > NEXUS_NXFS_MAX_FILE_BYTES ||
+    if (entry->size > nxfs_max_file_bytes ||
         record[10] == 0U) return false;
 
     char raw_name[NEXUS_NXFS_NAME_MAX];
@@ -305,7 +306,7 @@ static void encode_superblock(uint8_t *buffer, uint64_t partition_blocks) {
     write_le32(buffer + 8U, 2U);
     write_le32(buffer + 12U, nxfs_block_size);
     write_le32(buffer + 16U, NEXUS_NXFS_MAX_FILES);
-    write_le32(buffer + 20U, NEXUS_NXFS_MAX_FILE_BYTES);
+    write_le32(buffer + 20U, nxfs_max_file_bytes);
     write_le64(buffer + 24U, partition_blocks);
     write_le32(buffer + 32U, NXFS_METADATA_LBA);
     write_le32(buffer + 36U, NXFS_DATA_LBA);
@@ -314,17 +315,32 @@ static void encode_superblock(uint8_t *buffer, uint64_t partition_blocks) {
 }
 
 static bool validate_superblock(const uint8_t *buffer,
-                                uint64_t partition_blocks) {
-    return equal_bytes(buffer, (const uint8_t *)super_magic, 8U) &&
-        read_le32(buffer + 8U) == 2U &&
-        read_le32(buffer + 12U) == nxfs_block_size &&
-        read_le32(buffer + 16U) == NEXUS_NXFS_MAX_FILES &&
-        read_le32(buffer + 20U) == NEXUS_NXFS_MAX_FILE_BYTES &&
-        read_le64(buffer + 24U) == partition_blocks &&
-        read_le32(buffer + 32U) == NXFS_METADATA_LBA &&
-        read_le32(buffer + 36U) == NXFS_DATA_LBA &&
-        read_le32(buffer + 40U) == nxfs_blocks_per_slot &&
-        read_le32(buffer + 60U) == crc32_bytes(buffer, 60U);
+                                uint64_t partition_blocks,
+                                uint32_t *max_file_bytes,
+                                uint32_t *blocks_per_slot) {
+    if (buffer == NULL || max_file_bytes == NULL ||
+        blocks_per_slot == NULL) return false;
+    const uint32_t stored_limit = read_le32(buffer + 20U);
+    if (stored_limit != NEXUS_NXFS_MAX_FILE_BYTES &&
+        stored_limit != NEXUS_NXFS_LEGACY_FILE_BYTES) return false;
+    const uint32_t stored_blocks =
+        (stored_limit + nxfs_block_size - 1U) / nxfs_block_size;
+    const uint64_t required_blocks = (uint64_t)NXFS_DATA_LBA +
+        (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * stored_blocks;
+    if (partition_blocks < required_blocks ||
+        read_le32(buffer + 40U) != stored_blocks ||
+        !equal_bytes(buffer, (const uint8_t *)super_magic, 8U) ||
+        read_le32(buffer + 8U) != 2U ||
+        read_le32(buffer + 12U) != nxfs_block_size ||
+        read_le32(buffer + 16U) != NEXUS_NXFS_MAX_FILES ||
+        read_le64(buffer + 24U) != partition_blocks ||
+        read_le32(buffer + 32U) != NXFS_METADATA_LBA ||
+        read_le32(buffer + 36U) != NXFS_DATA_LBA ||
+        read_le32(buffer + 60U) != crc32_bytes(buffer, 60U))
+        return false;
+    *max_file_bytes = stored_limit;
+    *blocks_per_slot = stored_blocks;
+    return true;
 }
 
 static bool write_entry_to_disk(size_t slot,
@@ -420,17 +436,28 @@ bool nxfs_format(const struct nexus_block_device *device,
     nxfs_device = device;
     nxfs_partition = *partition;
     nxfs_block_size = device->block_size;
-    nxfs_blocks_per_slot =
-        (NEXUS_NXFS_MAX_FILE_BYTES + nxfs_block_size - 1U) /
-        nxfs_block_size;
     const uint64_t partition_blocks =
         partition->last_lba - partition->first_lba + 1U;
-    const uint64_t required_blocks =
-        (uint64_t)NXFS_DATA_LBA +
-        (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * nxfs_blocks_per_slot;
-    if (nxfs_block_size > NXFS_BLOCK_MAX ||
-        partition_blocks < required_blocks) {
+    if (nxfs_block_size > NXFS_BLOCK_MAX) {
         nxfs_device = NULL;
+        return false;
+    }
+    nxfs_max_file_bytes = NEXUS_NXFS_MAX_FILE_BYTES;
+    nxfs_blocks_per_slot =
+        (nxfs_max_file_bytes + nxfs_block_size - 1U) / nxfs_block_size;
+    uint64_t required_blocks = (uint64_t)NXFS_DATA_LBA +
+        (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * nxfs_blocks_per_slot;
+    if (partition_blocks < required_blocks) {
+        nxfs_max_file_bytes = NEXUS_NXFS_LEGACY_FILE_BYTES;
+        nxfs_blocks_per_slot =
+            (nxfs_max_file_bytes + nxfs_block_size - 1U) / nxfs_block_size;
+        required_blocks = (uint64_t)NXFS_DATA_LBA +
+            (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * nxfs_blocks_per_slot;
+    }
+    if (partition_blocks < required_blocks) {
+        nxfs_device = NULL;
+        nxfs_max_file_bytes = 0U;
+        nxfs_blocks_per_slot = 0U;
         return false;
     }
 
@@ -488,7 +515,7 @@ bool nxfs_write_file_install(
         nxfs_mounted || !nxfs_partition_type_matches(partition) ||
         partition->first_lba > partition->last_lba ||
         partition->last_lba >= device->block_count ||
-        length > NEXUS_NXFS_MAX_FILE_BYTES ||
+        length > nxfs_max_file_bytes ||
         !blockdev_install_session_begin(device, typed_stable_id,
                                         typed_erase_phrase))
         return false;
@@ -550,16 +577,9 @@ bool nxfs_mount(const struct nexus_block_device *device,
     nxfs_device = device;
     nxfs_partition = *partition;
     nxfs_block_size = device->block_size;
-    nxfs_blocks_per_slot =
-        (NEXUS_NXFS_MAX_FILE_BYTES + nxfs_block_size - 1U) /
-        nxfs_block_size;
     const uint64_t partition_blocks =
         partition->last_lba - partition->first_lba + 1U;
-    const uint64_t required_blocks =
-        (uint64_t)NXFS_DATA_LBA +
-        (uint64_t)NEXUS_NXFS_MAX_FILES * 2U * nxfs_blocks_per_slot;
-    if (partition_blocks < required_blocks ||
-        nxfs_block_size > NXFS_BLOCK_MAX) {
+    if (nxfs_block_size > NXFS_BLOCK_MAX) {
         nxfs_device = NULL;
         return false;
     }
@@ -568,10 +588,12 @@ bool nxfs_mount(const struct nexus_block_device *device,
     uint8_t super_b[NXFS_BLOCK_MAX];
     const bool read_a = nxfs_read_block(NXFS_SUPERBLOCK_A, super_a);
     const bool read_b = nxfs_read_block(NXFS_SUPERBLOCK_B, super_b);
+    uint32_t max_a = 0U, max_b = 0U;
+    uint32_t blocks_a = 0U, blocks_b = 0U;
     const bool valid_a = read_a &&
-        validate_superblock(super_a, partition_blocks);
+        validate_superblock(super_a, partition_blocks, &max_a, &blocks_a);
     const bool valid_b = read_b &&
-        validate_superblock(super_b, partition_blocks);
+        validate_superblock(super_b, partition_blocks, &max_b, &blocks_b);
     if (!valid_a && !valid_b) {
         nxfs_device = NULL;
         return false;
@@ -580,6 +602,8 @@ bool nxfs_mount(const struct nexus_block_device *device,
         nxfs_device = NULL;
         return false;
     }
+    nxfs_max_file_bytes = valid_a ? max_a : max_b;
+    nxfs_blocks_per_slot = valid_a ? blocks_a : blocks_b;
 
     bool override_valid = false;
     size_t override_slot = 0U;
@@ -630,6 +654,10 @@ bool nxfs_is_writable(void) {
         return true;
     return blockdev_nexus_data_write_is_enabled(nxfs_device,
         nxfs_partition.first_lba, nxfs_partition.last_lba);
+}
+
+uint32_t nxfs_get_max_file_bytes(void) {
+    return nxfs_mounted ? nxfs_max_file_bytes : 0U;
 }
 
 size_t nxfs_entry_count(void) {
@@ -687,7 +715,7 @@ bool nxfs_read_file(const struct nexus_nxfs_entry *entry,
 bool nxfs_write_file(const char *name, const void *data, size_t length) {
     char normalized[NEXUS_NXFS_NAME_MAX];
     if (!nxfs_mounted || nxfs_busy || !nxfs_is_writable() ||
-        length > NEXUS_NXFS_MAX_FILE_BYTES ||
+        length > nxfs_max_file_bytes ||
         (length != 0U && data == NULL) ||
         !normalize_name(name, normalized) ||
         !parent_directory_exists(normalized)) return false;
@@ -803,7 +831,7 @@ bool nxfs_copy_file(const char *source_name, const char *destination_name) {
     if (destination_slot >= NEXUS_NXFS_MAX_FILES) return false;
 
     const struct nexus_nxfs_entry *original = &nxfs_entries[source_slot];
-    if (original->size > NEXUS_NXFS_MAX_FILE_BYTES || original->bank > 1U)
+    if (original->size > nxfs_max_file_bytes || original->bank > 1U)
         return false;
 
     nxfs_busy = true;
@@ -910,7 +938,7 @@ static bool stage_journal_only(const char *name, const void *data,
                                size_t length) {
     char normalized[NEXUS_NXFS_NAME_MAX];
     if (!nxfs_is_writable() || !normalize_name(name, normalized) ||
-        length > NEXUS_NXFS_MAX_FILE_BYTES || (length != 0U && data == NULL))
+        length > nxfs_max_file_bytes || (length != 0U && data == NULL))
         return false;
 
     size_t slot = NEXUS_NXFS_MAX_FILES;

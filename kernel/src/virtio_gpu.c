@@ -1305,9 +1305,17 @@ bool virtio_gpu_display_verify_mode(uint32_t scanout_id,
         offset + sizeof(struct virtio_gpu_display_one) > response_length)
         return false;
 
-    return read_le32(response + offset + 16U) != 0U &&
-           read_le32(response + offset + 8U) == width &&
-           read_le32(response + offset + 12U) == height;
+    const bool verified =
+        read_le32(response + offset + 16U) != 0U &&
+        read_le32(response + offset + 8U) == width &&
+        read_le32(response + offset + 12U) == height;
+    if (!verified) return false;
+
+    display_inventory.scanouts[scanout_id].width = width;
+    display_inventory.scanouts[scanout_id].height = height;
+    current_scanout_rect_width[scanout_id] = width;
+    current_scanout_rect_height[scanout_id] = height;
+    return true;
 }
 
 bool virtio_gpu_display_set_topology(uint32_t topology) {

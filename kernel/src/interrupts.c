@@ -318,6 +318,7 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
         const uint8_t irq = (uint8_t)(frame->vector - 32);
         if (irq == 0) {
             timer_interrupt_tick();
+            scheduler_timer_tick(timer_ticks());
         } else if (irq == 1) {
             input_keyboard_interrupt();
         } else if (irq == 12) {

@@ -94,7 +94,9 @@ static bool parse_imports(const struct pe_view *view, uint32_t import_rva,
     while (consumed + PE_IMPORT_DESCRIPTOR_SIZE <= import_size &&
            info->import_module_count < PE_MAX_IMPORT_DESCRIPTORS) {
         size_t descriptor_offset;
-        if (!rva_to_offset(view, import_rva + consumed,
+        const uint64_t descriptor_rva = (uint64_t)import_rva + consumed;
+        if (descriptor_rva > UINT32_MAX ||
+            !rva_to_offset(view, (uint32_t)descriptor_rva,
                            PE_IMPORT_DESCRIPTOR_SIZE, &descriptor_offset))
             return false;
         const uint8_t *d = view->bytes + descriptor_offset;
@@ -153,7 +155,8 @@ static bool parse_imports(const struct pe_view *view, uint32_t import_rva,
 
 bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
                           struct nexus_win_pe_info *info) {
-    if (file_data == NULL || info == NULL || file_size < PE_DOS_HEADER_MIN)
+    if (file_data == NULL || info == NULL || file_size < PE_DOS_HEADER_MIN ||
+        file_size > UINT32_MAX)
         return false;
     *info = (struct nexus_win_pe_info){0};
     const uint8_t *bytes = (const uint8_t *)file_data;
@@ -184,7 +187,7 @@ bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
     const uint16_t subsystem = read16(bytes + optional + 68U);
     const uint16_t dll_characteristics = read16(bytes + optional + 70U);
     const uint32_t directory_count = read32(bytes + optional + 108U);
-    if (image_base == 0U || section_alignment == 0U ||
+    if (image_base == 0U || entry == 0U || section_alignment == 0U ||
         file_alignment == 0U || image_size == 0U ||
         headers_size == 0U || headers_size > file_size ||
         section_alignment < file_alignment ||
@@ -198,6 +201,21 @@ bool nexus_win_pe_inspect(const void *file_data, size_t file_size,
     const size_t section_bytes = (size_t)sections * PE_SECTION_HEADER_SIZE;
     if (!range_ok(file_size, section_offset, section_bytes) ||
         section_offset + section_bytes > headers_size) return false;
+
+    for (uint32_t i = 0U; i < sections; ++i) {
+        const size_t at = section_offset + (size_t)i * PE_SECTION_HEADER_SIZE;
+        const uint32_t virtual_size = read32(bytes + at + 8U);
+        const uint32_t virtual_address = read32(bytes + at + 12U);
+        const uint32_t raw_size = read32(bytes + at + 16U);
+        const uint32_t raw_offset = read32(bytes + at + 20U);
+        const uint32_t span = virtual_size > raw_size ? virtual_size : raw_size;
+        if ((raw_size != 0U &&
+             (!range_ok(file_size, raw_offset, raw_size) ||
+              raw_offset < headers_size || raw_offset % file_alignment != 0U)) ||
+            virtual_address >= image_size ||
+            (uint64_t)virtual_address + span > image_size ||
+            virtual_address % section_alignment != 0U) return false;
+    }
 
     struct pe_view view = {
         .bytes = bytes, .size = file_size, .headers_size = headers_size,

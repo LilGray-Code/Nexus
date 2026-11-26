@@ -48,9 +48,9 @@ static void force_legacy_superblocks(void) {
     for (uint64_t lba = 0U; lba < 2U; ++lba) {
         struct sparse_block *block = find_block(lba, false);
         assert(block != NULL);
-        test_write_le32(block->data + 20U, NEXUS_NXFS_LEGACY_FILE_BYTES);
+        test_write_le32(block->data + 20U, NEXUS_NXFS_OLD_FILE_BYTES);
         test_write_le32(block->data + 40U,
-            NEXUS_NXFS_LEGACY_FILE_BYTES / TEST_BLOCK_SIZE);
+            NEXUS_NXFS_OLD_FILE_BYTES / TEST_BLOCK_SIZE);
         test_write_le32(block->data + 60U,
                         test_crc32(block->data, 60U));
     }
@@ -183,9 +183,9 @@ int main(void) {
     /* Existing 1 MiB filesystems must keep their original slot geometry. */
     force_legacy_superblocks();
     assert(nxfs_mount(&device, &partition));
-    assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_LEGACY_FILE_BYTES);
+    assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_OLD_FILE_BYTES);
     assert(!nxfs_write_file("TOO.BIG", NULL,
-                           (size_t)NEXUS_NXFS_LEGACY_FILE_BYTES + 1U));
+                           (size_t)NEXUS_NXFS_OLD_FILE_BYTES + 1U));
 
     /* A Data partition too small for 4 MiB slots still formats as legacy. */
     struct nexus_gpt_partition smaller_partition = partition;
@@ -198,6 +198,44 @@ int main(void) {
     /* Restore a large test partition and verify the new 4 MiB format. */
     assert(nxfs_format(&device, &partition));
     assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_MAX_FILE_BYTES);
+    static const uint8_t streamed_payload[] =
+        "A streamed file is committed only when every byte is received.";
+    assert(nxfs_write_file_begin("STREAM.BIN",
+                                  sizeof(streamed_payload) - 1U));
+    assert(nxfs_write_file_append(streamed_payload, 7U));
+    assert(nxfs_write_file_append(streamed_payload + 7U,
+                                  sizeof(streamed_payload) - 1U - 7U));
+    assert(nxfs_write_file_finish());
+    const struct nexus_nxfs_entry *stream_entry = NULL;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && strcmp(entry->name, "STREAM.BIN") == 0)
+            stream_entry = entry;
+    }
+    assert(stream_entry != NULL);
+    uint8_t stream_readback[sizeof(streamed_payload)];
+    assert(nxfs_read_file(stream_entry, 0U, stream_entry->size,
+                          stream_readback));
+    assert(memcmp(stream_readback, streamed_payload,
+                  sizeof(streamed_payload) - 1U) == 0);
+
+    /* An interrupted replacement only touches the inactive data bank. */
+    assert(nxfs_write_file_begin("STREAM.BIN", 4U));
+    assert(nxfs_write_file_append("PART", 4U));
+    nxfs_write_file_abort();
+    stream_entry = NULL;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && strcmp(entry->name, "STREAM.BIN") == 0)
+            stream_entry = entry;
+    }
+    assert(stream_entry != NULL &&
+           stream_entry->size == sizeof(streamed_payload) - 1U);
+    assert(nxfs_read_file(stream_entry, 0U, stream_entry->size,
+                          stream_readback));
+    assert(memcmp(stream_readback, streamed_payload,
+                  sizeof(streamed_payload) - 1U) == 0);
+
     assert(!nxfs_create_directory("MISSING/CHILD"));
     assert(!nxfs_create_directory("DOCUMENTS//INVALID"));
     assert(!nxfs_create_directory("DOCUMENTS/"));

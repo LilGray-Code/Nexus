@@ -23,6 +23,24 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
 bool virtio_gpu_present(void);
 bool virtio_gpu_present_region(uint64_t x, uint64_t y,
                                uint64_t width, uint64_t height);
+/*
+ * Virgl/Gallium resource description. target/format/bind follow the
+ * selected capset's Gallium protocol values; this API does not translate
+ * OpenGL or Vulkan enums.
+ */
+struct nexus_virtio_gpu_3d_resource_desc {
+    uint32_t target;
+    uint32_t format;
+    uint32_t bind;
+    uint32_t width;
+    uint32_t height;
+    uint32_t depth;
+    uint32_t array_size;
+    uint32_t last_level;
+    uint32_t nr_samples;
+    uint32_t flags;
+};
+
 struct nexus_virtio_gpu_3d_info {
     bool virgl_feature_negotiated;
     bool context_created;
@@ -36,6 +54,12 @@ struct nexus_virtio_gpu_3d_info {
 };
 
 bool virtio_gpu_3d_get_info(struct nexus_virtio_gpu_3d_info *info);
+/* Allocate a host-side Virgl resource and attach it to the active context. */
+bool virtio_gpu_3d_resource_create(
+    const struct nexus_virtio_gpu_3d_resource_desc *description,
+    uint32_t *resource_id);
+/* Detach and unreference a resource created by the API above. */
+bool virtio_gpu_3d_resource_destroy(uint32_t resource_id);
 /* Submit a 4-byte-aligned Virgl command stream. Returns only after its fence
  * has been acknowledged; this call is synchronous and serialized.
  */

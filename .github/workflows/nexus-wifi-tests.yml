@@ -18,6 +18,9 @@ on:
       - "kernel/src/win_driver_pe.h"
       - "kernel/src/win_driver_package.c"
       - "kernel/src/win_driver_package.h"
+      - "kernel/src/win_driver_ndis.c"
+      - "kernel/src/win_driver_ndis.h"
+      - "kernel/tests/win_driver_ndis_test.c"
       - "kernel/tests/wifi_test.c"
       - "kernel/tests/wifi_80211_test.c"
       - "kernel/tests/wifi_pci_test.c"
@@ -94,6 +97,13 @@ jobs:
             -o /tmp/nexus-win-package-test
       - name: Run combined Windows driver package assessment tests
         run: /tmp/nexus-win-package-test
+      - name: Compile NDIS adapter lifecycle tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \\
+            -Ikernel/src kernel/src/win_driver_ndis.c \\
+            kernel/tests/win_driver_ndis_test.c -o /tmp/nexus-win-ndis-test
+      - name: Run NDIS adapter lifecycle tests
+        run: /tmp/nexus-win-ndis-test
       - name: Compile Windows INF hardware-ID matching tests
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

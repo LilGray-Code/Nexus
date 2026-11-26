@@ -5465,9 +5465,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     shell_click_handled = true;
                 } else {
                     for (size_t app = 0U; app < 6U; ++app) {
-                        const uint64_t tab_x = 110U + (uint64_t)app * 78U;
+                        const uint64_t tab_x = 110U + (uint64_t)app * 86U;
                         if ((uint64_t)pointer_x >= tab_x &&
-                            (uint64_t)pointer_x < tab_x + 72U) {
+                            (uint64_t)pointer_x < tab_x + 84U) {
                             desktop_open_app(app);
                             shell_click_handled = true;
                             break;

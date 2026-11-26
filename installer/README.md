@@ -44,7 +44,12 @@ part of the installed system's boot menu.
 ## Current installer flow
 
 The installer-only ISO starts directly in the graphical installer. It discovers
-eligible block devices and provides a target selection and layout preview. A
+eligible block devices and opens the complete detected-drive list immediately,
+so users do not have to find or open a hidden selector. Each row shows the
+kernel device name, shortened model, capacity, transport, and safety/readiness
+status; clicking a row selects it, while Up/Down and Enter provide keyboard
+selection. The selected drive's full model and stable hardware ID, sector size,
+firmware mode, and partition-layout preview are then shown before confirmation. A
 destructive install is blocked until the user confirms the selected device's
 stable identity and separately types `ERASE`. The kernel revalidates the
 device immediately before each destructive stage. The live boot medium,

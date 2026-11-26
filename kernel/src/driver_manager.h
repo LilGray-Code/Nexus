@@ -75,8 +75,16 @@ struct nexus_driver_binding_info {
 void nexus_driver_manager_init(void);
 bool nexus_driver_manager_register(
     const struct nexus_driver_descriptor *descriptor);
+/* Diagnostic probe API: distinguishes missing drivers from failed probes. */
+enum nexus_driver_probe_outcome nexus_driver_manager_probe_device_report(
+    const struct nexus_driver_device *device,
+    struct nexus_driver_probe_report *report);
+/* Compatibility wrapper; true only when a driver becomes active. */
 bool nexus_driver_manager_probe_device(
     const struct nexus_driver_device *device);
+enum nexus_driver_probe_outcome nexus_driver_manager_probe_pci_device_report(
+    const struct nexus_pci_device *device,
+    struct nexus_driver_probe_report *report);
 bool nexus_driver_manager_probe_pci_device(
     const struct nexus_pci_device *device);
 /* Unbind a removed device and invoke the active driver's remove callback. */

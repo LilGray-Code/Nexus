@@ -1,8 +1,10 @@
 #include "wifi_pci.h"
 #include "pci.h"
+#include "win_driver_inf.h"
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 static struct nexus_pci_device devices[4];
 static uint32_t count;
@@ -45,6 +47,17 @@ int main(void) {
     assert(first->subsystem_vendor_id == 0x8086U);
     assert(first->subsystem_device_id == 0x0024U);
     assert(second != NULL && second->vendor_id == 0x10ECU);
+    static const char intel_inf[] =
+        "[Models.NTamd64]\r\n"
+        "Intel Wi-Fi=Install, PCI\\VEN_8086&DEV_2723&SUBSYS_00248086&REV_01\r\n";
+    struct nexus_win_inf_match match;
+    assert(wifi_pci_match_windows_inf(0U, intel_inf,
+                                      sizeof(intel_inf) - 1U, &match));
+    assert(strcmp(match.install_section, "Install") == 0);
+    assert(match.specificity == 3U);
+    assert(!wifi_pci_match_windows_inf(1U, intel_inf,
+                                       sizeof(intel_inf) - 1U, &match));
+
     assert(second->vendor_name[0] == 'R');
     assert(wifi_pci_candidate_at(2U) == NULL);
     count = 0U;

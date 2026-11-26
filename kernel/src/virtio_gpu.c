@@ -555,10 +555,6 @@ static bool gpu_virgl_start(void) {
     virgl_last_submitted_fence = 0U;
     virgl_last_completed_fence = 0U;
     virgl_failed_submissions = 0U;
-    selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
-    device_scanout_count = 0U;
-    device_capset_count = 0U;
-    display_inventory = (struct nexus_virtio_gpu_display_info){0};
     next_3d_resource_id = VIRTIO_GPU_RESOURCE_ID + 1U;
     tracked_resource_count = 0U;
     tracked_resource_total_created = 0U;
@@ -710,6 +706,24 @@ bool virtio_gpu_start(uint64_t width, uint64_t height,
     virgl_last_submitted_fence = 0U;
     virgl_last_completed_fence = 0U;
     virgl_failed_submissions = 0U;
+    gfxstream_capset_available = false;
+    gfxstream_capset_max_version = 0U;
+    gfxstream_capset_max_size = 0U;
+    venus_capset_available = false;
+    venus_capset_max_version = 0U;
+    venus_capset_max_size = 0U;
+    virgl_smoke_test_in_progress = false;
+    selected_scanout_id = VIRTIO_GPU_SCANOUT_ID;
+    device_scanout_count = 0U;
+    device_capset_count = 0U;
+    display_inventory = (struct nexus_virtio_gpu_display_info){0};
+    next_3d_resource_id = VIRTIO_GPU_RESOURCE_ID + 1U;
+    tracked_resource_count = 0U;
+    tracked_resource_total_created = 0U;
+    virgl_clear_commands_fenced = 0U;
+    virgl_last_clear_resource_id = 0U;
+    for (size_t i = 0U; i < VIRTIO_GPU_MAX_3D_RESOURCES; ++i)
+        tracked_resources[i] = (struct virtio_gpu_tracked_resource){0};
     gpu_set_virtio_3d_submission_ready(false, 0U);
     if (firmware_surface == NULL || render_surface == NULL ||
         width == 0U || height == 0U ||

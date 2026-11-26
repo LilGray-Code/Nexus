@@ -478,8 +478,9 @@ bool nexus_display_init(const struct limine_framebuffer *framebuffer) {
     return true;
 }
 
-bool nexus_display_add_monitor(uint32_t id, bool enabled,
-                               int32_t desktop_x, int32_t desktop_y,
+bool nexus_display_add_monitor(uint32_t id, bool connected,
+                               bool enabled, int32_t desktop_x,
+                               int32_t desktop_y,
                                uint32_t width, uint32_t height,
                                const uint8_t *edid, size_t edid_length) {
     if (!display_info.initialized || width > 16384U || height > 16384U)
@@ -500,7 +501,7 @@ bool nexus_display_add_monitor(uint32_t id, bool enabled,
     struct nexus_display_monitor monitor = {
         .id = id,
         .present = true,
-        .connected = enabled,
+        .connected = connected,
         .enabled = enabled,
         .primary = id == display_info.primary_monitor_id,
         .desktop_x = desktop_x,
@@ -536,6 +537,30 @@ bool nexus_display_add_monitor(uint32_t id, bool enabled,
         }
     }
     display_info.monitors[slot] = monitor;
+
+    uint32_t enabled_count = 0U;
+    const struct nexus_display_monitor *first_enabled = NULL;
+    bool same_rectangle = true;
+    for (uint32_t i = 0U; i < display_info.monitor_count; ++i) {
+        const struct nexus_display_monitor *candidate =
+            &display_info.monitors[i];
+        if (!candidate->connected || !candidate->enabled) continue;
+        if (first_enabled == NULL) {
+            first_enabled = candidate;
+            ++enabled_count;
+            continue;
+        }
+        ++enabled_count;
+        if (candidate->desktop_x != first_enabled->desktop_x ||
+            candidate->desktop_y != first_enabled->desktop_y ||
+            candidate->width != first_enabled->width ||
+            candidate->height != first_enabled->height)
+            same_rectangle = false;
+    }
+    if (enabled_count > 1U)
+        display_info.topology = same_rectangle
+            ? NEXUS_DISPLAY_TOPOLOGY_MIRRORED
+            : NEXUS_DISPLAY_TOPOLOGY_EXTENDED;
     return true;
 }
 

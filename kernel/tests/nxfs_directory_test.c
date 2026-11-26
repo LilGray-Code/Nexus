@@ -219,6 +219,22 @@ int main(void) {
     assert(memcmp(stream_readback, streamed_payload,
                   sizeof(streamed_payload) - 1U) == 0);
 
+    assert(nxfs_write_file_begin("CHUNKED.BIN",
+                                  NEXUS_NXFS_STREAM_LENGTH_UNKNOWN));
+    assert(nxfs_write_file_append("Wiki", 4U));
+    assert(nxfs_write_file_append("pedia", 5U));
+    assert(nxfs_write_file_finish());
+    const struct nexus_nxfs_entry *chunked_entry = NULL;
+    for (size_t i = 0U; i < nxfs_entry_count(); ++i) {
+        const struct nexus_nxfs_entry *entry = nxfs_entry_at(i);
+        if (entry != NULL && strcmp(entry->name, "CHUNKED.BIN") == 0)
+            chunked_entry = entry;
+    }
+    assert(chunked_entry != NULL && chunked_entry->size == 9U);
+    uint8_t chunked_readback[9];
+    assert(nxfs_read_file(chunked_entry, 0U, 9U, chunked_readback));
+    assert(memcmp(chunked_readback, "Wikipedia", 9U) == 0);
+
     /* An interrupted replacement only touches the inactive data bank. */
     assert(nxfs_write_file_begin("STREAM.BIN", 4U));
     assert(nxfs_write_file_append("PART", 4U));

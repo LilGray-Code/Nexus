@@ -315,6 +315,9 @@ static void usermode_close_all_files(void) {
 bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
                       uint64_t stack_pointer, uint64_t kernel_stack_top,
                       uint32_t permissions, uint64_t *exit_status) {
+    active_app_fault = (struct nexus_usermode_fault_info){0};
+    active_app_execution = false;
+    active_app_permissions = 0U;
     if (root_physical == 0U || entry_point == 0U ||
         stack_pointer == 0U || kernel_stack_top == 0U ||
         (kernel_stack_top & 0x0FU) != 0U || exit_status == NULL ||
@@ -339,7 +342,6 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
     usermode_exit_status = UINT64_MAX;
     usermode_exit_seen = false;
     usermode_write_rejected = false;
-    active_app_fault = (struct nexus_usermode_fault_info){0};
     active_app_permissions = permissions;
     active_app_execution = true;
 

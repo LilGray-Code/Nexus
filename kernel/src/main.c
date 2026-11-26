@@ -375,6 +375,29 @@ void kmain(void) {
         serial_write(" features=");
         serial_write(nexus_cpu_feature_level_label());
         serial_write("\r\nNEXUS CPU CAPABILITY DISCOVERY READY\r\n");
+        serial_write("CPU vendor family: ");
+        serial_write(nexus_cpu_vendor_name());
+        serial_write("\r\n");
+        if (cpu->core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE)
+            serial_write("CPU bootstrap core type: Intel performance core\r\n");
+        else if (cpu->core_type == NEXUS_CPU_CORE_TYPE_EFFICIENCY)
+            serial_write("CPU bootstrap core type: Intel efficiency core\r\n");
+        if (cpu->frequency_info_valid) {
+            serial_write("CPU nominal base/max/bus MHz: ");
+            serial_write_hex(cpu->base_frequency_mhz);
+            serial_write("/");
+            serial_write_hex(cpu->maximum_frequency_mhz);
+            serial_write("/");
+            serial_write_hex(cpu->bus_frequency_mhz);
+            serial_write("\r\n");
+        }
+        serial_write("CPU advertised DTS/Turbo/HWP: ");
+        serial_write(cpu->digital_thermal_sensor_supported ? "yes" : "no");
+        serial_write("/");
+        serial_write(cpu->turbo_boost_supported ? "yes" : "no");
+        serial_write("/");
+        serial_write(cpu->hardware_p_states_supported ? "yes" : "no");
+        serial_write("\r\n");
     } else {
         serial_write("WARNING: CPU CPUID capability discovery unavailable\r\n");
     }

@@ -98,7 +98,12 @@ is mounted, RAM-only file saves are volatile and do not survive a reboot.
 ## Keyboard, mouse, and display compatibility
 
 The input stack supports legacy PS/2 keyboards and mice plus xHCI USB HID
-boot-protocol keyboards and mice. The xHCI port-speed decoder recognizes
+boot-protocol keyboards and mice. Before resetting the xHCI controller, the
+kernel walks its extended-capability chain, requests the OS-owned semaphore
+using byte accesses, waits for firmware to relinquish BIOS ownership, and
+disables firmware legacy SMI sources. The handoff is bounded; when firmware
+does not release the controller, the xHCI driver refuses unsafe takeover and
+PS/2 remains the available fallback. The xHCI port-speed decoder recognizes
 USB low/full/high-speed and SuperSpeed/SuperSpeedPlus link IDs, including the
 SuperSpeed warm-reset and 512-byte endpoint-zero packet-size rules. This
 improves initial enumeration compatibility for USB 3.x devices, but it does

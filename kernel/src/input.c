@@ -436,33 +436,38 @@ bool input_pop_event(struct nexus_input_event *event) {
 }
 
 
-void input_usb_mouse_report_sized(const uint8_t *report,
-                                  size_t report_length) {
-    struct nexus_usb_mouse_event decoded;
-    if (!usb_hid_mouse_decode_report(report, report_length, &decoded)) return;
+void input_usb_mouse_event(const struct nexus_usb_mouse_event *decoded) {
+    if (decoded == NULL) return;
     const uint64_t interrupt_flags = input_interrupt_save();
     const struct nexus_input_event event = {
         .type = NEXUS_INPUT_MOUSE,
         .scancode = 0U,
-        .mouse_buttons = decoded.buttons,
-        .mouse_dx = decoded.dx,
-        .mouse_dy = decoded.dy,
-        .mouse_wheel = decoded.wheel
+        .mouse_buttons = decoded->buttons,
+        .mouse_dx = decoded->dx,
+        .mouse_dy = decoded->dy,
+        .mouse_wheel = decoded->wheel
     };
     queue_event(&event);
     input_interrupt_restore(interrupt_flags);
     if (!usb_mouse_report_logged) {
         usb_mouse_report_logged = true;
         serial_write("INPUT: USB HID mouse first report buttons=");
-        serial_write_hex(decoded.buttons);
+        serial_write_hex(decoded->buttons);
         serial_write(" dx=");
-        serial_write_hex((uint16_t)decoded.dx);
+        serial_write_hex((uint16_t)decoded->dx);
         serial_write(" dy=");
-        serial_write_hex((uint16_t)decoded.dy);
+        serial_write_hex((uint16_t)decoded->dy);
         serial_write(" wheel=");
-        serial_write_hex((uint8_t)decoded.wheel);
+        serial_write_hex((uint8_t)decoded->wheel);
         serial_write("\r\n");
     }
+}
+
+void input_usb_mouse_report_sized(const uint8_t *report,
+                                  size_t report_length) {
+    struct nexus_usb_mouse_event decoded;
+    if (!usb_hid_mouse_decode_report(report, report_length, &decoded)) return;
+    input_usb_mouse_event(&decoded);
 }
 
 void input_usb_mouse_report(const uint8_t report[3]) {

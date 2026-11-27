@@ -12,7 +12,9 @@ bool usermode_run_selftest(void);
 bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
                       uint64_t stack_pointer, uint64_t kernel_stack_top,
                       uint64_t *exit_status);
-bool usermode_sys_write(uint64_t user_address, uint64_t length);
+int64_t usermode_sys_write(uint64_t user_address, uint64_t length);
+bool usermode_record_exception(uint64_t vector, uint64_t error_code,
+                               uint64_t fault_address);
 /* Copy the most recent native process's bounded write(1, ...) output. */
 size_t usermode_console_output_copy(char *destination, size_t capacity,
                                     bool *truncated);

@@ -80,4 +80,37 @@ bool nexus_bt_hci_parse_command_status(
     const struct nexus_bt_hci_event_view *event,
     struct nexus_bt_hci_command_result *result);
 
+
+enum nexus_bt_hci_host_state {
+    NEXUS_BT_HCI_HOST_STOPPED = 0,
+    NEXUS_BT_HCI_HOST_RESET_PENDING,
+    NEXUS_BT_HCI_HOST_RESET_IN_FLIGHT,
+    NEXUS_BT_HCI_HOST_VERSION_PENDING,
+    NEXUS_BT_HCI_HOST_VERSION_IN_FLIGHT,
+    NEXUS_BT_HCI_HOST_ADDRESS_PENDING,
+    NEXUS_BT_HCI_HOST_ADDRESS_IN_FLIGHT,
+    NEXUS_BT_HCI_HOST_READY,
+    NEXUS_BT_HCI_HOST_FAILED
+};
+
+struct nexus_bt_hci_host {
+    enum nexus_bt_hci_host_state state;
+    uint8_t command_credits;
+    uint16_t outstanding_opcode;
+    uint8_t hci_version;
+    uint8_t lmp_version;
+    uint16_t manufacturer;
+    uint16_t subversion;
+    uint8_t controller_address[6];
+};
+
+/* Minimal serialized controller bring-up. The caller owns the USB/UART
+ * transport and must submit the returned HCI command packet and feed received
+ * HCI events back into the host state machine. */
+void nexus_bt_hci_host_init(struct nexus_bt_hci_host *host);
+bool nexus_bt_hci_host_next_command(struct nexus_bt_hci_host *host,
+    uint8_t *packet, size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_host_handle_event(struct nexus_bt_hci_host *host,
+    const struct nexus_bt_hci_event_view *event);
+
 #endif

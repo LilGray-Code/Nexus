@@ -30,8 +30,7 @@
      NEXUS_CAP_DISPLAY | NEXUS_CAP_CLOCK)
 
 /* Signed packages without a capability manifest receive a deliberately small profile. */
-#define NEXUS_CAP_PACKAGE_DEFAULT \
-    (NEXUS_CAP_CONSOLE_WRITE | NEXUS_CAP_CLOCK)
+#define NEXUS_CAP_PACKAGE_DEFAULT NEXUS_CAP_APP_DEFAULT
 
 #define NEXUS_SECURITY_AUDIT_CAPACITY 64U
 

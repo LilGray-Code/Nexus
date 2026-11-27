@@ -47,14 +47,16 @@ static void test_multiple_keyboard_report_ids(void) {
         &multi, unknown_id, sizeof(unknown_id), decoded));
 }
 
-static void test_implicit_report_zero(void) {
+static void test_rejects_implicit_report_zero_in_numbered_interface(void) {
     const uint8_t descriptor[] = {
         0x05,0x01, 0x09,0x06, 0xA1,0x01,
+        /* First input report is unnumbered. */
         0x05,0x07, 0x19,0xE0, 0x29,0xE7,
         0x15,0x00, 0x25,0x01, 0x75,0x01, 0x95,0x08, 0x81,0x02,
         0x75,0x08, 0x95,0x01, 0x81,0x01,
         0x19,0x00, 0x29,0x65, 0x15,0x00, 0x25,0x65,
         0x75,0x08, 0x95,0x06, 0x81,0x00,
+        /* A later numbered input report makes this interface invalid. */
         0x85,0x01,
         0x05,0x07, 0x19,0xE0, 0x29,0xE7,
         0x15,0x00, 0x25,0x01, 0x75,0x01, 0x95,0x08, 0x81,0x02,
@@ -64,14 +66,9 @@ static void test_implicit_report_zero(void) {
         0xC0
     };
     struct nexus_usb_hid_generic_multi_layout multi = {0};
-    assert(usb_hid_generic_parse_descriptor_multi(
+    assert(!usb_hid_generic_parse_descriptor_multi(
         descriptor, sizeof(descriptor), &multi));
-    assert(multi.report_count == 2U);
-    assert(!multi.reports[0].has_report_id);
-    assert(multi.reports[1].has_report_id);
-    assert(multi.reports[1].report_id == 1U);
 }
-
 
 static void test_report_ids_across_global_push_pop(void) {
     const uint8_t descriptor[] = {
@@ -107,7 +104,7 @@ static void test_report_ids_across_global_push_pop(void) {
 
 int main(void) {
     test_multiple_keyboard_report_ids();
-    test_implicit_report_zero();
+    test_rejects_implicit_report_zero_in_numbered_interface();
     test_report_ids_across_global_push_pop();
     puts("NEXUS MULTI-REPORT-ID USB HID TESTS PASSED");
     return 0;

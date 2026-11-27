@@ -107,7 +107,7 @@ or complete userland.
 
 | Area | Current state | Required next engineering |
 |---|---|---|
-| Driver system | Bounded PCI PnP registry, subsystem-aware ID matching, dependency gates, probe fallback, history and lifecycle APIs; AHCI/NVMe dispatch | Register remaining built-in drivers with real readiness and teardown callbacks; add USB interface enumeration and bus notifications; implement quiesce/unload, signed loadable modules, firmware delivery, persistent updates and rollback |
+| Driver system | Bounded PCI PnP registry; AHCI/NVMe, E1000, RTL8139, VirtIO network, xHCI, AC'97 and VirtIO GPU descriptors; ID matching, dependency gates, probe fallback, history and lifecycle APIs | Add teardown callbacks and bus notifications; complete USB interface PnP; implement signed loadable modules, firmware delivery, persistent package updates and rollback |
 | System services | Dependency supervisor used by boot | Move service hosts to isolated processes after IPC and preemptive scheduling; add service permissions, logs, health checks, watchdogs and restart policy |
 | Native app runtime | Static ELF64, versioned syscalls, foreground launch | Multiple concurrent processes, full process lifecycle, dynamic linker, shared libraries, libc/POSIX layer, IPC and application sandboxing |
 | Graphics | Framebuffer software renderer and VirtIO 2D display, optional Virgl 3D submission | Native Intel/AMD/NVIDIA drivers, GPU memory management, synchronization, shader compiler and a documented 3D API |

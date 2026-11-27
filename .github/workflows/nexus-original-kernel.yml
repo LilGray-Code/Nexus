@@ -117,6 +117,7 @@ jobs:
 
       - name: Test xHCI USB 2.0, SuperSpeed and SuperSpeedPlus link handling
         run: |
+          test -s kernel/src/xhci_speed.h
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src kernel/tests/xhci_speed_test.c \
             -o /tmp/nexus-xhci-speed-test

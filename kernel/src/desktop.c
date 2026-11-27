@@ -1570,6 +1570,20 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
 }
 
 
+static void desktop_copy_text(char *destination, const char *source,
+                              size_t capacity) {
+    if (destination == NULL || capacity == 0U) return;
+    size_t i = 0U;
+    if (source != NULL) {
+        while (i + 1U < capacity && source[i] != '\0') {
+            destination[i] = source[i];
+            ++i;
+        }
+    }
+    destination[i] = '\0';
+    while (++i < capacity) destination[i] = '\0';
+}
+
 static void desktop_accounts_load_profile(void) {
     if (!nexus_accounts_is_logged_in()) return;
     const uint32_t uid = nexus_accounts_current_uid();
@@ -1747,7 +1761,7 @@ static void desktop_account_gate_submit(void) {
                desktop_gate_password[i] == desktop_gate_confirm[i]) ++i;
         if (desktop_gate_password[i] != '\0' ||
             desktop_gate_confirm[i] != '\0') {
-            copy_text(desktop_account_message, "PASSWORDS DO NOT MATCH",
+            desktop_copy_text(desktop_account_message, "PASSWORDS DO NOT MATCH",
                       sizeof(desktop_account_message));
             desktop_secure_clear(desktop_gate_password,
                                  sizeof(desktop_gate_password));
@@ -2307,7 +2321,7 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
 
 static void desktop_account_form_submit(void);
 
-static void desktop_update(void) {
+void desktop_update(void) {
     if (!desktop_ready || installer_session_mode ||
         desktop_account_gate_active) return;
     const uint64_t now = timer_ticks();

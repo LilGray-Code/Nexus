@@ -1773,7 +1773,7 @@ static void desktop_account_gate_submit(void) {
         }
         if (!nexus_accounts_bootstrap_admin(desktop_gate_username,
                                              desktop_gate_password)) {
-            copy_text(desktop_account_message,
+            desktop_copy_text(desktop_account_message,
                 "SETUP FAILED: CHECK PASSWORD, STORAGE AND HARDWARE RNG",
                 sizeof(desktop_account_message));
             desktop_secure_clear(desktop_gate_password,
@@ -1788,7 +1788,7 @@ static void desktop_account_gate_submit(void) {
         desktop_secure_clear(desktop_gate_confirm,
                              sizeof(desktop_gate_confirm));
         desktop_account_gate_stage = DESKTOP_GATE_LOGIN_USERNAME;
-        copy_text(desktop_account_message,
+        desktop_copy_text(desktop_account_message,
                   "ADMINISTRATOR CREATED. SIGN IN TO CONTINUE.",
                   sizeof(desktop_account_message));
         return;
@@ -1797,7 +1797,7 @@ static void desktop_account_gate_submit(void) {
     if (desktop_account_gate_stage == DESKTOP_GATE_LOGIN_PASSWORD) {
         if (!nexus_accounts_login(desktop_gate_username,
                                   desktop_gate_password)) {
-            copy_text(desktop_account_message,
+            desktop_copy_text(desktop_account_message,
                       "SIGN IN FAILED. CHECK CREDENTIALS OR WAIT FOR LOCKOUT.",
                       sizeof(desktop_account_message));
             desktop_secure_clear(desktop_gate_password,
@@ -1991,7 +1991,7 @@ static void desktop_account_form_submit(void) {
             "STARTUP APP NOT SAVED: CHECK NAME OR PROFILE LIMIT";
     }
 
-    copy_text(desktop_account_message, message,
+    desktop_copy_text(desktop_account_message, message,
               sizeof(desktop_account_message));
     desktop_account_form = DESKTOP_ACCOUNT_FORM_NONE;
     desktop_account_form_field = 0U;
@@ -2062,7 +2062,7 @@ static void desktop_accounts_draw_page(uint64_t x, uint64_t y) {
     const bool admin = nexus_accounts_is_admin();
     desktop_settings_draw_heading(x, y, "USER ACCOUNTS",
         "Manage login sessions, credentials and per-user profiles.");
-    char line[96], number[24];
+    char line[96];
     graphics_draw_text(x, y + 53U, "SIGNED IN:", 1U,
                        142U, 174U, 199U);
     graphics_draw_text(x + 91U, y + 53U, session.username, 1U,
@@ -2092,11 +2092,12 @@ static void desktop_accounts_draw_page(uint64_t x, uint64_t y) {
     graphics_draw_text(x, y + 198U, "LOCAL ACCOUNTS", 1U,
                        142U, 174U, 199U);
     const size_t count = nexus_accounts_count();
-    const size_t visible = count < 6U ? count : 6U;
+    const size_t visible = count < NEXUS_ACCOUNT_MAX_USERS
+        ? count : NEXUS_ACCOUNT_MAX_USERS;
     for (size_t i = 0U; i < visible; ++i) {
         struct nexus_account_info info;
         if (!nexus_accounts_get_info(i, &info)) continue;
-        const uint64_t row_y = y + 220U + (uint64_t)i * 28U;
+        const uint64_t row_y = y + 220U + (uint64_t)i * 22U;
         char uid[21];
         format_u64(info.uid, uid);
         line[0] = '\0';
@@ -2120,7 +2121,6 @@ static void desktop_accounts_draw_page(uint64_t x, uint64_t y) {
 
     struct nexus_account_profile profile;
     if (nexus_accounts_get_profile(session.uid, &profile)) {
-        format_u64(profile.startup_count, number);
         format_labeled_u64("STARTUP APPLICATIONS: ",
                            profile.startup_count, line);
         graphics_draw_text(x, y + 397U, line, 1U,
@@ -2162,16 +2162,16 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
     char line[112], number[24], second[24];
     if (snapshot.cpu_usage_available) {
         format_u64(snapshot.cpu_usage_percent, number);
-        copy_text(line, "CPU USAGE: ", sizeof(line));
+        desktop_copy_text(line, "CPU USAGE: ", sizeof(line));
         size_t used = 11U;
         hardware_append_text(line, sizeof(line), &used, number);
         hardware_append_text(line, sizeof(line), &used, "% (BSP)");
     } else {
-        copy_text(line, "CPU USAGE: SAMPLING / UNAVAILABLE", sizeof(line));
+        desktop_copy_text(line, "CPU USAGE: SAMPLING / UNAVAILABLE", sizeof(line));
     }
     graphics_draw_text(x, y + 52U, line, 1U, 108U, 216U, 229U);
     format_u64(snapshot.online_core_count, number);
-    copy_text(line, "ONLINE CORES: ", sizeof(line));
+    desktop_copy_text(line, "ONLINE CORES: ", sizeof(line));
     size_t used = 14U;
     hardware_append_text(line, sizeof(line), &used, number);
     graphics_draw_text(x + 235U, y + 52U, line, 1U,
@@ -2212,7 +2212,7 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
         hardware_append_text(line, sizeof(line), &used, second);
         hardware_append_text(line, sizeof(line), &used, " MiB USED / TOTAL");
     } else {
-        copy_text(line, "RAM: UNAVAILABLE", sizeof(line));
+        desktop_copy_text(line, "RAM: UNAVAILABLE", sizeof(line));
     }
     graphics_draw_text(x, y + 139U, line, 1U, 239U, 247U, 255U);
 
@@ -2223,7 +2223,7 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
         hardware_append_text(line, sizeof(line), &used, snapshot.gpu_name);
         hardware_append_text(line, sizeof(line), &used, " / UTILIZATION N/A");
     } else {
-        copy_text(line, "GPU: NOT DETECTED", sizeof(line));
+        desktop_copy_text(line, "GPU: NOT DETECTED", sizeof(line));
     }
     graphics_draw_text(x, y + 161U, line, 1U, 171U, 191U, 211U);
 
@@ -2238,7 +2238,7 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
         hardware_append_text(line, sizeof(line), &used, second);
         hardware_append_text(line, sizeof(line), &used, " MiB");
     } else {
-        copy_text(line, "STORAGE: NXFS NOT MOUNTED", sizeof(line));
+        desktop_copy_text(line, "STORAGE: NXFS NOT MOUNTED", sizeof(line));
     }
     graphics_draw_text(x, y + 183U, line, 1U, 171U, 191U, 211U);
 
@@ -2252,7 +2252,7 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
         hardware_append_text(line, sizeof(line), &used, " / ");
         hardware_append_text(line, sizeof(line), &used, second);
     } else {
-        copy_text(line, "NETWORK: NO REGISTERED ADAPTER", sizeof(line));
+        desktop_copy_text(line, "NETWORK: NO REGISTERED ADAPTER", sizeof(line));
     }
     graphics_draw_text(x, y + 205U, line, 1U, 171U, 191U, 211U);
 
@@ -2266,7 +2266,7 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
         hardware_append_text(line, sizeof(line), &used, " / ");
         hardware_append_text(line, sizeof(line), &used, second);
     } else {
-        copy_text(line, "DISK I/O: NO REGISTERED DEVICES", sizeof(line));
+        desktop_copy_text(line, "DISK I/O: NO REGISTERED DEVICES", sizeof(line));
     }
     graphics_draw_text(x, y + 227U, line, 1U, 171U, 191U, 211U);
 
@@ -7984,14 +7984,12 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         }
                     }
                 } else if (py >= content_y + 220U &&
-                           py < content_y + 388U &&
+                           py < content_y + 396U &&
                            px >= sx && px < sx + 460U) {
                     const size_t row =
-                        (size_t)(py - (content_y + 220U)) / 28U;
+                        (size_t)(py - (content_y + 220U)) / 22U;
                     if (row < nexus_accounts_count())
                         desktop_account_selected_user = row;
-                    else if (row >= 6U && nexus_accounts_count() > 6U)
-                        desktop_account_selected_user = 6U;
                 }
             } else if (settings_page == SETTINGS_TASK_MANAGER) {
                 if (py >= content_y + 274U && py < content_y + 346U) {

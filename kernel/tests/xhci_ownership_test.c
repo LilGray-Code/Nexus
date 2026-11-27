@@ -7,7 +7,7 @@
 int main(void) {
     assert(nexus_xhci_extended_cap_start(0U) == 0U);
     assert(nexus_xhci_extended_cap_start(0x00010000U) == 4U);
-    assert(nexus_xhci_extended_cap_start(0x12340000U) == 0x48D00U);
+    assert(nexus_xhci_extended_cap_start(0x12340000U) == 0x48D0U);
 
     assert(nexus_xhci_extended_cap_next(0x40U, 0x00000401U) == 0x50U);
     assert(nexus_xhci_extended_cap_next(0x40U, 0x00000001U) == 0U);

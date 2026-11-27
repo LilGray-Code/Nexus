@@ -5,11 +5,13 @@
 
 struct nexus_pci_device;
 
-/* Initialize xHCI and enumerate boot keyboards/mice plus generic HID gamepads.
- * Up to four independent boot keyboards, four boot mice and four gamepads can
- * be active. Compatible devices support hot-plug. USB hubs, Bluetooth pairing,
- * composite multi-interface receivers and non-boot keyboard/mouse report formats
- * still need additional USB host/HID driver support. */
+/* Initialize xHCI and enumerate directly attached HID keyboards, mice and
+ * gamepads. Boot-protocol and a bounded single-report generic HID keyboard/
+ * mouse format are normalized into the shared input queue. Up to 32 keyboard
+ * slots, 32 mouse slots and 32 gamepad slots are available per xHCI controller.
+ * USB hubs, composite multi-interface receivers, multiple report IDs per
+ * interface, non-xHCI host controllers and native Bluetooth pairing are not
+ * implemented. Compatible direct-root-port devices support hot-plug. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);

@@ -39,6 +39,7 @@
 #include "partition_plan.h"
 #include "installer_runtime.h"
 #include "diagnostics.h"
+#include "driver_manager.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -5801,6 +5802,26 @@ static void browser_history_navigate(bool forward) {
     browser_navigate(false);
 }
 
+static const char *terminal_command_argument(const char *input,
+                                               const char *command) {
+    if (input == NULL || command == NULL) return NULL;
+    size_t i = 0U;
+    while (command[i] != '\\0' && input[i] == command[i]) ++i;
+    if (command[i] != '\\0' || input[i] != ' ' || input[i + 1U] == '\\0')
+        return NULL;
+    return input + i + 1U;
+}
+
+static void terminal_set_message(const char *message) {
+    size_t i = 0U;
+    if (message == NULL) message = "";
+    while (message[i] != '\\0' && i < sizeof(terminal_output) - 1U) {
+        terminal_output[i] = message[i];
+        ++i;
+    }
+    terminal_output[i] = '\\0';
+}
+
 static void terminal_execute(void) {
     terminal_output[0] = '\0';
     if (terminal_input_length == 0U) return;
@@ -5808,7 +5829,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about diag cpu pci drivers netdiag storage logs trace debug sdk mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch write save rm clear";
+        const char *s = "help about diag cpu pci drivers driverlist drivererrors driverrescan driverload NAME driverunload NAME netdiag storage logs trace debug sdk mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch write save rm clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -6008,6 +6029,35 @@ static void terminal_execute(void) {
             }
             net_tcp_close();
         }
+    } else if (terminal_command_argument(terminal_input, "driverload") != NULL) {
+        const char *name = terminal_command_argument(terminal_input, "driverload");
+        terminal_set_message(nexus_driver_manager_load(name)
+            ? "driver loaded; matching devices retried"
+            : "driver load refused: unknown driver or dependency missing");
+    } else if (terminal_command_argument(terminal_input, "driverunload") != NULL) {
+        const char *name = terminal_command_argument(terminal_input, "driverunload");
+        terminal_set_message(nexus_driver_manager_unload(name)
+            ? "driver unloaded"
+            : "unload refused: active binding, dependent driver or unknown driver");
+    } else if (terminal_input[0]=='d' && terminal_input[1]=='r' &&
+               terminal_input[2]=='i' && terminal_input[3]=='v' &&
+               terminal_input[4]=='e' && terminal_input[5]=='r' &&
+               terminal_input[6]=='r' && terminal_input[7]=='e' &&
+               terminal_input[8]=='s' && terminal_input[9]=='c' &&
+               terminal_input[10]=='a' && terminal_input[11]=='n' &&
+               terminal_input[12]=='\0') {
+        const size_t rebound = nexus_driver_manager_rescan();
+        char number[21];
+        format_u64(rebound, number);
+        size_t out = 0U;
+        const char *prefix = "devices rebound ";
+        while (prefix[out] != '\0' && out < sizeof(terminal_output) - 1U) {
+            terminal_output[out] = prefix[out++];
+        }
+        for (size_t i = 0U; number[i] != '\0' &&
+             out < sizeof(terminal_output) - 1U; ++i)
+            terminal_output[out++] = number[i];
+        terminal_output[out] = '\0';
     } else if (terminal_input[0]=='s' && terminal_input[1]=='a' &&
                terminal_input[2]=='v' && terminal_input[3]=='e' &&
                terminal_input[4]==' ') {

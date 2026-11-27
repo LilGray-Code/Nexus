@@ -70,6 +70,7 @@ static void test_hub_port_status(void) {
     const uint8_t disconnected[] = {0U,0U,0U,0U};
     assert(nexus_usb_hub_decode_port_status(disconnected, &port));
     assert(!port.connected && !port.enabled);
+    assert(port.speed == NEXUS_USB_SPEED_UNKNOWN);
 }
 
 

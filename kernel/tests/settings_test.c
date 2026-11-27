@@ -12,6 +12,7 @@ int main(void) {
     assert(settings.ui_scale_percent == 100U);
     assert(settings.cursor_size == 1U);
     assert(settings.volume_percent == 75U);
+    assert(!settings.audio_muted);
 
     uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
     assert(nexus_settings_encode(&settings, record));
@@ -28,6 +29,8 @@ int main(void) {
     settings.volume_percent = 25U;
     settings.left_handed_mouse = true;
     settings.high_contrast = true;
+    settings.volume_percent = 37U;
+    settings.audio_muted = true;
     assert(nexus_settings_encode(&settings, record));
 
     struct nexus_settings decoded = {0};
@@ -43,6 +46,7 @@ int main(void) {
     assert(decoded.volume_percent == settings.volume_percent);
     assert(decoded.left_handed_mouse == settings.left_handed_mouse);
     assert(decoded.high_contrast == settings.high_contrast);
+    assert(decoded.audio_muted == settings.audio_muted);
 
     uint8_t corrupted[NEXUS_SETTINGS_RECORD_BYTES];
     memcpy(corrupted, record, sizeof(corrupted));
@@ -58,6 +62,9 @@ int main(void) {
     corrupted[15] = checksum;
     assert(!nexus_settings_decode(corrupted, sizeof(corrupted), &decoded));
 
+    settings.volume_percent = 101U;
+    assert(!nexus_settings_encode(&settings, record));
+    settings.volume_percent = 37U;
     settings.ui_scale_percent = 105U;
     assert(!nexus_settings_encode(&settings, record));
     nexus_settings_defaults(NULL);

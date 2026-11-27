@@ -2105,6 +2105,15 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
         if (!device->active) continue;
         const uint8_t release[8] = {0U};
         input_usb_keyboard_report_state(&device->keyboard_state, release);
+        if (device->secondary_active &&
+            device->secondary_kind == XHCI_HID_KEYBOARD)
+            input_usb_keyboard_report_state(
+                &device->secondary_keyboard_state, release);
+        if (device->secondary_active &&
+            device->secondary_kind == XHCI_HID_MOUSE) {
+            const uint8_t mouse_release[3] = {0U};
+            input_usb_mouse_report(mouse_release);
+        }
         xhci_free_hid_device_dma(xhci, device);
     }
     for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
@@ -2112,6 +2121,15 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
         if (!device->active) continue;
         const uint8_t release[3] = {0U};
         input_usb_mouse_report(release);
+        if (device->secondary_active &&
+            device->secondary_kind == XHCI_HID_KEYBOARD) {
+            const uint8_t keyboard_release[8] = {0U};
+            input_usb_keyboard_report_state(
+                &device->secondary_keyboard_state, keyboard_release);
+        }
+        if (device->secondary_active &&
+            device->secondary_kind == XHCI_HID_MOUSE)
+            input_usb_mouse_report(release);
         xhci_free_hid_device_dma(xhci, device);
     }
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {

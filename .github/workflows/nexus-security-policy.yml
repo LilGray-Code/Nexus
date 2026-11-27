@@ -1,0 +1,39 @@
+name: Nexus Security Policy Tests
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+      - security-foundation-capabilities-audit
+    paths:
+      - "kernel/src/security.c"
+      - "kernel/src/security.h"
+      - "kernel/tests/security_test.c"
+      - "kernel/src/process.c"
+      - "kernel/src/usermode.c"
+      - "kernel/src/interrupts.c"
+      - ".github/workflows/nexus-security-policy.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security-policy:
+    name: Test kernel capability and audit policy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+
+      - name: Compile security policy tests with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/security.c kernel/tests/security_test.c \
+            -o /tmp/nexus-security-policy-test
+
+      - name: Run security policy tests
+        run: /tmp/nexus-security-policy-test

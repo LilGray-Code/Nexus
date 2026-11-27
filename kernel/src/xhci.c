@@ -975,22 +975,32 @@ static bool xhci_configure_interrupt_endpoint(struct xhci_controller *xhci,
                         ((uint32_t)device->slot_id << 24), NULL);
 }
 
-static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
-                                         struct xhci_hid_device *device) {
-    if (device == NULL || !device->active ||
-        device->interrupt_ring.trbs == NULL) return false;
+static bool xhci_schedule_interrupt_endpoint(
+    struct xhci_controller *xhci, uint8_t slot_id, uint8_t endpoint_id,
+    struct xhci_ring *ring, uint64_t report_buffer_physical,
+    uint16_t max_packet) {
+    if (xhci == NULL || slot_id == 0U || endpoint_id == 0U ||
+        ring == NULL || ring->trbs == NULL ||
+        report_buffer_physical == 0U || max_packet == 0U) return false;
     volatile struct xhci_trb *trb = xhci_ring_push(
-        &device->interrupt_ring, device->report_buffer_physical,
-        device->max_packet,
+        ring, report_buffer_physical, max_packet,
         XHCI_TRB_TYPE(1U) | XHCI_TRB_IOC | XHCI_TRB_ISP);
     if (trb == NULL) return false;
     volatile uint32_t *doorbell = xhci_map_register(
         xhci, (uint64_t)xhci->doorbell_offset +
-              (uint64_t)device->slot_id * 4U);
+              (uint64_t)slot_id * 4U);
     if (doorbell == NULL) return false;
-    *doorbell = device->endpoint_id;
+    *doorbell = endpoint_id;
     __asm__ volatile ("sfence" : : : "memory");
     return true;
+}
+
+static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
+                                         struct xhci_hid_device *device) {
+    if (device == NULL || !device->active) return false;
+    return xhci_schedule_interrupt_endpoint(xhci, device->slot_id,
+        device->endpoint_id, &device->interrupt_ring,
+        device->report_buffer_physical, device->max_packet);
 }
 
 static void xhci_free_hid_device_dma(struct xhci_controller *xhci,

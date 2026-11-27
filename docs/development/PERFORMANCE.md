@@ -28,7 +28,7 @@ Host: AMD EPYC 9V74 (80-Core), x86-64, Linux 6.18.57, GCC 14.2.0. Build flags: `
 | Operation | Previous implementation | Optimized implementation | Median speedup |
 |---|---:|---:|---:|
 | Append one 43-byte log payload | 15.9 ns/op | 8.5 ns/op | 1.91× |
-| Read through a 112-byte output buffer (111 payload bytes) | 48.7 ns/op | 8.3 ns/op | 5.91× |
+| Read up to 111 payload bytes into a 112-byte output buffer | 48.7 ns/op | 8.3 ns/op | 5.91× |
 | Read full 4 KiB ring | 1,655.8 ns/op | 58.0 ns/op | 29.52× |
 
 The measured ranges across those seven runs were:
@@ -36,7 +36,7 @@ The measured ranges across those seven runs were:
 | Operation | Previous range | Optimized range |
 |---|---:|---:|
 | Append | 15.4–20.2 ns/op | 8.0–10.0 ns/op |
-| Read 112 bytes | 47.7–56.4 ns/op | 8.0–9.1 ns/op |
+| Read up to 111 bytes (112-byte buffer) | 47.7–56.4 ns/op | 8.0–9.1 ns/op |
 | Read 4 KiB | 1,593.3–3,159.6 ns/op | 51.5–85.9 ns/op |
 
 These are host microbenchmark results for the log ring only. They are not boot-time, whole-kernel, physical-PC, storage-throughput, or application-startup measurements. Absolute timings vary with CPU, power state, virtualization, compiler, and system load. The dedicated GitHub Actions workflow also runs the benchmark and prints its measurements; CI timing is informational and does not fail on a noisy speedup threshold.

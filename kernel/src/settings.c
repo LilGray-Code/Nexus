@@ -65,10 +65,10 @@ const struct nexus_settings_category_info *nexus_settings_category_at(
 bool nexus_settings_category_matches(
     enum nexus_settings_category category, const char *query) {
     if (query == NULL) return false;
-    if (query[0] == '\0') return true;
     for (size_t i = 0U; i < NEXUS_SETTINGS_CATEGORY_COUNT; ++i) {
         if (categories[i].category == category)
-            return contains_case_insensitive(categories[i].label, query) ||
+            return query[0] == '\0' ||
+                   contains_case_insensitive(categories[i].label, query) ||
                    contains_case_insensitive(categories[i].search_terms, query);
     }
     return false;

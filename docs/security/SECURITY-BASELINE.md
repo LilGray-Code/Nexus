@@ -4,7 +4,7 @@ This document distinguishes **enforced behavior** from security work that remain
 
 ## Enforced in the current kernel branch
 
-- **Ring separation and address spaces:** Native applications enter CPL3 through the Nexus user-mode transition. A process receives a private lower-half page-table tree and supervisor-only shared kernel mappings. User-copy helpers validate user, present, and writable page-table permissions.
+- **Ring separation and address spaces:** Native applications enter CPL3 through the Nexus user-mode transition. A process receives a private lower-half page-table tree and supervisor-only shared kernel mappings. User-copy helpers validate user, present, and writable page-table permissions. The runtime still executes one foreground native process at a time; this is not yet a concurrent, SMP-safe multi-process scheduler.
 - **W^X and NX:** ELF loading rejects writable+executable segments and maps executable text separately from writable data. The kernel now requires hardware NX before starting the user-mode runtime; processors without NX may boot no further than the explicit security-policy stop.
 - **Kernel-issued capabilities:** Process launch code assigns a capability mask. There is no syscall to add capabilities or change process identity. File writes, audio, gamepad, CPU/system information, display, input, file reads, and console output are checked at their syscall boundary.
 - **Least privilege:** Ordinary apps do not receive file-write, audio, gamepad, CPU-information, networking, driver-management, or administrator capabilities by default. Packages without a signed capability manifest are restricted to the package-default profile; no package can self-approve a permission.

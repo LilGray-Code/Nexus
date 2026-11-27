@@ -316,7 +316,7 @@ int main(void) {
     assert(!info->last_rollback_succeeded);
     assert(info->last_failure_stage == NEXUS_DISPLAY_FAILURE_ROLLBACK);
     assert(!info->mode_set_available);
-    assert(!nexus_display_apply_mode(mode_1600));
+    assert(!nexus_display_apply_mode(mode_1600_index));
 
     /* A failed GPU modeset can recover to the original firmware framebuffer
      * and must restore the matching monitor model, not retain stale VirtIO data.
@@ -334,7 +334,7 @@ int main(void) {
     assert(!nexus_display_topology_available());
     assert(!nexus_display_primary_selection_available());
     assert(!nexus_display_set_primary_monitor(0U));
-    assert(!nexus_display_apply_mode(mode_1600));
+    assert(!nexus_display_apply_mode(mode_1600_index));
 
     uint8_t bad_edid[128];
     memcpy(bad_edid, edid, sizeof(bad_edid));

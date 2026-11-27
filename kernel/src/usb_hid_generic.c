@@ -476,3 +476,187 @@ bool usb_hid_generic_decode_mouse(
     }
     return true;
 }
+
+
+#define HID_MULTI_MAX_DESCRIPTOR 512U
+
+static bool hid_multi_add_id(uint8_t ids[NEXUS_USB_HID_GENERIC_MAX_REPORTS],
+                             uint8_t *count, uint8_t id) {
+    for (uint8_t i = 0U; i < *count; ++i)
+        if (ids[i] == id) return true;
+    if (*count >= NEXUS_USB_HID_GENERIC_MAX_REPORTS) return false;
+    ids[(*count)++] = id;
+    return true;
+}
+
+static bool hid_multi_scan_ids(
+    const uint8_t *descriptor, size_t descriptor_length,
+    uint8_t ids[NEXUS_USB_HID_GENERIC_MAX_REPORTS],
+    uint8_t *id_count, bool *has_report_ids) {
+    if (descriptor == NULL || id_count == NULL || has_report_ids == NULL)
+        return false;
+    *id_count = 0U;
+    *has_report_ids = false;
+    uint8_t current_id = 0U;
+    bool report_id_seen = false;
+    size_t offset = 0U;
+    while (offset < descriptor_length) {
+        const uint8_t prefix = descriptor[offset++];
+        if (prefix == HID_ITEM_LONG) {
+            if (offset + 2U > descriptor_length) return false;
+            const uint8_t size = descriptor[offset];
+            offset += 2U;
+            if (offset + size > descriptor_length) return false;
+            offset += size;
+            continue;
+        }
+        const uint8_t size_code = prefix & 0x03U;
+        const uint8_t item_size = size_code == 3U ? 4U : size_code;
+        const uint8_t item_type = (prefix >> 2) & 0x03U;
+        const uint8_t item_tag = prefix >> 4;
+        if (offset + item_size > descriptor_length) return false;
+        const uint32_t value = hid_unsigned(&descriptor[offset], item_size);
+        if (item_type == 1U && item_tag == 8U) {
+            if (item_size != 1U || value == 0U || value > 255U)
+                return false;
+            current_id = (uint8_t)value;
+            report_id_seen = true;
+            *has_report_ids = true;
+            if (!hid_multi_add_id(ids, id_count, current_id)) return false;
+        } else if (item_type == 0U && item_tag == 8U &&
+                   !report_id_seen) {
+            if (!hid_multi_add_id(ids, id_count, 0U)) return false;
+        }
+        offset += item_size;
+    }
+    if (!*has_report_ids && *id_count == 0U)
+        return hid_multi_add_id(ids, id_count, 0U);
+    return *id_count != 0U;
+}
+
+static bool hid_multi_filter_descriptor(
+    const uint8_t *descriptor, size_t descriptor_length, uint8_t selected_id,
+    bool has_report_ids, uint8_t filtered[HID_MULTI_MAX_DESCRIPTOR]) {
+    if (descriptor == NULL || filtered == NULL ||
+        descriptor_length == 0U ||
+        descriptor_length > HID_MULTI_MAX_DESCRIPTOR) return false;
+    for (size_t i = 0U; i < descriptor_length; ++i)
+        filtered[i] = descriptor[i];
+
+    uint8_t current_id = 0U;
+    size_t offset = 0U;
+    while (offset < descriptor_length) {
+        const uint8_t prefix = descriptor[offset];
+        if (prefix == HID_ITEM_LONG) {
+            if (offset + 3U > descriptor_length) return false;
+            const uint8_t size = descriptor[offset + 1U];
+            if (offset + 3U + size > descriptor_length) return false;
+            offset += 3U + size;
+            continue;
+        }
+        const uint8_t size_code = prefix & 0x03U;
+        const uint8_t item_size = size_code == 3U ? 4U : size_code;
+        const uint8_t item_type = (prefix >> 2) & 0x03U;
+        const uint8_t item_tag = prefix >> 4;
+        if (offset + 1U + item_size > descriptor_length) return false;
+
+        if (item_type == 1U && item_tag == 8U) {
+            if (item_size != 1U) return false;
+            current_id = descriptor[offset + 1U];
+            if (current_id == 0U) return false;
+            if (selected_id == 0U) {
+                /* Reserved global tag: discard Report ID for implicit ID 0. */
+                filtered[offset] = (uint8_t)((12U << 4) | (1U << 2) |
+                                              size_code);
+            } else {
+                filtered[offset + 1U] = selected_id;
+            }
+        } else if (item_type == 0U && item_tag == 8U &&
+                   current_id != selected_id) {
+            /* Reclassify non-selected input payload as Output so it does not
+             * consume bits in the selected report's independent bit layout. */
+            filtered[offset] = (uint8_t)((9U << 4) |
+                                         (prefix & 0x0FU));
+        }
+        offset += 1U + item_size;
+    }
+    (void)has_report_ids;
+    return true;
+}
+
+bool usb_hid_generic_parse_descriptor_multi(
+    const uint8_t *descriptor, size_t descriptor_length,
+    struct nexus_usb_hid_generic_multi_layout *layout) {
+    if (descriptor == NULL || layout == NULL ||
+        descriptor_length == 0U ||
+        descriptor_length > HID_MULTI_MAX_DESCRIPTOR) return false;
+    *layout = (struct nexus_usb_hid_generic_multi_layout){0};
+
+    uint8_t ids[NEXUS_USB_HID_GENERIC_MAX_REPORTS] = {0U};
+    uint8_t id_count = 0U;
+    bool has_report_ids = false;
+    if (!hid_multi_scan_ids(descriptor, descriptor_length, ids,
+                            &id_count, &has_report_ids)) return false;
+
+    uint8_t filtered[HID_MULTI_MAX_DESCRIPTOR];
+    enum nexus_usb_hid_generic_kind common_kind = NEXUS_USB_HID_GENERIC_NONE;
+    for (uint8_t i = 0U; i < id_count; ++i) {
+        if (!hid_multi_filter_descriptor(descriptor, descriptor_length,
+                ids[i], has_report_ids, filtered)) return false;
+        struct nexus_usb_hid_generic_layout candidate = {0};
+        if (!usb_hid_generic_parse_descriptor(filtered, descriptor_length,
+                                               &candidate)) continue;
+        if (candidate.kind == NEXUS_USB_HID_GENERIC_NONE) continue;
+        if (common_kind != NEXUS_USB_HID_GENERIC_NONE &&
+            candidate.kind != common_kind) return false;
+        common_kind = candidate.kind;
+        if (layout->report_count >= NEXUS_USB_HID_GENERIC_MAX_REPORTS)
+            return false;
+        if (has_report_ids) {
+            candidate.has_report_id = ids[i] != 0U;
+            candidate.report_id = ids[i];
+        }
+        const uint16_t needed = (uint16_t)candidate.input_bytes +
+            (candidate.has_report_id ? 1U : 0U);
+        if (needed > layout->max_report_bytes)
+            layout->max_report_bytes = (uint8_t)needed;
+        layout->reports[layout->report_count++] = candidate;
+    }
+
+    return layout->report_count != 0U;
+}
+
+bool usb_hid_generic_decode_keyboard_multi(
+    const struct nexus_usb_hid_generic_multi_layout *layout,
+    const uint8_t *report, size_t report_length, uint8_t boot_report[8]) {
+    if (layout == NULL || report == NULL || boot_report == NULL) return false;
+    for (uint8_t i = 0U; i < layout->report_count; ++i) {
+        const struct nexus_usb_hid_generic_layout *candidate =
+            &layout->reports[i];
+        if (candidate->kind != NEXUS_USB_HID_GENERIC_KEYBOARD) continue;
+        if (candidate->has_report_id &&
+            (report_length == 0U || report[0] != candidate->report_id))
+            continue;
+        if (usb_hid_generic_decode_keyboard(candidate, report,
+                report_length, boot_report)) return true;
+    }
+    return false;
+}
+
+bool usb_hid_generic_decode_mouse_multi(
+    const struct nexus_usb_hid_generic_multi_layout *layout,
+    const uint8_t *report, size_t report_length,
+    struct nexus_usb_mouse_event *event) {
+    if (layout == NULL || report == NULL || event == NULL) return false;
+    for (uint8_t i = 0U; i < layout->report_count; ++i) {
+        const struct nexus_usb_hid_generic_layout *candidate =
+            &layout->reports[i];
+        if (candidate->kind != NEXUS_USB_HID_GENERIC_MOUSE) continue;
+        if (candidate->has_report_id &&
+            (report_length == 0U || report[0] != candidate->report_id))
+            continue;
+        if (usb_hid_generic_decode_mouse(candidate, report,
+                report_length, event)) return true;
+    }
+    return false;
+}

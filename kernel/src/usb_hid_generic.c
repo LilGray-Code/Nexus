@@ -536,6 +536,10 @@ static bool hid_multi_scan_ids(
         offset += item_size;
     }
     if (global_depth != 0U) return false;
+    if (*has_report_ids) {
+        for (uint8_t i = 0U; i < *id_count; ++i)
+            if (ids[i] == 0U) return false;
+    }
     if (!*has_report_ids && *id_count == 0U)
         return hid_multi_add_id(ids, id_count, 0U);
     return *id_count != 0U;

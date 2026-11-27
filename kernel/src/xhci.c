@@ -13,6 +13,7 @@
 #include "usb_hid.h"
 #include "usb_hid_generic.h"
 #include "usb_hid_interfaces.h"
+#include "usb_hub.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -117,6 +118,7 @@ struct xhci_hid_device {
     uint8_t slot_id;
     uint8_t endpoint_id;
     uint8_t port_number;
+    struct nexus_usb_path usb_path;
     uint16_t max_packet;
     uint16_t vendor_id;
     uint16_t product_id;
@@ -715,8 +717,11 @@ static bool xhci_command_enable_slot(struct xhci_controller *xhci,
 
 static bool xhci_setup_device_context(struct xhci_controller *xhci,
                                       struct xhci_hid_device *device,
-                                      uint8_t port_number, uint8_t speed,
-                                      uint16_t ep0_packet) {
+                                      const struct nexus_usb_path *path,
+                                      uint8_t speed, uint16_t ep0_packet) {
+    if (path == NULL || path->root_port == 0U ||
+        path->depth > NEXUS_USB_ROUTE_MAX_DEPTH ||
+        (path->route_string & ~0x000FFFFFU) != 0U) return false;
     volatile uint8_t *input_page = NULL;
     volatile uint8_t *output_page = NULL;
     volatile uint8_t *ep0_page = NULL;
@@ -747,8 +752,16 @@ static bool xhci_setup_device_context(struct xhci_controller *xhci,
 
     /* Input Control Context: add slot context and endpoint-zero context. */
     input[1] = 0x3U;
-    slot[0] = ((uint32_t)speed << 20) | (1U << 27);
-    slot[1] = (uint32_t)port_number << 16;
+    /*
+     * xHCI slot context routing for devices below hubs:
+     *   DW0[19:0] route string, DW0[23:20] speed, DW0[31:27] context entries.
+     *   DW1[7:0] parent hub slot, [15:8] parent port, [23:16] root port.
+     */
+    slot[0] = (path->route_string & 0x000FFFFFU) |
+              ((uint32_t)speed << 20) | (1U << 27);
+    slot[1] = (uint32_t)path->parent_hub_slot |
+              ((uint32_t)path->parent_port << 8) |
+              ((uint32_t)path->root_port << 16);
 
     ep0[1] = (3U << 1) | (4U << 3) | ((uint32_t)ep0_packet << 16);
     ep0[2] = (uint32_t)(device->ep0_ring.physical | 1U);
@@ -1076,16 +1089,20 @@ static bool xhci_gamepads_full(const struct xhci_controller *xhci) {
 }
 
 static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
-                                    uint8_t port_number, uint8_t speed,
+                                    const struct nexus_usb_path *path,
+                                    uint8_t speed,
                                     struct xhci_hid_device *device) {
-    if (xhci == NULL || device == NULL) return false;
+    if (xhci == NULL || path == NULL || device == NULL ||
+        path->root_port == 0U) return false;
     *device = (struct xhci_hid_device){0};
+    device->usb_path = *path;
+    device->port_number = path->root_port;
     if (!xhci_command_enable_slot(xhci, &device->slot_id)) return false;
 
     if (!nexus_xhci_speed_supported(speed)) goto failed;
     const uint16_t default_packet =
         nexus_xhci_default_ep0_packet_size(speed);
-    if (!xhci_setup_device_context(xhci, device, port_number, speed,
+    if (!xhci_setup_device_context(xhci, device, path, speed,
                                    default_packet)) goto failed;
 
     uint8_t descriptor[18] = {0U};
@@ -1134,7 +1151,7 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     }
     if (has_usb_hub_interface) {
         serial_write("xHCI: USB hub detected at root port ");
-        serial_write_hex(port_number);
+        serial_write_hex(path->root_port);
         serial_write(" VID/PID=");
         serial_write_hex(device->vendor_id);
         serial_write("/");
@@ -1190,7 +1207,7 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
                                            max_packet, interval, speed))
         goto failed;
     device->kind = kind;
-    device->port_number = port_number;
+    device->port_number = path->root_port;
     device->active = true;
     if (!xhci_schedule_interrupt_read(xhci, device)) goto failed;
     serial_write(kind == XHCI_HID_KEYBOARD
@@ -1349,8 +1366,10 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         serial_write_hex(speed);
         serial_write("\r\n");
 
+        struct nexus_usb_path path = {0};
+        if (!nexus_usb_path_root(port_number, &path)) continue;
         struct xhci_hid_device device = {0};
-        if (!xhci_enumerate_hid_port(xhci, port_number, speed, &device))
+        if (!xhci_enumerate_hid_port(xhci, &path, speed, &device))
             continue;
         if (!xhci_attach_hid_device(xhci, &device))
             xhci_release_hid_device(xhci, &device);
@@ -1444,8 +1463,10 @@ static void xhci_rescan_root_ports_internal(struct xhci_controller *xhci) {
 
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port_number, &speed)) continue;
+        struct nexus_usb_path path = {0};
+        if (!nexus_usb_path_root(port_number, &path)) continue;
         struct xhci_hid_device device = {0};
-        if (!xhci_enumerate_hid_port(xhci, port_number, speed, &device))
+        if (!xhci_enumerate_hid_port(xhci, &path, speed, &device))
             continue;
         if (!xhci_attach_hid_device(xhci, &device))
             xhci_release_hid_device(xhci, &device);

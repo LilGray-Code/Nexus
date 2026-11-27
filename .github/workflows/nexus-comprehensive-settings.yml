@@ -9,6 +9,9 @@ on:
       - "kernel/src/settings.h"
       - "kernel/src/desktop.c"
       - "kernel/src/desktop_services.c"
+      - "kernel/src/graphics.c"
+      - "kernel/src/graphics.h"
+      - "kernel/tests/graphics_readback_test.c"
       - "kernel/src/desktop_services.h"
       - "kernel/tests/desktop_services_test.c"
       - "kernel/src/desktop.h"
@@ -31,6 +34,9 @@ on:
     paths:
       - "kernel/src/settings.c"
       - "kernel/src/settings.h"
+      - "kernel/src/graphics.c"
+      - "kernel/src/graphics.h"
+      - "kernel/tests/graphics_readback_test.c"
       - "kernel/src/desktop.c"
       - "kernel/src/desktop.h"
       - "kernel/src/audio.c"
@@ -69,5 +75,12 @@ jobs:
             kernel/tests/desktop_services_test.c \
             -o /tmp/nexus-desktop-services-test
           /tmp/nexus-desktop-services-test
+      - name: Compile and run framebuffer readback regression tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/graphics.c \
+            kernel/tests/graphics_readback_test.c \
+            -o /tmp/nexus-graphics-readback-test
+          /tmp/nexus-graphics-readback-test
       - name: Compile complete freestanding Nexus kernel
         run: make -C kernel

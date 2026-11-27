@@ -302,14 +302,18 @@ JavaScript/CSS/DOM engine and cannot run Chrome web applications. See
 [`docs/development/SOFTWARE-ECOSYSTEM.md`](docs/development/SOFTWARE-ECOSYSTEM.md)
 for the format and trust requirements. The [Steam/game compatibility roadmap](docs/development/STEAM-COMPATIBILITY-ROADMAP.md) lists the Linux ABI, process model, audio, 3D, filesystem, and runtime work that still blocks Steam titles.
 
-The boot architecture now includes a bus-neutral driver registry with
-priority-based matching, probe fall-through, and per-device bind records.
-AHCI and NVMe initialization are dispatched through registered PCI drivers;
-other existing controllers are being migrated incrementally. A dependency-aware
-service supervisor now orders PCI discovery, graphics, network devices and
-stack, storage, timer, input, audio, desktop, and process-runtime startup. These
-callbacks still execute inside the kernel: this is a lifecycle/control layer,
-not yet isolated ring-3 service processes or dynamically loadable driver modules.
+The boot architecture now includes a bounded bus-neutral PnP/driver registry
+with subsystem-aware PCI identity matching, priority-based probe fallback,
+dependency checks, binding history and recovery rescans. AHCI/NVMe are
+dispatched through registered PCI drivers; E1000, RTL8139, VirtIO network,
+xHCI, AC'97 and VirtIO GPU descriptors are also registered and bind only after
+their existing initialization paths report the matching controller ready. The
+Devices settings overview reports driver/device counts, while Terminal exposes
+driver inventory, errors, load/unload and rescan commands. A dependency-aware
+service supervisor orders PCI discovery, graphics, network, storage, timer,
+input, audio, desktop, and process-runtime startup. These callbacks still run
+inside the kernel; this is not yet a signed loadable-module system or isolated
+ring-3 service environment.
 
 The desktop applications and current system services are integrated into the
 kernel. The ELF64 loader has a bounded ring-3 execution test, but this does

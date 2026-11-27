@@ -1018,12 +1018,26 @@ static void xhci_free_hid_device_dma(struct xhci_controller *xhci,
         (void)memory_free_page(device->interrupt_ring.physical);
     if (device->report_buffer_physical != 0U)
         (void)memory_free_page(device->report_buffer_physical);
+    if (device->secondary_interrupt_ring.physical != 0U)
+        (void)memory_free_page(device->secondary_interrupt_ring.physical);
+    if (device->secondary_report_buffer_physical != 0U)
+        (void)memory_free_page(device->secondary_report_buffer_physical);
     *device = (struct xhci_hid_device){0};
 }
 
 static void xhci_release_hid_device(struct xhci_controller *xhci,
                                     struct xhci_hid_device *device) {
     if (xhci == NULL || device == NULL) return;
+    if (device->secondary_active) {
+        if (device->secondary_kind == XHCI_HID_KEYBOARD) {
+            const uint8_t release[8] = {0U};
+            input_usb_keyboard_report_state(
+                &device->secondary_keyboard_state, release);
+        } else if (device->secondary_kind == XHCI_HID_MOUSE) {
+            const uint8_t release[3] = {0U};
+            input_usb_mouse_report(release);
+        }
+    }
     if (device->slot_id != 0U)
         (void)xhci_disable_slot(xhci, device->slot_id);
     xhci_free_hid_device_dma(xhci, device);

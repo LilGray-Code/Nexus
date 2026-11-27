@@ -816,6 +816,11 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
     struct nexus_usb_hid_interface_set interfaces = {0};
     if (!nexus_usb_hid_collect_interfaces(configuration, length, &interfaces))
         return false;
+    if (interfaces.interface_count > 1U) {
+        serial_write("xHCI: composite HID receiver detected; HID interfaces=");
+        serial_write_hex(interfaces.interface_count);
+        serial_write("; activating one interface only until multi-endpoint dispatch is implemented\r\n");
+    }
 
     const struct nexus_usb_hid_interface *selected = NULL;
     /* Prefer boot keyboards, then boot mice, then generic HID interfaces.
@@ -1492,7 +1497,7 @@ bool xhci_init(void) {
         if (xhci_try_controller(device)) return true;
     }
     if (candidates == 0U) {
-        serial_write("USB: no PCI xHCI controller found; PS/2 or a supported legacy host controller is required\r\n");
+        serial_write("USB: no PCI xHCI controller found; no operational USB host-controller driver available; use another supported input path\r\n");
     } else {
         serial_write("USB: xHCI controllers found but no supported directly attached HID device was initialized\r\n");
     }

@@ -14,6 +14,7 @@ on:
       - "kernel/Makefile"
       - "kernel/tests/developer_tools_test.c"
       - "kernel/tests/log_buffer_test.c"
+      - "kernel/tests/log_buffer_bench.c"
       - "kernel/tests/trace_test.c"
       - "sdk/**"
       - "docs/development/**"

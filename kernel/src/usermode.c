@@ -360,7 +360,84 @@ bool usermode_run_selftest(void) {
     }
     const bool result_ok = executed && exit_status == USER_EXIT_STATUS &&
                            usermode_write_rejected && output_matches;
-    return process_reap(pid) && result_ok;
+    if (!process_reap(pid) || !result_ok) return false;
+
+    /*
+     * A package-default process must not be able to write arbitrary files.
+     * The test deliberately passes NULL pointers: policy denial must happen
+     * before any attempted user-memory access or filesystem operation.
+     */
+    static const uint8_t denied_write_program[] = {
+        0x48, 0xC7, 0xC0, 0x06, 0x00, 0x00, 0x00, /* FILE_WRITE */
+        0x48, 0x31, 0xFF,                         /* xor rdi, rdi */
+        0x48, 0x31, 0xF6,                         /* xor rsi, rsi */
+        0x48, 0x31, 0xD2,                         /* xor rdx, rdx */
+        0xCD, 0x80,                               /* int 0x80 */
+        0x48, 0x83, 0xF8, 0xFF,                   /* cmp rax, -EPERM */
+        0x74, 0x02,                               /* je success */
+        0xEB, 0xFE,                               /* failure: spin */
+        0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00, /* EXIT */
+        0x48, 0xC7, 0xC7, 0x2A, 0x00, 0x00, 0x00, /* status 42 */
+        0xCD, 0x80,
+        0xEB, 0xFE
+    };
+    if (!build_test_elf(&elf_file_size)) return false;
+    for (size_t i = 0U; i < sizeof(denied_write_program); ++i)
+        usermode_test_elf[0x1000U + i] = denied_write_program[i];
+
+    uint32_t policy_pid = 0U;
+    if (!process_spawn_elf_with_capabilities(
+            "PERMTEST", usermode_test_elf, elf_file_size,
+            NEXUS_CAP_PACKAGE_DEFAULT, &policy_pid)) return false;
+    uint64_t policy_status = UINT64_MAX;
+    const bool policy_executed = process_run(policy_pid, &policy_status);
+    struct nexus_security_event audit_events[NEXUS_SECURITY_AUDIT_CAPACITY];
+    uint64_t audit_cursor = 1U;
+    const size_t audit_count = nexus_security_audit_read(
+        &audit_cursor, audit_events, NEXUS_SECURITY_AUDIT_CAPACITY);
+    bool write_denial_audited = false;
+    for (size_t i = 0U; i < audit_count; ++i) {
+        if (audit_events[i].type ==
+                NEXUS_SECURITY_EVENT_CAPABILITY_DENIED &&
+            audit_events[i].actor_pid == policy_pid &&
+            audit_events[i].auxiliary == NEXUS_CAP_FILE_WRITE) {
+            write_denial_audited = true;
+            break;
+        }
+    }
+    const bool policy_reaped = process_reap(policy_pid);
+    if (!policy_executed || policy_status != USER_EXIT_STATUS ||
+        !write_denial_audited || !policy_reaped) return false;
+
+    /*
+     * Finally, execute UD2 from ring 3. It must fail this process, return to
+     * the kernel, and leave a structured exception event instead of halting
+     * the entire machine.
+     */
+    if (!build_test_elf(&elf_file_size)) return false;
+    usermode_test_elf[0x1000U] = 0x0FU;
+    usermode_test_elf[0x1001U] = 0x0BU;
+    uint32_t fault_pid = 0U;
+    if (!process_spawn_elf("FAULTTEST", usermode_test_elf,
+                           elf_file_size, &fault_pid)) return false;
+    uint64_t fault_status = UINT64_MAX;
+    const bool fault_was_contained = !process_run(fault_pid, &fault_status);
+    audit_cursor = 1U;
+    const size_t fault_audit_count = nexus_security_audit_read(
+        &audit_cursor, audit_events, NEXUS_SECURITY_AUDIT_CAPACITY);
+    bool fault_audited = false;
+    for (size_t i = 0U; i < fault_audit_count; ++i) {
+        if (audit_events[i].type == NEXUS_SECURITY_EVENT_USER_EXCEPTION &&
+            audit_events[i].actor_pid == fault_pid &&
+            audit_events[i].code == 6U) {
+            fault_audited = true;
+            break;
+        }
+    }
+    const bool fault_reaped = process_reap(fault_pid);
+    return fault_was_contained &&
+           fault_status == (0x8000000000000000ULL | 6U) &&
+           fault_audited && fault_reaped;
 }
 
 int64_t usermode_sys_write(uint64_t user_address, uint64_t length) {

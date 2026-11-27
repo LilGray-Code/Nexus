@@ -3783,8 +3783,8 @@ static void draw_pointer(void) {
     const uint64_t y = (uint64_t)pointer_y;
     const uint64_t scale = desktop_settings.cursor_size == 0U
         ? 1U : desktop_settings.cursor_size;
-    const uint8_t edge = desktop_settings.high_contrast
-        ? (desktop_theme_is_light() ? 0U : 255U) : 5U;
+    /* Keep the outline dark in both themes so the white face stays distinct. */
+    const uint8_t edge = desktop_settings.high_contrast ? 0U : 5U;
 
     for (uint32_t row = 0U; row < 23U; ++row) {
         const uint16_t bits = arrow_rows[row];

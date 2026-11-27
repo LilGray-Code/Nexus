@@ -1020,6 +1020,7 @@ void kmain(void) {
     __asm__ volatile ("sti" : : : "memory");
     for (;;) {
         net_poll();
+        (void)input_poll_ps2();
         xhci_poll();
         ac97_poll();
         struct nexus_input_event event;

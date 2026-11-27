@@ -221,7 +221,7 @@ static bool files_vfs_ready;
 #define FILES_EDITOR_VIEW_BYTES 256U
 
 #define FILES_LISTING_MAX_ENTRIES NEXUS_FILE_LIST_MAX_ENTRIES
-#define FILES_LISTING_VISIBLE 6U
+#define FILES_LISTING_VISIBLE 4U
 
 static char files_first_name[NEXUS_VFS_NAME_MAX];
 static char files_preview[41];
@@ -3241,52 +3241,55 @@ static void draw_shell(void) {
                 if (files_listing_get_entry(files_selected_index, &selected)) {
                     char property_size[24];
                     format_u64(selected.size, property_size);
-                    graphics_draw_text(text_x, text_y + 374U,
+                    graphics_draw_text(text_x, text_y + 390U,
                         selected.name, 1U, 119U, 229U, 211U);
-                    graphics_draw_text(text_x + 260U, text_y + 374U,
+                    graphics_draw_text(text_x + 260U, text_y + 390U,
                         files_detect_type(selected.name), 1U,
                         170U, 191U, 211U);
-                    graphics_draw_text(text_x, text_y + 390U,
+                    graphics_draw_text(text_x, text_y + 408U,
                         property_size, 1U, 233U, 243U, 252U);
-                    graphics_draw_text(text_x + 72U, text_y + 390U,
+                    graphics_draw_text(text_x + 72U, text_y + 408U,
                         "BYTES", 1U, 170U, 191U, 211U);
-                    graphics_draw_text(text_x + 140U, text_y + 390U,
+                    graphics_draw_text(text_x + 140U, text_y + 408U,
                         selected.type == NEXUS_VFS_DIRECTORY ? "DIRECTORY" :
                             (vfs_file_writable(selected.name) ? "WRITABLE" : "READ ONLY"),
                         1U, 170U, 191U, 211U);
                 }
             } else if (files_run_output_available) {
-                graphics_draw_text(text_x, text_y + 374U,
+                graphics_draw_text(text_x, text_y + 390U,
                     files_run_output, 1U, 188U, 218U, 194U);
             } else if (files_preview[0] != '\0') {
-                graphics_draw_text(text_x, text_y + 374U,
+                graphics_draw_text(text_x, text_y + 390U,
                     files_preview, 1U, 170U, 191U, 211U);
             }
             char item_count_text[21], directory_bytes_text[21];
             format_u64((uint64_t)files_listing_count, item_count_text);
             format_u64(files_directory_total_bytes, directory_bytes_text);
-            graphics_draw_text(text_x, text_y + 356U, "ITEMS", 1U,
+            graphics_draw_text(text_x, text_y + 374U, "ITEMS", 1U,
                                170U, 191U, 211U);
-            graphics_draw_text(text_x + 48U, text_y + 356U,
+            graphics_draw_text(text_x + 48U, text_y + 374U,
                                item_count_text, 1U, 233U, 243U, 252U);
-            graphics_draw_text(text_x + 104U, text_y + 356U,
+            graphics_draw_text(text_x + 104U, text_y + 374U,
                                "FILE BYTES", 1U, 170U, 191U, 211U);
-            graphics_draw_text(text_x + 192U, text_y + 356U,
+            graphics_draw_text(text_x + 192U, text_y + 374U,
                                directory_bytes_text, 1U, 233U, 243U, 252U);
-            graphics_draw_text(text_x, text_y + 390U,
-                files_app_status, 1U,
-                files_app_status[0] == '\0' ? 139U : 119U,
-                files_app_status[0] == '\0' ? 163U : 229U,
-                files_app_status[0] == '\0' ? 188U : 190U);
-            graphics_draw_text(text_x, text_y + 408U,
-                "CTRL+T TAB  CTRL+W CLOSE  CTRL+TAB SWITCH  F3 INFO  F4 FILTER",
-                1, 170, 191, 211);
+            if (!files_property_open) {
+                graphics_draw_text(text_x, text_y + 408U,
+                    files_app_status, 1U,
+                    files_app_status[0] == '\0' ? 139U : 119U,
+                    files_app_status[0] == '\0' ? 163U : 229U,
+                    files_app_status[0] == '\0' ? 188U : 190U);
+            }
             if (files_run_output_truncated || files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 420U,
                     files_run_output_truncated
                         ? "PROGRAM OUTPUT TRUNCATED"
                         : "DIRECTORY LIST LIMITED TO 512 ENTRIES",
                     1, 239, 177, 119);
+            } else {
+                graphics_draw_text(text_x, text_y + 420U,
+                    "CTRL+T TAB  CTRL+W CLOSE  CTRL+TAB SWITCH  F3 INFO  F4 FILTER",
+                    1, 170, 191, 211);
             }
         }
         }
@@ -8787,7 +8790,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
             const int64_t relative_list_y =
                 pointer_y - (int64_t)(ty + 321U);
-            if (relative_list_y >= 0 && relative_list_y < 60 &&
+            if (relative_list_y >= 0 && relative_list_y < 48 &&
                 relative_x >= 0 && relative_x < 500) {
                 const size_t row = (size_t)relative_list_y / 24U;
                 const size_t column = (size_t)relative_x / 260U;

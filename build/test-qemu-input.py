@@ -354,9 +354,16 @@ def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
         # upward-positive, while Nexus screen coordinates are downward-positive.
         qmp.hmp(f"mouse_move {x - current_x} {current_y - y}")
         time.sleep(0.15)
-        qmp.hmp("mouse_button 1")
+        # Use QMP's explicit button transitions. This bypasses the legacy HMP
+        # mouse_button state cache while still routing through the active USB
+        # HID mouse selected above.
+        qmp.input([
+            {"type": "btn", "data": {"button": "left", "down": True}},
+        ])
         time.sleep(0.12)
-        qmp.hmp("mouse_button 0")
+        qmp.input([
+            {"type": "btn", "data": {"button": "left", "down": False}},
+        ])
         wait_for_predicate(
             serial_log,
             lambda value: marker in value,

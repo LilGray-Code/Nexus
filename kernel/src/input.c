@@ -36,6 +36,7 @@ static bool keyboard_e0_prefix;
 static uint8_t keyboard_e1_remaining;
 static bool keyboard_ready;
 static bool mouse_ready;
+static bool usb_mouse_report_logged;
 static struct nexus_usb_keyboard_state default_input_keyboard_state;
 
 static void queue_event(const struct nexus_input_event *event);
@@ -229,6 +230,7 @@ bool input_init(void) {
     usb_hid_keyboard_state_reset(&default_input_keyboard_state);
     keyboard_ready = false;
     mouse_ready = false;
+    usb_mouse_report_logged = false;
 
     /* Disable both PS/2 ports while configuring the controller. */
     if (!controller_command(0xADU) || !controller_command(0xA7U)) {
@@ -400,15 +402,18 @@ void input_usb_mouse_report_sized(const uint8_t *report,
     };
     queue_event(&event);
     input_interrupt_restore(interrupt_flags);
-    serial_write("INPUT: USB HID mouse report buttons=");
-    serial_write_hex(decoded.buttons);
-    serial_write(" dx=");
-    serial_write_hex((uint16_t)decoded.dx);
-    serial_write(" dy=");
-    serial_write_hex((uint16_t)decoded.dy);
-    serial_write(" wheel=");
-    serial_write_hex((uint8_t)decoded.wheel);
-    serial_write("\r\n");
+    if (!usb_mouse_report_logged) {
+        usb_mouse_report_logged = true;
+        serial_write("INPUT: USB HID mouse first report buttons=");
+        serial_write_hex(decoded.buttons);
+        serial_write(" dx=");
+        serial_write_hex((uint16_t)decoded.dx);
+        serial_write(" dy=");
+        serial_write_hex((uint16_t)decoded.dy);
+        serial_write(" wheel=");
+        serial_write_hex((uint8_t)decoded.wheel);
+        serial_write("\r\n");
+    }
 }
 
 void input_usb_mouse_report(const uint8_t report[3]) {

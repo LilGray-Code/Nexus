@@ -6,7 +6,14 @@
 #include <stdint.h>
 
 #define NEXUS_FILE_LIST_NAME_MAX 32U
-#define NEXUS_FILE_LIST_MAX_ENTRIES 128U
+#define NEXUS_FILE_LIST_MAX_ENTRIES 512U
+
+enum nexus_file_filter_mode {
+    NEXUS_FILE_FILTER_ALL = 0,
+    NEXUS_FILE_FILTER_FILES,
+    NEXUS_FILE_FILTER_DIRECTORIES,
+    NEXUS_FILE_FILTER_MODE_COUNT
+};
 
 enum nexus_file_sort_mode {
     NEXUS_FILE_SORT_NAME = 0,
@@ -35,6 +42,12 @@ bool nexus_file_list_filter(const struct nexus_file_list_item *items,
                             size_t count, const char *query,
                             size_t *indices, size_t capacity,
                             size_t *matched_count);
+bool nexus_file_list_filter_mode(const struct nexus_file_list_item *items,
+                                 size_t count, const char *query,
+                                 enum nexus_file_filter_mode mode,
+                                 size_t *indices, size_t capacity,
+                                 size_t *matched_count);
 const char *nexus_file_sort_mode_label(enum nexus_file_sort_mode mode);
+const char *nexus_file_filter_mode_label(enum nexus_file_filter_mode mode);
 
 #endif

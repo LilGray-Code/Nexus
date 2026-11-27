@@ -7,6 +7,8 @@ on:
     paths:
       - "kernel/src/graphics.c"
       - "kernel/src/package.c"
+      - "kernel/src/security.c"
+      - "kernel/src/security.h"
       - "kernel/src/catalog.c"
       - "kernel/src/catalog.h"
       - "kernel/tests/catalog_test.c"
@@ -47,6 +49,8 @@ on:
     paths:
       - "kernel/src/graphics.c"
       - "kernel/src/package.c"
+      - "kernel/src/security.c"
+      - "kernel/src/security.h"
       - "kernel/src/catalog.c"
       - "kernel/src/catalog.h"
       - "kernel/tests/catalog_test.c"
@@ -149,7 +153,8 @@ jobs:
         run: |
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
             kernel/src/package.c kernel/src/sha256.c \
-            kernel/tests/package_test.c -o /tmp/nexus-package-test
+            kernel/src/security.c kernel/tests/package_test.c \
+            -o /tmp/nexus-package-test
           /tmp/nexus-package-test
       - name: Test signed catalog verification and HTTPS restrictions
         run: |

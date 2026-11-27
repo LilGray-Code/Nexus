@@ -51,6 +51,16 @@ jobs:
           grep -q "NATIVE APPS + POPULAR PRODUCTIVITY / WEB APPS" kernel/src/desktop.c
           grep -q "Store is not yet connected to this package pipeline" README.md
 
+      - name: Test shared mouse input queue coalescing
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \\
+            -DNEXUS_INPUT_HOST_TEST -ffunction-sections -fdata-sections \\
+            -Ikernel/src kernel/src/input.c kernel/tests/input_queue_test.c \\
+            -Wl,--gc-sections -o /tmp/nexus-input-queue-test
+          /tmp/nexus-input-queue-test
+
       - name: Test signed package and catalog parser contracts
         shell: bash
         run: |

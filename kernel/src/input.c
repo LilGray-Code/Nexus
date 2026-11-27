@@ -281,6 +281,14 @@ bool input_init(void) {
     return keyboard_ready || mouse_ready;
 }
 
+bool input_ps2_keyboard_ready(void) {
+    return keyboard_ready;
+}
+
+bool input_ps2_mouse_ready(void) {
+    return mouse_ready;
+}
+
 void input_keyboard_interrupt(void) {
     input_process_keyboard_scancode(inb(PS2_DATA_PORT));
 }
@@ -392,6 +400,15 @@ void input_usb_mouse_report_sized(const uint8_t *report,
     };
     queue_event(&event);
     input_interrupt_restore(interrupt_flags);
+    serial_write("INPUT: USB HID mouse report buttons=");
+    serial_write_hex(decoded.buttons);
+    serial_write(" dx=");
+    serial_write_hex((uint16_t)decoded.dx);
+    serial_write(" dy=");
+    serial_write_hex((uint16_t)decoded.dy);
+    serial_write(" wheel=");
+    serial_write_hex((uint8_t)decoded.wheel);
+    serial_write("\\r\\n");
 }
 
 void input_usb_mouse_report(const uint8_t report[3]) {

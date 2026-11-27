@@ -32,6 +32,41 @@ bool nexus_usb_hub_parse_descriptor(
     return true;
 }
 
+
+bool nexus_usb3_hub_parse_descriptor(
+    const uint8_t *descriptor, size_t length,
+    struct nexus_usb_hub_descriptor *hub) {
+    if (descriptor == NULL || hub == NULL || length < 10U ||
+        descriptor[0] < 10U ||
+        descriptor[1] != NEXUS_USB3_HUB_DESCRIPTOR_TYPE ||
+        descriptor[0] > length) return false;
+
+    const uint8_t ports = descriptor[2];
+    if (ports == 0U || ports > NEXUS_USB_HUB_MAX_PORTS) return false;
+
+    const uint16_t characteristics =
+        (uint16_t)(descriptor[3] | ((uint16_t)descriptor[4] << 8));
+    const size_t removable_bytes = (size_t)(ports + 1U + 7U) / 8U;
+    const size_t minimum_length = 10U + removable_bytes;
+    if (descriptor[0] < minimum_length || length < minimum_length)
+        return false;
+
+    *hub = (struct nexus_usb_hub_descriptor){
+        .port_count = ports,
+        .characteristics = characteristics,
+        .power_on_to_good_2ms = descriptor[5],
+        .controller_current_ma = descriptor[6],
+        .individual_port_power = (characteristics & 0x03U) == 1U,
+        .no_power_switching = (characteristics & 0x03U) == 2U,
+        .multi_tt = false,
+        .superspeed = true,
+        .header_decode_latency = descriptor[7],
+        .hub_delay_ns = (uint16_t)(descriptor[8] |
+            ((uint16_t)descriptor[9] << 8))
+    };
+    return true;
+}
+
 bool nexus_usb_path_root(uint8_t root_port, struct nexus_usb_path *path) {
     if (root_port == 0U || path == NULL) return false;
     *path = (struct nexus_usb_path){

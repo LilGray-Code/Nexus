@@ -296,6 +296,15 @@ int main(void) {
     assert(pnp.state == NEXUS_PNP_DEVICE_ACTIVE);
     assert(strcmp(pnp.driver_name, "no-remove") == 0);
     assert(!nexus_driver_manager_unload("no-remove"));
+
+    /* A replacement at the same BDF is rejected while old DMA teardown is unavailable. */
+    struct nexus_driver_device unsafe_replacement = no_remove_device;
+    unsafe_replacement.vendor_id = 0xABCDU;
+    unsafe_replacement.device_id = 0x1234U;
+    assert(!nexus_driver_manager_probe_device(&unsafe_replacement));
+    assert(nexus_driver_manager_device_at(5U, &pnp));
+    assert(pnp.state == NEXUS_PNP_DEVICE_ACTIVE);
+    assert(pnp.vendor_id == 0xDEADU && pnp.device_id == 0xBEEFU);
     assert(late_remove_count == 1U);
     return 0;
 }

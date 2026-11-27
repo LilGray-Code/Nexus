@@ -120,8 +120,77 @@ static void test_hci_command_build_and_responses(void) {
            result.return_parameter_length == 0U);
 }
 
+
+static void test_host_initialization_state_machine(void) {
+    struct nexus_bt_hci_host host = {0};
+    uint8_t packet[32] = {0U};
+    size_t packet_length = 0U;
+    nexus_bt_hci_host_init(&host);
+    assert(host.state == NEXUS_BT_HCI_HOST_RESET_PENDING);
+    assert(host.command_credits == 1U);
+
+    assert(nexus_bt_hci_host_next_command(
+        &host, packet, sizeof(packet), &packet_length));
+    assert(packet_length == 4U);
+    assert(packet[1] == 0x03U && packet[2] == 0x0CU);
+    assert(host.state == NEXUS_BT_HCI_HOST_RESET_IN_FLIGHT);
+    assert(host.outstanding_opcode == NEXUS_BT_HCI_OPCODE_RESET);
+    assert(!nexus_bt_hci_host_next_command(
+        &host, packet, sizeof(packet), &packet_length));
+
+    const uint8_t reset_complete_parameters[] = {
+        1U,0x03U,0x0CU,0U
+    };
+    const struct nexus_bt_hci_event_view reset_complete = {
+        .event_code = NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE,
+        .parameters = reset_complete_parameters,
+        .parameter_length = sizeof(reset_complete_parameters)
+    };
+    assert(nexus_bt_hci_host_handle_event(&host, &reset_complete));
+    assert(host.state == NEXUS_BT_HCI_HOST_VERSION_PENDING);
+    assert(host.command_credits == 1U);
+
+    assert(nexus_bt_hci_host_next_command(
+        &host, packet, sizeof(packet), &packet_length));
+    assert(packet[1] == 0x01U && packet[2] == 0x10U);
+    const uint8_t version_complete_parameters[] = {
+        1U,0x01U,0x10U,0U,
+        0x09U,0x0BU,0x04U,0x09U,0x34U,0x12U,0x78U,0x56U
+    };
+    const struct nexus_bt_hci_event_view version_complete = {
+        .event_code = NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE,
+        .parameters = version_complete_parameters,
+        .parameter_length = sizeof(version_complete_parameters)
+    };
+    assert(nexus_bt_hci_host_handle_event(&host, &version_complete));
+    assert(host.state == NEXUS_BT_HCI_HOST_ADDRESS_PENDING);
+    assert(host.hci_version == 0x09U);
+    assert(host.lmp_version == 0x09U);
+    assert(host.manufacturer == 0x1234U);
+    assert(host.subversion == 0x5678U);
+
+    assert(nexus_bt_hci_host_next_command(
+        &host, packet, sizeof(packet), &packet_length));
+    assert(packet[1] == 0x09U && packet[2] == 0x10U);
+    const uint8_t address_complete_parameters[] = {
+        1U,0x09U,0x10U,0U, 1U,2U,3U,4U,5U,6U
+    };
+    const struct nexus_bt_hci_event_view address_complete = {
+        .event_code = NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE,
+        .parameters = address_complete_parameters,
+        .parameter_length = sizeof(address_complete_parameters)
+    };
+    assert(nexus_bt_hci_host_handle_event(&host, &address_complete));
+    assert(host.state == NEXUS_BT_HCI_HOST_READY);
+    assert(host.controller_address[0] == 1U);
+    assert(host.controller_address[5] == 6U);
+    assert(!nexus_bt_hci_host_next_command(
+        &host, packet, sizeof(packet), &packet_length));
+}
+
 int main(void) {
     test_event_framing();
+    test_host_initialization_state_machine();
     test_hci_command_build_and_responses();
     test_acl_framing();
     test_classic_connection_and_disconnect();

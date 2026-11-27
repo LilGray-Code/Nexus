@@ -343,6 +343,16 @@ int main(void) {
     assert(vfs_enter_directory("PROJECTS"));
     assert(vfs_current_path(path, sizeof(path)));
     assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
+    assert(vfs_change_directory("/DOCUMENTS"));
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/DOCUMENTS") == 0);
+    assert(vfs_change_directory("/DOCUMENTS/PROJECTS"));
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
+    /* A failed path change is transactional and leaves the working directory. */
+    assert(!vfs_change_directory("/DOCUMENTS/MISSING"));
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
 
     /* Root-scoped preferences never follow the current nested directory. */
     static const uint8_t preferences_a[] = {

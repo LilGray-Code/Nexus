@@ -1714,7 +1714,7 @@ static void desktop_draw_system_panel(uint64_t bottom_bar) {
             graphics_draw_text(x + 20U, row_y + 7U, info.name, 1U,
                 light ? 38U : 238U, light ? 55U : 246U,
                 light ? 75U : 252U);
-            char pid_line[32];
+            char pid_line[64];
             format_labeled_u64("PID: ", info.pid, pid_line);
             graphics_draw_text(x + 150U, row_y + 7U, pid_line, 1U,
                 light ? 83U : 174U, light ? 100U : 194U,
@@ -1892,7 +1892,7 @@ static bool desktop_capture_append_header(
     return true;
 }
 
-static bool desktop_capture_screenshot(void) {
+bool desktop_capture_screenshot(void) {
     const uint64_t width = graphics_width();
     const uint64_t height = graphics_height();
     if (width == 0U || height == 0U ||

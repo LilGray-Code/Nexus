@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-file-manager-management
     paths:
       - "kernel/src/file_list.c"
       - "kernel/src/file_list.h"
@@ -12,6 +13,7 @@ on:
   pull_request:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-desktop-shell-workspaces-panels
   workflow_dispatch:
 
 permissions:

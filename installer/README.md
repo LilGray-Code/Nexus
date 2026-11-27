@@ -112,15 +112,24 @@ can be plugged in or removed while the installer or desktop is running. The
 kernel synthesizes key/button releases on disconnect to avoid stuck input
 state. USB keyboard reports preserve all eight modifier bits, including
 right-side modifiers and GUI keys, and include extended navigation/keypad
-mappings. The current xHCI controller keeps one USB keyboard and one USB mouse
-active at a time. USB boot-mouse reports are three-byte reports, so wheel and
-extra buttons on a USB mouse are not exposed by this path yet.
+mappings. The xHCI driver reserves up to 32 independent keyboard and 32 mouse
+slots across directly attached root ports, and reports are drained in the
+kernel main loop for both installer and desktop input. Device removal releases
+held keyboard keys and mouse buttons. The boot-protocol mouse decoder handles
+three-byte relative motion/button reports and an optional fourth wheel byte;
+extra mouse buttons and vendor-defined reports are not exposed.
 
-Receiver-specific features, USB hubs, multi-interface receivers, non-boot HID
-reports, native Bluetooth discovery/pairing, and non-xHCI USB host controllers
-(OHCI/UHCI/EHCI) are not implemented. Bluetooth devices and devices requiring
-vendor-specific drivers are not guaranteed to work. A Bluetooth receiver is
-usable only if it independently presents a standard USB HID boot interface.
+Compatibility is bounded by the host-controller and HID paths: USB hubs,
+multi-interface composite receivers, non-boot HID keyboard/mouse report
+formats, and non-xHCI USB host controllers (OHCI/UHCI/EHCI) are not
+implemented. Native Bluetooth discovery/pairing and vendor-specific wireless
+drivers are not implemented. A wireless receiver is supported only when it
+presents a standard boot-protocol USB HID interface directly on a supported
+xHCI root port. The PS/2 path remains available on systems with an i8042
+controller. QEMU release CI now injects USB keyboard press/release and USB
+mouse movement/click events in both the installer ISO and installed desktop;
+this is not a substitute for testing the actual PC's controller, hub and
+firmware.
 
 The ISO and installed Limine configuration request a 1920x1080, 32-bit
 framebuffer. Limine automatically selects another available mode when that

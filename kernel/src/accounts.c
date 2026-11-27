@@ -325,7 +325,9 @@ static bool decode_database(const uint8_t *input, size_t length) {
     if (input == NULL || length < ACCOUNT_DB_HEADER_BYTES +
                                   ACCOUNT_DB_TRAILER_BYTES ||
         length > ACCOUNT_DB_MAX_BYTES) return false;
-    static const uint8_t magic[8] = ACCOUNT_DB_MAGIC;
+    static const uint8_t magic[8] = {
+        'N', 'X', 'A', 'C', 'C', 'T', '0', '1'
+    };
     for (size_t i = 0U; i < sizeof(magic); ++i)
         if (input[i] != magic[i]) return false;
     if (read_le32(input + 8U) != ACCOUNT_DB_VERSION) return false;
@@ -373,6 +375,8 @@ static bool decode_database(const uint8_t *input, size_t length) {
         user->profile.ui_scale_percent = input[offset++];
         user->profile.startup_count = input[offset++];
         for (size_t app = 0U; app < NEXUS_ACCOUNT_STARTUP_MAX; ++app) {
+            if (input[offset + NEXUS_ACCOUNT_STARTUP_NAME_MAX - 1U] != 0U)
+                return false;
             copy_bytes((uint8_t *)user->profile.startup_apps[app],
                 input + offset, NEXUS_ACCOUNT_STARTUP_NAME_MAX);
             user->profile.startup_apps[app]

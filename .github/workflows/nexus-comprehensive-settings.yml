@@ -3,11 +3,17 @@ name: Nexus comprehensive Settings integration
 on:
   push:
     branches:
-      - nexus-comprehensive-settings-service-integration
+      - nexus-desktop-shell-workspaces-panels
     paths:
       - "kernel/src/settings.c"
       - "kernel/src/settings.h"
       - "kernel/src/desktop.c"
+      - "kernel/src/desktop_services.c"
+      - "kernel/src/graphics.c"
+      - "kernel/src/graphics.h"
+      - "kernel/tests/graphics_readback_test.c"
+      - "kernel/src/desktop_services.h"
+      - "kernel/tests/desktop_services_test.c"
       - "kernel/src/desktop.h"
       - "kernel/src/audio.c"
       - "kernel/src/audio.h"
@@ -24,10 +30,13 @@ on:
       - ".github/workflows/nexus-comprehensive-settings.yml"
   pull_request:
     branches:
-      - nexus-storage-management-native-fs-recovery
+      - nexus-comprehensive-settings-service-integration
     paths:
       - "kernel/src/settings.c"
       - "kernel/src/settings.h"
+      - "kernel/src/graphics.c"
+      - "kernel/src/graphics.h"
+      - "kernel/tests/graphics_readback_test.c"
       - "kernel/src/desktop.c"
       - "kernel/src/desktop.h"
       - "kernel/src/audio.c"
@@ -59,5 +68,19 @@ jobs:
             -Ikernel/src kernel/src/settings.c kernel/tests/settings_test.c \
             -o /tmp/nexus-settings-test
           /tmp/nexus-settings-test
+      - name: Compile and run desktop workspace, notification, clipboard and search tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/desktop_services.c \
+            kernel/tests/desktop_services_test.c \
+            -o /tmp/nexus-desktop-services-test
+          /tmp/nexus-desktop-services-test
+      - name: Compile and run framebuffer readback regression tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/graphics.c \
+            kernel/tests/graphics_readback_test.c \
+            -o /tmp/nexus-graphics-readback-test
+          /tmp/nexus-graphics-readback-test
       - name: Compile complete freestanding Nexus kernel
         run: make -C kernel

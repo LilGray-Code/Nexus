@@ -41,6 +41,7 @@ static uint64_t audio_physical;
 static struct nexus_ac97_bdl_entry *bdl;
 static int16_t *audio_buffer;
 static bool initialized;
+static const struct nexus_pci_device *active_pci_device;
 static bool playback_active;
 static bool playback_started;
 static bool playback_failed;
@@ -127,6 +128,7 @@ static bool reset_pcm_output(void) {
 
 bool ac97_init(void) {
     initialized = false;
+    active_pci_device = NULL;
     playback_active = false;
     playback_started = false;
     playback_failed = false;
@@ -248,6 +250,10 @@ bool ac97_init(void) {
 
 bool ac97_is_ready(void) {
     return initialized;
+}
+
+bool ac97_owns_pci_device(const struct nexus_pci_device *device) {
+    return initialized && device != NULL && active_pci_device == device;
 }
 
 bool ac97_set_master_volume(uint8_t percent) {

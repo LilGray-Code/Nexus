@@ -68,7 +68,7 @@ static void test_le_connection(void) {
     assert(nexus_bt_hci_connection_complete(&event, &connection));
     assert(connection.connected && connection.low_energy);
     assert(connection.handle == 0x0078U);
-    assert(connection.peer_address[0] == 1U &&
+    assert(connection.peer_address[0] == 2U &&
            connection.peer_address[5] == 6U);
 }
 

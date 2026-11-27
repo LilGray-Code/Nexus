@@ -308,13 +308,15 @@ def main() -> None:
         temp = Path(temporary)
         qmp_socket = temp / "qmp.sock"
         serial_log = temp / "serial.log"
+        qemu_stderr = temp / "qemu.stderr"
         vars_copy = temp / "OVMF_VARS.fd"
         shutil.copyfile(args.firmware_vars, vars_copy)
         command = build_command(args, qmp_socket, serial_log, vars_copy)
-        process = subprocess.Popen(
-            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        with qemu_stderr.open("wb") as stderr_stream:
+            process = subprocess.Popen(
+                command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=stderr_stream,
+            )
         qmp = None
         try:
             if args.topology == "hub":
@@ -342,7 +344,14 @@ def main() -> None:
             deadline = time.monotonic() + args.timeout
             while time.monotonic() < deadline:
                 if process.poll() is not None:
-                    raise RuntimeError(f"QEMU exited early with status {process.returncode}")
+                    diagnostic = qemu_stderr.read_text(
+                        encoding="utf-8", errors="replace"
+                    ) if qemu_stderr.is_file() else ""
+                    raise RuntimeError(
+                        f"QEMU exited early with status {process.returncode}"
+                        + (f"\\n--- QEMU stderr ---\\n{diagnostic[-8000:]}"
+                           if diagnostic else "\\nQEMU produced no stderr output.")
+                    )
                 if qmp_socket.exists():
                     try:
                         qmp = QMP(qmp_socket)

@@ -134,7 +134,13 @@ def build_command(args: argparse.Namespace, qmp_socket: Path,
             "-device", "usb-mouse,id=nexus-usb-mouse,bus=xhci.0",
         ]
     if args.mode == "installer":
-        command += ["-cdrom", str(args.iso), "-boot", "d"]
+        if args.installer_disk is None:
+            raise RuntimeError("installer mode requires a disposable target disk")
+        command += [
+            "-drive", f"file={args.installer_disk},if=none,id=installer-target,format=raw",
+            "-device", "nvme,drive=installer-target,serial=NEXUSINPUTTGT01",
+            "-cdrom", str(args.iso), "-boot", "d",
+        ]
     else:
         command += [
             "-drive", f"file={args.disk},if=none,id=installed,format=raw",
@@ -259,6 +265,12 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
     print("USB keyboard A make/break reached Nexus input dispatcher")
     print("USB mouse motion/click/wheel reached Nexus input dispatcher")
 
+    # The installer UI must process an actual USB click, not merely receive
+    # a mouse report in the common event queue.
+    if "NEXUS BOOT MODE: DEDICATED INSTALLER" in serial_log.read_text(
+            encoding="utf-8", errors="replace"):
+        exercise_installer_mouse_ui(qmp, serial_log)
+
     # Exercise USB hot-unplug/replug, not just boot-time enumeration. The
     # kernel must release device state and discover the reinserted peripherals.
     qmp.command("device_del", {"id": "nexus-usb-keyboard"})
@@ -362,6 +374,7 @@ def main() -> None:
     parser.add_argument("--disk", type=Path)
     parser.add_argument("--disk-interface", choices=("usb-storage", "nvme"),
                         default="usb-storage")
+    parser.add_argument("--installer-disk", type=Path)
     parser.add_argument("--firmware-code", type=Path, required=True)
     parser.add_argument("--firmware-vars", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=90)
@@ -371,6 +384,10 @@ def main() -> None:
         parser.error("--iso is required for installer mode")
     if args.mode == "desktop" and (args.disk is None or not args.disk.is_file()):
         parser.error("--disk is required for desktop mode")
+    if args.mode == "installer" and args.installer_disk is None:
+        # The harness creates a fresh sparse NVMe target inside its temporary
+        # directory so the test can exercise drive selection safely.
+        args.installer_disk = Path(".") / "nexus-installer-test-target.raw"
     if not args.firmware_code.is_file() or not args.firmware_vars.is_file():
         parser.error("OVMF firmware code/variables files must exist")
 
@@ -381,6 +398,10 @@ def main() -> None:
         qemu_stderr = temp / "qemu.stderr"
         vars_copy = temp / "OVMF_VARS.fd"
         shutil.copyfile(args.firmware_vars, vars_copy)
+        if args.mode == "installer":
+            args.installer_disk = temp / "installer-target.raw"
+            with args.installer_disk.open("wb") as target:
+                target.truncate(64 * 1024 * 1024 * 1024)
         command = build_command(args, qmp_socket, serial_log, vars_copy)
         with qemu_stderr.open("wb") as stderr_stream:
             process = subprocess.Popen(
@@ -445,8 +466,6 @@ def main() -> None:
                     timeout=args.timeout,
                 )
             exercise_usb_inputs(qmp, serial_log, args.topology)
-            if args.mode == "installer":
-                exercise_installer_mouse_ui(qmp, serial_log)
             final_log = serial_log.read_text(encoding="utf-8", errors="replace")
             print(f"NEXUS {args.mode.upper()} USB INPUT INTEGRATION TEST PASSED (topology={args.topology})")
             print(final_log[-2500:])

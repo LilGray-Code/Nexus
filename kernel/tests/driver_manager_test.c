@@ -1,5 +1,6 @@
 #include "driver_manager.h"
 #include "pci.h"
+#include "security.h"
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
@@ -64,6 +65,8 @@ int main(void) {
     };
     assert(nexus_driver_manager_probe_pci_device(&pci));
     assert(failed_probe_count == 1U && successful_probe_count == 1U);
+
+
     assert(nexus_driver_manager_binding_count() == 2U);
     assert(nexus_driver_manager_device_count() == 1U);
     struct nexus_driver_binding_info binding;
@@ -169,9 +172,28 @@ int main(void) {
     };
     pci_test_device_count = 2U;
     assert(nexus_driver_manager_discover_pci_devices() == 2U);
-    assert(nexus_driver_manager_device_count() == 4U);
+    /* Three retained records plus two newly discovered PCI functions. */
+    assert(nexus_driver_manager_device_count() == 5U);
     const size_t final_devices = nexus_driver_manager_device_count();
     assert(nexus_driver_manager_discover_pci_devices() == 0U);
     assert(nexus_driver_manager_device_count() == final_devices);
+
+    /* Malformed/untrusted descriptors are rejected and security-audited. */
+    struct nexus_driver_descriptor invalid = make_driver(
+        "invalid-driver", 1, NULL, NULL);
+    assert(!nexus_driver_manager_register(&invalid));
+    struct nexus_security_event audit_events[8];
+    uint64_t audit_cursor = 1U;
+    const size_t audit_count = nexus_security_audit_read(
+        &audit_cursor, audit_events, 8U);
+    bool invalid_registration_logged = false;
+    for (size_t i = 0U; i < audit_count; ++i) {
+        if (audit_events[i].type == NEXUS_SECURITY_EVENT_DRIVER_REJECTED &&
+            audit_events[i].code == NEXUS_SECURITY_REASON_DRIVER_UNTRUSTED) {
+            invalid_registration_logged = true;
+            break;
+        }
+    }
+    assert(invalid_registration_logged);
     return 0;
 }

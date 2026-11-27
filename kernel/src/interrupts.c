@@ -139,8 +139,34 @@ static void syscall_frame_trace(const char *phase,
 #else
 #define syscall_frame_trace(phase, frame) ((void)0)
 #endif
-__attribute__((noreturn))
 void exception_dispatch(const struct interrupt_frame *frame) {
+    /*
+     * Isolate ordinary application faults. NMI, double fault, and machine
+     * check remain system-fatal because they cannot be safely resumed here.
+     */
+    if ((frame->code_segment & 3U) == 3U &&
+        frame->vector != 2U && frame->vector != 8U &&
+        frame->vector != 18U) {
+        uint64_t fault_address = 0U;
+        if (frame->vector == 14U)
+            __asm__ volatile ("mov %%cr2, %0" : "=r"(fault_address));
+        if (usermode_record_exception(frame->vector, frame->error_code,
+                                      fault_address)) {
+            struct interrupt_frame *mutable_frame =
+                (struct interrupt_frame *)(uintptr_t)frame;
+            serial_write("USERMODE: isolated exception vector=");
+            serial_write_hex(frame->vector);
+            serial_write("\r\n");
+            mutable_frame->instruction_pointer =
+                (uint64_t)(uintptr_t)nexus_user_return;
+            mutable_frame->code_segment = 0x08U;
+            mutable_frame->user_stack_pointer = gdt_get_kernel_stack();
+            mutable_frame->user_stack_segment = 0x10U;
+            mutable_frame->flags &= ~0x200ULL;
+            return;
+        }
+    }
+
     uint16_t current_cs = 0U;
     uint16_t current_ss = 0U;
     __asm__ volatile ("mov %%cs, %0" : "=r"(current_cs));
@@ -203,13 +229,8 @@ void interrupt_dispatch(const struct interrupt_frame *frame) {
                     syscall_frame_trace("return", mutable_frame);
                     return;
                 }
-                if (!usermode_sys_write(frame->rsi, frame->rdx)) {
-                    usermode_write_rejected = true;
-                    mutable_frame->rax = (uint64_t)(int64_t)-NEXUS_EFAULT;
-                    syscall_frame_trace("return", mutable_frame);
-                    return;
-                }
-                mutable_frame->rax = frame->rdx;
+                mutable_frame->rax = (uint64_t)usermode_sys_write(
+                    frame->rsi, frame->rdx);
                 syscall_frame_trace("return", mutable_frame);
                 return;
 

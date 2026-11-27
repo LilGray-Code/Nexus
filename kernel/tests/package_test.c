@@ -1,5 +1,6 @@
 #include "package.h"
 #include "process.h"
+#include "security.h"
 #include "elf64.h"
 #include "sha256.h"
 #include "vfs.h"
@@ -26,6 +27,7 @@ static bool apps_directory;
 static bool mock_writable = true;
 static char fail_write_path[32];
 static char launched_path[32];
+static uint64_t launched_capabilities;
 
 static struct mock_file *mock_find(const char *path) {
     for (size_t i = 0U; i < MOCK_FILES; ++i)
@@ -114,9 +116,17 @@ void vfs_close(struct nexus_vfs_file *file) {
     if (file != NULL) *file = (struct nexus_vfs_file){0};
 }
 
-bool process_execute_root_file(const char *name, struct nexus_process_result *result, enum nexus_process_error *error) {
-    if (name == NULL || result == NULL || error == NULL || strlen(name) >= sizeof(launched_path)) return false;
-    strcpy(launched_path, name); result->pid = 7U; result->exit_status = 42U; *error = NEXUS_PROCESS_ERROR_NONE; return true;
+bool process_execute_root_file_with_capabilities(
+    const char *name, struct nexus_process_result *result,
+    enum nexus_process_error *error, uint64_t capabilities) {
+    if (name == NULL || result == NULL || error == NULL ||
+        strlen(name) >= sizeof(launched_path)) return false;
+    strcpy(launched_path, name);
+    launched_capabilities = capabilities;
+    result->pid = 7U;
+    result->exit_status = 42U;
+    *error = NEXUS_PROCESS_ERROR_NONE;
+    return true;
 }
 
 /* ELF loading is separately tested; this harness isolates package plumbing. */
@@ -261,6 +271,13 @@ int main(void) {
     assert(nexus_package_launch("DEMO", mock_ed25519_verify, NULL, &exit_status));
     assert(strcmp(launched_path, "APPS/DEMO-1.0.0.ELF") == 0);
     assert(exit_status == 42U);
+    assert(launched_capabilities == NEXUS_CAP_PACKAGE_DEFAULT);
+    assert((launched_capabilities & (NEXUS_CAP_FILE_READ |
+        NEXUS_CAP_INPUT | NEXUS_CAP_DISPLAY)) ==
+        (NEXUS_CAP_FILE_READ | NEXUS_CAP_INPUT | NEXUS_CAP_DISPLAY));
+    assert((launched_capabilities & (NEXUS_CAP_FILE_WRITE |
+        NEXUS_CAP_AUDIO | NEXUS_CAP_GAMEPAD | NEXUS_CAP_NETWORK |
+        NEXUS_CAP_ADMIN | NEXUS_CAP_DRIVER_MANAGE)) == 0U);
     assert(!nexus_package_launch("DEMO", NULL, NULL, &exit_status));
 
     /* An update stages the new image, commits its receipt, then reclaims old. */
@@ -306,6 +323,18 @@ int main(void) {
     assert(!nexus_package_install(package, package_length,
                                   mock_ed25519_verify, NULL, NULL));
 
+    struct nexus_security_event audit_events[32];
+    uint64_t audit_cursor = 1U;
+    const size_t audit_count = nexus_security_audit_read(
+        &audit_cursor, audit_events, 32U);
+    bool package_rejection_logged = false;
+    for (size_t i = 0U; i < audit_count; ++i) {
+        if (audit_events[i].type == NEXUS_SECURITY_EVENT_PACKAGE_REJECTED) {
+            package_rejection_logged = true;
+            break;
+        }
+    }
+    assert(package_rejection_logged);
     puts("NEXUS SIGNED PACKAGE TESTS PASSED");
     return 0;
 }

@@ -26,6 +26,7 @@ struct nexus_store_application {
     enum nexus_store_delivery delivery;
     const char *native_status;
     const char *native_filename;
+    uint64_t capabilities;
 };
 
 /* Catalog entries are first-party metadata. URLs are fixed HTTPS origins. */

@@ -1,6 +1,7 @@
 #include "driver_manager.h"
 
 #include "pci.h"
+#include "security.h"
 
 #include <stddef.h>
 
@@ -160,16 +161,31 @@ void nexus_driver_manager_init(void) {
         pnp_devices[i] = (struct pnp_device_record){0};
 }
 
+static bool reject_driver_registration(void) {
+    nexus_security_audit(NEXUS_SECURITY_EVENT_DRIVER_REJECTED, 0U,
+        NEXUS_SECURITY_REASON_DRIVER_UNTRUSTED, 0U, 0U);
+    return false;
+}
+
 bool nexus_driver_manager_register(
     const struct nexus_driver_descriptor *descriptor) {
+    /*
+     * This API registers reviewed, statically linked kernel drivers only.
+     * There is intentionally no path from a disk/network payload to these
+     * function pointers. Unknown or malformed descriptors fail closed.
+     */
     if (descriptor == NULL || descriptor->probe == NULL ||
         drivers_used >= NEXUS_DRIVER_MAX_DRIVERS ||
         descriptor->match.bus < NEXUS_DRIVER_BUS_PCI ||
-        descriptor->match.bus > NEXUS_DRIVER_BUS_USB) return false;
+        descriptor->match.bus > NEXUS_DRIVER_BUS_USB)
+        return reject_driver_registration();
     struct registered_driver candidate = {0};
-    if (!copy_name(candidate.name, descriptor->name)) return false;
-    for (size_t i = 0U; i < drivers_used; ++i)
+    if (!copy_name(candidate.name, descriptor->name))
+        return reject_driver_registration();
+    for (size_t i = 0U; i < drivers_used; ++i) {
+        /* A duplicate static registration is a benign registry conflict. */
         if (names_equal(drivers[i].name, candidate.name)) return false;
+    }
     candidate.version = descriptor->version;
     candidate.priority = descriptor->priority;
     candidate.match = descriptor->match;
@@ -232,13 +248,14 @@ bool nexus_driver_manager_probe_device(
     const struct nexus_driver_device *device) {
     if (device == NULL || device->bus < NEXUS_DRIVER_BUS_PCI ||
         device->bus > NEXUS_DRIVER_BUS_USB) return false;
+    const size_t prior_count = pnp_devices_used;
     const size_t prior = find_pnp_device(device);
-    const enum nexus_pnp_device_state prior_state =
-        prior == pnp_devices_used ? NEXUS_PNP_DEVICE_DISCOVERED
-                                  : pnp_devices[prior].info.state;
+    const bool was_known = prior < prior_count;
+    const enum nexus_pnp_device_state prior_state = was_known
+        ? pnp_devices[prior].info.state : NEXUS_PNP_DEVICE_DISCOVERED;
     const size_t record = remember_device(device);
-    if (record == pnp_devices_used) return false;
-    if (prior != pnp_devices_used) {
+    if (record >= pnp_devices_used) return false;
+    if (was_known) {
         if (pnp_devices[record].info.state == NEXUS_PNP_DEVICE_ACTIVE)
             return true;
         if (prior_state != NEXUS_PNP_DEVICE_REMOVED)
@@ -289,10 +306,10 @@ size_t nexus_driver_manager_discover_pci_devices(void) {
             .segment_group = device->segment_group,
             .native_device = device
         };
-        const size_t prior = find_pnp_device(&generic);
+        const bool was_known = find_pnp_device(&generic) < pnp_devices_used;
         (void)nexus_driver_manager_discover_device(&generic);
-        if (prior == pnp_devices_used &&
-            find_pnp_device(&generic) != pnp_devices_used) ++discovered;
+        if (!was_known &&
+            find_pnp_device(&generic) < pnp_devices_used) ++discovered;
     }
     return discovered;
 }
@@ -324,7 +341,8 @@ bool nexus_driver_manager_remove_device(
         removed = true;
     }
     const size_t record = find_pnp_device(device);
-    if (record != pnp_devices_used) {
+    if (record != pnp_devices_used &&
+        pnp_devices[record].info.state != NEXUS_PNP_DEVICE_REMOVED) {
         pnp_devices[record].info.state = NEXUS_PNP_DEVICE_REMOVED;
         pnp_devices[record].info.driver_name[0] = '\0';
         removed = true;

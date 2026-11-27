@@ -12,6 +12,7 @@
 #include "nexus/app.h"
 #include "paging.h"
 #include "process.h"
+#include "security.h"
 #include "serial.h"
 #include "syscall.h"
 #include "timer.h"
@@ -63,6 +64,8 @@ uintptr_t usermode_saved_rsp;
 volatile uint64_t usermode_exit_status = UINT64_MAX;
 volatile bool usermode_exit_seen;
 volatile bool usermode_write_rejected;
+static volatile bool usermode_fault_seen;
+static volatile bool usermode_active;
 
 extern void nexus_enter_user(uint64_t root_physical,
                              uint64_t entry_point,
@@ -275,6 +278,23 @@ static void usermode_close_all_files(void) {
     }
 }
 
+/*
+ * Called only for a CPU exception that originated at CPL3. The interrupt
+ * dispatcher redirects the saved frame to nexus_user_return, which restores
+ * the original kernel stack and CR3. Kernel-originated faults remain fatal.
+ */
+bool usermode_record_exception(uint64_t vector, uint64_t error_code,
+                               uint64_t fault_address) {
+    const uint32_t pid = nexus_security_current_pid();
+    if (!usermode_active || pid == 0U || vector > 31U) return false;
+    usermode_fault_seen = true;
+    usermode_exit_seen = true;
+    usermode_exit_status = 0x8000000000000000ULL | vector;
+    nexus_security_audit(NEXUS_SECURITY_EVENT_USER_EXCEPTION, pid,
+                         (uint16_t)vector, fault_address, error_code);
+    return true;
+}
+
 bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
                       uint64_t stack_pointer, uint64_t kernel_stack_top,
                       uint64_t *exit_status) {
@@ -301,17 +321,21 @@ bool usermode_execute(uint64_t root_physical, uint64_t entry_point,
     usermode_exit_status = UINT64_MAX;
     usermode_exit_seen = false;
     usermode_write_rejected = false;
+    usermode_fault_seen = false;
+    usermode_active = true;
 
     nexus_enter_user(root_physical, entry_point, stack_pointer,
                      kernel_stack_top);
 
+    usermode_active = false;
     const bool exited = usermode_exit_seen;
+    const bool faulted = usermode_fault_seen;
     const uint64_t status = usermode_exit_status;
     const bool fpu_restored = nexus_fpu_user_end();
     usermode_close_all_files();
     const bool stack_restored = gdt_set_kernel_stack(previous_kernel_stack);
     *exit_status = status;
-    return exited && stack_restored && fpu_restored;
+    return exited && !faulted && stack_restored && fpu_restored;
 }
 
 bool usermode_run_selftest(void) {
@@ -336,28 +360,110 @@ bool usermode_run_selftest(void) {
     }
     const bool result_ok = executed && exit_status == USER_EXIT_STATUS &&
                            usermode_write_rejected && output_matches;
-    return process_reap(pid) && result_ok;
+    if (!process_reap(pid) || !result_ok) return false;
+
+    /*
+     * A package-default process must not be able to write arbitrary files.
+     * The test deliberately passes NULL pointers: policy denial must happen
+     * before any attempted user-memory access or filesystem operation.
+     */
+    static const uint8_t denied_write_program[] = {
+        0x48, 0xC7, 0xC0, 0x06, 0x00, 0x00, 0x00, /* FILE_WRITE */
+        0x48, 0x31, 0xFF,                         /* xor rdi, rdi */
+        0x48, 0x31, 0xF6,                         /* xor rsi, rsi */
+        0x48, 0x31, 0xD2,                         /* xor rdx, rdx */
+        0xCD, 0x80,                               /* int 0x80 */
+        0x48, 0x83, 0xF8, 0xFF,                   /* cmp rax, -EPERM */
+        0x74, 0x02,                               /* je success */
+        0xEB, 0xFE,                               /* failure: spin */
+        0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00, /* EXIT */
+        0x48, 0xC7, 0xC7, 0x2A, 0x00, 0x00, 0x00, /* status 42 */
+        0xCD, 0x80,
+        0xEB, 0xFE
+    };
+    if (!build_test_elf(&elf_file_size)) return false;
+    for (size_t i = 0U; i < sizeof(denied_write_program); ++i)
+        usermode_test_elf[0x1000U + i] = denied_write_program[i];
+
+    uint32_t policy_pid = 0U;
+    if (!process_spawn_elf_with_capabilities(
+            "PERMTEST", usermode_test_elf, elf_file_size,
+            NEXUS_CAP_PACKAGE_DEFAULT, &policy_pid)) return false;
+    uint64_t policy_status = UINT64_MAX;
+    const bool policy_executed = process_run(policy_pid, &policy_status);
+    struct nexus_security_event audit_events[NEXUS_SECURITY_AUDIT_CAPACITY];
+    uint64_t audit_cursor = 1U;
+    const size_t audit_count = nexus_security_audit_read(
+        &audit_cursor, audit_events, NEXUS_SECURITY_AUDIT_CAPACITY);
+    bool write_denial_audited = false;
+    for (size_t i = 0U; i < audit_count; ++i) {
+        if (audit_events[i].type ==
+                NEXUS_SECURITY_EVENT_CAPABILITY_DENIED &&
+            audit_events[i].actor_pid == policy_pid &&
+            audit_events[i].auxiliary == NEXUS_CAP_FILE_WRITE) {
+            write_denial_audited = true;
+            break;
+        }
+    }
+    const bool policy_reaped = process_reap(policy_pid);
+    if (!policy_executed || policy_status != USER_EXIT_STATUS ||
+        !write_denial_audited || !policy_reaped) return false;
+
+    /*
+     * Finally, execute UD2 from ring 3. It must fail this process, return to
+     * the kernel, and leave a structured exception event instead of halting
+     * the entire machine.
+     */
+    if (!build_test_elf(&elf_file_size)) return false;
+    usermode_test_elf[0x1000U] = 0x0FU;
+    usermode_test_elf[0x1001U] = 0x0BU;
+    uint32_t fault_pid = 0U;
+    if (!process_spawn_elf("FAULTTEST", usermode_test_elf,
+                           elf_file_size, &fault_pid)) return false;
+    uint64_t fault_status = UINT64_MAX;
+    const bool fault_was_contained = !process_run(fault_pid, &fault_status);
+    audit_cursor = 1U;
+    const size_t fault_audit_count = nexus_security_audit_read(
+        &audit_cursor, audit_events, NEXUS_SECURITY_AUDIT_CAPACITY);
+    bool fault_audited = false;
+    for (size_t i = 0U; i < fault_audit_count; ++i) {
+        if (audit_events[i].type == NEXUS_SECURITY_EVENT_USER_EXCEPTION &&
+            audit_events[i].actor_pid == fault_pid &&
+            audit_events[i].code == 6U) {
+            fault_audited = true;
+            break;
+        }
+    }
+    const bool fault_reaped = process_reap(fault_pid);
+    return fault_was_contained &&
+           fault_status == (0x8000000000000000ULL | 6U) &&
+           fault_audited && fault_reaped;
 }
 
-bool usermode_sys_write(uint64_t user_address, uint64_t length) {
+int64_t usermode_sys_write(uint64_t user_address, uint64_t length) {
     static char kernel_buffer[128U];
-    if (length == 0U) return true;
+    if (!nexus_security_require(NEXUS_CAP_CONSOLE_WRITE))
+        return -NEXUS_EPERM;
+    if (length == 0U) return 0;
     if (length > sizeof(kernel_buffer) ||
         !paging_copy_from_user(kernel_buffer, user_address, (size_t)length)) {
-        return false;
+        usermode_write_rejected = true;
+        return -NEXUS_EFAULT;
     }
 
     /* Never dereference a userspace pointer directly in ring 0. */
     usermode_output_append(kernel_buffer, (size_t)length);
     serial_write_n(kernel_buffer, (size_t)length);
     serial_write("\r\n");
-    return true;
+    return (int64_t)length;
 }
 
 
 /* Read-only descriptor table for the current bootstrap user process. */
 int64_t usermode_sys_open(uint64_t user_path) {
     char path[NEXUS_VFS_NAME_MAX];
+    if (!nexus_security_require(NEXUS_CAP_FILE_READ))
+        return -NEXUS_EPERM;
     if (!paging_copy_from_user(path, user_path, sizeof(path))) {
         return -NEXUS_EFAULT;
     }
@@ -387,6 +493,8 @@ int64_t usermode_sys_open(uint64_t user_path) {
 
 int64_t usermode_sys_read(uint64_t descriptor, uint64_t user_buffer,
                           uint64_t length) {
+    if (!nexus_security_require(NEXUS_CAP_FILE_READ))
+        return -NEXUS_EPERM;
     if (descriptor < USERMODE_FD_BASE ||
         descriptor >= USERMODE_FD_BASE + USERMODE_FILE_SLOTS) {
         return -NEXUS_EBADF;
@@ -414,6 +522,8 @@ int64_t usermode_sys_read(uint64_t descriptor, uint64_t user_buffer,
 int64_t usermode_sys_file_write(uint64_t user_path,
                                 uint64_t user_buffer, uint64_t length) {
     char path[NEXUS_VFS_NAME_MAX];
+    if (!nexus_security_require(NEXUS_CAP_FILE_WRITE))
+        return -NEXUS_EPERM;
     static uint8_t write_buffer[NEXUS_VFS_RAM_MAX_FILE_SIZE];
 
     if (!paging_copy_from_user(path, user_path, sizeof(path)))
@@ -448,6 +558,8 @@ int64_t usermode_sys_close(uint64_t descriptor) {
 }
 
 int64_t usermode_sys_input_poll(uint64_t user_event) {
+    if (!nexus_security_require(NEXUS_CAP_INPUT))
+        return -NEXUS_EPERM;
     if (!paging_user_range_writable(user_event,
                                     sizeof(struct nexus_app_input_event))) {
         return -NEXUS_EFAULT;
@@ -475,6 +587,8 @@ int64_t usermode_sys_input_poll(uint64_t user_event) {
 
 int64_t usermode_sys_audio_write(uint64_t user_samples,
                                  uint64_t sample_frames) {
+    if (!nexus_security_require(NEXUS_CAP_AUDIO))
+        return -NEXUS_EPERM;
     if (sample_frames == 0U ||
         sample_frames > NEXUS_AC97_MAX_FRAMES)
         return -NEXUS_EINVAL;
@@ -494,6 +608,8 @@ int64_t usermode_sys_audio_write(uint64_t user_samples,
 }
 
 int64_t usermode_sys_gamepad_poll(uint64_t user_event) {
+    if (!nexus_security_require(NEXUS_CAP_GAMEPAD))
+        return -NEXUS_EPERM;
     if (!paging_user_range_writable(
             user_event, sizeof(struct nexus_app_gamepad_event)))
         return -NEXUS_EFAULT;
@@ -508,6 +624,8 @@ int64_t usermode_sys_gamepad_poll(uint64_t user_event) {
 }
 
 int64_t usermode_sys_display_info(uint64_t user_info) {
+    if (!nexus_security_require(NEXUS_CAP_DISPLAY))
+        return -NEXUS_EPERM;
     const uint64_t width = graphics_width();
     const uint64_t height = graphics_height();
     const uint64_t pitch = graphics_pitch();
@@ -529,6 +647,8 @@ int64_t usermode_sys_display_info(uint64_t user_info) {
 }
 
 int64_t usermode_sys_cpu_info(uint64_t user_info) {
+    if (!nexus_security_require(NEXUS_CAP_SYSTEM_INFO))
+        return -NEXUS_EPERM;
     const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
     if (cpu == NULL || !cpu->cpuid_available) return -NEXUS_ENODEV;
 
@@ -577,10 +697,14 @@ int64_t usermode_sys_cpu_info(uint64_t user_info) {
 }
 
 int64_t usermode_sys_clock_ticks(void) {
+    if (!nexus_security_require(NEXUS_CAP_CLOCK))
+        return -NEXUS_EPERM;
     return (int64_t)timer_ticks();
 }
 
 int64_t usermode_sys_framebuffer_blit(uint64_t user_request) {
+    if (!nexus_security_require(NEXUS_CAP_DISPLAY))
+        return -NEXUS_EPERM;
     struct nexus_app_blit_request request;
     static uint32_t staging[NEXUS_APP_FRAME_MAX_PIXELS];
 

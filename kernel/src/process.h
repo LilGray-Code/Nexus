@@ -42,6 +42,9 @@ struct nexus_process_result {
 void process_init(void);
 bool process_spawn_elf(const char *name, const void *image, size_t image_size,
                        uint32_t *pid);
+bool process_spawn_elf_with_capabilities(const char *name, const void *image,
+                                         size_t image_size, uint64_t capabilities,
+                                         uint32_t *pid);
 bool process_run(uint32_t pid, uint64_t *exit_status);
 bool process_execute_file(const char *name,
                           struct nexus_process_result *result,
@@ -50,6 +53,9 @@ bool process_execute_file(const char *name,
 bool process_execute_root_file(const char *name,
                                struct nexus_process_result *result,
                                enum nexus_process_error *error);
+bool process_execute_root_file_with_capabilities(
+    const char *name, struct nexus_process_result *result,
+    enum nexus_process_error *error, uint64_t capabilities);
 size_t process_count(void);
 bool process_get_info(size_t slot, struct nexus_process_info *info);
 bool process_reap(uint32_t pid);

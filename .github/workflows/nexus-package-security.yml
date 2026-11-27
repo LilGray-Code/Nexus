@@ -9,6 +9,8 @@ on:
       - "kernel/src/package.h"
       - "kernel/src/sha256.c"
       - "kernel/src/sha256.h"
+      - "kernel/src/security.c"
+      - "kernel/src/security.h"
       - "kernel/tests/package_test.c"
       - ".github/workflows/nexus-package-security.yml"
   pull_request:
@@ -31,7 +33,7 @@ jobs:
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src kernel/src/package.c kernel/src/sha256.c \
-            kernel/tests/package_test.c \
+            kernel/src/security.c kernel/tests/package_test.c \
             -o /tmp/nexus-package-security-test
 
       - name: Run signed-package and tamper-detection tests

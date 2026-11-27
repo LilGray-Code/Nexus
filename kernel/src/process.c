@@ -2,6 +2,7 @@
 
 #include "elf64.h"
 #include "paging.h"
+#include "security.h"
 #include "usermode.h"
 #include "vfs.h"
 
@@ -18,6 +19,7 @@ struct nexus_process {
     uint64_t entry_point;
     uint64_t stack_pointer;
     uint64_t exit_status;
+    uint64_t capabilities;
     char name[NEXUS_PROCESS_NAME_MAX];
     uint8_t kernel_stack[PROCESS_KERNEL_STACK_SIZE]
         __attribute__((aligned(16)));
@@ -41,6 +43,7 @@ static void clear_slot(struct nexus_process *process) {
     process->entry_point = 0U;
     process->stack_pointer = 0U;
     process->exit_status = UINT64_MAX;
+    process->capabilities = 0U;
     process->name[0] = '\0';
 }
 
@@ -120,8 +123,21 @@ void process_init(void) {
 
 bool process_spawn_elf(const char *name, const void *image, size_t image_size,
                        uint32_t *pid) {
+    return process_spawn_elf_with_capabilities(name, image, image_size,
+                                                NEXUS_CAP_APP_DEFAULT, pid);
+}
+
+bool process_spawn_elf_with_capabilities(
+    const char *name, const void *image, size_t image_size,
+    uint64_t capabilities, uint32_t *pid) {
     if (image == NULL || image_size == 0U ||
         image_size > PROCESS_MAX_IMAGE_SIZE || pid == NULL) return false;
+    if (!nexus_security_capabilities_valid(capabilities)) {
+        nexus_security_audit(NEXUS_SECURITY_EVENT_POLICY_REJECTED,
+            nexus_security_current_pid(),
+            NEXUS_SECURITY_REASON_INVALID_CAPABILITIES, capabilities, 0U);
+        return false;
+    }
 
     char process_name[NEXUS_PROCESS_NAME_MAX];
     if (!copy_process_name(process_name, name)) return false;
@@ -154,6 +170,7 @@ bool process_spawn_elf(const char *name, const void *image, size_t image_size,
     process->entry_point = entry_point;
     process->stack_pointer = stack_pointer;
     process->exit_status = UINT64_MAX;
+    process->capabilities = capabilities;
     for (size_t i = 0; i < NEXUS_PROCESS_NAME_MAX; ++i) {
         process->name[i] = process_name[i];
     }
@@ -166,6 +183,16 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
     struct nexus_process *process = find_process(pid);
     if (process == NULL || process->state != NEXUS_PROCESS_READY) return false;
 
+    if (!nexus_security_context_enter(process->pid,
+                                      process->capabilities)) {
+        (void)paging_destroy_user_address_space(process->address_space);
+        process->address_space = 0U;
+        process->exit_status = UINT64_MAX;
+        *exit_status = UINT64_MAX;
+        process->state = NEXUS_PROCESS_FAILED;
+        return false;
+    }
+
     process->state = NEXUS_PROCESS_RUNNING;
     const uint64_t kernel_stack_top = (uint64_t)(uintptr_t)
         (process->kernel_stack + sizeof(process->kernel_stack));
@@ -173,6 +200,7 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
     const bool executed =
         usermode_execute(process->address_space, process->entry_point,
                          process->stack_pointer, kernel_stack_top, &status);
+    nexus_security_context_leave(process->pid);
     const bool reclaimed =
         paging_destroy_user_address_space(process->address_space);
     process->address_space = 0U;
@@ -189,7 +217,8 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
 
 static bool process_execute_file_internal(
     const char *name, struct nexus_process_result *result,
-    enum nexus_process_error *error, bool root_scoped) {
+    enum nexus_process_error *error, bool root_scoped,
+    uint64_t capabilities) {
     if (error != NULL) *error = NEXUS_PROCESS_ERROR_NONE;
     if (result == NULL || name == NULL) {
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_NOT_FOUND;
@@ -245,7 +274,8 @@ static bool process_execute_file_internal(
     }
 
     uint32_t pid = 0U;
-    const bool spawned = process_spawn_elf(name, process_image, total_read, &pid);
+    const bool spawned = process_spawn_elf_with_capabilities(
+        name, process_image, total_read, capabilities, &pid);
     /* The ELF loader has copied the image into its address space; erase the
      * shared staging buffer before running untrusted user code. */
     wipe_process_image();
@@ -267,13 +297,22 @@ static bool process_execute_file_internal(
 bool process_execute_file(const char *name,
                           struct nexus_process_result *result,
                           enum nexus_process_error *error) {
-    return process_execute_file_internal(name, result, error, false);
+    return process_execute_file_internal(name, result, error, false,
+                                          NEXUS_CAP_APP_DEFAULT);
 }
 
 bool process_execute_root_file(const char *name,
                                struct nexus_process_result *result,
                                enum nexus_process_error *error) {
-    return process_execute_file_internal(name, result, error, true);
+    return process_execute_file_internal(name, result, error, true,
+                                          NEXUS_CAP_APP_DEFAULT);
+}
+
+bool process_execute_root_file_with_capabilities(
+    const char *name, struct nexus_process_result *result,
+    enum nexus_process_error *error, uint64_t capabilities) {
+    return process_execute_file_internal(name, result, error, true,
+                                          capabilities);
 }
 
 size_t process_count(void) {

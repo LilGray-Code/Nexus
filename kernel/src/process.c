@@ -131,8 +131,13 @@ bool process_spawn_elf_with_capabilities(
     const char *name, const void *image, size_t image_size,
     uint64_t capabilities, uint32_t *pid) {
     if (image == NULL || image_size == 0U ||
-        image_size > PROCESS_MAX_IMAGE_SIZE || pid == NULL ||
-        !nexus_security_capabilities_valid(capabilities)) return false;
+        image_size > PROCESS_MAX_IMAGE_SIZE || pid == NULL) return false;
+    if (!nexus_security_capabilities_valid(capabilities)) {
+        nexus_security_audit(NEXUS_SECURITY_EVENT_POLICY_REJECTED,
+            nexus_security_current_pid(),
+            NEXUS_SECURITY_REASON_INVALID_CAPABILITIES, capabilities, 0U);
+        return false;
+    }
 
     char process_name[NEXUS_PROCESS_NAME_MAX];
     if (!copy_process_name(process_name, name)) return false;

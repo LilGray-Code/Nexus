@@ -143,6 +143,10 @@ struct xhci_controller {
     uint8_t max_ports;
     uint8_t context_size;
     uint16_t version;
+    uint32_t hcsparams1;
+    uint32_t hcsparams2;
+    uint32_t hccparams1;
+    uint32_t scratchpad_count;
     uint32_t doorbell_offset;
     uint32_t runtime_offset;
     volatile uint64_t *dcbaa;
@@ -570,6 +574,7 @@ static bool xhci_allocate_controller_memory(struct xhci_controller *xhci,
     const uint32_t scratchpad_hi = (hcsparams2 >> 21) & 0x1FU;
     const uint32_t scratchpad_lo = (hcsparams2 >> 27) & 0x1FU;
     const uint32_t scratchpad_count = (scratchpad_hi << 5) | scratchpad_lo;
+    xhci->scratchpad_count = scratchpad_count;
     if (scratchpad_count > XHCI_MAX_SCRATCHPADS) {
         serial_write("xHCI: scratchpad requirement exceeds supported bound\r\n");
         return false;
@@ -961,13 +966,11 @@ static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
     return true;
 }
 
-static void xhci_release_hid_device(struct xhci_controller *xhci,
-                                    struct xhci_hid_device *device) {
+static void xhci_free_hid_device_dma(struct xhci_controller *xhci,
+                                       struct xhci_hid_device *device) {
     if (xhci == NULL || device == NULL) return;
-    if (device->slot_id != 0U) {
-        (void)xhci_disable_slot(xhci, device->slot_id);
-        if (xhci->dcbaa != NULL) xhci->dcbaa[device->slot_id] = 0U;
-    }
+    if (device->slot_id != 0U && xhci->dcbaa != NULL)
+        xhci->dcbaa[device->slot_id] = 0U;
     if (device->input_context_physical != 0U)
         (void)memory_free_page(device->input_context_physical);
     if (device->device_context_physical != 0U)
@@ -979,6 +982,14 @@ static void xhci_release_hid_device(struct xhci_controller *xhci,
     if (device->report_buffer_physical != 0U)
         (void)memory_free_page(device->report_buffer_physical);
     *device = (struct xhci_hid_device){0};
+}
+
+static void xhci_release_hid_device(struct xhci_controller *xhci,
+                                    struct xhci_hid_device *device) {
+    if (xhci == NULL || device == NULL) return;
+    if (device->slot_id != 0U)
+        (void)xhci_disable_slot(xhci, device->slot_id);
+    xhci_free_hid_device_dma(xhci, device);
 }
 
 static bool xhci_keyboard_slots_full(const struct xhci_controller *xhci) {
@@ -1329,6 +1340,9 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
 
     if (!xhci_handoff_bios(xhci, hccparams)) return false;
 
+    xhci->hcsparams1 = hcsparams1;
+    xhci->hcsparams2 = hcsparams2;
+    xhci->hccparams1 = hccparams;
     xhci->max_ports = nexus_xhci_root_port_count(hcsparams1);
     if (xhci->max_ports == 0U) {
         serial_write("xHCI: controller reports zero root ports\r\n");
@@ -1550,21 +1564,120 @@ void xhci_rescan(void) {
     xhci_rescan_root_ports_internal(&controller);
 }
 
+static bool xhci_stop_for_reinitialization(struct xhci_controller *xhci) {
+    uint32_t command = 0U;
+    if (!xhci_read32(xhci, (uint64_t)xhci->cap_length, &command))
+        return false;
+    if ((command & XHCI_USBCMD_RUN) != 0U &&
+        !xhci_write32(xhci, (uint64_t)xhci->cap_length,
+                      command & ~XHCI_USBCMD_RUN)) return false;
+    return xhci_wait_register(xhci, (uint64_t)xhci->cap_length + 4U,
+                              XHCI_USBSTS_HALTED, true);
+}
+
+static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i) {
+        struct xhci_hid_device *device = &xhci->keyboards[i];
+        if (!device->active) continue;
+        const uint8_t release[8] = {0U};
+        input_usb_keyboard_report_state(&device->keyboard_state, release);
+        xhci_free_hid_device_dma(xhci, device);
+    }
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
+        struct xhci_hid_device *device = &xhci->mice[i];
+        if (!device->active) continue;
+        const uint8_t release[3] = {0U};
+        input_usb_mouse_report(release);
+        xhci_free_hid_device_dma(xhci, device);
+    }
+    for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {
+        struct xhci_hid_device *device = &xhci->gamepads[i];
+        if (!device->active) continue;
+        xhci_notify_gamepad_disconnected(device);
+        xhci_free_hid_device_dma(xhci, device);
+    }
+}
+
+static void xhci_release_controller_dma(struct xhci_controller *xhci) {
+    if (xhci == NULL) return;
+    if (xhci->scratchpad_array_physical != 0U) {
+        volatile uint64_t *array = (volatile uint64_t *)memory_phys_to_virt(
+            xhci->scratchpad_array_physical);
+        if (array != NULL) {
+            for (uint32_t i = 0U; i < xhci->scratchpad_count; ++i)
+                if (array[i] != 0U) (void)memory_free_page(array[i]);
+        }
+        (void)memory_free_page(xhci->scratchpad_array_physical);
+    }
+    if (xhci->command_ring.physical != 0U)
+        (void)memory_free_page(xhci->command_ring.physical);
+    if (xhci->event_ring_physical != 0U)
+        (void)memory_free_page(xhci->event_ring_physical);
+    if (xhci->erst_physical != 0U)
+        (void)memory_free_page(xhci->erst_physical);
+    if (xhci->dcbaa_physical != 0U)
+        (void)memory_free_page(xhci->dcbaa_physical);
+
+    xhci->dcbaa = NULL;
+    xhci->dcbaa_physical = 0U;
+    xhci->scratchpad_array_physical = 0U;
+    xhci->scratchpad_count = 0U;
+    xhci->command_ring = (struct xhci_ring){0};
+    xhci->event_ring = NULL;
+    xhci->event_ring_physical = 0U;
+    xhci->event_dequeue = 0U;
+    xhci->event_cycle = 1U;
+    xhci->erst_physical = 0U;
+}
+
+static bool xhci_reinitialize_after_power_loss(struct xhci_controller *xhci) {
+    if (xhci == NULL || xhci->pci_device == NULL ||
+        xhci->hcsparams1 == 0U || xhci->hccparams1 == 0U) return false;
+
+    /* Stop DMA before releasing any controller/device memory. If halt cannot
+     * be confirmed, deliberately retain the DMA buffers to avoid use-after-free
+     * by a controller that may still be bus-mastering. */
+    if (!xhci_stop_for_reinitialization(xhci)) {
+        serial_write("xHCI: cannot confirm controller halt; retaining DMA memory for safety\r\n");
+        return false;
+    }
+
+    xhci_release_all_input_devices(xhci);
+    xhci_release_controller_dma(xhci);
+    xhci->initialized = false;
+    for (size_t i = 0U; i <= NEXUS_XHCI_MAX_ROOT_PORTS; ++i)
+        xhci->root_port_connected[i] = false;
+
+    serial_write("xHCI: rebuilding command/event rings and device contexts after power loss\r\n");
+    if (!xhci_start_controller(xhci, xhci->hcsparams1,
+                               xhci->hcsparams2, xhci->hccparams1)) {
+        serial_write("xHCI: controller reinitialization failed; USB input remains unavailable\r\n");
+        return false;
+    }
+
+    xhci->initialized = true;
+    xhci->last_root_scan_tick = timer_ticks();
+    xhci_rescan_root_ports_internal(xhci);
+    serial_write("xHCI: controller reinitialized; root ports rescanned\r\n");
+    return true;
+}
+
 bool xhci_resume(void) {
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized) return false;
     uint32_t command = 0U;
     uint32_t status = 0U;
-    if (!xhci_read32(xhci, (uint64_t)xhci->cap_length, &command) ||
-        !xhci_read32(xhci, (uint64_t)xhci->cap_length + 4U, &status))
-        return false;
-    if ((command & XHCI_USBCMD_RUN) == 0U ||
-        (status & XHCI_USBSTS_HALTED) != 0U) {
-        serial_write("xHCI: controller did not retain its running state across resume; full controller reinitialization is required\r\n");
-        return false;
+    const bool registers_read =
+        xhci_read32(xhci, (uint64_t)xhci->cap_length, &command) &&
+        xhci_read32(xhci, (uint64_t)xhci->cap_length + 4U, &status);
+    if (registers_read && (command & XHCI_USBCMD_RUN) != 0U &&
+        (status & XHCI_USBSTS_HALTED) == 0U) {
+        xhci_rescan_root_ports_internal(xhci);
+        return true;
     }
-    xhci_rescan_root_ports_internal(xhci);
-    return true;
+
+    serial_write("xHCI: controller state lost across resume; attempting full reinitialization\r\n");
+    return xhci_reinitialize_after_power_loss(xhci);
 }
 
 bool xhci_controller_owns_pci_device(

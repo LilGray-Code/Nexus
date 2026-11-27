@@ -21,8 +21,6 @@ static bool equal_bytes(const uint8_t *a, const uint8_t *b, size_t length) {
     for (size_t i = 0U; i < length; ++i) {
         if (a[i] != b[i]) return false;
     }
-    __atomic_fetch_add(&net_rx_bytes, (uint64_t)*length, __ATOMIC_RELAXED);
-    __atomic_fetch_add(&net_rx_frames, 1U, __ATOMIC_RELAXED);
     return true;
 }
 
@@ -181,5 +179,7 @@ bool netdev_receive_frame(void *buffer, size_t capacity, size_t *length) {
         *length = 0U;
         return false;
     }
+    __atomic_fetch_add(&net_rx_bytes, (uint64_t)*length, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&net_rx_frames, 1U, __ATOMIC_RELAXED);
     return true;
 }

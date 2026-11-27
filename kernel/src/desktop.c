@@ -2,6 +2,7 @@
 
 #include "accounts.h"
 #include "system_monitor.h"
+#include "service_manager.h"
 #include "blockdev.h"
 #include "storage.h"
 #include "gpt.h"
@@ -7881,6 +7882,162 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     py >= content_y + 190U && py < content_y + 222U &&
                     px >= sx && px < sx + 136U)
                     (void)wifi_scan();
+            } else if (settings_page == SETTINGS_ACCOUNTS) {
+                if (py >= content_y + 76U && py < content_y + 106U) {
+                    if (px >= sx && px < sx + 112U) {
+                        nexus_accounts_logout();
+                        desktop_profile_loaded_uid = 0U;
+                        desktop_account_gate_active = true;
+                        desktop_account_gate_stage = DESKTOP_GATE_LOGIN_USERNAME;
+                        desktop_secure_clear(desktop_gate_password,
+                                             sizeof(desktop_gate_password));
+                        desktop_gate_username[0] = '\0';
+                        desktop_account_message[0] = '\0';
+                        active_view = DESKTOP_HOME;
+                        draw_shell();
+                        return;
+                    } else if (px >= sx + 122U && px < sx + 288U) {
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_CHANGE_PASSWORD;
+                        desktop_account_form_field = 0U;
+                        for (size_t i = 0U; i < 3U; ++i)
+                            desktop_secure_clear(desktop_account_form_values[i],
+                                sizeof(desktop_account_form_values[i]));
+                    } else if (px >= sx + 298U && px < sx + 430U) {
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_STARTUP_ADD;
+                        desktop_account_form_field = 0U;
+                        for (size_t i = 0U; i < 3U; ++i)
+                            desktop_secure_clear(desktop_account_form_values[i],
+                                sizeof(desktop_account_form_values[i]));
+                    }
+                } else if (py >= content_y + 115U &&
+                           py < content_y + 145U && nexus_accounts_is_admin()) {
+                    if (px >= sx && px < sx + 142U)
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_ADD_STANDARD;
+                    else if (px >= sx + 152U && px < sx + 284U)
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_ADD_ADMIN;
+                    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_STANDARD ||
+                        desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN) {
+                        desktop_account_form_field = 0U;
+                        for (size_t i = 0U; i < 3U; ++i)
+                            desktop_secure_clear(desktop_account_form_values[i],
+                                sizeof(desktop_account_form_values[i]));
+                    }
+                } else if (py >= content_y + 154U &&
+                           py < content_y + 184U) {
+                    if (nexus_accounts_is_admin() &&
+                        px >= sx && px < sx + 142U) {
+                        struct nexus_account_info user;
+                        if (nexus_accounts_get_info(
+                                desktop_account_selected_user, &user)) {
+                            const bool active = !user.active;
+                            const bool ok = nexus_accounts_set_user_active(
+                                user.uid, active);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "ACCOUNT STATUS UPDATED"
+                                   : "STATUS CHANGE DENIED",
+                                sizeof(desktop_account_message));
+                        }
+                    } else if (nexus_accounts_is_admin() &&
+                               px >= sx + 152U && px < sx + 244U) {
+                        struct nexus_account_info user;
+                        if (nexus_accounts_get_info(
+                                desktop_account_selected_user, &user)) {
+                            const bool ok =
+                                nexus_accounts_delete_user(user.uid);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "ACCOUNT DELETED"
+                                   : "DELETE DENIED: SELF OR LAST ADMIN",
+                                sizeof(desktop_account_message));
+                            if (desktop_account_selected_user >=
+                                nexus_accounts_count())
+                                desktop_account_selected_user = 0U;
+                        }
+                    } else if (px >= sx + 298U && px < sx + 430U) {
+                        struct nexus_account_profile profile;
+                        if (nexus_accounts_get_profile(
+                                nexus_accounts_current_uid(), &profile) &&
+                            profile.startup_count != 0U) {
+                            const bool ok = nexus_accounts_remove_startup_app(
+                                nexus_accounts_current_uid(),
+                                profile.startup_apps[0]);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "STARTUP APP REMOVED"
+                                   : "STARTUP APP REMOVE FAILED",
+                                sizeof(desktop_account_message));
+                        }
+                    }
+                } else if (py >= content_y + 220U &&
+                           py < content_y + 388U &&
+                           px >= sx && px < sx + 460U) {
+                    const size_t row =
+                        (size_t)(py - (content_y + 220U)) / 28U;
+                    if (row < nexus_accounts_count())
+                        desktop_account_selected_user = row;
+                    else if (row >= 6U && nexus_accounts_count() > 6U)
+                        desktop_account_selected_user = 6U;
+                }
+            } else if (settings_page == SETTINGS_TASK_MANAGER) {
+                if (py >= content_y + 274U && py < content_y + 346U) {
+                    const size_t row =
+                        (size_t)(py - (content_y + 274U)) / 18U;
+                    if (px >= sx && px < sx + 232U &&
+                        row < NEXUS_MONITOR_MAX_PROCESSES)
+                        desktop_task_selected_process = row;
+                    else if (px >= sx + 256U && px < sx + 500U &&
+                             row < NEXUS_MONITOR_MAX_SERVICES)
+                        desktop_task_selected_service = row;
+                } else if (nexus_accounts_is_admin() &&
+                           py >= content_y + 376U &&
+                           py < content_y + 404U) {
+                    if (px >= sx && px < sx + 142U) {
+                        struct nexus_system_monitor_snapshot snapshot;
+                        if (nexus_system_monitor_get_snapshot(&snapshot) &&
+                            desktop_task_selected_service <
+                                snapshot.service_count) {
+                            const struct nexus_service_info *service =
+                                &snapshot.services[
+                                    desktop_task_selected_service].service;
+                            const bool ok =
+                                service->state == NEXUS_SERVICE_RUNNING
+                                    ? nexus_service_manager_stop(service->name)
+                                    : nexus_service_manager_start(service->name);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "SERVICE STATE UPDATED"
+                                   : "SERVICE TRANSITION DENIED",
+                                sizeof(desktop_account_message));
+                        }
+                    } else if (px >= sx + 152U && px < sx + 312U) {
+                        struct nexus_system_monitor_snapshot snapshot;
+                        if (nexus_system_monitor_get_snapshot(&snapshot) &&
+                            desktop_task_selected_service <
+                                snapshot.service_count) {
+                            const struct nexus_service_info *service =
+                                &snapshot.services[
+                                    desktop_task_selected_service].service;
+                            (void)nexus_service_manager_set_startup_enabled(
+                                service->name, !service->startup_enabled);
+                        }
+                    } else if (px >= sx + 324U && px < sx + 456U) {
+                        struct nexus_system_monitor_snapshot snapshot;
+                        if (nexus_system_monitor_get_snapshot(&snapshot) &&
+                            desktop_task_selected_process <
+                                snapshot.process_count) {
+                            const struct nexus_process_info *process =
+                                &snapshot.processes[
+                                    desktop_task_selected_process].process;
+                            bool ok = false;
+                            if (process->state == NEXUS_PROCESS_READY)
+                                ok = process_terminate_ready(process->pid);
+                            else if (process->state == NEXUS_PROCESS_EXITED ||
+                                     process->state == NEXUS_PROCESS_FAILED)
+                                ok = process_reap(process->pid);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "PROCESS STOPPED OR REAPED"
+                                   : "PROCESS CANNOT BE STOPPED WHILE RUNNING",
+                                sizeof(desktop_account_message));
+                        }
+                    }
+                }
             }
             if (changed) desktop_preferences_save();
             else desktop_settings_apply();

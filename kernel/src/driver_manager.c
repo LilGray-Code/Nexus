@@ -306,10 +306,10 @@ size_t nexus_driver_manager_discover_pci_devices(void) {
             .segment_group = device->segment_group,
             .native_device = device
         };
-        const size_t prior = find_pnp_device(&generic);
+        const bool was_known = find_pnp_device(&generic) < pnp_devices_used;
         (void)nexus_driver_manager_discover_device(&generic);
-        if (prior == pnp_devices_used &&
-            find_pnp_device(&generic) != pnp_devices_used) ++discovered;
+        if (!was_known &&
+            find_pnp_device(&generic) < pnp_devices_used) ++discovered;
     }
     return discovered;
 }

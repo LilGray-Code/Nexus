@@ -942,7 +942,9 @@ jobs:
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-uefi.log
           grep -q "NEXUS READ-ONLY SYSTEM PACK READY; files=" installer-ui-installed-uefi.log
-          grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" installer-ui-installed-uefi.log
+          grep -q "NEXUS DESKTOP FRAMEBUFFER READY" installer-ui-installed-uefi.log
+          grep -q "NEXUS RAMFS READY" installer-ui-installed-uefi.log
+          grep -q "NEXUS ELF64 USER LOADER READY" installer-ui-installed-uefi.log
           grep -q "NEXUS BOOT MODE: DESKTOP" installer-ui-installed-uefi.log
           set +e
           timeout -k 2s 18s qemu-system-x86_64 \
@@ -963,7 +965,9 @@ jobs:
           fi
           grep -q "NEXUS K0 BOOT COMPLETE" installer-ui-installed-bios.log
           grep -q "NEXUS READ-ONLY SYSTEM PACK READY; files=" installer-ui-installed-bios.log
-          grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" installer-ui-installed-bios.log
+          grep -q "NEXUS DESKTOP FRAMEBUFFER READY" installer-ui-installed-bios.log
+          grep -q "NEXUS RAMFS READY" installer-ui-installed-bios.log
+          grep -q "NEXUS ELF64 USER LOADER READY" installer-ui-installed-bios.log
           grep -q "NEXUS BOOT MODE: DESKTOP" installer-ui-installed-bios.log
           cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-ui-input-vars.fd
           python3 build/test-qemu-input.py \

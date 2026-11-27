@@ -1,6 +1,13 @@
 #include "storage.h"
 #include "driver_manager.h"
 
+#include "e1000.h"
+#include "rtl8139.h"
+#include "virtio_net.h"
+#include "ac97.h"
+#include "xhci.h"
+#include "virtio_gpu.h"
+
 #include "pci.h"
 #include "nvme.h"
 #include "ahci.h"
@@ -154,31 +161,190 @@ static bool storage_nvme_driver_probe(
     return nvme_identify_probe(
         (const struct nexus_pci_device *)device->native_device);
 }
+static bool e1000_device_supported(const struct nexus_pci_device *pci) {
+    if (pci == NULL || pci->vendor_id != 0x8086U ||
+        pci->class_code != 0x02U || pci->subclass != 0x00U) return false;
+    switch (pci->device_id) {
+        case 0x100EU: case 0x101EU: case 0x100FU:
+        case 0x1026U: case 0x1010U: case 0x10D3U:
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool first_matching_pci_device(const struct nexus_pci_device *device,
+                                      bool (*predicate)(const struct nexus_pci_device *)) {
+    if (device == NULL || predicate == NULL) return false;
+    for (uint32_t i = 0U; i < pci_stored_device_count(); ++i) {
+        const struct nexus_pci_device *candidate = pci_device_at(i);
+        if (predicate(candidate)) return candidate == device;
+    }
+    return false;
+}
+
+static bool e1000_pnp_probe(const struct nexus_driver_device *device,
+                            void *context) {
+    (void)context;
+    return device != NULL && device->native_device != NULL &&
+           e1000_ready() &&
+           first_matching_pci_device(
+               (const struct nexus_pci_device *)device->native_device,
+               e1000_device_supported);
+}
+
+static bool rtl8139_device_supported(const struct nexus_pci_device *pci) {
+    return pci != NULL && pci->vendor_id == 0x10ECU &&
+           pci->device_id == 0x8139U && pci->class_code == 0x02U;
+}
+
+static bool rtl8139_pnp_probe(const struct nexus_driver_device *device,
+                              void *context) {
+    (void)context;
+    return device != NULL && device->native_device != NULL &&
+           rtl8139_ready() &&
+           first_matching_pci_device(
+               (const struct nexus_pci_device *)device->native_device,
+               rtl8139_device_supported);
+}
+
+static bool virtio_net_device_supported(const struct nexus_pci_device *pci) {
+    return pci != NULL && pci->vendor_id == 0x1AF4U &&
+           pci->device_id == 0x1041U;
+}
+
+static bool virtio_net_pnp_probe(const struct nexus_driver_device *device,
+                                 void *context) {
+    (void)context;
+    return device != NULL && device->native_device != NULL &&
+           virtio_net_ready() &&
+           first_matching_pci_device(
+               (const struct nexus_pci_device *)device->native_device,
+               virtio_net_device_supported);
+}
+
+static bool ac97_pnp_probe(const struct nexus_driver_device *device,
+                           void *context) {
+    (void)context;
+    return device != NULL && device->native_device != NULL &&
+        device->class_code == 0x04U && device->subclass == 0x01U &&
+        ac97_owns_pci_device(
+            (const struct nexus_pci_device *)device->native_device);
+}
+
+static bool xhci_pnp_probe(const struct nexus_driver_device *device,
+                           void *context) {
+    (void)context;
+    return device != NULL && device->native_device != NULL &&
+        device->class_code == 0x0CU && device->subclass == 0x03U &&
+        device->programming_interface == 0x30U &&
+        xhci_controller_owns_pci_device(
+            (const struct nexus_pci_device *)device->native_device);
+}
+
+static bool virtio_gpu_pnp_probe(const struct nexus_driver_device *device,
+                                 void *context) {
+    (void)context;
+    return device != NULL && device->native_device != NULL &&
+        device->vendor_id == 0x1AF4U && device->device_id == 0x1050U &&
+        virtio_gpu_owns_pci_device(
+            (const struct nexus_pci_device *)device->native_device);
+}
+
 static bool storage_register_drivers(void) {
-    const struct nexus_driver_descriptor ahci = {
-        .name = "ahci", .version = 1U, .priority = 100,
-        .match = {
-            .bus = NEXUS_DRIVER_BUS_PCI,
-            .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
-            .device_id = NEXUS_DRIVER_WILDCARD_U16,
-            .class_code = 0x01U, .subclass = 0x06U,
-            .programming_interface = 0x01U
+    const struct nexus_driver_descriptor descriptors[] = {
+        {
+            .name = "ahci", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
+                .device_id = NEXUS_DRIVER_WILDCARD_U16,
+                .class_code = 0x01U, .subclass = 0x06U,
+                .programming_interface = 0x01U
+            },
+            .probe = storage_ahci_driver_probe
         },
-        .probe = storage_ahci_driver_probe, .remove = NULL, .context = NULL
-    };
-    const struct nexus_driver_descriptor nvme = {
-        .name = "nvme", .version = 1U, .priority = 100,
-        .match = {
-            .bus = NEXUS_DRIVER_BUS_PCI,
-            .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
-            .device_id = NEXUS_DRIVER_WILDCARD_U16,
-            .class_code = 0x01U, .subclass = 0x08U,
-            .programming_interface = 0x02U
+        {
+            .name = "nvme", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
+                .device_id = NEXUS_DRIVER_WILDCARD_U16,
+                .class_code = 0x01U, .subclass = 0x08U,
+                .programming_interface = 0x02U
+            },
+            .probe = storage_nvme_driver_probe
         },
-        .probe = storage_nvme_driver_probe, .remove = NULL, .context = NULL
+        {
+            .name = "e1000", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = 0x8086U,
+                .device_id = NEXUS_DRIVER_WILDCARD_U16,
+                .class_code = 0x02U, .subclass = 0x00U,
+                .programming_interface = NEXUS_DRIVER_WILDCARD_U8
+            },
+            .probe = e1000_pnp_probe
+        },
+        {
+            .name = "rtl8139", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = 0x10ECU, .device_id = 0x8139U,
+                .class_code = 0x02U,
+                .subclass = NEXUS_DRIVER_WILDCARD_U8,
+                .programming_interface = NEXUS_DRIVER_WILDCARD_U8
+            },
+            .probe = rtl8139_pnp_probe
+        },
+        {
+            .name = "virtio-net", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = 0x1AF4U, .device_id = 0x1041U,
+                .class_code = NEXUS_DRIVER_WILDCARD_U8,
+                .subclass = NEXUS_DRIVER_WILDCARD_U8,
+                .programming_interface = NEXUS_DRIVER_WILDCARD_U8
+            },
+            .probe = virtio_net_pnp_probe
+        },
+        {
+            .name = "ac97", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
+                .device_id = NEXUS_DRIVER_WILDCARD_U16,
+                .class_code = 0x04U, .subclass = 0x01U,
+                .programming_interface = NEXUS_DRIVER_WILDCARD_U8
+            },
+            .probe = ac97_pnp_probe
+        },
+        {
+            .name = "xhci", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = NEXUS_DRIVER_WILDCARD_U16,
+                .device_id = NEXUS_DRIVER_WILDCARD_U16,
+                .class_code = 0x0CU, .subclass = 0x03U,
+                .programming_interface = 0x30U
+            },
+            .probe = xhci_pnp_probe
+        },
+        {
+            .name = "virtio-gpu", .version = 1U, .priority = 100,
+            .match = {
+                .bus = NEXUS_DRIVER_BUS_PCI,
+                .vendor_id = 0x1AF4U, .device_id = 0x1050U,
+                .class_code = 0x03U,
+                .subclass = NEXUS_DRIVER_WILDCARD_U8,
+                .programming_interface = NEXUS_DRIVER_WILDCARD_U8
+            },
+            .probe = virtio_gpu_pnp_probe
+        }
     };
-    return nexus_driver_manager_register(&ahci) &&
-           nexus_driver_manager_register(&nvme);
+    for (size_t i = 0U; i < sizeof(descriptors) / sizeof(descriptors[0]); ++i)
+        if (!nexus_driver_manager_register(&descriptors[i])) return false;
+    return true;
 }
 
 bool storage_probe(void) {

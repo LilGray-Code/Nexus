@@ -83,6 +83,13 @@ test -s "$ISO_ROOT/NEXUS/SYSTEM.NXP"
 test "$(stat -c %s "$ISO_ROOT/NEXUS/SYSTEM.NXP")" -le 2097152
 grep -q 'module_path: boot():/NEXUS/SYSTEM.NXP' "$ISO_ROOT/boot/limine/limine.conf"
 
+# Add a machine-readable inventory of the actual linked kernel subsystems,
+# system applications, build identity, and installer recovery path.
+python3 build/release.py prepare \
+  --iso-root "$ISO_ROOT" \
+  --kernel build/nexus-kernel.elf \
+  --system-pack build/system-pack/NEXUS-SYSTEM.NXP
+
 xorriso -as mkisofs \
   -R -r -J \
   -b boot/limine/limine-bios-cd.bin \
@@ -94,9 +101,19 @@ xorriso -as mkisofs \
 
 build/limine-binary/limine bios-install release/NexusOS-OriginalKernel-x86_64.iso
 
+# Inspect the completed ISO itself, not only the files that were used to build it.
+python3 build/release.py verify \
+  --iso release/NexusOS-OriginalKernel-x86_64.iso \
+  --kernel build/nexus-kernel.elf \
+  --system-pack build/system-pack/NEXUS-SYSTEM.NXP
+python3 build/release.py report \
+  --iso release/NexusOS-OriginalKernel-x86_64.iso \
+  --kernel build/nexus-kernel.elf \
+  --system-pack build/system-pack/NEXUS-SYSTEM.NXP
+
 (
   cd release
-  sha256sum NexusOS-OriginalKernel-x86_64.iso > SHA256SUMS.txt
+  sha256sum NexusOS-OriginalKernel-x86_64.iso BUILD-INFO.txt RELEASE-MANIFEST.TXT > SHA256SUMS.txt
   sha256sum --check SHA256SUMS.txt
 )
 file release/NexusOS-OriginalKernel-x86_64.iso

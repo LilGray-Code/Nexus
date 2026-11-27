@@ -31,6 +31,14 @@ typedef bool (*nexus_blockdev_write_fn)(void *context,
                                         const void *buffer);
 typedef bool (*nexus_blockdev_flush_fn)(void *context);
 
+struct nexus_blockdev_activity {
+    uint64_t read_bytes;
+    uint64_t written_bytes;
+    uint64_t read_operations;
+    uint64_t write_operations;
+    uint64_t flush_operations;
+};
+
 struct nexus_block_device {
     char name[NEXUS_BLOCKDEV_NAME_MAX];
     /* Stable hardware identity and model are shown during destructive setup. */
@@ -48,6 +56,7 @@ struct nexus_block_device {
 };
 
 void blockdev_init(void);
+void blockdev_get_activity(struct nexus_blockdev_activity *activity);
 bool blockdev_register(const struct nexus_block_device *device);
 size_t blockdev_count(void);
 const struct nexus_block_device *blockdev_at(size_t index);

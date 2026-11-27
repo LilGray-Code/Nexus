@@ -1,4 +1,5 @@
 #include "xhci.h"
+#include "xhci_speed.h"
 
 #include "input.h"
 #include "memory.h"
@@ -630,7 +631,7 @@ static bool xhci_port_reset(struct xhci_controller *xhci, uint8_t port_number,
 
     const uint32_t speed_value =
         (port_status & XHCI_PORT_SPEED_MASK) >> 10;
-    if (speed_value == 0U || speed_value > 4U) return false;
+    if (!nexus_xhci_speed_supported((uint8_t)speed_value)) return false;
 
     /* Power the root port before issuing the protocol-specific reset. */
     if ((port_status & XHCI_PORT_PP) == 0U) {
@@ -639,7 +640,7 @@ static bool xhci_port_reset(struct xhci_controller *xhci, uint8_t port_number,
             return false;
         xhci_delay();
     }
-    if (speed_value == 4U) {
+    if (nexus_xhci_speed_requires_warm_reset((uint8_t)speed_value)) {
         if (!xhci_write32(xhci, port_offset,
                           XHCI_PORT_PP | XHCI_PORT_WPR |
                           (port_status & XHCI_PORT_CHANGE_MASK))) return false;
@@ -649,7 +650,8 @@ static bool xhci_port_reset(struct xhci_controller *xhci, uint8_t port_number,
                           (port_status & XHCI_PORT_CHANGE_MASK))) return false;
     }
 
-    const uint32_t reset_bit = speed_value == 4U ? XHCI_PORT_WPR : XHCI_PORT_PR;
+    const uint32_t reset_bit = nexus_xhci_speed_requires_warm_reset((uint8_t)speed_value)
+        ? XHCI_PORT_WPR : XHCI_PORT_PR;
     bool reset_done = false;
     for (uint32_t spin = 0U; spin < XHCI_POLL_LIMIT; ++spin) {
         if (!xhci_read32(xhci, port_offset, &port_status)) return false;
@@ -1072,16 +1074,17 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     *device = (struct xhci_hid_device){0};
     if (!xhci_command_enable_slot(xhci, &device->slot_id)) return false;
 
-    const uint16_t default_packet = speed == 3U ? 64U :
-                                   speed == 4U ? 512U : 8U;
+    if (!nexus_xhci_speed_supported(speed)) goto failed;
+    const uint16_t default_packet =
+        nexus_xhci_default_ep0_packet_size(speed);
     if (!xhci_setup_device_context(xhci, device, port_number, speed,
                                    default_packet)) goto failed;
 
     uint8_t descriptor[18] = {0U};
     if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U, 8U, descriptor))
         goto failed;
-    const uint16_t descriptor_packet = speed == 4U ? 512U :
-        (descriptor[7] == 0U ? default_packet : descriptor[7]);
+    const uint16_t descriptor_packet =
+        nexus_xhci_descriptor_ep0_packet_size(speed, descriptor[7]);
     if (descriptor_packet != default_packet &&
         !xhci_update_ep0_packet(xhci, device, descriptor_packet)) goto failed;
     if (!xhci_get_descriptor(xhci, device, 1U, 0U, 0U,

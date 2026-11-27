@@ -1820,6 +1820,15 @@ static void desktop_account_gate_submit(void) {
 }
 
 static void desktop_account_handle_key(uint8_t scancode) {
+    if (scancode == 0x2AU) { keyboard_left_shift = true; return; }
+    if (scancode == 0x36U) { keyboard_right_shift = true; return; }
+    if (scancode == 0xAAU) { keyboard_left_shift = false; return; }
+    if (scancode == 0xB6U) { keyboard_right_shift = false; return; }
+    if (scancode == 0x3AU) {
+        keyboard_caps_lock = !keyboard_caps_lock;
+        draw_shell();
+        return;
+    }
     if ((scancode & 0x80U) != 0U || scancode == 0x00U) return;
 
     if (desktop_account_gate_active) {
@@ -2130,6 +2139,9 @@ static void desktop_accounts_draw_page(uint64_t x, uint64_t y) {
                                171U, 191U, 211U);
         }
     }
+    graphics_draw_text(x, y + 410U,
+        "AUTO-LAUNCH WAITS FOR THE SIGNED APP TRUST CHAIN.",
+        1U, 171U, 191U, 211U);
     graphics_draw_text(x, y + 422U, desktop_account_message, 1U,
         desktop_account_message[0] == '\0' ? 142U : 231U,
         desktop_account_message[0] == '\0' ? 174U : 183U,

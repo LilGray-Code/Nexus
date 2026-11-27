@@ -720,7 +720,7 @@ void kmain(void) {
             if ((cpu_topology.vendor == NEXUS_CPU_VENDOR_AMD ||
                  cpu_topology.vendor == NEXUS_CPU_VENDOR_HYGON) &&
                 cpu_topology.topology_extensions_supported &&
-                cpu_topology.apic_id_valid &&
+                cpu_topology.cpuid_apic_id_valid &&
                 cpu_topology.core_id_valid && cpu_topology.node_id_valid)
                 ++amd_topology_records;
             if (cpu_topology.core_type == NEXUS_CPU_CORE_TYPE_PERFORMANCE)

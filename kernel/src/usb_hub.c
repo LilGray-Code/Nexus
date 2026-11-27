@@ -111,17 +111,19 @@ bool nexus_usb_hub_decode_port_status(
     const uint16_t change =
         (uint16_t)(status[2] | ((uint16_t)status[3] << 8));
 
+    const bool connected = (value & (1U << 0)) != 0U;
+    const bool low_speed = (value & (1U << 9)) != 0U;
+    const bool high_speed = (value & (1U << 10)) != 0U;
     *decoded = (struct nexus_usb_hub_port_status){
-        .connected = (value & (1U << 0)) != 0U,
+        .connected = connected,
         .enabled = (value & (1U << 1)) != 0U,
         .resetting = (value & (1U << 4)) != 0U,
-        .low_speed = (value & (1U << 9)) != 0U,
-        .high_speed = (value & (1U << 10)) != 0U,
+        .low_speed = low_speed,
+        .high_speed = high_speed,
         .change_bits = change,
-        .speed = (value & (1U << 9)) != 0U
-            ? NEXUS_USB_SPEED_LOW
-            : (value & (1U << 10)) != 0U
-                ? NEXUS_USB_SPEED_HIGH : NEXUS_USB_SPEED_FULL
+        .speed = low_speed ? NEXUS_USB_SPEED_LOW
+            : high_speed ? NEXUS_USB_SPEED_HIGH
+            : connected ? NEXUS_USB_SPEED_FULL : NEXUS_USB_SPEED_UNKNOWN
     };
     return true;
 }

@@ -365,6 +365,20 @@ bool process_get_info(size_t slot, struct nexus_process_info *info) {
     return true;
 }
 
+bool process_terminate_ready(uint32_t pid) {
+    struct nexus_process *process = find_process(pid);
+    if (process == NULL || process->state != NEXUS_PROCESS_READY ||
+        process->address_space == 0U) return false;
+    if (!paging_destroy_user_address_space(process->address_space))
+        return false;
+    process->address_space = 0U;
+    process->exit_status = UINT64_MAX;
+    process->elapsed_ticks = timer_ticks() >= process->start_tick
+        ? timer_ticks() - process->start_tick : 0U;
+    process->state = NEXUS_PROCESS_FAILED;
+    return true;
+}
+
 bool process_reap(uint32_t pid) {
     struct nexus_process *process = find_process(pid);
     if (process == NULL ||

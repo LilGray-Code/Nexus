@@ -93,3 +93,32 @@ bool nexus_usb_hid_collect_interfaces(
     if (!hid_finish_interface(&current, set)) return false;
     return true;
 }
+
+bool nexus_usb_hid_find_companion_interface(
+    const struct nexus_usb_hid_interface_set *set,
+    uint8_t primary_interface, uint8_t wanted_boot_protocol,
+    struct nexus_usb_hid_interface *companion) {
+    if (set == NULL || companion == NULL ||
+        (wanted_boot_protocol != 1U && wanted_boot_protocol != 2U) ||
+        set->interface_count > NEXUS_USB_HID_MAX_INTERFACES) return false;
+
+    for (uint8_t pass = 0U; pass < 2U; ++pass) {
+        for (uint8_t i = 0U; i < set->interface_count; ++i) {
+            const struct nexus_usb_hid_interface *candidate =
+                &set->interfaces[i];
+            if (candidate->number == primary_interface ||
+                candidate->alternate_setting != 0U ||
+                candidate->endpoint_in == 0U ||
+                candidate->report_descriptor_length == 0U) continue;
+            const bool boot = candidate->subclass == 1U &&
+                candidate->protocol == wanted_boot_protocol;
+            const bool generic = candidate->subclass != 1U ||
+                (candidate->protocol != 1U && candidate->protocol != 2U);
+            if ((pass == 0U && boot) || (pass == 1U && generic)) {
+                *companion = *candidate;
+                return true;
+            }
+        }
+    }
+    return false;
+}

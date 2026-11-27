@@ -25,6 +25,7 @@
 #include "graphics.h"
 #include "settings.h"
 #include "ac97.h"
+#include "audio.h"
 #include "gpu.h"
 #include "cpu.h"
 #include "pci.h"
@@ -72,6 +73,7 @@ enum desktop_settings_page {
     SETTINGS_INPUT,
     SETTINGS_ACCESSIBILITY,
     SETTINGS_SYSTEM,
+    SETTINGS_AUDIO,
     SETTINGS_DEVICES,
     SETTINGS_PAGE_COUNT
 };
@@ -128,7 +130,8 @@ static struct nexus_settings desktop_settings = {
     .scroll_speed = 2U,
     .volume_percent = 75U,
     .left_handed_mouse = false,
-    .high_contrast = false
+    .high_contrast = false,
+    .audio_muted = false
 };
 static const uint8_t desktop_accent_palette[NEXUS_SETTINGS_ACCENT_COUNT][3] = {
     {45U, 177U, 202U},   /* Cyan */
@@ -447,8 +450,8 @@ static bool desktop_theme_is_light(void) {
 static void desktop_settings_apply(void) {
     desktop_text_scale_16_16 =
         (87381U * desktop_settings.ui_scale_percent + 50U) / 100U;
-    if (ac97_is_ready())
-        (void)ac97_set_master_volume(desktop_settings.volume_percent);
+    nexus_audio_set_master_volume(desktop_settings.volume_percent);
+    nexus_audio_set_master_mute(desktop_settings.audio_muted);
 }
 
 static void desktop_preferences_save(void) {
@@ -2143,7 +2146,7 @@ static void draw_shell(void) {
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_SETTINGS) {
         static const char *const tab_labels[SETTINGS_PAGE_COUNT] = {
-            "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "DEVICES"
+            "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "AUDIO", "DEVICES"
         };
         const uint64_t tab_y = text_y - 2U;
         for (size_t tab = 0U; tab < SETTINGS_PAGE_COUNT; ++tab) {
@@ -2415,6 +2418,97 @@ static void draw_shell(void) {
                 1U, desktop_preferences_persistent ? 108U : 231U,
                 desktop_preferences_persistent ? 216U : 183U,
                 desktop_preferences_persistent ? 229U : 127U);
+        } else if (settings_page == SETTINGS_AUDIO) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "AUDIO", "Output, microphone routing and application levels.");
+            graphics_draw_text(text_x, content_y + 58U, "OUTPUT DEVICES",
+                               1U, 142U, 174U, 199U);
+            graphics_draw_text(text_x + 270U, content_y + 58U, "INPUT DEVICES",
+                               1U, 142U, 174U, 199U);
+            size_t output_rows = 0U;
+            size_t input_rows = 0U;
+            const uint32_t selected_output =
+                nexus_audio_default_device(NEXUS_AUDIO_PLAYBACK);
+            const uint32_t selected_input =
+                nexus_audio_default_device(NEXUS_AUDIO_CAPTURE);
+            for (size_t i = 0U; i < nexus_audio_device_count(); ++i) {
+                struct nexus_audio_device device;
+                if (!nexus_audio_device_get(i, &device)) continue;
+                if (device.description.direction == NEXUS_AUDIO_PLAYBACK &&
+                    output_rows < 3U) {
+                    desktop_settings_draw_button(text_x,
+                        content_y + 76U + output_rows * 32U,
+                        238U, 28U, device.description.label,
+                        device.ready && device.id == selected_output);
+                    ++output_rows;
+                } else if (device.description.direction == NEXUS_AUDIO_CAPTURE &&
+                           input_rows < 3U) {
+                    desktop_settings_draw_button(text_x + 270U,
+                        content_y + 76U + input_rows * 32U,
+                        238U, 28U, device.description.label,
+                        device.ready && device.id == selected_input);
+                    ++input_rows;
+                }
+            }
+            if (output_rows == 0U)
+                graphics_draw_text(text_x, content_y + 82U,
+                    "NO PLAYBACK DEVICE READY", 1U, 231U, 183U, 127U);
+            if (input_rows == 0U)
+                graphics_draw_text(text_x + 270U, content_y + 82U,
+                    "NO MICROPHONE / CAPTURE DRIVER", 1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 184U, "MASTER OUTPUT VOLUME",
+                               1U, 142U, 174U, 199U);
+            static const uint8_t audio_volumes[11] = {
+                0U, 10U, 20U, 30U, 40U, 50U,
+                60U, 70U, 80U, 90U, 100U
+            };
+            for (size_t i = 0U; i < 11U; ++i) {
+                char label[8] = {
+                    (char)('0' + audio_volumes[i] / 100U),
+                    (char)('0' + (audio_volumes[i] / 10U) % 10U),
+                    (char)('0' + audio_volumes[i] % 10U), '%', '\0'
+                };
+                desktop_settings_draw_button(text_x + (uint64_t)i * 46U,
+                    content_y + 201U, 40U, 29U, label,
+                    desktop_settings.volume_percent == audio_volumes[i]);
+            }
+            desktop_settings_draw_button(text_x + 514U, content_y + 201U,
+                106U, 29U, desktop_settings.audio_muted ? "UNMUTE" : "MUTE",
+                desktop_settings.audio_muted);
+            graphics_draw_text(text_x, content_y + 247U,
+                "APPLICATION VOLUME", 1U, 142U, 174U, 199U);
+            size_t visible_streams = 0U;
+            for (size_t i = 0U; i < NEXUS_AUDIO_MAX_STREAMS &&
+                                 visible_streams < 3U; ++i) {
+                struct nexus_audio_stream_info stream;
+                if (!nexus_audio_stream_get_info(i, &stream) ||
+                    stream.direction != NEXUS_AUDIO_PLAYBACK)
+                    continue;
+                char app_line[64];
+                char volume_line[64];
+                format_labeled_u64("APP ID: ", stream.application_id, app_line);
+                format_labeled_u64("VOL: ", stream.volume_percent, volume_line);
+                const uint64_t y = content_y + 265U + visible_streams * 28U;
+                graphics_draw_text(text_x, y + 8U, app_line, 1U,
+                                   231U, 239U, 247U);
+                graphics_draw_text(text_x + 150U, y + 8U, volume_line, 1U,
+                                   171U, 191U, 211U);
+                desktop_settings_draw_button(text_x + 330U, y,
+                    42U, 25U, "-", false);
+                desktop_settings_draw_button(text_x + 378U, y,
+                    42U, 25U, "+", false);
+                desktop_settings_draw_button(text_x + 426U, y,
+                    82U, 25U, stream.muted ? "UNMUTE" : "MUTE",
+                    stream.muted);
+                ++visible_streams;
+            }
+            if (visible_streams == 0U)
+                graphics_draw_text(text_x, content_y + 274U,
+                    "NO ACTIVE APPLICATION MIXER STREAMS", 1U,
+                    171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 368U,
+                "HDA, USB, HDMI/DP AND BLUETOOTH APPEAR WHEN THEIR DRIVERS INITIALIZE.",
+                1U, 108U, 216U, 229U);
         } else {
             desktop_settings_draw_heading(text_x, content_y,
                 "DEVICES", "Detected hardware, active driver path and capabilities.");
@@ -6327,6 +6421,79 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         }
                     }
                 }
+            } else if (settings_page == SETTINGS_AUDIO) {
+                if (py >= content_y + 76U && py < content_y + 172U) {
+                    const uint64_t row = (py - (content_y + 76U)) / 32U;
+                    size_t output_row = 0U;
+                    size_t input_row = 0U;
+                    for (size_t i = 0U; i < nexus_audio_device_count(); ++i) {
+                        struct nexus_audio_device device;
+                        if (!nexus_audio_device_get(i, &device) ||
+                            !device.ready) continue;
+                        if (device.description.direction == NEXUS_AUDIO_PLAYBACK) {
+                            if (px >= sx && px < sx + 238U &&
+                                output_row == row) {
+                                if (nexus_audio_set_default_device(
+                                        NEXUS_AUDIO_PLAYBACK, device.id))
+                                    changed = true;
+                                break;
+                            }
+                            ++output_row;
+                        } else {
+                            if (px >= sx + 270U && px < sx + 508U &&
+                                input_row == row) {
+                                if (nexus_audio_set_default_device(
+                                        NEXUS_AUDIO_CAPTURE, device.id))
+                                    changed = true;
+                                break;
+                            }
+                            ++input_row;
+                        }
+                    }
+                } else if (py >= content_y + 201U &&
+                           py < content_y + 230U && px >= sx) {
+                    static const uint8_t audio_volumes[11] = {
+                        0U, 10U, 20U, 30U, 40U, 50U,
+                        60U, 70U, 80U, 90U, 100U
+                    };
+                    if (px >= sx + 514U && px < sx + 620U) {
+                        desktop_settings.audio_muted =
+                            !desktop_settings.audio_muted;
+                        changed = true;
+                    } else if (px < sx + 506U) {
+                        const uint64_t col = (px - sx) / 46U;
+                        if (col < 11U && (px - sx) % 46U < 40U &&
+                            desktop_settings.volume_percent != audio_volumes[col]) {
+                            desktop_settings.volume_percent = audio_volumes[col];
+                            changed = true;
+                        }
+                    }
+                } else if (py >= content_y + 265U &&
+                           py < content_y + 349U && px >= sx + 330U) {
+                    const size_t row = (size_t)(py - (content_y + 265U)) / 28U;
+                    size_t current = 0U;
+                    for (size_t i = 0U; i < NEXUS_AUDIO_MAX_STREAMS; ++i) {
+                        struct nexus_audio_stream_info stream;
+                        if (!nexus_audio_stream_get_info(i, &stream) ||
+                            stream.direction != NEXUS_AUDIO_PLAYBACK)
+                            continue;
+                        if (current++ != row) continue;
+                        uint8_t volume = stream.volume_percent;
+                        if (px >= sx + 330U && px < sx + 372U) {
+                            volume = volume >= 10U ? (uint8_t)(volume - 10U) : 0U;
+                            changed = nexus_audio_stream_set_volume(
+                                stream.id, volume);
+                        } else if (px >= sx + 378U && px < sx + 420U) {
+                            volume = volume <= 90U ? (uint8_t)(volume + 10U) : 100U;
+                            changed = nexus_audio_stream_set_volume(
+                                stream.id, volume);
+                        } else if (px >= sx + 426U && px < sx + 508U) {
+                            changed = nexus_audio_stream_set_mute(
+                                stream.id, !stream.muted);
+                        }
+                        break;
+                    }
+                }
             } else if (settings_page == SETTINGS_SYSTEM) {
                 if (py >= content_y + 83U && py < content_y + 113U &&
                     px >= sx) {
@@ -6957,7 +7124,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else if (event->scancode == 0x4DU || event->scancode == 0x0FU) {
             settings_page = (enum desktop_settings_page)(
                 ((uint32_t)settings_page + 1U) % SETTINGS_PAGE_COUNT);
-        } else if (event->scancode >= 0x02U && event->scancode <= 0x07U) {
+        } else if (event->scancode >= 0x02U && event->scancode <= 0x08U) {
             settings_page = (enum desktop_settings_page)(
                 event->scancode - 0x02U);
         } else if (event->scancode == 0x14U) {

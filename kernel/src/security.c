@@ -42,9 +42,9 @@ void nexus_security_audit(uint16_t type, uint32_t actor_pid, uint16_t code,
      * accidentally make stale cursors appear current.
      */
     if (next_sequence == UINT64_MAX) {
-        for (size_t i = 0U; i < NEXUS_SECURITY_AUDIT_CAPACITY; ++i)
-            audit_ring[i] = (struct nexus_security_event){0};
-        next_sequence = 1U;
+        /* Saturate rather than wrap; monotonic event cursors must never alias. */
+        unlock_security();
+        return;
     }
     const uint64_t sequence = next_sequence++;
     const size_t slot =

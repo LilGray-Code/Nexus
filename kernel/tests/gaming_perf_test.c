@@ -59,7 +59,7 @@ static void test_benchmark_metrics_and_validity(void) {
     assert(!nexus_gaming_perf_begin(&session, start, period, 0U));
     assert(!nexus_gaming_perf_set_loading_interval(&session, 20U, 10U));
     assert(nexus_gaming_perf_set_loading_interval(
-        &session, 2000000000ULL, 2500000000ULL));
+        &session, 500000000ULL, 1000000000ULL));
 
     /* 60 measured frame intervals: 2/4 CPU cores and one GPU timeline busy
      * for half of each interval. Input latency is a distinct measured source.

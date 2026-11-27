@@ -17,7 +17,7 @@ CFLAGS := -std=gnu11 -O2 -Wall -Wextra -Werror \
 LDFLAGS := -nostdlib -static -no-pie -Wl,-e,_start \
 	-Wl,-Ttext-segment=0x400000 -Wl,--build-id=none -Wl,-z,noexecstack
 
-.PHONY: all clean
+.PHONY: all clean inspect
 all: $(APP) $(GAMEPAD_APP) $(AUDIO_APP) $(PIE_APP) $(ARCADE_APP)
 
 $(OUT):
@@ -37,6 +37,14 @@ $(PIE_APP): examples/pie_demo.c ../kernel/include/nexus/app.h | $(OUT)
 
 $(ARCADE_APP): examples/breakout_game.c ../kernel/include/nexus/app.h | $(OUT)
 	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@
+
+inspect: all
+	file $(APP) $(GAMEPAD_APP) $(AUDIO_APP) $(PIE_APP) $(ARCADE_APP)
+	readelf -h $(APP)
+	readelf -lW $(APP)
+	readelf -h $(PIE_APP)
+	readelf -dW $(PIE_APP)
+	objdump -d $(APP) | head -n 80
 
 clean:
 	rm -rf $(OUT)

@@ -1026,7 +1026,7 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 usb_hid_keyboard_state_reset(&xhci->keyboards[i].keyboard_state);
                 serial_write("NEXUS USB HID KEYBOARD READY slot=");
                 serial_write_hex(device->slot_id);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
                 return true;
             }
         }
@@ -1036,7 +1036,7 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 xhci->mice[i] = *device;
                 serial_write("NEXUS USB HID MOUSE READY slot=");
                 serial_write_hex(device->slot_id);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
                 return true;
             }
         }
@@ -1050,7 +1050,7 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 serial_write_hex(device->vendor_id);
                 serial_write("/");
                 serial_write_hex(device->product_id);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
                 return true;
             }
         }
@@ -1159,7 +1159,7 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         serial_write_hex(device->vendor_id);
         serial_write("/");
         serial_write_hex(device->product_id);
-        serial_write("; hub/child-port enumeration is not yet supported; connect keyboard/mouse directly to a controller port\\r\\n");
+        serial_write("; hub/child-port enumeration is not yet supported; connect keyboard/mouse directly to a controller port\r\n");
         (void)memory_free_page(config_buffer_physical);
         goto failed;
     }
@@ -1230,7 +1230,7 @@ failed:
     serial_write_hex(device->vendor_id);
     serial_write("/");
     serial_write_hex(device->product_id);
-    serial_write("\\r\\n");
+    serial_write("\r\n");
     xhci_release_hid_device(xhci, device);
     return false;
 }
@@ -1367,7 +1367,7 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
         any_gamepad = any_gamepad || xhci->gamepads[i].active;
     if (!xhci_has_keyboard(xhci) && !xhci_has_mouse(xhci) && !any_gamepad) {
-        serial_write("xHCI: no supported HID input found\\r\\n");
+        serial_write("xHCI: no supported HID input found\r\n");
         return false;
     }
     xhci->pci_device = pci_device;
@@ -1419,7 +1419,7 @@ static void xhci_detach_port(struct xhci_controller *xhci,
             xhci->gamepads[i].port_number == port_number) {
             serial_write("USB: HID gamepad disconnected from xHCI port ");
             serial_write_hex(port_number);
-            serial_write("\\r\\n");
+            serial_write("\r\n");
             xhci_notify_gamepad_disconnected(&xhci->gamepads[i]);
             xhci_release_hid_device(xhci, &xhci->gamepads[i]);
         }
@@ -1459,7 +1459,7 @@ static void xhci_handle_port_status_change(struct xhci_controller *xhci,
 bool xhci_init(void) {
     usb_hid_keyboard_reset();
     uint32_t candidates = 0U;
-    serial_write("USB: scanning PCI inventory for xHCI host controllers\\r\\n");
+    serial_write("USB: scanning PCI inventory for xHCI host controllers\r\n");
     for (uint32_t i = 0U; i < pci_device_count(); ++i) {
         const struct nexus_pci_device *device = pci_device_at(i);
         if (device == NULL || device->class_code != 0x0CU ||
@@ -1476,13 +1476,13 @@ bool xhci_init(void) {
         serial_write_hex(device->vendor_id);
         serial_write("/");
         serial_write_hex(device->device_id);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
         if (xhci_try_controller(device)) return true;
     }
     if (candidates == 0U) {
-        serial_write("USB: no PCI xHCI controller found; PS/2 or a supported legacy host controller is required\\r\\n");
+        serial_write("USB: no PCI xHCI controller found; PS/2 or a supported legacy host controller is required\r\n");
     } else {
-        serial_write("USB: xHCI controllers found but no supported directly attached HID device was initialized\\r\\n");
+        serial_write("USB: xHCI controllers found but no supported directly attached HID device was initialized\r\n");
     }
     return false;
 }
@@ -1603,10 +1603,10 @@ void xhci_poll(void) {
         }
         if (!xhci_schedule_interrupt_read(xhci, device)) {
             serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: unable to re-arm USB keyboard endpoint\\r\\n"
+                ? "xHCI: unable to re-arm USB keyboard endpoint\r\n"
                 : device->kind == XHCI_HID_MOUSE
-                ? "xHCI: unable to re-arm USB mouse endpoint\\r\\n"
-                : "xHCI: unable to re-arm USB gamepad endpoint\\r\\n");
+                ? "xHCI: unable to re-arm USB mouse endpoint\r\n"
+                : "xHCI: unable to re-arm USB gamepad endpoint\r\n");
             xhci_drop_hid_device(xhci, device);
         }
     }

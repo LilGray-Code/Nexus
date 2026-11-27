@@ -8,6 +8,7 @@ static size_t registered_count;
 static const struct nexus_block_device *boot_media_device;
 static bool boot_media_detection_complete;
 static bool mounted_devices[NEXUS_BLOCKDEV_MAX_DEVICES];
+static struct nexus_blockdev_stats device_stats[NEXUS_BLOCKDEV_MAX_DEVICES];
 static const struct nexus_block_device *install_session_device;
 static char install_session_id[NEXUS_BLOCKDEV_ID_MAX];
 static char install_session_model[NEXUS_BLOCKDEV_MODEL_MAX];
@@ -16,6 +17,13 @@ static uint32_t install_session_block_size;
 static const struct nexus_block_device *nexus_data_write_device;
 static uint64_t nexus_data_write_first_lba;
 static uint64_t nexus_data_write_last_lba;
+static size_t blockdev_index(const struct nexus_block_device *device);
+
+static void stats_add(uint64_t *value, uint64_t amount) {
+    if (value == NULL) return;
+    *value = *value > UINT64_MAX - amount ? UINT64_MAX : *value + amount;
+}
+
 static const uint8_t nexus_nxfs_type_guid[16] = {
     0x46U, 0x53U, 0x58U, 0x4EU, 0x01U, 0x00U, 0x58U, 0x4EU,
     0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x46U, 0x53U
@@ -42,6 +50,7 @@ void blockdev_init(void) {
     for (size_t i = 0; i < NEXUS_BLOCKDEV_MAX_DEVICES; ++i) {
         devices[i] = (struct nexus_block_device){0};
         mounted_devices[i] = false;
+        device_stats[i] = (struct nexus_blockdev_stats){0};
     }
 }
 
@@ -99,27 +108,22 @@ const struct nexus_block_device *blockdev_at(size_t index) {
 
 bool blockdev_read(const struct nexus_block_device *device,
                    uint64_t lba, uint32_t block_count, void *buffer) {
-    if (device == NULL || buffer == NULL || block_count == 0 ||
+    if (device == NULL || buffer == NULL || block_count == 0U ||
         device->read == NULL ||
         (device->flags & (NEXUS_BLOCKDEV_READ_ONLY |
-                          NEXUS_BLOCKDEV_WRITABLE)) == 0 ||
+                          NEXUS_BLOCKDEV_WRITABLE)) == 0U ||
         lba >= device->block_count ||
         (uint64_t)block_count > device->block_count - lba ||
-        block_count > device->max_blocks_per_request) {
+        block_count > device->max_blocks_per_request)
         return false;
-    }
 
-    /* Only registry-owned handles may reach a driver callback. */
-    bool registered = false;
-    for (size_t i = 0; i < registered_count; ++i) {
-        if (&devices[i] == device) {
-            registered = true;
-            break;
-        }
-    }
-    if (!registered) return false;
-
-    return device->read(device->context, lba, block_count, buffer);
+    const size_t index = blockdev_index(device);
+    if (index >= NEXUS_BLOCKDEV_MAX_DEVICES) return false;
+    stats_add(&device_stats[index].read_requests, 1U);
+    const bool ok = device->read(device->context, lba, block_count, buffer);
+    if (ok) stats_add(&device_stats[index].read_blocks, block_count);
+    else stats_add(&device_stats[index].read_errors, 1U);
+    return ok;
 }
 
 
@@ -147,11 +151,13 @@ bool blockdev_write(const struct nexus_block_device *device,
         !nexus_data_write_range_matches(device, lba, block_count))
         return false;
 
-    for (size_t i = 0U; i < registered_count; ++i) {
-        if (&devices[i] == device)
-            return device->write(device->context, lba, block_count, buffer);
-    }
-    return false;
+    const size_t index = blockdev_index(device);
+    if (index >= NEXUS_BLOCKDEV_MAX_DEVICES) return false;
+    stats_add(&device_stats[index].write_requests, 1U);
+    const bool ok = device->write(device->context, lba, block_count, buffer);
+    if (ok) stats_add(&device_stats[index].write_blocks, block_count);
+    else stats_add(&device_stats[index].write_errors, 1U);
+    return ok;
 }
 
 bool blockdev_flush(const struct nexus_block_device *device) {
@@ -164,10 +170,12 @@ bool blockdev_flush(const struct nexus_block_device *device) {
          !boot_media_detection_complete || boot_media_device != device))
         return false;
 
-    for (size_t i = 0U; i < registered_count; ++i) {
-        if (&devices[i] == device) return device->flush(device->context);
-    }
-    return false;
+    const size_t index = blockdev_index(device);
+    if (index >= NEXUS_BLOCKDEV_MAX_DEVICES) return false;
+    stats_add(&device_stats[index].flush_requests, 1U);
+    const bool ok = device->flush(device->context);
+    if (!ok) stats_add(&device_stats[index].flush_errors, 1U);
+    return ok;
 }
 
 static size_t blockdev_index(const struct nexus_block_device *device) {
@@ -175,6 +183,15 @@ static size_t blockdev_index(const struct nexus_block_device *device) {
     for (size_t i = 0U; i < registered_count; ++i)
         if (&devices[i] == device) return i;
     return NEXUS_BLOCKDEV_MAX_DEVICES;
+}
+
+bool blockdev_get_stats(const struct nexus_block_device *device,
+                        struct nexus_blockdev_stats *stats) {
+    if (stats == NULL) return false;
+    const size_t index = blockdev_index(device);
+    if (index >= NEXUS_BLOCKDEV_MAX_DEVICES) return false;
+    *stats = device_stats[index];
+    return true;
 }
 
 static bool blockdev_set_boot_media(const struct nexus_block_device *device) {

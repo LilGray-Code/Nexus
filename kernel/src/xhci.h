@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 
+struct nexus_pci_device;
+
 /* Initialize xHCI and enumerate boot keyboards/mice plus generic HID gamepads.
  * Up to four independent boot keyboards, four boot mice and four gamepads can
  * be active. Compatible devices support hot-plug. USB hubs, Bluetooth pairing,

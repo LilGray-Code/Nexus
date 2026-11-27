@@ -883,7 +883,9 @@ jobs:
           for char in stable_id:
               key("minus" if char == "-" else char)
           key("ret")
-          wait_for_marker("NEXUS INSTALLER TARGET ID VERIFIED")
+          # A full NVMe stable ID is 22 characters; keep the stage timeout
+          # long enough for every QMP key-down/up pair to reach the kernel.
+          wait_for_marker("NEXUS INSTALLER TARGET ID VERIFIED", timeout=30)
           for name in ["e","r","a","s","e"]:
               key(name)
           key("ret")

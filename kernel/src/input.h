@@ -38,6 +38,7 @@ uint32_t input_dropped_event_count(void);
 void input_usb_keyboard_report_state(struct nexus_usb_keyboard_state *state,
                                      const uint8_t report[8]);
 void input_usb_keyboard_report(const uint8_t report[8]);
+void input_usb_mouse_event(const struct nexus_usb_mouse_event *event);
 void input_usb_mouse_report_sized(const uint8_t *report, size_t report_length);
 void input_usb_mouse_report(const uint8_t report[3]);
 /* Submit decoded gamepad state without changing keyboard/mouse event layout. */

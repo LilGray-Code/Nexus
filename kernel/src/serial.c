@@ -36,7 +36,7 @@ void serial_init(void) {
 void serial_write(const char *text) {
     if (text == NULL) return;
     size_t length = 0U;
-    while (text[length] != '\\0') ++length;
+    while (text[length] != 0) ++length;
     serial_write_n(text, length);
 }
 

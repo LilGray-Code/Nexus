@@ -753,6 +753,11 @@ bool vfs_current_directory_writable(void) {
     return true;
 }
 
+bool vfs_directory_truncated(void) {
+    return directory_backend == VFS_DIRECTORY_FAT32 &&
+           fat32_directory_truncated();
+}
+
 size_t vfs_root_entry_count(void) {
     if (directory_backend == VFS_DIRECTORY_FAT32)
         return root_mounted ? fat32_root_entry_count() : 0U;

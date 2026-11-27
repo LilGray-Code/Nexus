@@ -118,6 +118,21 @@ jobs:
           grep -q 'cmdline: nexus.mode=desktop' /tmp/nexus-installed-limine.conf
           ! grep -q 'nexus.mode=installer' /tmp/nexus-installed-limine.conf
 
+      - name: Verify USB keyboard and mouse in installer and installed desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 build/test-qemu-input.py \
+            --mode installer \
+            --iso release/NexusOS-OriginalKernel-x86_64.iso \
+            --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --firmware-vars /usr/share/OVMF/OVMF_VARS_4M.fd
+          python3 build/test-qemu-input.py \
+            --mode desktop \
+            --disk /tmp/nexus-installed-uefi.img \
+            --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --firmware-vars /usr/share/OVMF/OVMF_VARS_4M.fd
+
       - name: Boot the installed target through UEFI and legacy BIOS
         shell: bash
         run: |

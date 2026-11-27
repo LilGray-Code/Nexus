@@ -1058,6 +1058,18 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 return true;
             }
         }
+    } else if (device->kind == XHCI_HID_HUB) {
+        for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
+            if (!xhci->hubs[i].active) {
+                xhci->hubs[i] = *device;
+                serial_write("NEXUS USB HUB READY slot=");
+                serial_write_hex(device->slot_id);
+                serial_write(" ports=");
+                serial_write_hex(device->hub_descriptor.port_count);
+                serial_write("\r\n");
+                return true;
+            }
+        }
     }
     return false;
 }

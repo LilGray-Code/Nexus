@@ -244,6 +244,28 @@ static void test_capture_stream_path_and_device_hotplug(void) {
                                     48000U, 1U, 100U, &stream));
 }
 
+static void test_master_gain_for_legacy_pcm(void) {
+    assert(nexus_audio_init());
+    int16_t samples[] = {20000, -20000, INT16_MAX, INT16_MIN};
+    nexus_audio_set_master_volume(50U);
+    nexus_audio_set_master_mute(false);
+    assert(nexus_audio_apply_master_gain_s16_stereo(samples, 2U));
+    assert(samples[0] == 10000 && samples[1] == -10000);
+    assert(samples[2] == 16383 && samples[3] == -16384);
+
+    samples[0] = 1;
+    samples[1] = -1;
+    samples[2] = 200;
+    samples[3] = -200;
+    nexus_audio_set_master_mute(true);
+    assert(nexus_audio_apply_master_gain_s16_stereo(samples, 2U));
+    for (size_t i = 0U; i < 4U; ++i) assert(samples[i] == 0);
+    assert(!nexus_audio_apply_master_gain_s16_stereo(NULL, 1U));
+    assert(!nexus_audio_apply_master_gain_s16_stereo(samples, 0U));
+    assert(!nexus_audio_apply_master_gain_s16_stereo(
+        samples, NEXUS_AUDIO_MIX_MAX_FRAMES + 1U));
+}
+
 static void test_ac97_backend_adapter(void) {
     fake_ac97_ready = true;
     fake_ac97_idle = true;
@@ -284,6 +306,7 @@ int main(void) {
     test_resampling_and_clipping();
     test_ring_capacity_and_underrun_accounting();
     test_capture_stream_path_and_device_hotplug();
+    test_master_gain_for_legacy_pcm();
     test_ac97_backend_adapter();
     puts("NEXUS AUDIO CORE, MIXER AND CAPTURE TESTS PASSED");
     return 0;

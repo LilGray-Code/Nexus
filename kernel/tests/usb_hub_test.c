@@ -46,6 +46,14 @@ static void test_usb_route_strings(void) {
     assert(grandchild.route_string == 0x52U);
     assert(grandchild.depth == 2U);
 
+    /* Preserve a high-speed ancestor TT through a nested full-speed hub. */
+    child.parent_hub_uses_tt = true;
+    child.tt_hub_slot = 7U;
+    child.tt_port = 2U;
+    assert(nexus_usb_path_child(&child, 9U, 5U, &grandchild));
+    assert(grandchild.parent_hub_uses_tt);
+    assert(grandchild.tt_hub_slot == 7U && grandchild.tt_port == 2U);
+
     assert(!nexus_usb_path_child(&root, 0U, 1U, &child));
     assert(!nexus_usb_path_child(&root, 1U, 0U, &child));
     assert(!nexus_usb_path_child(&root, 1U, 16U, &child));

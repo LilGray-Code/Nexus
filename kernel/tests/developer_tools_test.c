@@ -36,6 +36,30 @@ uint32_t pci_stored_device_count(void) { return 12U; }
 size_t nexus_driver_manager_device_count(void) { return 5U; }
 size_t nexus_driver_manager_driver_count(void) { return 3U; }
 size_t nexus_driver_manager_binding_count(void) { return 4U; }
+size_t nexus_driver_manager_failure_count(void) { return 1U; }
+bool nexus_driver_manager_driver_at(size_t index,
+                                    struct nexus_driver_info *info) {
+    static const char *const names[] = { "nvme", "ahci", "e1000" };
+    if (info == NULL || index >= 3U) return false;
+    memset(info, 0, sizeof(*info));
+    memcpy(info->name, names[index], strlen(names[index]) + 1U);
+    info->version = 1U;
+    info->loaded = true;
+    info->active_bindings = index == 0U ? 1U : 0U;
+    info->failure_count = index == 1U ? 1U : 0U;
+    return true;
+}
+bool nexus_driver_manager_binding_at(
+    size_t index, struct nexus_driver_binding_info *info) {
+    if (info == NULL || index >= 4U) return false;
+    memset(info, 0, sizeof(*info));
+    memcpy(info->driver_name, "ahci", 5U);
+    info->state = index == 1U ? NEXUS_DRIVER_STATE_FAILED
+                              : NEXUS_DRIVER_STATE_ACTIVE;
+    info->error = index == 1U ? NEXUS_DRIVER_ERROR_PROBE_FAILED
+                              : NEXUS_DRIVER_ERROR_NONE;
+    return true;
+}
 bool nexus_driver_manager_device_at(size_t index,
                                     struct nexus_pnp_device_info *info) {
     if (info == NULL || index >= 5U) return false;
@@ -121,6 +145,12 @@ int main(void) {
 
     assert(nexus_diagnostics_command("drivers", output, sizeof(output)));
     assert(has(output, "drivers 3") && has(output, "2/1/2"));
+
+    assert(nexus_diagnostics_command("driverlist", output, sizeof(output)));
+    assert(has(output, "registered drivers 3") && has(output, "nvme v1 loaded"));
+
+    assert(nexus_diagnostics_command("drivererrors", output, sizeof(output)));
+    assert(has(output, "failure records 1") && has(output, "ahci probe-failed"));
 
     assert(nexus_diagnostics_command("netdiag", output, sizeof(output)));
     assert(has(output, "eth0") && has(output, "link-up"));

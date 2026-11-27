@@ -23,7 +23,7 @@ Kernel and boot-critical drivers form one compatibility group. A snapshot declar
 
 ## 3. Trust and transport
 
-HTTPS protects transport; it does not establish package authenticity. Every repository snapshot and package is authenticated using detached Ed25519 signatures rooted in public keys compiled into a reviewed updater trust store. Signed bytes use a specified canonical encoding; ambiguous JSON serialization is not signed directly. Key IDs, validity windows, revocation sequence, and key-rotation metadata are part of the signed snapshot.
+HTTPS protects transport; it does not establish package authenticity. Every repository snapshot and package is authenticated using detached Ed25519 signatures rooted in public keys compiled into a reviewed updater trust store. Repository metadata uses RFC 8785 JSON Canonicalization Scheme (JCS). The snapshot signature is Ed25519 over the canonical UTF-8 bytes of the snapshot with signing.signature omitted; signing.algorithm and signing.key_id remain covered. Each package signature is over a domain-separated canonical record containing repository ID, snapshot sequence, package ID, version, architecture, archive size, and archive SHA-256. The archive digest covers the exact downloaded archive bytes. Key IDs, validity windows, revocation sequence, and key-rotation metadata are part of the signed snapshot. Implementations must reject duplicate JSON keys and non-canonical encodings before verification.
 
 Verification order:
 1. Validate repository snapshot signature and expiry using the trusted root.

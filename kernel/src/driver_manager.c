@@ -444,7 +444,8 @@ bool nexus_driver_manager_probe_device(
     if (existed &&
         !same_hardware_identity(&pnp_devices[prior].device, device)) {
         const struct nexus_driver_device previous = pnp_devices[prior].device;
-        (void)nexus_driver_manager_remove_device(&previous);
+        if (!nexus_driver_manager_remove_device(&previous))
+            return false;
         prior_state = NEXUS_PNP_DEVICE_REMOVED;
     }
 

@@ -10,10 +10,12 @@
 #define NEXUS_USB_HUB_MAX_PORTS 15U
 #define NEXUS_USB_ROUTE_MAX_DEPTH 5U
 
+/* Values deliberately match xHCI PORTSC speed IDs so a child port's
+ * decoded speed can be written directly into its Slot Context. */
 enum nexus_usb_speed {
     NEXUS_USB_SPEED_UNKNOWN = 0,
-    NEXUS_USB_SPEED_LOW = 1,
-    NEXUS_USB_SPEED_FULL = 2,
+    NEXUS_USB_SPEED_FULL = 1,
+    NEXUS_USB_SPEED_LOW = 2,
     NEXUS_USB_SPEED_HIGH = 3,
     NEXUS_USB_SPEED_SUPER = 4,
     NEXUS_USB_SPEED_SUPER_PLUS = 5

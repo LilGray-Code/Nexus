@@ -93,13 +93,14 @@ static uint64_t bench_read(read_fn read_recent, size_t capacity,
 
 static void report(const char *name, uint64_t legacy, uint64_t optimized,
                    size_t iterations) {
-    const uint64_t old_avg = iterations != 0U ? legacy / iterations : 0U;
-    const uint64_t new_avg = iterations != 0U ? optimized / iterations : 0U;
+    const double old_avg = iterations != 0U
+        ? (double)legacy / (double)iterations : 0.0;
+    const double new_avg = iterations != 0U
+        ? (double)optimized / (double)iterations : 0.0;
     const double speedup = optimized != 0U
         ? (double)legacy / (double)optimized : 0.0;
-    printf("%s: baseline=%" PRIu64 " ns total (%" PRIu64
-           " ns/op), optimized=%" PRIu64 " ns total (%" PRIu64
-           " ns/op), speedup=%.2fx\n",
+    printf("%s: baseline=%" PRIu64 " ns total (%.2f ns/op), optimized=%"
+           PRIu64 " ns total (%.2f ns/op), speedup=%.2fx\n",
            name, legacy, old_avg, optimized, new_avg, speedup);
 }
 
@@ -113,11 +114,25 @@ int main(void) {
     nexus_log_buffer_init();
 
     const size_t payload_length = sizeof(payload) - 1U;
-    const uint64_t legacy_append_ns = bench_append(
+    uint64_t legacy_append_ns = bench_append(
+        legacy_append, payload, 1U, APPEND_ITERATIONS);
+    uint64_t optimized_append_ns = bench_append(
+        nexus_log_buffer_append, payload, 1U, APPEND_ITERATIONS);
+    report("append-1B", legacy_append_ns, optimized_append_ns,
+           APPEND_ITERATIONS);
+
+    legacy_append_ns = bench_append(
+        legacy_append, payload, 8U, APPEND_ITERATIONS);
+    optimized_append_ns = bench_append(
+        nexus_log_buffer_append, payload, 8U, APPEND_ITERATIONS);
+    report("append-8B", legacy_append_ns, optimized_append_ns,
+           APPEND_ITERATIONS);
+
+    legacy_append_ns = bench_append(
         legacy_append, payload, payload_length, APPEND_ITERATIONS);
-    const uint64_t optimized_append_ns = bench_append(
+    optimized_append_ns = bench_append(
         nexus_log_buffer_append, payload, payload_length, APPEND_ITERATIONS);
-    report("append-payload", legacy_append_ns, optimized_append_ns,
+    report("append-43B", legacy_append_ns, optimized_append_ns,
            APPEND_ITERATIONS);
 
     (void)legacy_read(legacy_output, sizeof(legacy_output));

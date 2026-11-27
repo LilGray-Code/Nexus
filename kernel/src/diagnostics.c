@@ -122,7 +122,55 @@ static bool command_drivers(char *out, size_t cap, size_t *len) {
     append_u64(out, cap, len, failed);
     append_text(out, cap, len, "/");
     append_u64(out, cap, len, unsupported);
+    append_text(out, cap, len, " failure records ");
+    append_u64(out, cap, len, nexus_driver_manager_failure_count());
     (void)discovered;
+    return true;
+}
+
+static bool command_driverlist(char *out, size_t cap, size_t *len) {
+    const size_t count = nexus_driver_manager_driver_count();
+    append_text(out, cap, len, "registered drivers ");
+    append_u64(out, cap, len, count);
+    for (size_t i = 0U; i < count; ++i) {
+        struct nexus_driver_info info;
+        if (!nexus_driver_manager_driver_at(i, &info)) continue;
+        append_text(out, cap, len, "; ");
+        append_text(out, cap, len, info.name);
+        append_text(out, cap, len, " v");
+        append_u64(out, cap, len, info.version);
+        append_text(out, cap, len, info.loaded ? " loaded" : " disabled");
+        append_text(out, cap, len, " binds/failures ");
+        append_u64(out, cap, len, info.active_bindings);
+        append_text(out, cap, len, "/");
+        append_u64(out, cap, len, info.failure_count);
+    }
+    return true;
+}
+
+static bool command_drivererrors(char *out, size_t cap, size_t *len) {
+    size_t shown = 0U;
+    append_text(out, cap, len, "driver failure records ");
+    append_u64(out, cap, len, nexus_driver_manager_failure_count());
+    for (size_t i = 0U; i < nexus_driver_manager_binding_count(); ++i) {
+        struct nexus_driver_binding_info info;
+        if (!nexus_driver_manager_binding_at(i, &info) ||
+            (info.state != NEXUS_DRIVER_STATE_FAILED &&
+             info.state != NEXUS_DRIVER_STATE_BLOCKED)) continue;
+        append_text(out, cap, len, "; ");
+        append_text(out, cap, len, info.driver_name);
+        append_text(out, cap, len, " ");
+        append_text(out, cap, len, nexus_driver_error_name(info.error));
+        append_text(out, cap, len, " at ");
+        append_hex(out, cap, len, info.segment_group);
+        append_text(out, cap, len, ":");
+        append_hex(out, cap, len, info.bus_number);
+        append_text(out, cap, len, ":");
+        append_hex(out, cap, len, info.slot);
+        append_text(out, cap, len, ".");
+        append_hex(out, cap, len, info.function);
+        if (++shown >= 4U) break;
+    }
     return true;
 }
 
@@ -254,6 +302,8 @@ bool nexus_diagnostics_command(const char *command,
         return true;
     }
     if (text_equal(command, "drivers")) return command_drivers(output, capacity, &length);
+    if (text_equal(command, "driverlist")) return command_driverlist(output, capacity, &length);
+    if (text_equal(command, "drivererrors")) return command_drivererrors(output, capacity, &length);
     if (text_equal(command, "netdiag")) return command_net(output, capacity, &length);
     if (text_equal(command, "storage")) return command_storage(output, capacity, &length);
     if (text_equal(command, "sysinfo") || text_equal(command, "diag") ||

@@ -399,6 +399,15 @@ jobs:
           grep -q "INSTALLER: verified kernel, UEFI loader, BIOS stage-2, and system-pack payloads available" installed-bios-serial.log
           grep -q "NEXUS K0 BOOT COMPLETE" installed-bios-serial.log
 
+      - name: Test USB keyboard and mouse in the live installer (xHCI)
+        run: |
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-input-installer-vars.fd
+          python3 build/test-qemu-input.py \
+            --mode installer \
+            --iso release/NexusOS-OriginalKernel-x86_64.iso \
+            --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --firmware-vars /tmp/nexus-input-installer-vars.fd
+
       - name: Verify kernel ELF and ISO
         run: |
           file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso
@@ -886,6 +895,13 @@ jobs:
           grep -q "NEXUS READ-ONLY SYSTEM PACK READY; files=" installer-ui-installed-bios.log
           grep -q "NEXUS STORE BUNDLED APP SELFTEST READY" installer-ui-installed-bios.log
           grep -q "NEXUS BOOT MODE: DESKTOP" installer-ui-installed-bios.log
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-ui-input-vars.fd
+          python3 build/test-qemu-input.py \
+            --mode desktop \
+            --disk /tmp/nexus-ui-target.img \
+            --disk-interface nvme \
+            --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --firmware-vars /tmp/nexus-ui-input-vars.fd
 
       - name: Test the graphical installer on a disposable SATA target
         shell: bash

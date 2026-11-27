@@ -24,8 +24,10 @@ The API in `kernel/src/driver_manager.h` provides:
   in-tree driver and retries retained device records. Update requires a newer
   version and no active bindings.
 - **Safe refusal:** unload refuses while a driver has active bindings or a
-  loaded driver depends on it. Device removal invokes the active driver's
-  registered remove callback once and marks binding history removed.
+  loaded driver depends on it. Device removal first checks that every active
+  binding has a teardown callback; otherwise it refuses without changing the
+  active PnP record. With callbacks present, it invokes teardown once and marks
+  binding history removed.
 - **Failure visibility:** device and binding records retain probe failures,
   dependency blocks, disabled-driver state and table-capacity errors. The
   `drivers`, `driverlist` and `drivererrors` diagnostics expose status.
@@ -48,10 +50,11 @@ or partial-support entries, not active driver bindings.
 
 The manager's `remove` callback contract is available, but current PCI
 surprise-removal notifications and all xHCI USB hot-unplug events are not yet
-connected to it. Existing hardware drivers without a quiesce/remove callback
-are not safe to unload while their DMA engines or interrupts may still be
-active. The manager rejects unload of active bindings; it does not invent a
-driver teardown path.
+connected to it. Removal of an active binding without a teardown callback is
+refused without changing its PnP state. Existing hardware drivers without a
+quiesce/remove callback are not safe to unload while their DMA engines or
+interrupts may still be active. The manager rejects unload of active bindings;
+it does not invent a driver teardown path.
 
 Driver descriptors currently point to statically linked kernel functions.
 `install()` is not an arbitrary executable/module loader. There is no

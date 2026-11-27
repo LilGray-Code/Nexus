@@ -5808,7 +5808,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about diag cpu pci drivers netdiag storage logs trace debug sdk mem uptime net dns HOST http HOST ls cat FILE run FILE ps clear";
+        const char *s = "help about diag cpu pci drivers netdiag storage logs trace debug sdk mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch write save rm clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&

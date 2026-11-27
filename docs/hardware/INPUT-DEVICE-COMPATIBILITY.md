@@ -137,3 +137,8 @@ Until then, retain the known-good wired/PS/2 fallback and describe the feature a
 - Host-side tests cover root-port counts, valid/invalid port numbers, register offsets through port 255, connection state, speed extraction, and PORTSC change bits.
 
 **Not yet complete:** external USB hub child-port enumeration is still unsupported by the controller driver. Hub descriptor parsing, hub class requests, child-device route strings, and downstream hot-plug are required before USB hubs can be advertised as supported. Phases 2–7 have not been implemented by this increment.
+
+
+## Implementation status
+
+See [INPUT-IMPLEMENTATION-STATUS.md](INPUT-IMPLEMENTATION-STATUS.md) for the ordered implementation ledger, what is actually implemented, and the remaining runtime and physical-hardware acceptance gates. In particular, hub topology helpers are not yet a live hub child-enumeration driver, composite HID discovery does not yet dispatch multiple endpoints on one device slot, and Bluetooth/legacy-controller components are groundwork rather than working input transports.

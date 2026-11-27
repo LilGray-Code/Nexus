@@ -148,7 +148,7 @@ static void test_high_resolution_mouse_motion_is_not_clipped(void) {
     assert(usb_hid_generic_decode_mouse(&layout, extremes,
         sizeof(extremes), &event));
     assert(event.dx == INT16_MIN);
-    assert(event.dy == INT16_MIN);
+    assert(event.dy == INT16_MAX);
     assert(event.wheel == 127);
 }
 

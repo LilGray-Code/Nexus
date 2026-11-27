@@ -131,6 +131,13 @@ static bool has(const char *text, const char *part) {
 }
 
 int main(void) {
+    _Static_assert(NEXUS_CPU_FEATURE_CLWB == (UINT64_C(1) << 32),
+                   "64-bit CPU feature mask must preserve bit 32");
+    _Static_assert(NEXUS_CPU_FEATURE_AVX512VNNI == (UINT64_C(1) << 42),
+                   "64-bit CPU feature mask must preserve bit 42");
+    _Static_assert((NEXUS_CPU_FEATURE_AVX512VNNI &
+                    NEXUS_CPU_FEATURE_AVX512F) == 0U,
+                   "CPU feature masks must remain distinct");
     char output[160];
 
     assert(nexus_diagnostics_command("cpu", output, sizeof(output)));

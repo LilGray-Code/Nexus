@@ -2306,16 +2306,18 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
     }
 
     graphics_draw_text(x, y + 354U,
-        "APP RESPONSIVENESS: N/A (SYNCHRONOUS RUN-TO-COMPLETION RUNTIME)",
+        "APP RESPONSIVENESS: N/A (FOREGROUND PROCESS CANNOT BE TIMED OUT)",
         1U, 231U, 183U, 127U);
     if (nexus_accounts_is_admin()) {
         desktop_settings_draw_button(x, y + 376U, 142U, 28U,
                                      "START / STOP SERVICE", false);
         desktop_settings_draw_button(x + 152U, y + 376U, 160U, 28U,
-                                     "TOGGLE AUTO START", false);
+                                     "AUTO FLAG (RAM ONLY)", false);
+        desktop_settings_draw_button(x + 324U, y + 376U, 132U, 28U,
+                                     "CANCEL READY", false);
     } else {
         graphics_draw_text(x, y + 378U,
-            "SERVICE CONTROL REQUIRES ADMINISTRATOR PRIVILEGES.",
+            "SERVICE / PROCESS CONTROL REQUIRES ADMINISTRATOR PRIVILEGES.",
             1U, 171U, 191U, 211U);
     }
 }
@@ -7915,8 +7917,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         desktop_account_form = DESKTOP_ACCOUNT_FORM_ADD_STANDARD;
                     else if (px >= sx + 152U && px < sx + 284U)
                         desktop_account_form = DESKTOP_ACCOUNT_FORM_ADD_ADMIN;
+                    else if (px >= sx + 294U && px < sx + 432U)
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_RESET_PASSWORD;
                     if (desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_STANDARD ||
-                        desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN) {
+                        desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN ||
+                        desktop_account_form == DESKTOP_ACCOUNT_FORM_RESET_PASSWORD) {
                         desktop_account_form_field = 0U;
                         for (size_t i = 0U; i < 3U; ++i)
                             desktop_secure_clear(desktop_account_form_values[i],

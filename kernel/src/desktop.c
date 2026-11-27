@@ -4412,9 +4412,9 @@ static uint16_t files_normalize_navigation_scancode(uint16_t scancode) {
 }
 
 static void files_editor_handle_key(const struct nexus_input_event *event) {
-    if ((key_code & 0x80U) != 0U) return;
+    if ((event->scancode & 0x80U) != 0U) return;
     const uint16_t key_code =
-        files_normalize_navigation_scancode(key_code);
+        files_normalize_navigation_scancode(event->scancode);
     if (key_code == 0x01U) {
         files_editor_state = FILES_EDITOR_CLOSED;
         return;
@@ -8189,9 +8189,9 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         return;
     }
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
-        if ((files_key & 0x80U) != 0U) return;
+        if ((event->scancode & 0x80U) != 0U) return;
         const uint16_t files_key =
-            files_normalize_navigation_scancode(files_key);
+            files_normalize_navigation_scancode(event->scancode);
         if (keyboard_left_control && files_key == 0x21U) {
             files_search_focus = true;
             draw_shell(); draw_pointer(); return;

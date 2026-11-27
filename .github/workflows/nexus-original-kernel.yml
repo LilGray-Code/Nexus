@@ -123,6 +123,14 @@ jobs:
             -o /tmp/nexus-xhci-speed-test
           /tmp/nexus-xhci-speed-test
 
+      - name: Test xHCI firmware BIOS-to-OS ownership handoff
+        run: |
+          test -s kernel/src/xhci_ownership.h
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/tests/xhci_ownership_test.c \
+            -o /tmp/nexus-xhci-ownership-test
+          /tmp/nexus-xhci-ownership-test
+
       - name: Test bounded AC97 PCM DMA descriptor format
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

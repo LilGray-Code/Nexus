@@ -145,7 +145,12 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
         raise RuntimeError(f"QEMU query-mice returned unexpected data: {mice!r}")
     usb_mice = [
         item for item in mice
-        if isinstance(item, dict) and "usb" in str(item.get("name", "")).lower()
+        if isinstance(item, dict)
+        and "ps/2" not in str(item.get("name", "")).lower()
+        and (
+            "usb" in str(item.get("name", "")).lower()
+            or "hid" in str(item.get("name", "")).lower()
+        )
     ]
     if not usb_mice:
         raise RuntimeError(
@@ -160,7 +165,14 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
         item for item in selected_after
         if isinstance(item, dict) and item.get("current") is True
     ]
-    if not any("usb" in str(item.get("name", "")).lower() for item in current):
+    if not any(
+        "ps/2" not in str(item.get("name", "")).lower()
+        and (
+            "usb" in str(item.get("name", "")).lower()
+            or "hid" in str(item.get("name", "")).lower()
+        )
+        for item in current
+    ):
         raise RuntimeError(
             "QEMU did not make the USB mouse the active pointer: "
             + json.dumps(selected_after, sort_keys=True)
@@ -208,7 +220,7 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
         ),
         "USB mouse motion and left-button events in the desktop event dispatcher",
     )
-    print(f"USB keyboard tested: {json.dumps(mice, sort_keys=True)}")
+    print(f"USB HID mouse selected: {selected.get('name')} (index {index})")
     print("USB keyboard A make/break reached Nexus input dispatcher")
     print("USB mouse motion/click reached Nexus input dispatcher")
 

@@ -222,7 +222,8 @@ int main(void) {
             .subclass = NEXUS_DRIVER_WILDCARD_U8,
             .programming_interface = NEXUS_DRIVER_WILDCARD_U8
         },
-        .probe = succeed_probe, .context = (void *)(uintptr_t)0x1234U
+        .probe = succeed_probe, .remove = remove_device,
+        .context = (void *)(uintptr_t)0x1234U
     };
     assert(nexus_driver_manager_register(&subsystem));
     assert(nexus_driver_manager_probe_pci_device(&pci));

@@ -1572,6 +1572,11 @@ static void xhci_detach_hub_children(struct xhci_controller *xhci,
             device->usb_path.parent_port != parent_port) continue;
         const uint8_t release[8] = {0U};
         input_usb_keyboard_report_state(&device->keyboard_state, release);
+        serial_write("USB: HID keyboard disconnected from hub slot=");
+        serial_write_hex(parent_hub_slot);
+        serial_write(" port=");
+        serial_write_hex(parent_port);
+        serial_write("\r\n");
         xhci_release_hid_device(xhci, device);
     }
     for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
@@ -1581,6 +1586,11 @@ static void xhci_detach_hub_children(struct xhci_controller *xhci,
             device->usb_path.parent_port != parent_port) continue;
         const uint8_t release[3] = {0U};
         input_usb_mouse_report(release);
+        serial_write("USB: HID mouse disconnected from hub slot=");
+        serial_write_hex(parent_hub_slot);
+        serial_write(" port=");
+        serial_write_hex(parent_port);
+        serial_write("\r\n");
         xhci_release_hid_device(xhci, device);
     }
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {
@@ -1718,10 +1728,20 @@ static bool xhci_hub_reset_and_enumerate_child(
 
     struct xhci_hid_device child = {0};
     if (!xhci_enumerate_hid_port(xhci, &child_path,
-            (uint8_t)status.speed, &child)) return false;
+            (uint8_t)status.speed, &child)) {
+        /* The port is still occupied even when its child is not a supported
+         * HID or hub class. Avoid resetting unrelated storage/audio devices
+         * on every polling cycle; wait for a connection-change edge. */
+        serial_write("USB: downstream device enumerated but no supported HID interface found on hub slot=");
+        serial_write_hex(hub->slot_id);
+        serial_write(" port=");
+        serial_write_hex(port);
+        serial_write("\r\n");
+        return true;
+    }
     if (!xhci_attach_hid_device(xhci, &child)) {
         xhci_release_hid_device(xhci, &child);
-        return false;
+        return true;
     }
 
     serial_write("USB: downstream input device enumerated through hub slot ");

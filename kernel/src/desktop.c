@@ -3702,7 +3702,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     serial_write_hex(screen_width);
     serial_write(" height=");
     serial_write_hex(screen_height);
-    serial_write("\\r\\n");
+    serial_write("\r\n");
     active_view = installer_session_mode ? DESKTOP_INSTALLER : DESKTOP_HOME;
     nexus_browser_history_init(&browser_history);
     browser_address_length = 0U;
@@ -7004,7 +7004,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             serial_write_hex((uint64_t)pointer_x);
             serial_write(" y=");
             serial_write_hex((uint64_t)pointer_y);
-            serial_write("\\r\\n");
+            serial_write("\r\n");
         }
         const uint8_t primary_button =
             desktop_settings.left_handed_mouse ? 2U : 1U;
@@ -7557,7 +7557,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             serial_write_hex((uint64_t)pointer_x);
             serial_write(" y=");
             serial_write_hex((uint64_t)pointer_y);
-            serial_write("\\r\\n");
+            serial_write("\r\n");
             const struct desktop_window_rect bounds = desktop_window_bounds();
             const uint64_t px = bounds.x;
             const uint64_t py = bounds.y;
@@ -7575,12 +7575,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             const size_t selected =
                                 (size_t)((uint64_t)relative_y - 82U) / 28U;
                             installer_select_device(selected);
+                            serial_write("NEXUS INSTALLER MOUSE: DRIVE SELECTED\r\n");
                         }
                         installer_drive_dropdown_open = false;
                     } else if (relative_y >= 48 && relative_y < 76 &&
                                relative_x < 520) {
                         installer_drive_dropdown_open = true;
-                        serial_write("NEXUS INSTALLER MOUSE: DRIVE SELECTOR OPENED\\r\\n");
+                        serial_write("NEXUS INSTALLER MOUSE: DRIVE SELECTOR OPENED\r\n");
                     } else if (relative_y >= 158 && relative_y < 182) {
                         if (relative_x < 104) {
                             installer_firmware = NEXUS_FIRMWARE_UEFI;
@@ -7594,7 +7595,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         }
                     } else if (relative_y >= 310 && relative_y < 334 &&
                                relative_x >= 228 && relative_x < 448) {
-                        (void)installer_begin_confirmation();
+                        if (installer_begin_confirmation())
+                            serial_write("NEXUS INSTALLER MOUSE: CONFIRMATION SCREEN OPENED\r\n");
+                        else
+                            serial_write("NEXUS INSTALLER MOUSE: CONTINUE REFUSED\r\n");
                     }
                 } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
                            installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {

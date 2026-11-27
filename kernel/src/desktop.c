@@ -182,6 +182,7 @@ static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
 static void desktop_preferences_save(void);
+static void desktop_settings_apply(void);
 static void desktop_store_refresh(void);
 static const char *installer_transport_label(
     const struct nexus_block_device *device);
@@ -2711,6 +2712,7 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 224U,
                 "PAIRING, BLE, A2DP AND BLUETOOTH HID SETTINGS ARE NOT EXPOSED WITHOUT A DRIVER.",
                 1U, 171U, 191U, 211U);
+            desktop_draw_hardware_overview(text_x + 430U, content_y + 70U);
         } else if (settings_page == SETTINGS_NETWORK) {
             desktop_settings_draw_heading(text_x, content_y,
                 "NETWORK & INTERNET", "Ethernet status and Wi-Fi operations use the active network services.");
@@ -8178,6 +8180,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     draw_shell();
     draw_pointer();
     serial_write("DESKTOP: view changed by keyboard shortcut\r\n");
+    }
 }
 
 

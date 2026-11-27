@@ -248,13 +248,14 @@ bool nexus_driver_manager_probe_device(
     const struct nexus_driver_device *device) {
     if (device == NULL || device->bus < NEXUS_DRIVER_BUS_PCI ||
         device->bus > NEXUS_DRIVER_BUS_USB) return false;
+    const size_t prior_count = pnp_devices_used;
     const size_t prior = find_pnp_device(device);
-    const enum nexus_pnp_device_state prior_state =
-        prior == pnp_devices_used ? NEXUS_PNP_DEVICE_DISCOVERED
-                                  : pnp_devices[prior].info.state;
+    const bool was_known = prior < prior_count;
+    const enum nexus_pnp_device_state prior_state = was_known
+        ? pnp_devices[prior].info.state : NEXUS_PNP_DEVICE_DISCOVERED;
     const size_t record = remember_device(device);
-    if (record == pnp_devices_used) return false;
-    if (prior != pnp_devices_used) {
+    if (record >= pnp_devices_used) return false;
+    if (was_known) {
         if (pnp_devices[record].info.state == NEXUS_PNP_DEVICE_ACTIVE)
             return true;
         if (prior_state != NEXUS_PNP_DEVICE_REMOVED)

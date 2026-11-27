@@ -19,5 +19,9 @@ void scheduler_timer_tick(uint64_t now);
 bool scheduler_sleep_ticks(uint64_t ticks);
 void scheduler_preempt(void);
 void scheduler_set_preemption_enabled(bool enabled);
+/* BSP idle accounting; call around an STI;HLT idle wait. */
+void scheduler_idle_begin(void);
+void scheduler_idle_end(void);
+void scheduler_get_cpu_ticks(uint64_t *busy_ticks, uint64_t *idle_ticks);
 
 #endif

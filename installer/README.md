@@ -97,49 +97,47 @@ is mounted, RAM-only file saves are volatile and do not survive a reboot.
 
 ## Keyboard, mouse, and display compatibility
 
-The input stack supports legacy PS/2 keyboards and mice plus xHCI USB HID
-boot-protocol keyboards and mice. Before resetting the xHCI controller, the
-kernel walks its extended-capability chain, requests the OS-owned semaphore
-using byte accesses, waits for firmware to relinquish BIOS ownership, and
-disables firmware legacy SMI sources. The handoff is bounded; when firmware
-does not release the controller, the xHCI driver refuses unsafe takeover and
-PS/2 remains the available fallback. The xHCI port-speed decoder recognizes
-USB low/full/high-speed and SuperSpeed/SuperSpeedPlus link IDs, including the
-SuperSpeed warm-reset and 512-byte endpoint-zero packet-size rules. This
-improves initial enumeration compatibility for USB 3.x devices, but it does
-not certify every controller or receiver implementation. The PS/2 keyboard
-parser handles E0 extended
-keys, keeps right Ctrl/Alt separate from their left-side counterparts, filters
-Print Screen's fake Shift bytes, and safely consumes the multi-byte Pause
-sequence. PS/2 IntelliMouse negotiation enables four-byte wheel packets for
-compatible ID 3 devices and wheel/side-button packets for compatible ID 4
-devices. The desktop maps wheel movement to the active app's page navigation.
+The unified input stack supports legacy PS/2 keyboards/mice plus xHCI USB HID
+boot-protocol and generic-report-protocol keyboards/mice. Generic HID parsing
+is bounded and supports one input report ID per interface, keyboard modifier
+bits/key arrays, mouse button fields, relative X/Y axes, and an optional wheel
+field. Both formats are normalized into the same desktop and installer input
+events.
 
-Wired USB devices and standard 2.4 GHz wireless keyboard/mouse receivers work
-when they expose a standard HID boot interface. xHCI root-port status events
-are monitored after startup, so a supported wired device or 2.4 GHz receiver
-can be plugged in or removed while the installer or desktop is running. The
-kernel synthesizes key/button releases on disconnect to avoid stuck input
-state. USB keyboard reports preserve all eight modifier bits, including
-right-side modifiers and GUI keys, and include extended navigation/keypad
-mappings. The xHCI driver reserves up to 32 independent keyboard and 32 mouse
-slots across directly attached root ports, and reports are drained in the
-kernel main loop for both installer and desktop input. Device removal releases
-held keyboard keys and mouse buttons. The boot-protocol mouse decoder handles
-three-byte relative motion/button reports and an optional fourth wheel byte;
-extra mouse buttons and vendor-defined reports are not exposed.
+Before resetting the xHCI controller, the kernel walks its extended-capability
+chain, requests the OS-owned semaphore, waits for firmware to relinquish BIOS
+ownership, and disables legacy SMI sources. The handoff is bounded; if firmware
+does not release the controller, the xHCI driver refuses unsafe takeover.
+The xHCI port-speed decoder recognizes USB low/full/high-speed and
+SuperSpeed/SuperSpeedPlus link IDs, including SuperSpeed warm-reset and
+512-byte endpoint-zero packet-size rules.
 
-Compatibility is bounded by the host-controller and HID paths: USB hubs,
-multi-interface composite receivers, non-boot HID keyboard/mouse report
-formats, and non-xHCI USB host controllers (OHCI/UHCI/EHCI) are not
-implemented. Native Bluetooth discovery/pairing and vendor-specific wireless
-drivers are not implemented. A wireless receiver is supported only when it
-presents a standard boot-protocol USB HID interface directly on a supported
-xHCI root port. The PS/2 path remains available on systems with an i8042
-controller. QEMU release CI now injects USB keyboard press/release and USB
-mouse movement/click events in both the installer ISO and installed desktop;
-this is not a substitute for testing the actual PC's controller, hub and
-firmware.
+The PS/2 keyboard parser handles E0 extended keys, separates right Ctrl/Alt
+from their left-side counterparts, filters Print Screen fake Shift bytes,
+and consumes the multi-byte Pause sequence. PS/2 IntelliMouse negotiation
+enables four-byte wheel packets for compatible ID 3 devices and
+wheel/side-button packets for compatible ID 4 devices. The kernel consumes
+i8042 data through both IRQ handlers and a bounded output-buffer polling
+fallback. The polling path routes keyboard and auxiliary mouse bytes using
+the controller status register and discards parity/timeout-corrupted bytes,
+so a broken legacy IRQ route does not silently disable PS/2 input.
+
+For USB, the xHCI driver reserves up to 32 keyboard and 32 mouse slots across
+directly attached root ports, handles root-port hotplug, and synthesizes
+key/button releases on disconnect. Standard 2.4 GHz wireless receivers work
+when they expose a standard HID keyboard or mouse interface. QEMU release CI
+injects key press/release and pointer movement/click events through USB in
+both the installer and installed desktop. Host tests separately cover generic
+HID descriptors, report IDs, and PS/2 IRQ-independent byte routing.
+
+Remaining limits: USB hubs, multiple HID interfaces on one composite device,
+multiple report IDs within one HID interface, OHCI/UHCI/EHCI controllers,
+native Bluetooth discovery/pairing, and vendor-specific wireless protocols
+are not implemented. Bluetooth is usable only through a receiver that
+independently presents a supported USB HID interface. The PS/2 path requires
+a working i8042 controller. QEMU testing cannot certify the actual PC's
+controller, firmware, USB ports, hub topology, keyboard layout, or power
+management behavior.
 
 The ISO and installed Limine configuration request a 1920x1080, 32-bit
 framebuffer. Limine automatically selects another available mode when that

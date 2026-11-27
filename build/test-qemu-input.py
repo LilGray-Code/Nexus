@@ -247,6 +247,7 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
         serial_log,
         lambda log: (
             "USB: HID keyboard disconnected from xHCI port" in log
+            or "USB: HID keyboard disconnected from hub slot=" in log
             or "xHCI: USB keyboard transfer failed; code=" in log
         ),
         "USB keyboard disconnect after QMP hot-unplug",
@@ -256,6 +257,7 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
         serial_log,
         lambda log: (
             "USB: HID mouse disconnected from xHCI port" in log
+            or "USB: HID mouse disconnected from hub slot=" in log
             or "xHCI: USB mouse transfer failed; code=" in log
         ),
         "USB mouse disconnect after QMP hot-unplug",

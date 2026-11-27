@@ -147,6 +147,14 @@ jobs:
             -o /tmp/nexus-usb-hid-gamepad-test
           /tmp/nexus-usb-hid-gamepad-test
 
+      - name: Test generic USB HID keyboard and mouse report protocols
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hid_generic.c \
+            kernel/tests/usb_hid_generic_test.c \
+            -o /tmp/nexus-usb-hid-generic-test
+          /tmp/nexus-usb-hid-generic-test
+
       - name: Test gamepad input queue and overflow behavior
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

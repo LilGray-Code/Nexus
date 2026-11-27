@@ -2224,9 +2224,68 @@ static void xhci_release_controller_dma(struct xhci_controller *xhci) {
     xhci->erst_physical = 0U;
 }
 
+static bool xhci_reprobe_pci_controller(struct xhci_controller *xhci) {
+    if (xhci == NULL || xhci->pci_device == NULL) return false;
+
+    /* Firmware may have placed the controller in a lower PCI power state and
+     * cleared the Memory Space Enable / Bus Master Enable bits. Restore PCI
+     * access before touching BAR0. */
+    if (!pci_enable_memory_bus_master(xhci->pci_device)) {
+        serial_write("xHCI: unable to restore PCI memory decoding/bus mastering\\r\\n");
+        return false;
+    }
+
+    struct nexus_pci_bar bar = {0};
+    if (!pci_decode_bar(xhci->pci_device, 0U, &bar) ||
+        bar.io_space || !bar.assigned || bar.base == 0U) {
+        serial_write("xHCI: PCI BAR0 could not be restored after power loss\\r\\n");
+        return false;
+    }
+    if (bar.base != xhci->bar_base) {
+        xhci->bar_base = bar.base;
+        /* Old MMIO mappings remain mapped but are no longer part of the
+         * active register lookup cache. */
+        xhci->mapping_count = 0U;
+    }
+
+    uint32_t cap0 = 0U;
+    uint32_t hcsparams1 = 0U, hcsparams2 = 0U, hccparams1 = 0U;
+    uint32_t db_offset = 0U, rt_offset = 0U;
+    if (!xhci_read32(xhci, 0U, &cap0) ||
+        !xhci_read32(xhci, 0x04U, &hcsparams1) ||
+        !xhci_read32(xhci, 0x08U, &hcsparams2) ||
+        !xhci_read32(xhci, 0x10U, &hccparams1) ||
+        !xhci_read32(xhci, 0x14U, &db_offset) ||
+        !xhci_read32(xhci, 0x18U, &rt_offset)) return false;
+
+    const uint8_t cap_length = (uint8_t)(cap0 & 0xFFU);
+    const uint8_t ports = nexus_xhci_root_port_count(hcsparams1);
+    if (cap_length < 0x20U || ports == 0U) return false;
+
+    xhci->cap_length = cap_length;
+    xhci->version = (uint16_t)(cap0 >> 16);
+    xhci->hcsparams1 = hcsparams1;
+    xhci->hcsparams2 = hcsparams2;
+    xhci->hccparams1 = hccparams1;
+    xhci->max_ports = ports;
+    xhci->doorbell_offset = db_offset & ~0x03U;
+    xhci->runtime_offset = rt_offset & ~0x1FU;
+    xhci->context_size = (hccparams1 & (1U << 2)) != 0U ? 64U : 32U;
+
+    serial_write("xHCI: PCI BAR and controller capability registers restored\\r\\n");
+    return true;
+}
+
 static bool xhci_reinitialize_after_power_loss(struct xhci_controller *xhci) {
     if (xhci == NULL || xhci->pci_device == NULL ||
         xhci->hcsparams1 == 0U) return false;
+
+    /* Restore PCI config access first, then verify the controller is
+     * halted before releasing any DMA memory. */
+    if (!xhci_reprobe_pci_controller(xhci)) {
+        serial_write("xHCI: PCI access could not be restored; retaining all DMA resources\\r\\n");
+        return false;
+    }
 
     /* Stop DMA before releasing any controller/device memory. If halt cannot
      * be confirmed, deliberately retain the DMA buffers to avoid use-after-free

@@ -1532,8 +1532,12 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     bool any_gamepad = false;
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
         any_gamepad = any_gamepad || xhci->gamepads[i].active;
-    if (!xhci_has_keyboard(xhci) && !xhci_has_mouse(xhci) && !any_gamepad) {
-        serial_write("xHCI: no supported HID input found\r\n");
+    bool any_hub = false;
+    for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i)
+        any_hub = any_hub || xhci->hubs[i].active;
+    if (!xhci_has_keyboard(xhci) && !xhci_has_mouse(xhci) &&
+        !any_gamepad && !any_hub) {
+        serial_write("xHCI: no supported HID input or downstream hub found\r\n");
         return false;
     }
     xhci->pci_device = pci_device;
@@ -2132,4 +2136,5 @@ void xhci_poll(void) {
             xhci_drop_hid_device(xhci, device);
         }
     }
+    xhci_poll_usb_hubs(xhci);
 }

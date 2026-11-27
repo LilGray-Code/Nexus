@@ -72,10 +72,49 @@ static void test_hub_port_status(void) {
     assert(!port.connected && !port.enabled);
 }
 
+
+static void test_superspeed_hub_descriptor(void) {
+    const uint8_t desc[] = {
+        11U,0x2AU,4U,0x01U,0x00U,10U,25U,3U,0x34U,0x12U,0U
+    };
+    struct nexus_usb_hub_descriptor hub = {0};
+    assert(nexus_usb3_hub_parse_descriptor(desc, sizeof(desc), &hub));
+    assert(hub.superspeed);
+    assert(hub.port_count == 4U);
+    assert(hub.header_decode_latency == 3U);
+    assert(hub.hub_delay_ns == 0x1234U);
+    assert(!nexus_usb3_hub_parse_descriptor(desc, 9U, &hub));
+
+    const uint8_t wrong_type[] = {
+        11U,0x29U,4U,0x01U,0x00U,10U,25U,3U,0x34U,0x12U,0U
+    };
+    assert(!nexus_usb3_hub_parse_descriptor(wrong_type,
+        sizeof(wrong_type), &hub));
+}
+
+static void test_superspeed_hub_port_status(void) {
+    struct nexus_usb_hub_port_status port = {0};
+    const uint8_t super_speed[] = {0x03U,0x0CU,0x11U,0x00U};
+    assert(nexus_usb3_hub_decode_port_status(super_speed, &port));
+    assert(port.connected && port.enabled);
+    assert(port.speed == NEXUS_USB_SPEED_SUPER);
+    assert(port.change_bits == 0x0011U);
+
+    const uint8_t super_plus[] = {0x01U,0x10U,0x00U,0x00U};
+    assert(nexus_usb3_hub_decode_port_status(super_plus, &port));
+    assert(port.connected && !port.enabled);
+    assert(port.speed == NEXUS_USB_SPEED_SUPER_PLUS);
+
+    const uint8_t invalid_speed[] = {0x01U,0x14U,0x00U,0x00U};
+    assert(!nexus_usb3_hub_decode_port_status(invalid_speed, &port));
+}
+
 int main(void) {
     test_hub_descriptor();
     test_usb_route_strings();
     test_hub_port_status();
+    test_superspeed_hub_descriptor();
+    test_superspeed_hub_port_status();
     puts("NEXUS USB HUB DESCRIPTOR, PORT STATUS, AND ROUTE TESTS PASSED");
     return 0;
 }

@@ -6614,6 +6614,7 @@ static bool installer_begin_confirmation(void) {
         installer_input_length = 0U;
         installer_input[0] = '\0';
         installer_set_status("No disk writes have occurred");
+        serial_write("NEXUS INSTALLER TARGET ID CONFIRMATION READY\r\n");
         return true;
     }
     installer_set_status("Target is not eligible for installation");
@@ -6636,6 +6637,7 @@ static void installer_confirm_target_id(void) {
         installer_input_length = 0U;
         installer_input[0] = '\0';
         installer_set_status("Target identity verified; final erase phrase required");
+        serial_write("NEXUS INSTALLER TARGET ID VERIFIED\r\n");
     } else {
         installer_set_status("Target ID did not match");
     }
@@ -6725,6 +6727,7 @@ static void installer_apply_typed_erase(void) {
         installer_set_status("Type ERASE exactly to continue");
         return;
     }
+    serial_write("NEXUS INSTALLER ERASE PHRASE ACCEPTED\r\n");
     const struct nexus_block_device *device =
         blockdev_at(installer_selected_device);
     installer_ui_state = INSTALLER_UI_RUNNING;

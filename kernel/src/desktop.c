@@ -6875,12 +6875,33 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t px = (uint64_t)pointer_x;
             const uint64_t py = (uint64_t)pointer_y;
             bool changed = false;
-            if (py >= sy - 2U && py < sy + 25U && px >= sx) {
+            if (py >= sy - 2U && py < sy + 38U && px >= sx) {
                 const uint64_t relative_x = px - sx;
-                const size_t page = (size_t)(relative_x / 80U);
-                if (page < SETTINGS_PAGE_COUNT && relative_x % 80U < 74U)
-                    settings_page = (enum desktop_settings_page)page;
+                const uint64_t relative_y = py - (sy - 2U);
+                const size_t slot = (size_t)(relative_y / 20U) * 8U +
+                                    (size_t)(relative_x / 80U);
+                if (relative_x % 80U < 74U && relative_y % 20U < 18U) {
+                    const enum desktop_settings_page page =
+                        settings_visible_category_at(slot);
+                    if (page < SETTINGS_PAGE_COUNT) {
+                        settings_page = page;
+                        settings_wifi_password_focused = false;
+                        settings_status_set("");
+                    }
+                }
+            } else if (py >= content_y + 1U && py < content_y + 23U &&
+                       px >= sx + 520U && px < sx + 850U) {
+                settings_search_focused = true;
+                settings_wifi_password_focused = false;
             } else if (settings_page == SETTINGS_PERSONAL) {
+                if (py >= content_y + 278U && py < content_y + 305U) {
+                    if (px >= sx && px < sx + 104U)
+                        (void)desktop_settings_export();
+                    else if (px >= sx + 112U && px < sx + 216U)
+                        (void)desktop_settings_import();
+                    else if (px >= sx + 224U && px < sx + 356U)
+                        (void)desktop_settings_restore_defaults();
+                } else if (py >= content_y + 77U && py < content_y + 107U) {
                 if (py >= content_y + 77U && py < content_y + 107U) {
                     if (px >= sx && px < sx + 112U &&
                         desktop_settings.theme != NEXUS_SETTINGS_THEME_DARK) {
@@ -6993,6 +7014,59 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         }
                     }
                 }
+            } else if (settings_page == SETTINGS_NETWORK) {
+                if (py >= content_y + 132U && py < content_y + 159U) {
+                    if (px >= sx && px < sx + 104U) {
+                        settings_wifi_selected_index = 0U;
+                        const bool requested = wifi_available() && wifi_scan();
+                        settings_status_set(requested
+                            ? "Wi-Fi scan requested from the radio driver."
+                            : "Wi-Fi scan could not start; check radio availability and state.");
+                    } else if (px >= sx + 114U && px < sx + 232U) {
+                        if (wifi_available() &&
+                            wifi_get_state() == NEXUS_WIFI_CONNECTED) {
+                            wifi_disconnect();
+                            settings_status_set("Disconnect requested; radio returned to ready state.");
+                        } else {
+                            settings_status_set("No connected Wi-Fi session to disconnect.");
+                        }
+                    }
+                } else if (py >= content_y + 184U &&
+                           py < content_y + 184U + 5U * 28U &&
+                           px >= sx && px < sx + 238U) {
+                    const size_t row = (size_t)(py - (content_y + 184U)) / 28U;
+                    if (row < wifi_scan_result_count()) {
+                        settings_wifi_selected_index = row;
+                        settings_wifi_password_focused = false;
+                        settings_status_set("Network selected. Enter its password if required, then connect.");
+                    }
+                } else if (py >= content_y + 184U &&
+                           py < content_y + 211U &&
+                           px >= sx + 270U && px < sx + 530U) {
+                    settings_wifi_password_focused = true;
+                    settings_search_focused = false;
+                    settings_status_set("Wi-Fi password is session-only and is not exported.");
+                } else if (py >= content_y + 222U &&
+                           py < content_y + 250U &&
+                           px >= sx + 270U && px < sx + 390U) {
+                    struct nexus_wifi_network network;
+                    if (!wifi_scan_result_at(settings_wifi_selected_index, &network)) {
+                        settings_status_set("Connect failed: select a discovered network first.");
+                    } else {
+                        const char *password =
+                            network.security == NEXUS_WIFI_SECURITY_OPEN
+                                ? "" : settings_wifi_password;
+                        if (!wifi_connect(&network, password)) {
+                            settings_status_set("Connect request rejected: password or radio state is invalid.");
+                        } else {
+                            settings_status_set("Connect request accepted by radio driver.");
+                            for (size_t i = 0U; i < sizeof(settings_wifi_password); ++i)
+                                settings_wifi_password[i] = '\0';
+                            settings_wifi_password_length = 0U;
+                            settings_wifi_password_focused = false;
+                        }
+                    }
+                }
             } else if (settings_page == SETTINGS_SOUND) {
                 if (py >= content_y + 76U && py < content_y + 172U) {
                     const uint64_t row = (py - (content_y + 76U)) / 32U;
@@ -7085,19 +7159,16 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     draw_pointer();
                     return;
                 }
-            } else if (settings_page == SETTINGS_SYSTEM_INFORMATION) {
-                if (py >= content_y + 83U && py < content_y + 113U &&
-                    px >= sx) {
-                    static const uint8_t volumes[5] = {
-                        0U, 25U, 50U, 75U, 100U
-                    };
-                    const uint64_t col = (px - sx) / 82U;
-                    if (col < 5U && (px - sx) % 82U < 74U &&
-                        desktop_settings.volume_percent != volumes[col]) {
-                        desktop_settings.volume_percent = volumes[col];
-                        changed = true;
-                    }
-                }
+            } else if (settings_page == SETTINGS_SYSTEM_INFORMATION ||
+                       settings_page == SETTINGS_BLUETOOTH_DEVICES ||
+                       settings_page == SETTINGS_APPLICATIONS ||
+                       settings_page == SETTINGS_PRIVACY_SECURITY ||
+                       settings_page == SETTINGS_ACCOUNTS_USERS ||
+                       settings_page == SETTINGS_POWER_BATTERY ||
+                       settings_page == SETTINGS_GAMING ||
+                       settings_page == SETTINGS_UPDATES_RECOVERY ||
+                       settings_page == SETTINGS_DEVELOPER) {
+                /* Information-only pages expose no synthetic write controls. */
             }
             if (changed) desktop_preferences_save();
             else desktop_settings_apply();

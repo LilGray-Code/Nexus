@@ -430,9 +430,13 @@ static void ring_write_frame(struct nexus_audio_stream *stream,
         right = samples[input_frame * 2U + 1U];
     }
     if (stream->channels == 1U) {
-        stream->ring[(size_t)slot * 2U] =
+        const int16_t mono = input_channels == 1U ? left :
             (int16_t)(((int32_t)left + (int32_t)right) / 2);
-        stream->ring[(size_t)slot * 2U + 1U] = 0;
+        /* Duplicate mono into both mixer channels so playback remains
+         * centered rather than being attenuated into the left channel only.
+         */
+        stream->ring[(size_t)slot * 2U] = mono;
+        stream->ring[(size_t)slot * 2U + 1U] = mono;
     } else {
         stream->ring[(size_t)slot * 2U] = left;
         stream->ring[(size_t)slot * 2U + 1U] = right;

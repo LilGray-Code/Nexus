@@ -2295,18 +2295,35 @@ static void draw_shell(void) {
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_SETTINGS) {
         static const char *const tab_labels[SETTINGS_PAGE_COUNT] = {
-            "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "AUDIO", "STORAGE", "DEVICES"
+            "LOOK", "DISPLAY", "SOUND", "NETWORK", "BT/DEV", "INPUT", "ACCESS", "APPS",
+            "STORAGE", "SECURITY", "ACCOUNTS", "POWER", "GAMING", "UPDATES", "INFO", "DEV"
         };
         const uint64_t tab_y = text_y - 2U;
-        for (size_t tab = 0U; tab < SETTINGS_PAGE_COUNT; ++tab) {
-            const uint64_t tab_x = text_x + (uint64_t)tab * 80U;
-            desktop_settings_draw_button(tab_x, tab_y, 74U, 25U,
-                                         tab_labels[tab],
-                                         settings_page == (enum desktop_settings_page)tab);
+        size_t visible_tab = 0U;
+        for (size_t category = 0U; category < SETTINGS_PAGE_COUNT; ++category) {
+            if (!settings_category_matches_query(category)) continue;
+            const uint64_t col = visible_tab % 8U;
+            const uint64_t row = visible_tab / 8U;
+            const uint64_t tab_x = text_x + col * 80U;
+            const uint64_t y = tab_y + row * 20U;
+            desktop_settings_draw_button(tab_x, y, 74U, 18U,
+                tab_labels[category],
+                settings_page == (enum desktop_settings_page)category);
+            ++visible_tab;
         }
 
         const uint64_t content_y = text_y + 42U;
         const bool light_theme = desktop_theme_is_light();
+        graphics_blend_round_rect(text_x + 520U, content_y + 1U,
+            330U, 22U, 6U, light_theme ? 237U : 23U,
+            light_theme ? 243U : 39U, light_theme ? 250U : 60U, 245U);
+        graphics_round_rect(text_x + 520U, content_y + 1U,
+            330U, 22U, 6U, light_theme ? 173U : 74U,
+            light_theme ? 190U : 99U, light_theme ? 211U : 132U);
+        graphics_draw_text(text_x + 529U, content_y + 8U,
+            settings_search_length == 0U ? "SEARCH SETTINGS..." : settings_search_query,
+            1U, light_theme ? 63U : 229U,
+            light_theme ? 79U : 239U, light_theme ? 97U : 249U);
         if (settings_page == SETTINGS_PERSONAL) {
             desktop_settings_draw_heading(text_x, content_y,
                 "PERSONALIZATION", "Make the Nexus workspace match your style.");
@@ -2503,7 +2520,7 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 296U,
                 "LARGE TEXT AND POINTER CHANGES APPLY IMMEDIATELY.",
                 1U, 108U, 216U, 229U);
-        } else if (settings_page == SETTINGS_SYSTEM) {
+        } else if (settings_page == SETTINGS_SYSTEM_INFORMATION) {
             desktop_settings_draw_heading(text_x, content_y,
                 "SYSTEM", "Sound, connectivity and system status.");
             graphics_draw_text(text_x, content_y + 66U, "MASTER VOLUME",
@@ -2569,7 +2586,7 @@ static void draw_shell(void) {
                 1U, desktop_preferences_persistent ? 108U : 231U,
                 desktop_preferences_persistent ? 216U : 183U,
                 desktop_preferences_persistent ? 229U : 127U);
-        } else if (settings_page == SETTINGS_AUDIO) {
+        } else if (settings_page == SETTINGS_SOUND) {
             desktop_settings_draw_heading(text_x, content_y,
                 "AUDIO", "Output, microphone routing and application levels.");
             graphics_draw_text(text_x, content_y + 58U, "OUTPUT DEVICES",
@@ -2660,7 +2677,273 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 368U,
                 "HDA, USB, HDMI/DP AND BLUETOOTH APPEAR WHEN THEIR DRIVERS INITIALIZE.",
                 1U, 108U, 216U, 229U);
-        } else if (settings_page == SETTINGS_STORAGE) {
+        } else if (settings_page == SETTINGS_BLUETOOTH_DEVICES) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "BLUETOOTH & DEVICES", "Connected-device status and implemented transport services.");
+            graphics_draw_text(text_x, content_y + 68U,
+                xhci_keyboard_ready() ? "USB KEYBOARD: READY" : "USB KEYBOARD: NOT DETECTED",
+                1U, xhci_keyboard_ready() ? 108U : 231U,
+                xhci_keyboard_ready() ? 216U : 183U,
+                xhci_keyboard_ready() ? 229U : 127U);
+            graphics_draw_text(text_x, content_y + 96U,
+                xhci_mouse_ready() ? "USB MOUSE: READY" : "USB MOUSE: NOT DETECTED",
+                1U, xhci_mouse_ready() ? 108U : 231U,
+                xhci_mouse_ready() ? 216U : 183U,
+                xhci_mouse_ready() ? 229U : 127U);
+            graphics_draw_text(text_x, content_y + 124U,
+                xhci_gamepads_ready() ? "USB GAMEPAD: READY" : "USB GAMEPAD: NOT DETECTED",
+                1U, xhci_gamepads_ready() ? 108U : 231U,
+                xhci_gamepads_ready() ? 216U : 183U,
+                xhci_gamepads_ready() ? 229U : 127U);
+            graphics_draw_text(text_x, content_y + 162U,
+                "BLUETOOTH RADIO / PAIRING SERVICE: NOT IMPLEMENTED",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 188U,
+                "USB HID BOOT KEYBOARD / MOUSE AND GAMEPAD PATHS ARE ACTIVE WHEN DETECTED.",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 224U,
+                "PAIRING, BLE, A2DP AND BLUETOOTH HID SETTINGS ARE NOT EXPOSED WITHOUT A DRIVER.",
+                1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_NETWORK) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "NETWORK & INTERNET", "Ethernet status and Wi-Fi operations use the active network services.");
+            struct nexus_net_info net_info;
+            const bool net_info_ok = net_get_info(&net_info);
+            const char *ethernet_status = !net_info_ok || !net_info.interface_ready
+                ? "NO ACTIVE ETHERNET INTERFACE"
+                : (!net_info.link_up ? "LINK DOWN"
+                   : (net_info.ipv4_configured ? "CONNECTED / IPv4 CONFIGURED"
+                                              : "LINK UP / WAITING FOR DHCP"));
+            graphics_draw_text(text_x, content_y + 62U, "ETHERNET",
+                               1U, 142U, 174U, 199U);
+            graphics_draw_text(text_x + 110U, content_y + 62U,
+                ethernet_status, 1U, 108U, 216U, 229U);
+            if (net_info_ok && net_info.ipv4_configured) {
+                char ip_line[64];
+                size_t n = 0U;
+                const char prefix[] = "IPV4: ";
+                while (prefix[n] != '\0') { ip_line[n] = prefix[n]; ++n; }
+                for (size_t b = 0U; b < 4U; ++b) {
+                    char number[21];
+                    format_u64(net_info.ipv4[b], number);
+                    for (size_t j = 0U; number[j] != '\0' && n < 60U; ++j)
+                        ip_line[n++] = number[j];
+                    if (b != 3U && n < 60U) ip_line[n++] = '.';
+                }
+                ip_line[n] = '\0';
+                graphics_draw_text(text_x, content_y + 84U,
+                    ip_line, 1U, 171U, 191U, 211U);
+            }
+            const char *wifi_label = !wifi_available() ? "WI-FI DRIVER UNAVAILABLE"
+                : (wifi_get_state() == NEXUS_WIFI_CONNECTED ? "CONNECTED"
+                   : (wifi_get_state() == NEXUS_WIFI_SCANNING ? "SCANNING"
+                      : (wifi_get_state() == NEXUS_WIFI_CONNECTING ? "CONNECTING"
+                         : (wifi_get_state() == NEXUS_WIFI_FAILED ? "RADIO ERROR"
+                            : "READY"))));
+            graphics_draw_text(text_x, content_y + 112U, "WI-FI",
+                               1U, 142U, 174U, 199U);
+            graphics_draw_text(text_x + 110U, content_y + 112U,
+                wifi_label, 1U, 108U, 216U, 229U);
+            desktop_settings_draw_button(text_x, content_y + 132U,
+                104U, 27U, "SCAN", wifi_get_state() == NEXUS_WIFI_SCANNING);
+            desktop_settings_draw_button(text_x + 114U, content_y + 132U,
+                118U, 27U, "DISCONNECT", false);
+            graphics_draw_text(text_x, content_y + 168U, "AVAILABLE NETWORKS",
+                               1U, 142U, 174U, 199U);
+            const size_t scans = wifi_scan_result_count();
+            const size_t visible_scans = scans < 5U ? scans : 5U;
+            for (size_t i = 0U; i < visible_scans; ++i) {
+                struct nexus_wifi_network network;
+                char ssid[40];
+                if (!wifi_scan_result_at(i, &network)) continue;
+                settings_copy_ssid(&network, ssid);
+                desktop_settings_draw_button(text_x, content_y + 184U + i * 28U,
+                    238U, 24U, ssid,
+                    i == settings_wifi_selected_index);
+            }
+            if (scans == 0U)
+                graphics_draw_text(text_x, content_y + 190U,
+                    "NO SCAN RESULTS - USE SCAN", 1U,
+                    171U, 191U, 211U);
+            graphics_draw_text(text_x + 270U, content_y + 168U,
+                "NETWORK PASSWORD", 1U, 142U, 174U, 199U);
+            graphics_blend_round_rect(text_x + 270U, content_y + 184U,
+                260U, 27U, 6U, light_theme ? 237U : 23U,
+                light_theme ? 243U : 39U, light_theme ? 250U : 60U, 245U);
+            graphics_round_rect(text_x + 270U, content_y + 184U,
+                260U, 27U, 6U, light_theme ? 173U : 74U,
+                light_theme ? 190U : 99U, light_theme ? 211U : 132U);
+            char password_mask[64];
+            size_t mask = settings_wifi_password_length < 60U
+                ? settings_wifi_password_length : 60U;
+            for (size_t i = 0U; i < mask; ++i) password_mask[i] = '*';
+            password_mask[mask] = '\0';
+            graphics_draw_text(text_x + 279U, content_y + 192U,
+                settings_wifi_password_focused ? password_mask : "CLICK TO ENTER PASSWORD",
+                1U, 229U, 239U, 249U);
+            desktop_settings_draw_button(text_x + 270U, content_y + 222U,
+                120U, 28U, "CONNECT", false);
+            graphics_draw_text(text_x + 270U, content_y + 264U,
+                wifi_available() ? "PASSWORD IS HELD IN RAM ONLY." :
+                    "WI-FI SERVICE NOT AVAILABLE.",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 340U,
+                "CONNECTIONS ARE REQUESTED THROUGH THE REGISTERED RADIO DRIVER.",
+                1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_INPUT_ACCESSORIES) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "INPUT & ACCESSORIES", "Live pointer, scroll and handedness settings.");
+            graphics_draw_text(text_x, content_y + 64U,
+                "MOUSE SENSITIVITY, SCROLL SPEED AND HANDEDNESS APPLY TO THE ACTIVE INPUT PATH.",
+                1U, 108U, 216U, 229U);
+            char dropped[64];
+            format_labeled_u64("DROPPED INPUT EVENTS: ",
+                input_dropped_event_count(), dropped);
+            graphics_draw_text(text_x, content_y + 100U, dropped,
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 136U,
+                xhci_keyboard_ready() ? "USB KEYBOARD: ACTIVE" : "USB KEYBOARD: NOT DETECTED",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 164U,
+                xhci_mouse_ready() ? "USB MOUSE: ACTIVE" : "USB MOUSE: NOT DETECTED",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 192U,
+                xhci_gamepads_ready() ? "USB GAMEPAD INTERFACE: ACTIVE" : "USB GAMEPAD: NOT DETECTED",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 232U,
+                "KEYBOARD LAYOUT REMAPPING IS NOT YET AVAILABLE.",
+                1U, 231U, 183U, 127U);
+        } else if (settings_page == SETTINGS_APPLICATIONS) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "APPLICATIONS", "Inspect running processes and the installed application catalogue.");
+            char line[64];
+            format_labeled_u64("RUNNING / RETAINED PROCESSES: ", process_count(), line);
+            graphics_draw_text(text_x, content_y + 64U, line, 1U,
+                108U, 216U, 229U);
+            format_labeled_u64("STORE CATALOGUE ENTRIES: ", nexus_store_count(), line);
+            graphics_draw_text(text_x, content_y + 90U, line, 1U,
+                171U, 191U, 211U);
+            size_t shown = 0U;
+            for (size_t i = 0U; i < NEXUS_PROCESS_MAX && shown < 4U; ++i) {
+                struct nexus_process_info info;
+                if (!process_get_info(i, &info)) continue;
+                graphics_draw_text(text_x, content_y + 124U + shown * 27U,
+                    info.name, 1U, 231U, 239U, 247U);
+                graphics_draw_text(text_x + 190U, content_y + 124U + shown * 27U,
+                    process_state_name(info.state), 1U, 171U, 191U, 211U);
+                ++shown;
+            }
+            if (shown == 0U)
+                graphics_draw_text(text_x, content_y + 124U,
+                    "NO ACTIVE USER PROCESSES", 1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 260U,
+                "APP INSTALL / REMOVE IS PROVIDED BY THE SIGNED PACKAGE PATH.",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 288U,
+                "PER-APP STARTUP, DEFAULT-APP AND BACKGROUND-APP CONTROLS ARE NOT IMPLEMENTED.",
+                1U, 231U, 183U, 127U);
+        } else if (settings_page == SETTINGS_PRIVACY_SECURITY) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "PRIVACY & SECURITY", "Current enforcement and available security controls.");
+            graphics_draw_text(text_x, content_y + 68U,
+                "SIGNED PACKAGE VERIFICATION IS PROVIDED BY THE PACKAGE INSTALL API.",
+                1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x, content_y + 102U,
+                "PROCESS ISOLATION AND BOUNDED NATIVE APPLICATION EXECUTION ARE IMPLEMENTED.",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 136U,
+                "PER-APP PERMISSIONS, FIREWALL RULES AND USER ACL MANAGEMENT ARE NOT EXPOSED.",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 170U,
+                "NO PRIVACY SWITCH IS SHOWN WITHOUT A BACKING SERVICE.",
+                1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_ACCOUNTS_USERS) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "ACCOUNTS & USERS", "Account management capability status.");
+            graphics_draw_text(text_x, content_y + 74U,
+                "MULTI-USER ACCOUNT DATABASE: NOT IMPLEMENTED",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 108U,
+                "USER LOGIN / PASSWORD / SESSION MANAGEMENT: NOT IMPLEMENTED",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 152U,
+                "THIS KERNEL CURRENTLY STARTS A SINGLE DESKTOP SESSION.",
+                1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_POWER_BATTERY) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "POWER & BATTERY", "Power-management capabilities reported by firmware and drivers.");
+            graphics_draw_text(text_x, content_y + 70U,
+                "BATTERY TELEMETRY: NO ACPI BATTERY DRIVER REGISTERED",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 104U,
+                "SUSPEND / HIBERNATE / POWER-PROFILE SERVICE: NOT IMPLEMENTED",
+                1U, 231U, 183U, 127U);
+            const struct nexus_acpi_topology *topology = acpi_get_topology();
+            graphics_draw_text(text_x, content_y + 148U,
+                topology != NULL ? "ACPI PLATFORM TABLES: AVAILABLE"
+                                 : "ACPI PLATFORM TABLES: NOT AVAILABLE",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 182U,
+                "NO SLEEP OR BATTERY CONTROL IS EXPOSED WITHOUT A POWER DRIVER.",
+                1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_GAMING) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "GAMING", "Runtime gaming capabilities and compatibility status.");
+            struct nexus_gaming_system_capabilities game_caps;
+            nexus_gaming_query_system(&game_caps);
+            char line[64];
+            format_labeled_u64("AVAILABLE CAPABILITY MASK: ", game_caps.available, line);
+            graphics_draw_text(text_x, content_y + 66U, line, 1U,
+                108U, 216U, 229U);
+            format_labeled_u64("GAME LIBRARY ENTRIES: ", nexus_game_library_count(), line);
+            graphics_draw_text(text_x, content_y + 94U, line, 1U,
+                171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 136U,
+                gpu_render_path_name(), 1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 168U,
+                "FPS / BENCHMARK TELEMETRY IS AVAILABLE TO NATIVE CLIENTS.",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 202U,
+                "VULKAN / DXVK / VKD3D / PROTON CONTROLS REQUIRE THOSE RUNTIMES.",
+                1U, 231U, 183U, 127U);
+        } else if (settings_page == SETTINGS_UPDATES_RECOVERY) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "UPDATES & RECOVERY", "Update and recovery service availability.");
+            graphics_draw_text(text_x, content_y + 72U,
+                "AUTOMATIC OS UPDATE SERVICE: NOT IMPLEMENTED",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 106U,
+                "SYSTEM RESTORE / ROLLBACK MANAGER: NOT IMPLEMENTED",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 150U,
+                "THE INSTALLER HAS A TRANSACTION JOURNAL FOR INTERRUPTED INSTALLS.",
+                1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x, content_y + 184U,
+                "FRESH INSTALLATION IS NOT AN IN-PLACE UPDATE MECHANISM.",
+                1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_DEVELOPER) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "DEVELOPER SETTINGS", "Read-only service diagnostics; no inert debug toggles.");
+            char line[64];
+            format_labeled_u64("REGISTERED SERVICES: ",
+                nexus_service_manager_count(), line);
+            graphics_draw_text(text_x, content_y + 64U, line, 1U,
+                108U, 216U, 229U);
+            size_t service_rows = nexus_service_manager_count();
+            if (service_rows > 8U) service_rows = 8U;
+            for (size_t i = 0U; i < service_rows; ++i) {
+                struct nexus_service_info service;
+                if (!nexus_service_manager_get_info(i, &service)) continue;
+                graphics_draw_text(text_x, content_y + 92U + i * 25U,
+                    service.name, 1U, 231U, 239U, 247U);
+                graphics_draw_text(text_x + 240U, content_y + 92U + i * 25U,
+                    nexus_service_state_name(service.state), 1U,
+                    171U, 191U, 211U);
+            }
+            graphics_draw_text(text_x, content_y + 322U,
+                "SERIAL DIAGNOSTICS REMAIN ENABLED BY THE KERNEL BUILD.",
+                1U, 171U, 191U, 211U);
+        }
             desktop_settings_draw_heading(text_x, content_y,
                 "STORAGE", "Inspect disks, partitions, transport and I/O health.");
             graphics_draw_text(text_x, content_y + 58U, "CONNECTED DISKS",
@@ -6720,7 +7003,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         }
                     }
                 }
-            } else if (settings_page == SETTINGS_AUDIO) {
+            } else if (settings_page == SETTINGS_SOUND) {
                 if (py >= content_y + 76U && py < content_y + 172U) {
                     const uint64_t row = (py - (content_y + 76U)) / 32U;
                     size_t output_row = 0U;
@@ -6812,7 +7095,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     draw_pointer();
                     return;
                 }
-            } else if (settings_page == SETTINGS_SYSTEM) {
+            } else if (settings_page == SETTINGS_SYSTEM_INFORMATION) {
                 if (py >= content_y + 83U && py < content_y + 113U &&
                     px >= sx) {
                     static const uint8_t volumes[5] = {

@@ -109,8 +109,6 @@ def build_command(args: argparse.Namespace, qmp_socket: Path,
         "-cpu", "qemu64",
         "-m", "512M",
         "-device", "qemu-xhci,id=xhci",
-        "-device", "usb-kbd,id=nexus-usb-keyboard,bus=xhci.0",
-        "-device", "usb-mouse,id=nexus-usb-mouse,bus=xhci.0",
         "-drive", f"if=pflash,format=raw,readonly=on,file={args.firmware_code}",
         "-drive", f"if=pflash,format=raw,file={vars_copy}",
         "-display", "none",
@@ -120,6 +118,17 @@ def build_command(args: argparse.Namespace, qmp_socket: Path,
         "-no-reboot",
         "-no-shutdown",
     ]
+    if args.topology == "hub":
+        command += [
+            "-device", "usb-hub,id=nexus-usb-hub,bus=xhci.0",
+            "-device", "usb-kbd,id=nexus-usb-keyboard,bus=nexus-usb-hub.0",
+            "-device", "usb-mouse,id=nexus-usb-mouse,bus=nexus-usb-hub.0",
+        ]
+    else:
+        command += [
+            "-device", "usb-kbd,id=nexus-usb-keyboard,bus=xhci.0",
+            "-device", "usb-mouse,id=nexus-usb-mouse,bus=xhci.0",
+        ]
     if args.mode == "installer":
         command += ["-cdrom", str(args.iso), "-boot", "d"]
     else:
@@ -146,7 +155,7 @@ def usb_mouse_click_dispatched(log: str) -> bool:
     )
 
 
-def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
+def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
     mice = qmp.command("query-mice")
     if not isinstance(mice, list):
         raise RuntimeError(f"QEMU query-mice returned unexpected data: {mice!r}")
@@ -254,11 +263,11 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
 
     qmp.command("device_add", {
         "driver": "usb-kbd", "id": "nexus-usb-keyboard-replugged",
-        "bus": "xhci.0",
+        "bus": "nexus-usb-hub.0" if topology == "hub" else "xhci.0",
     })
     qmp.command("device_add", {
         "driver": "usb-mouse", "id": "nexus-usb-mouse-replugged",
-        "bus": "xhci.0",
+        "bus": "nexus-usb-hub.0" if topology == "hub" else "xhci.0",
     })
     wait_for_predicate(
         serial_log,
@@ -276,6 +285,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--mode", choices=("installer", "desktop"), required=True)
+    parser.add_argument("--topology", choices=("direct", "hub"), default="direct")
     parser.add_argument("--iso", type=Path)
     parser.add_argument("--disk", type=Path)
     parser.add_argument("--disk-interface", choices=("usb-storage", "nvme"),
@@ -312,6 +322,8 @@ def main() -> None:
                 "INPUT: USB HID boot keyboard available",
                 "INPUT: USB HID boot mouse available",
             )
+            if args.topology == "hub":
+                required += ("NEXUS USB HUB READY",)
             if args.mode == "installer":
                 required += (
                     "NEXUS BOOT MODE: DEDICATED INSTALLER",
@@ -337,9 +349,9 @@ def main() -> None:
             if qmp is None:
                 raise RuntimeError("QEMU QMP socket did not become available")
             wait_for_log(serial_log, required, args.timeout)
-            exercise_usb_inputs(qmp, serial_log)
+            exercise_usb_inputs(qmp, serial_log, args.topology)
             final_log = serial_log.read_text(encoding="utf-8", errors="replace")
-            print(f"NEXUS {args.mode.upper()} USB INPUT INTEGRATION TEST PASSED")
+            print(f"NEXUS {args.mode.upper()} USB INPUT INTEGRATION TEST PASSED (topology={args.topology})")
             print(final_log[-2500:])
         finally:
             if qmp is not None:

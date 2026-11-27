@@ -339,20 +339,20 @@ def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
         raise RuntimeError("installer mouse geometry/pointer telemetry was malformed")
 
     width, height = int(geometry.group(1), 16), int(geometry.group(2), 16)
-    # Keep the observed pointer values as a sanity check that real motion has
-    # reached the desktop before issuing coordinate-based HMP clicks.
-    int(pointer.group(1), 16)
-    int(pointer.group(2), 16)
+    current_x = int(pointer.group(1), 16)
+    current_y = int(pointer.group(2), 16)
     if width < 640 or height < 420:
         raise RuntimeError(
             f"installer framebuffer too small for full pointer test: {width}x{height}"
         )
 
     def click_at(x: int, y: int, marker: str, description: str) -> None:
+        nonlocal current_x, current_y
         if not (0 <= x < width and 0 <= y < height):
             raise RuntimeError(f"{description}: target outside framebuffer ({x},{y})")
-        # HMP mouse_move uses absolute virtual-screen coordinates.
-        qmp.hmp(f"mouse_move {x} {y}")
+        # QEMU HMP mouse_move sends relative deltas. USB HID reports Y as
+        # upward-positive, while Nexus screen coordinates are downward-positive.
+        qmp.hmp(f"mouse_move {x - current_x} {current_y - y}")
         time.sleep(0.15)
         qmp.hmp("mouse_button 1")
         time.sleep(0.12)
@@ -362,6 +362,7 @@ def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
             lambda value: marker in value,
             description,
         )
+        current_x, current_y = x, y
 
     # Full-screen installer origin is (8,8); the drive selector is drawn at
     # (40,104) with size 520x28. Click its center to open the list.

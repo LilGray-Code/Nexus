@@ -1,5 +1,6 @@
 #include "package.h"
 #include "process.h"
+#include "security.h"
 #include "elf64.h"
 #include "sha256.h"
 #include "vfs.h"

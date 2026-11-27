@@ -55,10 +55,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cc -std=gnu11 -O2 -Wall -Wextra -Werror \\
-            -DNEXUS_INPUT_HOST_TEST -ffunction-sections -fdata-sections \\
-            -Ikernel/src kernel/src/input.c kernel/tests/input_queue_test.c \\
-            -Wl,--gc-sections -o /tmp/nexus-input-queue-test
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror -DNEXUS_INPUT_HOST_TEST -ffunction-sections -fdata-sections -Ikernel/src kernel/src/input.c kernel/tests/input_queue_test.c -Wl,--gc-sections -o /tmp/nexus-input-queue-test
           /tmp/nexus-input-queue-test
 
       - name: Test signed package and catalog parser contracts

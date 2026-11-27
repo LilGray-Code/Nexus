@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 static const uint8_t composite_config[] = {
-    9,2, 59,0, 3,1,0,0x80,50,
+    9,2, 75,0, 3,1,0,0x80,50,
     /* Interface 0: keyboard HID boot interface. */
     9,4, 0,0,1,3,1,1,0,
     9,0x21, 0x11,0x01,0,1,0x22,63,0,

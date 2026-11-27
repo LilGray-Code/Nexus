@@ -39,6 +39,7 @@
 #include "vfs.h"
 #include "service_manager.h"
 #include "smp.h"
+#include "security.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
@@ -341,6 +342,7 @@ static bool register_boot_services(void) {
 void kmain(void) {
     __asm__ volatile ("cli" : : : "memory");
     serial_init();
+    nexus_security_init();
     blockdev_init();
     serial_write("\r\nNEXUS OS KERNEL STARTED\r\n");
     serial_write("Architecture: x86_64\r\n");
@@ -462,11 +464,13 @@ void kmain(void) {
         halt_forever();
     }
 
-    if (paging_enable_nx()) {
-        serial_write("NEXUS NX PAGE PROTECTION READY\r\n");
-    } else {
-        serial_write("WARNING: CPU does not support NX page protection\r\n");
+    if (!paging_enable_nx()) {
+        nexus_security_audit(NEXUS_SECURITY_EVENT_POLICY_REJECTED, 0U,
+            NEXUS_SECURITY_REASON_NX_UNAVAILABLE, 0U, 0U);
+        serial_write("ERROR: hardware NX is required; user mode is disabled\r\n");
+        halt_forever();
     }
+    serial_write("NEXUS HARDWARE NX PAGE PROTECTION READY\r\n");
 
     if (!memory_allocator_selftest()) {
         serial_write("ERROR: physical page reclamation self-test failed\r\n");

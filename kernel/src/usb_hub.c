@@ -10,15 +10,16 @@ bool nexus_usb_hub_parse_descriptor(
         descriptor[1] != NEXUS_USB2_HUB_DESCRIPTOR_TYPE ||
         descriptor[0] > length) return false;
 
+    /* The fixed USB 2 hub fields occupy bytes 0..6. DeviceRemovable
+     * and PortPwrCtrlMask follow as bitmaps, but this driver does not consume
+     * either bitmap. Some emulated hubs (including QEMU's 8-port hub) report
+     * a shortened bitmap tail, so validate the fixed fields and descriptor
+     * bounds without rejecting an otherwise usable hub solely for that tail. */
     const uint8_t ports = descriptor[2];
     if (ports == 0U || ports > NEXUS_USB_HUB_MAX_PORTS) return false;
 
     const uint16_t characteristics =
         (uint16_t)(descriptor[3] | ((uint16_t)descriptor[4] << 8));
-    const uint8_t bitmap_bytes = (uint8_t)((ports + 1U + 7U) / 8U);
-    const size_t minimum_length = 7U + 2U * bitmap_bytes;
-    if (descriptor[0] < minimum_length || length < minimum_length)
-        return false;
 
     *hub = (struct nexus_usb_hub_descriptor){
         .port_count = ports,

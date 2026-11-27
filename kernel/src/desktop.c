@@ -349,6 +349,7 @@ enum desktop_panel_state {
     DESKTOP_PANEL_QUICK_SETTINGS,
     DESKTOP_PANEL_NOTIFICATIONS,
     DESKTOP_PANEL_CLIPBOARD,
+    DESKTOP_PANEL_TASK_MANAGER,
     DESKTOP_PANEL_SEARCH
 };
 static enum desktop_panel_state desktop_panel;
@@ -1587,7 +1588,8 @@ static void desktop_panel_geometry(uint64_t bottom_bar, uint64_t *x,
         : (screen_width > 24U ? screen_width - 24U : screen_width);
     uint64_t h = desktop_panel == DESKTOP_PANEL_NOTIFICATIONS ? 250U
         : (desktop_panel == DESKTOP_PANEL_CLIPBOARD ? 230U
-            : (desktop_panel == DESKTOP_PANEL_SEARCH ? 320U : 226U));
+            : (desktop_panel == DESKTOP_PANEL_TASK_MANAGER ? 272U
+                : (desktop_panel == DESKTOP_PANEL_SEARCH ? 320U : 226U)));
     const uint64_t available = screen_height > bottom_bar + 12U
         ? screen_height - bottom_bar - 12U : 1U;
     if (h > available) h = available;
@@ -1611,8 +1613,10 @@ static void desktop_draw_system_panel(uint64_t bottom_bar) {
         ? "QUICK SETTINGS"
         : (desktop_panel == DESKTOP_PANEL_NOTIFICATIONS
             ? "NOTIFICATION CENTER"
-            : (desktop_panel == DESKTOP_PANEL_SEARCH
-                ? "DESKTOP SEARCH" : "CLIPBOARD HISTORY"));
+            : (desktop_panel == DESKTOP_PANEL_TASK_MANAGER
+                ? "TASK MANAGER"
+                : (desktop_panel == DESKTOP_PANEL_SEARCH
+                    ? "DESKTOP SEARCH" : "CLIPBOARD HISTORY")));
     graphics_draw_text(x + 14U, y + 17U, heading, 1U,
         light ? 38U : 238U, light ? 55U : 246U, light ? 75U : 252U);
     graphics_fill_rect(x + 12U, y + 34U, width - 24U, 1U,
@@ -1693,6 +1697,46 @@ static void desktop_draw_system_panel(uint64_t bottom_bar) {
         graphics_draw_text(x + 14U, y + height - 17U,
             "DELETE TO CLEAR NOTIFICATIONS", 1U,
             light ? 91U : 150U, light ? 108U : 180U, light ? 131U : 203U);
+    } else if (desktop_panel == DESKTOP_PANEL_TASK_MANAGER) {
+        char process_total[64];
+        format_labeled_u64("PROCESSES RETAINED: ", process_count(),
+                           process_total);
+        graphics_draw_text(x + 16U, y + 49U, process_total, 1U,
+            light ? 82U : 174U, light ? 100U : 194U, light ? 122U : 215U);
+        size_t shown = 0U;
+        for (size_t slot = 0U; slot < NEXUS_PROCESS_MAX; ++slot) {
+            struct nexus_process_info info;
+            if (!process_get_info(slot, &info)) continue;
+            const uint64_t row_y = y + 72U + (uint64_t)shown * 37U;
+            graphics_blend_round_rect(x + 12U, row_y, width - 24U,
+                32U, 6U, light ? 235U : 28U,
+                light ? 241U : 44U, light ? 247U : 63U, 242U);
+            graphics_draw_text(x + 20U, row_y + 7U, info.name, 1U,
+                light ? 38U : 238U, light ? 55U : 246U,
+                light ? 75U : 252U);
+            char pid_line[32];
+            format_labeled_u64("PID: ", info.pid, pid_line);
+            graphics_draw_text(x + 150U, row_y + 7U, pid_line, 1U,
+                light ? 83U : 174U, light ? 100U : 194U,
+                light ? 122U : 215U);
+            graphics_draw_text(x + 20U, row_y + 20U,
+                process_state_name(info.state), 1U,
+                light ? 83U : 174U, light ? 100U : 194U,
+                light ? 122U : 215U);
+            ++shown;
+        }
+        if (shown == 0U)
+            graphics_draw_text(x + 18U, y + 92U,
+                "NO USER PROCESSES ARE CURRENTLY REGISTERED.", 1U,
+                light ? 91U : 150U, light ? 108U : 180U,
+                light ? 131U : 203U);
+        graphics_draw_text(x + 14U, y + height - 30U,
+            "READ ONLY - PROCESS TERMINATION IS NOT IMPLEMENTED.", 1U,
+            239U, 177U, 119U);
+        graphics_draw_text(x + 14U, y + height - 16U,
+            "CTRL+SHIFT+P CAPTURES THE CURRENT DESKTOP.", 1U,
+            light ? 91U : 150U, light ? 108U : 180U,
+            light ? 131U : 203U);
     } else if (desktop_panel == DESKTOP_PANEL_SEARCH) {
         graphics_blend_round_rect(x + 12U, y + 44U, width - 24U, 30U, 6U,
             light ? 233U : 32U, light ? 240U : 48U,
@@ -1834,6 +1878,110 @@ static void desktop_handle_system_panel_click(uint64_t bottom_bar) {
             }
         }
     }
+}
+
+static bool desktop_capture_append_header(
+    char *header, size_t capacity, size_t *length, const char *value) {
+    if (header == NULL || length == NULL || value == NULL) return false;
+    for (size_t i = 0U; value[i] != '\0'; ++i) {
+        if (*length >= capacity) return false;
+        header[(*length)++] = value[i];
+    }
+    return true;
+}
+
+static bool desktop_capture_screenshot(void) {
+    const uint64_t width = graphics_width();
+    const uint64_t height = graphics_height();
+    if (width == 0U || height == 0U ||
+        width > UINT32_MAX || height > UINT32_MAX ||
+        width > UINT64_MAX / height) {
+        desktop_notify("Screen capture failed",
+            "The active display dimensions are not supported.",
+            NEXUS_DESKTOP_NOTIFICATION_ERROR);
+        return false;
+    }
+    char width_text[21], height_text[21];
+    char header[64];
+    size_t header_length = 0U;
+    format_u64(width, width_text);
+    format_u64(height, height_text);
+    if (!desktop_capture_append_header(header, sizeof(header),
+            &header_length, "P6\n") ||
+        !desktop_capture_append_header(header, sizeof(header),
+            &header_length, width_text) ||
+        !desktop_capture_append_header(header, sizeof(header),
+            &header_length, " ") ||
+        !desktop_capture_append_header(header, sizeof(header),
+            &header_length, height_text) ||
+        !desktop_capture_append_header(header, sizeof(header),
+            &header_length, "\n255\n")) {
+        desktop_notify("Screen capture failed",
+            "Could not construct a valid PPM image header.",
+            NEXUS_DESKTOP_NOTIFICATION_ERROR);
+        return false;
+    }
+    const uint64_t pixel_count = width * height;
+    if (pixel_count > (UINT32_MAX - header_length) / 3U) {
+        desktop_notify("Screen capture failed",
+            "The screenshot would exceed the filesystem stream size limit.",
+            NEXUS_DESKTOP_NOTIFICATION_ERROR);
+        return false;
+    }
+    const uint32_t expected_length =
+        (uint32_t)(header_length + pixel_count * 3U);
+    if (!vfs_current_directory_writable() ||
+        !vfs_stream_write_begin("SCREEN.PPM", expected_length)) {
+        desktop_notify("Screen capture unavailable",
+            "Open a writable Nexus Data folder; screenshot streaming requires writable NXFS.",
+            NEXUS_DESKTOP_NOTIFICATION_WARNING);
+        return false;
+    }
+    if (!vfs_stream_write_append(header, header_length)) {
+        vfs_stream_write_abort();
+        desktop_notify("Screen capture failed",
+            "The image header could not be written to the current folder.",
+            NEXUS_DESKTOP_NOTIFICATION_ERROR);
+        return false;
+    }
+
+    uint32_t pixels[128];
+    uint8_t rgb[128U * 3U];
+    bool write_ok = true;
+    for (uint64_t y = 0U; y < height && write_ok; ++y) {
+        for (uint64_t x = 0U; x < width && write_ok;) {
+            const uint64_t remaining = width - x;
+            const size_t count = (size_t)(remaining < 128U ? remaining : 128U);
+            if (!graphics_read_xrgb8888(x, y, count, 1U, pixels, count)) {
+                write_ok = false;
+                break;
+            }
+            for (size_t i = 0U; i < count; ++i) {
+                rgb[i * 3U] = (uint8_t)(pixels[i] >> 16U);
+                rgb[i * 3U + 1U] = (uint8_t)(pixels[i] >> 8U);
+                rgb[i * 3U + 2U] = (uint8_t)pixels[i];
+            }
+            write_ok = vfs_stream_write_append(rgb, count * 3U);
+            x += count;
+        }
+    }
+    if (!write_ok) {
+        vfs_stream_write_abort();
+        desktop_notify("Screen capture failed",
+            "Framebuffer readback or a streaming disk write failed; the partial image was discarded.",
+            NEXUS_DESKTOP_NOTIFICATION_ERROR);
+        return false;
+    }
+    if (!vfs_stream_write_finish()) {
+        desktop_notify("Screen capture failed",
+            "The NXFS stream could not be committed.",
+            NEXUS_DESKTOP_NOTIFICATION_ERROR);
+        return false;
+    }
+    desktop_notify("Screenshot saved",
+        "SCREEN.PPM was saved in the current writable Nexus Data folder.",
+        NEXUS_DESKTOP_NOTIFICATION_SUCCESS);
+    return true;
 }
 
 static bool desktop_clipboard_copy(void) {
@@ -2035,13 +2183,13 @@ static void desktop_draw_taskbar(uint64_t bottom_bar) {
     char uptime[21];
     format_u64(timer_ticks() / 100U, uptime);
     if (screen_width >= 900U) {
-        const uint64_t panel_x = screen_width - 188U;
-        const char *const labels[3] = {"QS", "NT", "CP"};
-        const enum desktop_panel_state kinds[3] = {
+        const uint64_t panel_x = screen_width - 228U;
+        const char *const labels[4] = {"QS", "NT", "CP", "TM"};
+        const enum desktop_panel_state kinds[4] = {
             DESKTOP_PANEL_QUICK_SETTINGS, DESKTOP_PANEL_NOTIFICATIONS,
-            DESKTOP_PANEL_CLIPBOARD
+            DESKTOP_PANEL_CLIPBOARD, DESKTOP_PANEL_TASK_MANAGER
         };
-        for (size_t i = 0U; i < 3U; ++i) {
+        for (size_t i = 0U; i < 4U; ++i) {
             const uint64_t x = panel_x + (uint64_t)i * 40U;
             const bool selected = desktop_panel == kinds[i];
             graphics_blend_round_rect(x, button_y + 1U, 36U,
@@ -7579,16 +7727,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     shell_click_handled = true;
                 } else {
                     if (screen_width >= 900U &&
-                        (uint64_t)pointer_x >= screen_width - 188U &&
+                        (uint64_t)pointer_x >= screen_width - 228U &&
                         (uint64_t)pointer_x < screen_width - 68U) {
                         const uint64_t slot =
-                            ((uint64_t)pointer_x - (screen_width - 188U)) / 40U;
+                            ((uint64_t)pointer_x - (screen_width - 228U)) / 40U;
                         if (slot == 0U)
                             desktop_panel_toggle(DESKTOP_PANEL_QUICK_SETTINGS);
                         else if (slot == 1U)
                             desktop_panel_toggle(DESKTOP_PANEL_NOTIFICATIONS);
                         else if (slot == 2U)
                             desktop_panel_toggle(DESKTOP_PANEL_CLIPBOARD);
+                        else if (slot == 3U)
+                            desktop_panel_toggle(DESKTOP_PANEL_TASK_MANAGER);
                         shell_click_handled = true;
                     }
                     if (!shell_click_handled &&
@@ -8333,6 +8483,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (key_code == 0x2FU) {
             desktop_panel_toggle(DESKTOP_PANEL_CLIPBOARD);
+            draw_shell(); draw_pointer(); return;
+        }
+        if (key_code == 0x01U) {
+            desktop_panel_toggle(DESKTOP_PANEL_TASK_MANAGER);
             draw_shell(); draw_pointer(); return;
         }
     }

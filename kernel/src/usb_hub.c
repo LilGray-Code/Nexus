@@ -98,7 +98,10 @@ bool nexus_usb_path_child(const struct nexus_usb_path *parent,
         .parent_port = child_port,
         .depth = (uint8_t)(parent->depth + 1U),
         .route_string = parent->route_string |
-                        ((uint32_t)child_port << shift)
+                        ((uint32_t)child_port << shift),
+        .parent_hub_uses_tt = parent->parent_hub_uses_tt,
+        .tt_hub_slot = parent->tt_hub_slot,
+        .tt_port = parent->tt_port
     };
     return true;
 }

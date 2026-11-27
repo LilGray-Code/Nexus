@@ -522,6 +522,21 @@ size_t nexus_driver_manager_rescan(void) {
 bool nexus_driver_manager_remove_device(
     const struct nexus_driver_device *device) {
     if (device == NULL) return false;
+
+    /*
+     * Preflight every active binding before changing any state. A DMA-capable
+     * driver without a teardown callback cannot be safely detached, so leave
+     * the binding and PnP record active and report failure to the bus owner.
+     */
+    for (size_t i = 0U; i < bindings_used; ++i) {
+        const struct nexus_driver_binding_info *binding = &bindings[i];
+        if (binding->state != NEXUS_DRIVER_STATE_ACTIVE ||
+            !same_device(&binding_devices[i], device)) continue;
+        const size_t driver_index = binding_driver_indices[i];
+        if (driver_index >= drivers_used ||
+            drivers[driver_index].remove == NULL) return false;
+    }
+
     bool removed = false;
     for (size_t i = 0U; i < bindings_used; ++i) {
         struct nexus_driver_binding_info *binding = &bindings[i];
@@ -529,8 +544,7 @@ bool nexus_driver_manager_remove_device(
         if (binding->state == NEXUS_DRIVER_STATE_REMOVED ||
             !same_device(bound, device)) continue;
         const size_t driver_index = binding_driver_indices[i];
-        if (binding->state == NEXUS_DRIVER_STATE_ACTIVE &&
-            driver_index < drivers_used && drivers[driver_index].remove != NULL)
+        if (binding->state == NEXUS_DRIVER_STATE_ACTIVE)
             drivers[driver_index].remove(bound, drivers[driver_index].context);
         binding->state = NEXUS_DRIVER_STATE_REMOVED;
         removed = true;

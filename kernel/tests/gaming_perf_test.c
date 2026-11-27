@@ -29,8 +29,11 @@ static void test_frame_pacer_overflow_is_fail_closed(void) {
     uint64_t deadline = 0U;
     assert(nexus_gaming_frame_pacer_init(
         &pacer, 1U, UINT64_MAX - 2U));
-    assert(!nexus_gaming_frame_pacer_next(
+    assert(nexus_gaming_frame_pacer_next(
         &pacer, UINT64_MAX - 1U, &deadline));
+    assert(deadline == UINT64_MAX - 1U);
+    assert(!nexus_gaming_frame_pacer_next(
+        &pacer, UINT64_MAX, &deadline));
     assert(pacer.missed_deadlines == 0U);
 }
 

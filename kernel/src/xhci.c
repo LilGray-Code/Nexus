@@ -2231,14 +2231,14 @@ static bool xhci_reprobe_pci_controller(struct xhci_controller *xhci) {
      * cleared the Memory Space Enable / Bus Master Enable bits. Restore PCI
      * access before touching BAR0. */
     if (!pci_enable_memory_bus_master(xhci->pci_device)) {
-        serial_write("xHCI: unable to restore PCI memory decoding/bus mastering\\r\\n");
+        serial_write("xHCI: unable to restore PCI memory decoding/bus mastering\r\n");
         return false;
     }
 
     struct nexus_pci_bar bar = {0};
     if (!pci_decode_bar(xhci->pci_device, 0U, &bar) ||
         bar.io_space || !bar.assigned || bar.base == 0U) {
-        serial_write("xHCI: PCI BAR0 could not be restored after power loss\\r\\n");
+        serial_write("xHCI: PCI BAR0 could not be restored after power loss\r\n");
         return false;
     }
     if (bar.base != xhci->bar_base) {
@@ -2272,7 +2272,7 @@ static bool xhci_reprobe_pci_controller(struct xhci_controller *xhci) {
     xhci->runtime_offset = rt_offset & ~0x1FU;
     xhci->context_size = (hccparams1 & (1U << 2)) != 0U ? 64U : 32U;
 
-    serial_write("xHCI: PCI BAR and controller capability registers restored\\r\\n");
+    serial_write("xHCI: PCI BAR and controller capability registers restored\r\n");
     return true;
 }
 
@@ -2283,7 +2283,7 @@ static bool xhci_reinitialize_after_power_loss(struct xhci_controller *xhci) {
     /* Restore PCI config access first, then verify the controller is
      * halted before releasing any DMA memory. */
     if (!xhci_reprobe_pci_controller(xhci)) {
-        serial_write("xHCI: PCI access could not be restored; retaining all DMA resources\\r\\n");
+        serial_write("xHCI: PCI access could not be restored; retaining all DMA resources\r\n");
         return false;
     }
 

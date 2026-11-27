@@ -387,7 +387,8 @@ the latest run attached to the current branch.
 
 ## Build and test
 
-See the [installer documentation](installer/README.md), the
+See the [ISO release and download guide](docs/release/ISO-RELEASE.md),
+[installer documentation](installer/README.md), the
 [original-kernel architecture roadmap](docs/architecture/ORIGINAL-KERNEL-ROADMAP.md),
 and [GitHub Actions](https://github.com/LilGray-Code/Nexus/actions).
 

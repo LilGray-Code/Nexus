@@ -22,4 +22,9 @@ bool xhci_gamepads_ready(void);
 /* Drain completed USB HID keyboard and mouse interrupt transfers. */
 void xhci_poll(void);
 
+/* Rescan root ports after device errors or power transitions. Resume succeeds
+ * only when firmware/platform power management left the controller running. */
+void xhci_rescan(void);
+bool xhci_resume(void);
+
 #endif

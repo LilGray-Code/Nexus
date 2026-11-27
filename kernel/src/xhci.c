@@ -1215,13 +1215,13 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         : kind == XHCI_HID_MOUSE
         ? "USB: HID boot mouse attached to xHCI port "
         : "USB: generic HID gamepad attached to xHCI port ");
-    serial_write_hex(port_number);
+    serial_write_hex(path->root_port);
     serial_write("\r\n");
     return true;
 
 failed:
     serial_write("xHCI: HID enumeration failed on root port ");
-    serial_write_hex(port_number);
+    serial_write_hex(path->root_port);
     serial_write(" VID/PID=");
     serial_write_hex(device->vendor_id);
     serial_write("/");

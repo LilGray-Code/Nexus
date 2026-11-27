@@ -183,8 +183,8 @@ bool nexus_driver_manager_register(
     if (!copy_name(candidate.name, descriptor->name))
         return reject_driver_registration();
     for (size_t i = 0U; i < drivers_used; ++i) {
-        if (names_equal(drivers[i].name, candidate.name))
-            return reject_driver_registration();
+        /* A duplicate static registration is a benign registry conflict. */
+        if (names_equal(drivers[i].name, candidate.name)) return false;
     }
     candidate.version = descriptor->version;
     candidate.priority = descriptor->priority;

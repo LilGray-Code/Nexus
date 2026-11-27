@@ -456,10 +456,19 @@ uint32_t input_dropped_event_count(void) {
 }
 
 bool input_pop_event(struct nexus_input_event *event) {
-    if (event == NULL || event_head == event_tail) return false;
+    if (event == NULL) return false;
+    /* The PS/2 IRQ producer may coalesce the newest queued mouse report.
+     * Mask interrupts while copying/removing an entry so a producer cannot
+     * mutate the slot concurrently with the consumer's read. */
+    const uint64_t interrupt_flags = input_interrupt_save();
+    if (event_head == event_tail) {
+        input_interrupt_restore(interrupt_flags);
+        return false;
+    }
     __asm__ volatile ("" : : : "memory");
     *event = event_queue[event_head];
     event_head = (uint8_t)((event_head + 1U) & INPUT_EVENT_QUEUE_MASK);
+    input_interrupt_restore(interrupt_flags);
     return true;
 }
 

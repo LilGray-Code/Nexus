@@ -22,8 +22,22 @@ bool nexus_bt_gatt_find_hid_service(const uint8_t *pdu, size_t pdu_length,
         const uint16_t start = get_le16(pdu + offset);
         const uint16_t end = get_le16(pdu + offset + 2U);
         if (start == 0U || end < start) return false;
-        if (entry_length == 6U &&
-            get_le16(pdu + offset + 4U) == 0x1812U) {
+        bool is_hid_service = entry_length == 6U &&
+            get_le16(pdu + offset + 4U) == 0x1812U;
+        if (entry_length == 20U) {
+            const uint8_t *uuid = pdu + offset + 4U;
+            static const uint8_t base_prefix[12] = {
+                0xFBU,0x34U,0x9BU,0x5FU,0x80U,0x00U,
+                0x00U,0x80U,0x00U,0x10U,0x00U,0x00U
+            };
+            bool base = true;
+            for (size_t i = 0U; i < sizeof(base_prefix); ++i)
+                if (uuid[i] != base_prefix[i]) base = false;
+            if (uuid[14] != 0U || uuid[15] != 0U) base = false;
+            is_hid_service = base && uuid[12] == 0x12U &&
+                             uuid[13] == 0x18U;
+        }
+        if (is_hid_service) {
             *service = (struct nexus_bt_gatt_hid_service){
                 .start_handle = start,
                 .end_handle = end
@@ -116,20 +130,16 @@ bool nexus_bt_gatt_find_report_descriptors(const uint8_t *pdu,
         else {
             /* Only the Bluetooth base UUID's 16-bit assigned-number form
              * is recognized by this bounded HID descriptor walker. */
-            static const uint8_t bluetooth_base_tail[14] = {
-                0x00U,0x00U,0x10U,0x00U,0x80U,0x00U,0x00U,
-                0x80U,0x5FU,0x9BU,0x34U,0xFBU,0x00U,0x00U
+            static const uint8_t bluetooth_base_prefix[12] = {
+                0xFBU,0x34U,0x9BU,0x5FU,0x80U,0x00U,
+                0x00U,0x80U,0x00U,0x10U,0x00U,0x00U
             };
             const uint8_t *uuid128 = pdu + offset + 2U;
-            bool base = true;
-            for (size_t i = 0U; i < sizeof(bluetooth_base_tail); ++i) {
-                if (uuid128[2U + i] != bluetooth_base_tail[i]) {
-                    base = false;
-                    break;
-                }
-            }
-            if (base) uuid = (uint16_t)(uuid128[0] |
-                ((uint16_t)uuid128[1] << 8));
+            bool base = uuid128[14] == 0U && uuid128[15] == 0U;
+            for (size_t i = 0U; i < sizeof(bluetooth_base_prefix); ++i)
+                if (uuid128[i] != bluetooth_base_prefix[i]) base = false;
+            if (base) uuid = (uint16_t)(uuid128[12] |
+                ((uint16_t)uuid128[13] << 8));
         }
         if (uuid == NEXUS_BT_GATT_UUID_CCCD) *cccd_handle = handle;
         if (uuid == NEXUS_BT_GATT_UUID_REPORT_REFERENCE)

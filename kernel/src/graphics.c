@@ -215,6 +215,52 @@ uint64_t graphics_pitch(void) {
     return initialized ? active_surface.pitch : 0U;
 }
 
+bool graphics_read_xrgb8888(uint64_t x, uint64_t y,
+                            uint64_t width, uint64_t height,
+                            uint32_t *pixels, size_t stride_pixels) {
+    if (!initialized || pixels == NULL || width == 0U || height == 0U ||
+        x >= active_surface.width || y >= active_surface.height ||
+        width > active_surface.width - x ||
+        height > active_surface.height - y ||
+        stride_pixels < width ||
+        width > (uint64_t)(SIZE_MAX / sizeof(uint32_t)) ||
+        stride_pixels > SIZE_MAX / sizeof(uint32_t) ||
+        (height - 1U) >
+            (uint64_t)(((SIZE_MAX / sizeof(uint32_t)) -
+                        (size_t)width) / stride_pixels)) {
+        return false;
+    }
+
+    const volatile uint8_t *base =
+        (const volatile uint8_t *)active_surface.address;
+    const uint32_t red_max =
+        (1U << active_surface.red_mask_size) - 1U;
+    const uint32_t green_max =
+        (1U << active_surface.green_mask_size) - 1U;
+    const uint32_t blue_max =
+        (1U << active_surface.blue_mask_size) - 1U;
+    for (uint64_t row = 0U; row < height; ++row) {
+        const volatile uint32_t *source =
+            (const volatile uint32_t *)(uintptr_t)(
+                base + (y + row) * active_surface.pitch + x * 4U);
+        uint32_t *destination = pixels + (size_t)row * stride_pixels;
+        for (uint64_t column = 0U; column < width; ++column) {
+            const uint32_t packed = source[column];
+            const uint32_t red =
+                (packed >> active_surface.red_mask_shift) & red_max;
+            const uint32_t green =
+                (packed >> active_surface.green_mask_shift) & green_max;
+            const uint32_t blue =
+                (packed >> active_surface.blue_mask_shift) & blue_max;
+            const uint32_t r = red * 255U / red_max;
+            const uint32_t g = green * 255U / green_max;
+            const uint32_t b = blue * 255U / blue_max;
+            destination[column] = (r << 16U) | (g << 8U) | b;
+        }
+    }
+    return true;
+}
+
 bool graphics_blit_xrgb8888(uint64_t x, uint64_t y, uint64_t width,
                             uint64_t height, const uint32_t *pixels,
                             size_t stride_pixels) {

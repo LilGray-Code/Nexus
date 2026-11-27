@@ -1,0 +1,43 @@
+name: Nexus gaming performance foundation
+
+on:
+  push:
+    branches:
+      - nexus-gaming-frame-pacing-telemetry
+    paths:
+      - "kernel/src/gaming_perf.c"
+      - "kernel/src/gaming_perf.h"
+      - "kernel/tests/gaming_perf_test.c"
+      - "kernel/Makefile"
+      - ".github/workflows/nexus-gaming-performance-tests.yml"
+  pull_request:
+    branches:
+      - nexus-pc-gaming-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gaming-performance:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run host frame pacing and telemetry tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/gaming_perf.c \
+            kernel/tests/gaming_perf_test.c \
+            -o /tmp/nexus-gaming-perf-test
+          /tmp/nexus-gaming-perf-test
+      - name: Compile the freestanding kernel telemetry object
+        run: |
+          cc -std=gnu11 -Os -Wall -Wextra -Werror -ffreestanding \
+            -fno-builtin -fno-stack-protector -fno-pic -fno-pie \
+            -fno-asynchronous-unwind-tables -fno-unwind-tables \
+            -fno-common -m64 -march=x86-64 -mno-red-zone \
+            -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only \
+            -mcmodel=kernel -Ikernel/include -Ikernel/src -Iinstaller \
+            -c kernel/src/gaming_perf.c -o /tmp/nexus-gaming-perf.o
+      - name: Verify kernel build includes the performance module
+        run: grep -q 'gaming_perf.o' kernel/Makefile

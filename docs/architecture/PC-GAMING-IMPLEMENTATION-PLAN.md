@@ -69,6 +69,16 @@ The library API is not yet wired into a dedicated graphical game-library page, g
 
 New host tests exercise capability classification (including actual CPUID-backed Steam CPU prerequisite reporting), Direct3D mapping, anti-cheat blocking, hardware-specific verification, shader-cache identity/round-trip/corruption, game-library persistence/checksum handling, test evidence and safe launch restrictions. The full kernel workflow compiles the feature mask and game manager into the BIOS/UEFI kernel.
 
+## 3. Frame pacing and performance measurement increment
+
+This branch adds `kernel/src/gaming_perf.h` and `gaming_perf.c`, a bounded, allocation-free frame pacer and performance-session collector. It can aggregate frame-time distributions, dropped presentation intervals, FPS, source-supplied CPU/GPU busy time, input-to-present latency, memory peaks, loading duration and crash outcome. Percentile buckets use 0.5 ms widths and expose upper-bound estimates.
+
+The collector deliberately distinguishes unavailable metrics from measured zero. CPU utilization requires process CPU-time samples and online-CPU count; GPU utilization requires a real driver busy-time source; input latency requires the input event timestamp to be correlated with the corresponding presentation; memory requires working-set/VRAM accounting. The collector and its host tests do not independently measure physical hardware.
+
+The frame pacer advances absolute monotonic deadlines and skips missed deadlines to avoid drift. Its caller must block on a scheduler/timer; it is not a busy-wait loop and is not yet connected to a compositor present path.
+
+A new CI workflow tests the frame pacer, metric aggregation, invalid sample rejection, missing-source reporting and the freestanding kernel object. See [Gaming performance and upstream reuse](../development/GAMING-PERFORMANCE-AND-UPSTREAM-REUSE.md) for API semantics, test gates and the Proton/Wine/Vulkan/DXVK/VKD3D-Proton reuse strategy.
+
 ## 3. Why Steam and Proton are not a simple installer package
 
 The Steam Linux client is a Linux userspace application. Valve's published requirements include a 64-bit Linux kernel environment, both 64-bit and 32-bit graphics/runtime libraries, and both 64-bit and 32-bit glibc. Current Steam client guidance also calls out session services and graphics/audio integration such as D-Bus, X11/Xwayland, PulseAudio/PipeWire-Pulse and OpenGL/Vulkan drivers. A web link to the Steam store is not the Steam client.

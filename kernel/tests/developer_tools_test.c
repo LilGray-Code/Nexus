@@ -37,6 +37,25 @@ size_t nexus_driver_manager_device_count(void) { return 5U; }
 size_t nexus_driver_manager_driver_count(void) { return 3U; }
 size_t nexus_driver_manager_binding_count(void) { return 4U; }
 size_t nexus_driver_manager_failure_count(void) { return 1U; }
+
+/* Keep the diagnostics test hermetic: mock the manager's display helper,
+ * while the production implementation remains in driver_manager.c. */
+const char *nexus_driver_error_name(enum nexus_driver_error error) {
+    switch (error) {
+        case NEXUS_DRIVER_ERROR_NONE: return "none";
+        case NEXUS_DRIVER_ERROR_NO_MATCH: return "no-match";
+        case NEXUS_DRIVER_ERROR_PROBE_FAILED: return "probe-failed";
+        case NEXUS_DRIVER_ERROR_DEPENDENCY_MISSING: return "dependency-missing";
+        case NEXUS_DRIVER_ERROR_DISABLED: return "driver-disabled";
+        case NEXUS_DRIVER_ERROR_DEVICE_TABLE_FULL: return "device-table-full";
+        case NEXUS_DRIVER_ERROR_BINDING_TABLE_FULL: return "binding-table-full";
+        case NEXUS_DRIVER_ERROR_DRIVER_BUSY: return "driver-busy";
+        case NEXUS_DRIVER_ERROR_DEPENDENT_DRIVER: return "dependent-driver";
+        case NEXUS_DRIVER_ERROR_VERSION_NOT_NEWER: return "version-not-newer";
+        case NEXUS_DRIVER_ERROR_INVALID_DESCRIPTOR: return "invalid-descriptor";
+        default: return "unknown";
+    }
+}
 bool nexus_driver_manager_driver_at(size_t index,
                                     struct nexus_driver_info *info) {
     static const char *const names[] = { "nvme", "ahci", "e1000" };

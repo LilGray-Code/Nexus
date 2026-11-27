@@ -1,0 +1,67 @@
+name: Nexus storage and filesystem infrastructure
+
+on:
+  push:
+    branches:
+      - nexus-storage-management-native-fs-recovery
+    paths:
+      - "kernel/src/blockdev.c"
+      - "kernel/src/blockdev.h"
+      - "kernel/src/mbr.c"
+      - "kernel/src/mbr.h"
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - "kernel/src/desktop.c"
+      - "kernel/Makefile"
+      - "kernel/tests/mbr_test.c"
+      - "kernel/tests/blockdev_stats_test.c"
+      - "installer/installer_journal.c"
+      - "docs/architecture/STORAGE-ARCHITECTURE.md"
+      - ".github/workflows/nexus-storage-management.yml"
+  pull_request:
+    branches:
+      - nexus-audio-core-mixer-control-panel
+    paths:
+      - "kernel/src/blockdev.c"
+      - "kernel/src/blockdev.h"
+      - "kernel/src/mbr.c"
+      - "kernel/src/mbr.h"
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - "kernel/src/desktop.c"
+      - "kernel/Makefile"
+      - "kernel/tests/mbr_test.c"
+      - "kernel/tests/blockdev_stats_test.c"
+      - "installer/installer_journal.c"
+      - "docs/architecture/STORAGE-ARCHITECTURE.md"
+      - ".github/workflows/nexus-storage-management.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  storage-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test classic MBR, extended partitions and protective GPT handling
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/mbr.c kernel/tests/mbr_test.c \
+            -o /tmp/nexus-mbr-test
+          /tmp/nexus-mbr-test
+      - name: Test block device read/write/flush telemetry
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/blockdev.c kernel/src/gpt.c \
+            kernel/tests/blockdev_stats_test.c -o /tmp/nexus-blockdev-stats-test
+          /tmp/nexus-blockdev-stats-test
+      - name: Run persistent filesystem directory and recovery tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/nxfs.c kernel/tests/nxfs_directory_test.c \
+            -o /tmp/nexus-nxfs-directory-test
+          /tmp/nexus-nxfs-directory-test
+      - name: Compile complete freestanding kernel
+        run: make -C kernel

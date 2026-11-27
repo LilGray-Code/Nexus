@@ -62,6 +62,7 @@ bool process_execute_root_file_with_capabilities(
     enum nexus_process_error *error, uint64_t capabilities);
 size_t process_count(void);
 bool process_get_info(size_t slot, struct nexus_process_info *info);
+bool process_terminate_ready(uint32_t pid);
 bool process_reap(uint32_t pid);
 const char *process_state_name(enum nexus_process_state state);
 

@@ -49,6 +49,17 @@ static bool succeed_unsupported(const struct nexus_driver_device *device,
     ++successful_probe_count;
     return true;
 }
+static uint32_t late_remove_count;
+static void remove_late_audio(const struct nexus_driver_device *device,
+                              void *context) {
+    assert(device != NULL && context == (void *)(uintptr_t)0x5678U);
+    ++late_remove_count;
+}
+static bool succeed_no_remove(const struct nexus_driver_device *device,
+                              void *context) {
+    assert(device != NULL && context == (void *)(uintptr_t)0xBEEFU);
+    return true;
+}
 static bool should_not_probe(const struct nexus_driver_device *device,
                              void *context) {
     (void)device; (void)context;
@@ -155,6 +166,7 @@ int main(void) {
             .programming_interface = NEXUS_DRIVER_WILDCARD_U8
         },
         .probe = succeed_unsupported,
+        .remove = remove_late_audio,
         .context = (void *)(uintptr_t)0x5678U
     };
     assert(nexus_driver_manager_install(&late));
@@ -258,5 +270,31 @@ int main(void) {
     assert(nexus_driver_manager_device_count() == final_devices);
     assert(strcmp(nexus_driver_error_name(NEXUS_DRIVER_ERROR_PROBE_FAILED),
                   "probe-failed") == 0);
+
+    /* Active devices cannot be detached unless the driver has teardown. */
+    struct nexus_driver_descriptor no_remove_driver = {
+        .name = "no-remove", .version = 1U, .priority = 1,
+        .match = {
+            .bus = NEXUS_DRIVER_BUS_PCI, .vendor_id = 0xDEADU,
+            .device_id = 0xBEEFU, .class_code = 0xFFU,
+            .subclass = NEXUS_DRIVER_WILDCARD_U8,
+            .programming_interface = NEXUS_DRIVER_WILDCARD_U8
+        },
+        .probe = succeed_no_remove,
+        .context = (void *)(uintptr_t)0xBEEFU
+    };
+    assert(nexus_driver_manager_register(&no_remove_driver));
+    struct nexus_driver_device no_remove_device = {
+        .bus = NEXUS_DRIVER_BUS_PCI, .vendor_id = 0xDEADU,
+        .device_id = 0xBEEFU, .class_code = 0xFFU,
+        .bus_number = 0U, .slot = 7U, .function = 0U
+    };
+    assert(nexus_driver_manager_probe_device(&no_remove_device));
+    assert(!nexus_driver_manager_remove_device(&no_remove_device));
+    assert(nexus_driver_manager_device_at(5U, &pnp));
+    assert(pnp.state == NEXUS_PNP_DEVICE_ACTIVE);
+    assert(strcmp(pnp.driver_name, "no-remove") == 0);
+    assert(!nexus_driver_manager_unload("no-remove"));
+    assert(late_remove_count == 1U);
     return 0;
 }

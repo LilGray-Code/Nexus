@@ -1339,7 +1339,7 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
 
     xhci->max_ports = nexus_xhci_root_port_count(hcsparams1);
     if (xhci->max_ports == 0U) {
-        serial_write("xHCI: controller reports zero root ports\\r\\n");
+        serial_write("xHCI: controller reports zero root ports\r\n");
         return false;
     }
     xhci->doorbell_offset = db_offset & ~0x03U;

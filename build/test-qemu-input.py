@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -303,6 +304,55 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
     print("USB keyboard and mouse hot-unplug/replug recovered")
 
 
+
+def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
+    """Move the USB mouse onto the installer drive selector and activate it."""
+    log = wait_for_predicate(
+        serial_log,
+        lambda value: (
+            "NEXUS DISPLAY GEOMETRY width=" in value
+            and "NEXUS INSTALLER MOUSE POINTER x=" in value
+        ),
+        "installer pointer position telemetry",
+    )
+    geometry = re.search(
+        r"NEXUS DISPLAY GEOMETRY width=0x([0-9a-fA-F]+) height=0x([0-9a-fA-F]+)",
+        log,
+    )
+    pointer = re.search(
+        r"NEXUS INSTALLER MOUSE POINTER x=0x([0-9a-fA-F]+) y=0x([0-9a-fA-F]+)",
+        log,
+    )
+    if geometry is None or pointer is None:
+        raise RuntimeError("installer mouse geometry/pointer telemetry was malformed")
+
+    width, height = int(geometry.group(1), 16), int(geometry.group(2), 16)
+    current_x, current_y = int(pointer.group(1), 16), int(pointer.group(2), 16)
+    if width < 640 or height < 300:
+        raise RuntimeError(
+            f"installer framebuffer too small for mouse UI test: {width}x{height}"
+        )
+
+    # The selector is drawn at text_x..text_x+520 and text_y+48..+76.
+    # The dedicated installer uses panel origin (8, 8), text origin (40, 56).
+    target_x = min(max(300, 24), width - 24)
+    target_y = min(max(118, 24), height - 24)
+    qmp.hmp(f"mouse_move {target_x - current_x} {target_y - current_y}")
+    time.sleep(0.15)
+    qmp.hmp("mouse_button 1")
+    time.sleep(0.12)
+    qmp.hmp("mouse_button 0")
+    wait_for_predicate(
+        serial_log,
+        lambda value: (
+            "NEXUS INSTALLER MOUSE CLICK x=" in value
+            and "NEXUS INSTALLER MOUSE: DRIVE SELECTOR OPENED" in value
+        ),
+        "USB mouse click activating the installer drive selector",
+    )
+    print("USB mouse moved to and activated the installer drive selector")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
@@ -395,6 +445,8 @@ def main() -> None:
                     timeout=args.timeout,
                 )
             exercise_usb_inputs(qmp, serial_log, args.topology)
+            if args.mode == "installer":
+                exercise_installer_mouse_ui(qmp, serial_log)
             final_log = serial_log.read_text(encoding="utf-8", errors="replace")
             print(f"NEXUS {args.mode.upper()} USB INPUT INTEGRATION TEST PASSED (topology={args.topology})")
             print(final_log[-2500:])

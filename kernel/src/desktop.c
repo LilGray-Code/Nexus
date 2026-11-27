@@ -38,6 +38,7 @@
 #include "text_buffer.h"
 #include "partition_plan.h"
 #include "installer_runtime.h"
+#include "diagnostics.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -5807,7 +5808,7 @@ static void terminal_execute(void) {
     if (terminal_input[0] == 'h' && terminal_input[1] == 'e' &&
         terminal_input[2] == 'l' && terminal_input[3] == 'p' &&
         terminal_input[4] == '\0') {
-        const char *s = "help about mem uptime net dns HOST http HOST ls cat FILE run FILE ps touch NAME write NAME TEXT save NAME rm NAME clear";
+        const char *s = "help about diag cpu pci drivers netdiag storage logs trace debug sdk mem uptime net dns HOST http HOST ls cat FILE run FILE ps clear";
         size_t i = 0; while (s[i] != '\0' && i < sizeof(terminal_output)-1U) { terminal_output[i]=s[i]; ++i; }
         terminal_output[i]='\0';
     } else if (terminal_input[0]=='a' && terminal_input[1]=='b' &&
@@ -6213,7 +6214,8 @@ static void terminal_execute(void) {
                terminal_input[2]=='e' && terminal_input[3]=='a' &&
                terminal_input[4]=='r' && terminal_input[5]=='\0') {
         terminal_output[0]='\0';
-    } else {
+    } else if (!nexus_diagnostics_command(terminal_input, terminal_output,
+                                           sizeof(terminal_output))) {
         const char *s="unknown command (type help)";
         size_t n=0; while(s[n]!='\0' && n<sizeof(terminal_output)-1U){terminal_output[n]=s[n];++n;}
         terminal_output[n]='\0';

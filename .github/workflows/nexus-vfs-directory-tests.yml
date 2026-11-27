@@ -4,19 +4,23 @@ on:
   push:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-file-manager-management
     paths:
       - "kernel/src/vfs.c"
       - "kernel/src/boot_pack.c"
       - "kernel/src/boot_pack.h"
       - "kernel/src/vfs.h"
+      - "kernel/src/fat32.c"
       - "kernel/src/nxfs.c"
       - "kernel/src/nxfs.h"
       - "kernel/src/fat32.h"
+      - "kernel/src/fat32.c"
       - "kernel/tests/vfs_directory_test.c"
       - ".github/workflows/nexus-vfs-directory-tests.yml"
   pull_request:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-desktop-shell-workspaces-panels
     paths:
       - "kernel/src/vfs.c"
       - "kernel/src/vfs.h"

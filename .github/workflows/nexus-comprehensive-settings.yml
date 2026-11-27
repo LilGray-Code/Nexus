@@ -40,6 +40,7 @@ on:
       - "kernel/src/process.c"
       - "kernel/src/service_manager.c"
       - "kernel/tests/settings_test.c"
+      - "docs/architecture/SETTINGS-ARCHITECTURE.md"
       - "kernel/Makefile"
       - ".github/workflows/nexus-comprehensive-settings.yml"
   workflow_dispatch:

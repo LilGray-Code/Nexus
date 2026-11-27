@@ -185,6 +185,34 @@ void input_test_keyboard_scancode(uint8_t scancode) {
 #endif
 
 static void queue_event(const struct nexus_input_event *event) {
+    if (event == NULL) return;
+
+    /* Mouse reports can arrive much faster than the framebuffer is redrawn.
+     * Combine adjacent motion reports only while the button state is identical:
+     * press/release edges therefore remain distinct and keep their ordering. */
+    if (event->type == NEXUS_INPUT_MOUSE && event_head != event_tail) {
+        const uint8_t previous_index = (uint8_t)(
+            (event_tail - 1U) & INPUT_EVENT_QUEUE_MASK);
+        struct nexus_input_event *previous = &event_queue[previous_index];
+        if (previous->type == NEXUS_INPUT_MOUSE &&
+            previous->mouse_buttons == event->mouse_buttons) {
+            int32_t dx = (int32_t)previous->mouse_dx + event->mouse_dx;
+            int32_t dy = (int32_t)previous->mouse_dy + event->mouse_dy;
+            int32_t wheel = (int32_t)previous->mouse_wheel +
+                            event->mouse_wheel;
+            if (dx < INT16_MIN) dx = INT16_MIN;
+            if (dx > INT16_MAX) dx = INT16_MAX;
+            if (dy < INT16_MIN) dy = INT16_MIN;
+            if (dy > INT16_MAX) dy = INT16_MAX;
+            if (wheel < INT8_MIN) wheel = INT8_MIN;
+            if (wheel > INT8_MAX) wheel = INT8_MAX;
+            previous->mouse_dx = (int16_t)dx;
+            previous->mouse_dy = (int16_t)dy;
+            previous->mouse_wheel = (int8_t)wheel;
+            return;
+        }
+    }
+
     const uint8_t next = (uint8_t)((event_tail + 1U) & INPUT_EVENT_QUEUE_MASK);
     if (next == event_head) {
         /* Preserve queued key/button transitions and make overload observable. */

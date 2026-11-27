@@ -87,6 +87,9 @@ bool nexus_audio_remove_device(uint32_t device_id);
 void nexus_audio_set_master_volume(uint8_t volume_percent);
 uint8_t nexus_audio_get_master_volume(void);
 void nexus_audio_set_master_mute(bool muted);
+/* Apply current master gain/mute to a legacy signed-16 stereo buffer in place. */
+bool nexus_audio_apply_master_gain_s16_stereo(int16_t *samples,
+                                              uint32_t frames);
 bool nexus_audio_get_master_mute(void);
 
 bool nexus_audio_stream_open(

@@ -993,20 +993,6 @@ static void xhci_release_hid_device(struct xhci_controller *xhci,
     xhci_free_hid_device_dma(xhci, device);
 }
 
-static bool xhci_keyboard_slots_full(const struct xhci_controller *xhci) {
-    if (xhci == NULL) return true;
-    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
-        if (!xhci->keyboards[i].active) return false;
-    return true;
-}
-
-static bool xhci_mouse_slots_full(const struct xhci_controller *xhci) {
-    if (xhci == NULL) return true;
-    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
-        if (!xhci->mice[i].active) return false;
-    return true;
-}
-
 static bool xhci_has_keyboard(const struct xhci_controller *xhci) {
     if (xhci == NULL) return false;
     for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
@@ -1091,13 +1077,6 @@ static void xhci_drop_hid_device(struct xhci_controller *xhci,
         xhci_notify_gamepad_disconnected(device);
     }
     xhci_release_hid_device(xhci, device);
-}
-
-static bool xhci_gamepads_full(const struct xhci_controller *xhci) {
-    if (xhci == NULL) return true;
-    for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
-        if (!xhci->gamepads[i].active) return false;
-    return true;
 }
 
 static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
@@ -1514,8 +1493,10 @@ static void xhci_handle_port_status_change(struct xhci_controller *xhci,
     uint8_t speed = 0U;
     if (!xhci_port_reset(xhci, port_number, &speed)) return;
 
+    struct nexus_usb_path path = {0};
+    if (!nexus_usb_path_root(port_number, &path)) return;
     struct xhci_hid_device device = {0};
-    if (!xhci_enumerate_hid_port(xhci, port_number, speed, &device))
+    if (!xhci_enumerate_hid_port(xhci, &path, speed, &device))
         return;
 
     if (!xhci_attach_hid_device(xhci, &device))

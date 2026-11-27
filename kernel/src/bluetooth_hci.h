@@ -54,4 +54,30 @@ bool nexus_bt_hci_disconnection_complete(
     const struct nexus_bt_hci_event_view *event,
     uint16_t *connection_handle, uint8_t *reason);
 
+
+#define NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE 0x0EU
+#define NEXUS_BT_HCI_EVENT_COMMAND_STATUS 0x0FU
+#define NEXUS_BT_HCI_OPCODE_RESET 0x0C03U
+#define NEXUS_BT_HCI_OPCODE_READ_LOCAL_VERSION 0x1001U
+#define NEXUS_BT_HCI_OPCODE_READ_SUPPORTED_COMMANDS 0x1002U
+#define NEXUS_BT_HCI_OPCODE_READ_BD_ADDR 0x1009U
+
+struct nexus_bt_hci_command_result {
+    uint16_t opcode;
+    uint8_t status;
+    uint8_t command_packets_allowed;
+    const uint8_t *return_parameters;
+    uint8_t return_parameter_length;
+};
+
+bool nexus_bt_hci_build_command(uint16_t opcode,
+    const uint8_t *parameters, uint8_t parameter_length,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+bool nexus_bt_hci_parse_command_complete(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_command_result *result);
+bool nexus_bt_hci_parse_command_status(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_command_result *result);
+
 #endif

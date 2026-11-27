@@ -201,6 +201,13 @@ int main(void) {
     assert(nexus_driver_manager_load("late-audio-extra"));
     assert(!nexus_driver_manager_unload("late-audio"));
     assert(nexus_driver_manager_unload("late-audio-extra"));
+    const char *cycle_dependencies[] = { "late-audio-extra" };
+    assert(!nexus_driver_manager_update(&(struct nexus_driver_descriptor){
+        .name = "late-audio", .version = 2U, .priority = 50,
+        .match = late.match, .probe = succeed_unsupported,
+        .dependencies = cycle_dependencies, .dependency_count = 1U,
+        .context = (void *)(uintptr_t)0x5678U
+    }));
     assert(nexus_driver_manager_update(&(struct nexus_driver_descriptor){
         .name = "late-audio", .version = 2U, .priority = 50,
         .match = late.match, .probe = succeed_unsupported,

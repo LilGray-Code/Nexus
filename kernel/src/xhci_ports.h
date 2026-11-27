@@ -38,6 +38,11 @@ static inline bool nexus_xhci_port_connected(uint32_t port_status) {
     return (port_status & NEXUS_XHCI_PORT_CCS) != 0U;
 }
 
+static inline bool nexus_xhci_port_connection_changed(
+    bool previously_connected, uint32_t port_status) {
+    return previously_connected != nexus_xhci_port_connected(port_status);
+}
+
 static inline uint8_t nexus_xhci_port_speed_id(uint32_t port_status) {
     return (uint8_t)((port_status & NEXUS_XHCI_PORT_SPEED_MASK) >> 10);
 }

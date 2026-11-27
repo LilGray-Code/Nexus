@@ -259,15 +259,15 @@ static bool service_input_start(void *c) {
 static bool service_audio_start(void *c) {
     (void)c;
     if (!ac97_init())
-        serial_write("AUDIO: AC97 backend unavailable; checking other audio endpoints\\r\\n");
+        serial_write("AUDIO: AC97 backend unavailable; checking other audio endpoints\r\n");
     if (!nexus_audio_init()) {
-        serial_write("AUDIO: shared audio manager initialization failed\\r\\n");
+        serial_write("AUDIO: shared audio manager initialization failed\r\n");
         return false;
     }
     if (nexus_audio_device_count() == 0U)
-        serial_write("AUDIO: no supported playback/capture driver initialized\\r\\n");
+        serial_write("AUDIO: no supported playback/capture driver initialized\r\n");
     else
-        serial_write("AUDIO: device registry and software mixer ready\\r\\n");
+        serial_write("AUDIO: device registry and software mixer ready\r\n");
     return true;
 }
 static bool service_desktop_start(void *c) {

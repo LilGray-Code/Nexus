@@ -391,6 +391,13 @@ bool nexus_audio_stream_set_device(uint32_t stream_id, uint32_t device_id) {
     if (stream == NULL ||
         !device_is_usable(device_id, stream->direction))
         return false;
+    struct nexus_audio_device *device = device_id == 0U
+        ? default_device(stream->direction) : find_device(device_id);
+    if (device == NULL) return false;
+    if (stream->direction == NEXUS_AUDIO_CAPTURE &&
+        (stream->sample_rate != device->description.sample_rate ||
+         stream->channels > device->description.channels))
+        return false;
     stream->device_id = device_id;
     return true;
 }
@@ -463,7 +470,8 @@ size_t nexus_audio_capture_publish(
     for (size_t i = 0U; i < NEXUS_AUDIO_MAX_STREAMS; ++i) {
         struct nexus_audio_stream *stream = &streams[i];
         if (!stream->active || stream->direction != NEXUS_AUDIO_CAPTURE ||
-            (stream->device_id != 0U && stream->device_id != device_id))
+            (stream->device_id != 0U && stream->device_id != device_id) ||
+            (stream->device_id == 0U && device_id != default_capture_device))
             continue;
         const size_t free_frames =
             NEXUS_AUDIO_STREAM_RING_FRAMES - stream->queued_frames;

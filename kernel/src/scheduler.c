@@ -34,6 +34,9 @@ static struct nexus_thread *current_thread;
 static bool scheduler_started;
 /* IRQ-context preemption remains opt-in outside scheduler-safe execution windows. */
 static bool preemption_enabled;
+static volatile bool monitor_idle;
+static volatile uint64_t monitor_busy_ticks;
+static volatile uint64_t monitor_idle_ticks;
 
 extern void arch_context_switch(uintptr_t *old_stack, uintptr_t new_stack);
 
@@ -89,6 +92,9 @@ void scheduler_init(void) {
     current_thread = &main_thread;
     scheduler_started = false;
     preemption_enabled = false;
+    monitor_idle = false;
+    monitor_busy_ticks = 0U;
+    monitor_idle_ticks = 0U;
 }
 
 bool scheduler_create_thread(nexus_thread_entry_t entry, void *argument) {
@@ -221,6 +227,11 @@ void scheduler_yield(void) {
  * existing IRQ-exit preemption point or an explicit scheduler safe point.
  */
 void scheduler_timer_tick(uint64_t now) {
+    if (monitor_idle)
+        __atomic_fetch_add(&monitor_idle_ticks, 1U, __ATOMIC_RELAXED);
+    else
+        __atomic_fetch_add(&monitor_busy_ticks, 1U, __ATOMIC_RELAXED);
+
     if (main_thread.state == NEXUS_THREAD_SLEEPING &&
         now >= main_thread.wake_tick) {
         main_thread.state = NEXUS_THREAD_RUNNABLE;
@@ -267,7 +278,9 @@ bool scheduler_sleep_ticks(uint64_t ticks) {
              * pending maskable IRQ, so a timer cannot be lost between the
              * deadline check and entering the idle wait.
              */
+            scheduler_idle_begin();
             __asm__ volatile ("sti; hlt; cli" : : : "memory");
+            scheduler_idle_end();
         }
     }
 
@@ -301,7 +314,9 @@ void scheduler_wait(void) {
             }
         }
         if (!runnable) break;
-        __asm__ volatile ("sti; hlt" : : : "memory");
+        scheduler_idle_begin();
+        __asm__ volatile ("sti; hlt; cli" : : : "memory");
+        scheduler_idle_end();
         /* Timer IRQs wake expired contexts; this is the main-context safe point. */
         scheduler_yield();
     }
@@ -327,4 +342,19 @@ static void scheduler_thread_exit(void) {
         }
         __asm__ volatile ("sti; hlt; cli" : : : "memory");
     }
+}
+
+void scheduler_idle_begin(void) {
+    monitor_idle = true;
+}
+
+void scheduler_idle_end(void) {
+    monitor_idle = false;
+}
+
+void scheduler_get_cpu_ticks(uint64_t *busy_ticks, uint64_t *idle_ticks) {
+    if (busy_ticks != NULL)
+        *busy_ticks = __atomic_load_n(&monitor_busy_ticks, __ATOMIC_RELAXED);
+    if (idle_ticks != NULL)
+        *idle_ticks = __atomic_load_n(&monitor_idle_ticks, __ATOMIC_RELAXED);
 }

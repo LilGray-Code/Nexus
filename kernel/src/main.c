@@ -40,6 +40,7 @@
 #include "service_manager.h"
 #include "smp.h"
 #include "security.h"
+#include "system_monitor.h"
 
 __attribute__((used, section(".limine_requests")))
 static volatile uint64_t base_revision[] = LIMINE_BASE_REVISION(6);
@@ -1018,6 +1019,10 @@ void kmain(void) {
                 serial_write("\r\n");
             }
         }
-        __asm__ volatile ("sti; hlt" : : : "memory");
+        desktop_update();
+        scheduler_idle_begin();
+        __asm__ volatile ("sti; hlt; cli" : : : "memory");
+        scheduler_idle_end();
+        __asm__ volatile ("sti" : : : "memory");
     }
 }

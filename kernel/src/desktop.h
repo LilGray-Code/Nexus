@@ -17,5 +17,7 @@ enum nexus_desktop_process_test_result desktop_run_process_selftest(void);
 void desktop_set_installer_mode(bool enabled);
 bool desktop_show(const struct limine_framebuffer *framebuffer);
 void desktop_handle_input(const struct nexus_input_event *event);
+/* Periodic refresh hook called from the kernel foreground event loop. */
+void desktop_update(void);
 
 #endif

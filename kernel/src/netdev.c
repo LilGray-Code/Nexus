@@ -9,6 +9,7 @@ struct netdev_state {
 static struct netdev_state devices[NEXUS_NETDEV_MAX_DEVICES];
 static size_t device_count;
 static size_t active_device_index;
+static uint64_t net_tx_bytes, net_rx_bytes, net_tx_frames, net_rx_frames;
 
 static void copy_bytes(void *destination, const void *source, size_t length) {
     uint8_t *out = (uint8_t *)destination;
@@ -21,6 +22,18 @@ static bool equal_bytes(const uint8_t *a, const uint8_t *b, size_t length) {
         if (a[i] != b[i]) return false;
     }
     return true;
+}
+
+void netdev_get_activity(struct nexus_netdev_activity *activity) {
+    if (activity == NULL) return;
+    activity->transmitted_bytes =
+        __atomic_load_n(&net_tx_bytes, __ATOMIC_RELAXED);
+    activity->received_bytes =
+        __atomic_load_n(&net_rx_bytes, __ATOMIC_RELAXED);
+    activity->transmitted_frames =
+        __atomic_load_n(&net_tx_frames, __ATOMIC_RELAXED);
+    activity->received_frames =
+        __atomic_load_n(&net_rx_frames, __ATOMIC_RELAXED);
 }
 
 static bool equal_name(const char *a, const char *b) {
@@ -64,6 +77,10 @@ void netdev_init(void) {
         devices[i] = (struct netdev_state){0};
     device_count = 0U;
     active_device_index = 0U;
+    __atomic_store_n(&net_tx_bytes, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&net_rx_bytes, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&net_tx_frames, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&net_rx_frames, 0U, __ATOMIC_RELAXED);
 }
 
 bool netdev_register(const char *name, enum nexus_netdev_medium medium,
@@ -136,8 +153,13 @@ bool netdev_send_frame(const void *frame, size_t length) {
     if (active >= device_count || frame == NULL ||
         length < NEXUS_NETDEV_MIN_FRAME ||
         length > devices[active].info.max_frame_size) return false;
-    return devices[active].ops.send_frame(
+    const bool sent = devices[active].ops.send_frame(
         devices[active].context, frame, length);
+    if (sent) {
+        __atomic_fetch_add(&net_tx_bytes, (uint64_t)length, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&net_tx_frames, 1U, __ATOMIC_RELAXED);
+    }
+    return sent;
 }
 
 bool netdev_receive_frame(void *buffer, size_t capacity, size_t *length) {
@@ -157,5 +179,7 @@ bool netdev_receive_frame(void *buffer, size_t capacity, size_t *length) {
         *length = 0U;
         return false;
     }
+    __atomic_fetch_add(&net_rx_bytes, (uint64_t)*length, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&net_rx_frames, 1U, __ATOMIC_RELAXED);
     return true;
 }

@@ -16,6 +16,9 @@ static uint32_t install_session_block_size;
 static const struct nexus_block_device *nexus_data_write_device;
 static uint64_t nexus_data_write_first_lba;
 static uint64_t nexus_data_write_last_lba;
+static uint64_t block_read_bytes, block_written_bytes;
+static uint64_t block_read_operations, block_write_operations;
+static uint64_t block_flush_operations;
 static const uint8_t nexus_nxfs_type_guid[16] = {
     0x46U, 0x53U, 0x58U, 0x4EU, 0x01U, 0x00U, 0x58U, 0x4EU,
     0x9AU, 0x11U, 0x4EU, 0x58U, 0x55U, 0x53U, 0x46U, 0x53U
@@ -39,6 +42,11 @@ void blockdev_init(void) {
     nexus_data_write_device = NULL;
     nexus_data_write_first_lba = 0U;
     nexus_data_write_last_lba = 0U;
+    __atomic_store_n(&block_read_bytes, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&block_written_bytes, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&block_read_operations, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&block_write_operations, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&block_flush_operations, 0U, __ATOMIC_RELAXED);
     for (size_t i = 0; i < NEXUS_BLOCKDEV_MAX_DEVICES; ++i) {
         devices[i] = (struct nexus_block_device){0};
         mounted_devices[i] = false;
@@ -119,7 +127,14 @@ bool blockdev_read(const struct nexus_block_device *device,
     }
     if (!registered) return false;
 
-    return device->read(device->context, lba, block_count, buffer);
+    const bool read_ok =
+        device->read(device->context, lba, block_count, buffer);
+    if (read_ok) {
+        __atomic_fetch_add(&block_read_bytes,
+            (uint64_t)block_count * device->block_size, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&block_read_operations, 1U, __ATOMIC_RELAXED);
+    }
+    return read_ok;
 }
 
 
@@ -148,8 +163,18 @@ bool blockdev_write(const struct nexus_block_device *device,
         return false;
 
     for (size_t i = 0U; i < registered_count; ++i) {
-        if (&devices[i] == device)
-            return device->write(device->context, lba, block_count, buffer);
+        if (&devices[i] == device) {
+            const bool write_ok =
+                device->write(device->context, lba, block_count, buffer);
+            if (write_ok) {
+                __atomic_fetch_add(&block_written_bytes,
+                    (uint64_t)block_count * device->block_size,
+                    __ATOMIC_RELAXED);
+                __atomic_fetch_add(&block_write_operations, 1U,
+                                   __ATOMIC_RELAXED);
+            }
+            return write_ok;
+        }
     }
     return false;
 }
@@ -165,9 +190,29 @@ bool blockdev_flush(const struct nexus_block_device *device) {
         return false;
 
     for (size_t i = 0U; i < registered_count; ++i) {
-        if (&devices[i] == device) return device->flush(device->context);
+        if (&devices[i] == device) {
+            const bool flush_ok = device->flush(device->context);
+            if (flush_ok)
+                __atomic_fetch_add(&block_flush_operations, 1U,
+                                   __ATOMIC_RELAXED);
+            return flush_ok;
+        }
     }
     return false;
+}
+
+void blockdev_get_activity(struct nexus_blockdev_activity *activity) {
+    if (activity == NULL) return;
+    activity->read_bytes =
+        __atomic_load_n(&block_read_bytes, __ATOMIC_RELAXED);
+    activity->written_bytes =
+        __atomic_load_n(&block_written_bytes, __ATOMIC_RELAXED);
+    activity->read_operations =
+        __atomic_load_n(&block_read_operations, __ATOMIC_RELAXED);
+    activity->write_operations =
+        __atomic_load_n(&block_write_operations, __ATOMIC_RELAXED);
+    activity->flush_operations =
+        __atomic_load_n(&block_flush_operations, __ATOMIC_RELAXED);
 }
 
 static size_t blockdev_index(const struct nexus_block_device *device) {

@@ -28,12 +28,15 @@ struct nexus_service_info {
     char name[NEXUS_SERVICE_NAME_MAX];
     enum nexus_service_state state;
     uint8_t dependency_count;
+    bool startup_enabled;
 };
 void nexus_service_manager_init(void);
 bool nexus_service_manager_register(
     const struct nexus_service_descriptor *descriptor);
 bool nexus_service_manager_start(const char *name);
 bool nexus_service_manager_stop(const char *name);
+bool nexus_service_manager_set_startup_enabled(const char *name,
+                                               bool enabled);
 size_t nexus_service_manager_count(void);
 bool nexus_service_manager_get_info(size_t index,
                                     struct nexus_service_info *info);

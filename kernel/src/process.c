@@ -1,7 +1,9 @@
 #include "process.h"
 
+#include "accounts.h"
 #include "elf64.h"
 #include "paging.h"
+#include "timer.h"
 #include "security.h"
 #include "usermode.h"
 #include "vfs.h"
@@ -20,6 +22,10 @@ struct nexus_process {
     uint64_t stack_pointer;
     uint64_t exit_status;
     uint64_t capabilities;
+    uint32_t owner_uid;
+    uint64_t session_id;
+    uint64_t start_tick;
+    uint64_t elapsed_ticks;
     char name[NEXUS_PROCESS_NAME_MAX];
     uint8_t kernel_stack[PROCESS_KERNEL_STACK_SIZE]
         __attribute__((aligned(16)));
@@ -44,6 +50,10 @@ static void clear_slot(struct nexus_process *process) {
     process->stack_pointer = 0U;
     process->exit_status = UINT64_MAX;
     process->capabilities = 0U;
+    process->owner_uid = 0U;
+    process->session_id = 0U;
+    process->start_tick = 0U;
+    process->elapsed_ticks = 0U;
     process->name[0] = '\0';
 }
 
@@ -171,6 +181,17 @@ bool process_spawn_elf_with_capabilities(
     process->stack_pointer = stack_pointer;
     process->exit_status = UINT64_MAX;
     process->capabilities = capabilities;
+    struct nexus_account_session owner_session;
+    if (nexus_accounts_get_session(&owner_session) &&
+        owner_session.logged_in) {
+        process->owner_uid = owner_session.uid;
+        process->session_id = owner_session.session_id;
+    } else {
+        process->owner_uid = 0U; /* Kernel-owned self-tests/system tasks. */
+        process->session_id = 0U;
+    }
+    process->start_tick = timer_ticks();
+    process->elapsed_ticks = 0U;
     for (size_t i = 0; i < NEXUS_PROCESS_NAME_MAX; ++i) {
         process->name[i] = process_name[i];
     }
@@ -200,6 +221,9 @@ bool process_run(uint32_t pid, uint64_t *exit_status) {
     const bool executed =
         usermode_execute(process->address_space, process->entry_point,
                          process->stack_pointer, kernel_stack_top, &status);
+    const uint64_t finished_tick = timer_ticks();
+    process->elapsed_ticks = finished_tick >= process->start_tick
+        ? finished_tick - process->start_tick : 0U;
     nexus_security_context_leave(process->pid);
     const bool reclaimed =
         paging_destroy_user_address_space(process->address_space);
@@ -329,11 +353,29 @@ bool process_get_info(size_t slot, struct nexus_process_info *info) {
         return false;
     }
     info->pid = processes[slot].pid;
+    info->owner_uid = processes[slot].owner_uid;
+    info->session_id = processes[slot].session_id;
     info->state = processes[slot].state;
     info->exit_status = processes[slot].exit_status;
+    info->start_tick = processes[slot].start_tick;
+    info->elapsed_ticks = processes[slot].elapsed_ticks;
     for (size_t i = 0; i < NEXUS_PROCESS_NAME_MAX; ++i) {
         info->name[i] = processes[slot].name[i];
     }
+    return true;
+}
+
+bool process_terminate_ready(uint32_t pid) {
+    struct nexus_process *process = find_process(pid);
+    if (process == NULL || process->state != NEXUS_PROCESS_READY ||
+        process->address_space == 0U) return false;
+    if (!paging_destroy_user_address_space(process->address_space))
+        return false;
+    process->address_space = 0U;
+    process->exit_status = UINT64_MAX;
+    process->elapsed_ticks = timer_ticks() >= process->start_tick
+        ? timer_ticks() - process->start_tick : 0U;
+    process->state = NEXUS_PROCESS_FAILED;
     return true;
 }
 

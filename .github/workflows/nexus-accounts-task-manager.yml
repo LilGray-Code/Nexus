@@ -1,0 +1,40 @@
+name: Nexus accounts and Task Manager tests
+
+on:
+  push:
+    branches:
+      - user-accounts-task-manager
+    paths:
+      - "kernel/src/accounts.*"
+      - "kernel/src/system_monitor.*"
+      - "kernel/src/scheduler.*"
+      - "kernel/src/process.*"
+      - "kernel/src/service_manager.*"
+      - "kernel/src/netdev.*"
+      - "kernel/tests/accounts_test.c"
+      - "kernel/tests/system_monitor_test.c"
+      - "kernel/Makefile"
+      - ".github/workflows/nexus-accounts-task-manager.yml"
+  pull_request:
+    branches:
+      - security-foundation-capabilities-audit
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  account-security:
+    name: Account, password and session policy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile with strict warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_ACCOUNT_PBKDF2_ITERATIONS=100000 \
+            -Ikernel/include -Ikernel/src \
+            kernel/src/accounts.c kernel/src/security.c kernel/src/sha256.c \
+            kernel/tests/accounts_test.c -o /tmp/nexus-accounts-test
+      - name: Test secure account storage, authentication and roles
+        run: /tmp/nexus-accounts-test

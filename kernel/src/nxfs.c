@@ -1152,3 +1152,30 @@ void nxfs_unmount(void) {
     nxfs_device = NULL;
     zero_bytes(nxfs_entries, sizeof(nxfs_entries));
 }
+
+bool nxfs_get_storage_usage(uint64_t *capacity_bytes,
+                            uint64_t *file_data_bytes,
+                            uint64_t *file_count) {
+    if (!nxfs_mounted || nxfs_device == NULL || nxfs_block_size == 0U ||
+        capacity_bytes == NULL || file_data_bytes == NULL ||
+        file_count == NULL || nxfs_partition.last_lba <
+            nxfs_partition.first_lba) return false;
+
+    const uint64_t partition_blocks =
+        nxfs_partition.last_lba - nxfs_partition.first_lba + 1U;
+    if (partition_blocks > UINT64_MAX / nxfs_block_size) return false;
+    const uint64_t capacity = partition_blocks * nxfs_block_size;
+    uint64_t used = 0U;
+    uint64_t count = 0U;
+    for (size_t i = 0U; i < NEXUS_NXFS_MAX_FILES; ++i) {
+        const struct nexus_nxfs_entry *entry = &nxfs_entries[i];
+        if (!entry->used || entry->directory) continue;
+        if (UINT64_MAX - used < entry->size) used = UINT64_MAX;
+        else used += entry->size;
+        ++count;
+    }
+    *capacity_bytes = capacity;
+    *file_data_bytes = used;
+    *file_count = count;
+    return true;
+}

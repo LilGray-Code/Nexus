@@ -63,5 +63,9 @@ bool nxfs_is_directory(const char *name);
 bool nxfs_create_directory(const char *name);
 bool nxfs_remove_directory(const char *name);
 bool nxfs_selftest(void);
+/* Logical file-data usage and partition capacity for system monitoring. */
+bool nxfs_get_storage_usage(uint64_t *capacity_bytes,
+                           uint64_t *file_data_bytes,
+                           uint64_t *file_count);
 
 #endif

@@ -1,5 +1,8 @@
 #include "desktop.h"
 
+#include "accounts.h"
+#include "system_monitor.h"
+#include "service_manager.h"
 #include "blockdev.h"
 #include "storage.h"
 #include "gpt.h"
@@ -79,11 +82,56 @@ enum desktop_settings_page {
     SETTINGS_SECURITY,
     SETTINGS_APPS,
     SETTINGS_ABOUT,
+    SETTINGS_ACCOUNTS,
+    SETTINGS_TASK_MANAGER,
     SETTINGS_PAGE_COUNT
 };
 #define SETTINGS_VISIBLE_TABS 5U
 static enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
 static size_t settings_tab_first_page;
+
+enum desktop_account_gate_stage {
+    DESKTOP_GATE_BLOCKED = 0,
+    DESKTOP_GATE_LOGIN_USERNAME,
+    DESKTOP_GATE_LOGIN_PASSWORD,
+    DESKTOP_GATE_SETUP_USERNAME,
+    DESKTOP_GATE_SETUP_PASSWORD,
+    DESKTOP_GATE_SETUP_CONFIRM
+};
+
+enum desktop_account_form_kind {
+    DESKTOP_ACCOUNT_FORM_NONE = 0,
+    DESKTOP_ACCOUNT_FORM_ADD_STANDARD,
+    DESKTOP_ACCOUNT_FORM_ADD_ADMIN,
+    DESKTOP_ACCOUNT_FORM_CHANGE_PASSWORD,
+    DESKTOP_ACCOUNT_FORM_RESET_PASSWORD,
+    DESKTOP_ACCOUNT_FORM_STARTUP_ADD
+};
+
+#define DESKTOP_ACCOUNT_FIELD_BYTES (NEXUS_ACCOUNT_PASSWORD_MAX + 1U)
+static bool desktop_account_gate_active;
+static enum desktop_account_gate_stage desktop_account_gate_stage;
+static char desktop_gate_username[NEXUS_ACCOUNT_NAME_MAX];
+static char desktop_gate_password[DESKTOP_ACCOUNT_FIELD_BYTES];
+static char desktop_gate_confirm[DESKTOP_ACCOUNT_FIELD_BYTES];
+static char desktop_account_message[72];
+static enum desktop_account_form_kind desktop_account_form;
+static unsigned desktop_account_form_field;
+static char desktop_account_form_values[3][DESKTOP_ACCOUNT_FIELD_BYTES];
+static size_t desktop_account_selected_user;
+static size_t desktop_task_selected_process;
+static size_t desktop_task_selected_service;
+static uint64_t desktop_last_monitor_tick;
+static uint32_t desktop_profile_loaded_uid;
+
+static void draw_shell(void);
+static void desktop_settings_apply(void);
+static void desktop_accounts_load_profile(void);
+static void desktop_account_handle_key(uint8_t scancode);
+static void desktop_account_form_submit(void);
+static void desktop_account_gate_draw(void);
+static void desktop_accounts_draw_page(uint64_t x, uint64_t y);
+static void desktop_task_manager_draw_page(uint64_t x, uint64_t y);
 
 static void desktop_settings_select_page(enum desktop_settings_page page) {
     if (page >= SETTINGS_PAGE_COUNT) return;
@@ -693,13 +741,31 @@ static void desktop_settings_apply(void) {
 }
 
 static void desktop_preferences_save(void) {
-    uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
     desktop_settings_apply();
-    desktop_preferences_saved =
-        nexus_settings_encode(&desktop_settings, record) &&
-        vfs_write_root_file("NEXUS.CFG", record, sizeof(record));
-    desktop_preferences_persistent =
-        desktop_preferences_saved && vfs_nxfs_writable();
+    if (nexus_accounts_is_logged_in()) {
+        struct nexus_account_profile profile;
+        const bool loaded = nexus_accounts_get_profile(
+            nexus_accounts_current_uid(), &profile);
+        if (loaded) {
+            profile.theme = desktop_settings.theme;
+            profile.accent = desktop_settings.accent;
+            profile.wallpaper = desktop_settings.wallpaper;
+            profile.ui_scale_percent = desktop_settings.ui_scale_percent;
+            desktop_preferences_saved = nexus_accounts_set_profile(
+                nexus_accounts_current_uid(), &profile);
+            desktop_preferences_persistent = desktop_preferences_saved;
+        } else {
+            desktop_preferences_saved = false;
+            desktop_preferences_persistent = false;
+        }
+    } else {
+        uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
+        desktop_preferences_saved =
+            nexus_settings_encode(&desktop_settings, record) &&
+            vfs_write_root_file("NEXUS.CFG", record, sizeof(record));
+        desktop_preferences_persistent =
+            desktop_preferences_saved && vfs_nxfs_writable();
+    }
     serial_write(desktop_preferences_persistent
         ? "DESKTOP: system settings saved to persistent NXFS\r\n"
         : (desktop_preferences_saved
@@ -708,6 +774,10 @@ static void desktop_preferences_save(void) {
 }
 
 static void desktop_preferences_load(void) {
+    if (nexus_accounts_is_logged_in()) {
+        desktop_accounts_load_profile();
+        return;
+    }
     if (desktop_preferences_loaded) return;
     desktop_preferences_loaded = true;
     nexus_settings_defaults(&desktop_settings);
@@ -1499,11 +1569,799 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
                        desktop_theme_is_light() ? 137U : 195U);
 }
 
+
+static void desktop_copy_text(char *destination, const char *source,
+                              size_t capacity) {
+    if (destination == NULL || capacity == 0U) return;
+    size_t i = 0U;
+    if (source != NULL) {
+        while (i + 1U < capacity && source[i] != '\0') {
+            destination[i] = source[i];
+            ++i;
+        }
+    }
+    destination[i] = '\0';
+    while (++i < capacity) destination[i] = '\0';
+}
+
+static void desktop_accounts_load_profile(void) {
+    if (!nexus_accounts_is_logged_in()) return;
+    const uint32_t uid = nexus_accounts_current_uid();
+    if (desktop_profile_loaded_uid == uid) return;
+
+    struct nexus_account_profile profile;
+    if (!nexus_accounts_get_profile(uid, &profile)) return;
+    desktop_settings.theme = profile.theme;
+    desktop_settings.accent = profile.accent;
+    desktop_settings.wallpaper = profile.wallpaper;
+    desktop_settings.ui_scale_percent = profile.ui_scale_percent;
+    desktop_profile_loaded_uid = uid;
+    desktop_preferences_loaded = true;
+    desktop_preferences_saved = true;
+    desktop_preferences_persistent =
+        nexus_accounts_get_status() == NEXUS_ACCOUNTS_READY;
+    desktop_settings_apply();
+}
+
+static void desktop_secure_clear(char *buffer, size_t capacity) {
+    if (buffer == NULL) return;
+    volatile char *bytes = buffer;
+    for (size_t i = 0U; i < capacity; ++i) bytes[i] = '\0';
+}
+
+static void desktop_account_gate_draw_field(
+    uint64_t x, uint64_t y, const char *label,
+    const char *value, bool password, bool selected) {
+    const uint8_t r = desktop_theme_is_light() ? 38U : 226U;
+    const uint8_t g = desktop_theme_is_light() ? 54U : 237U;
+    const uint8_t b = desktop_theme_is_light() ? 74U : 247U;
+    graphics_draw_text(x, y, label, 1U, r, g, b);
+    graphics_blend_round_rect(x, y + 16U, 390U, 31U, 6U,
+        selected ? desktop_accent_palette[desktop_settings.accent][0] : 32U,
+        selected ? desktop_accent_palette[desktop_settings.accent][1] : 42U,
+        selected ? desktop_accent_palette[desktop_settings.accent][2] : 58U,
+        240U);
+    char shown[40];
+    size_t count = 0U;
+    if (value != NULL) {
+        while (value[count] != '\0' && count < 36U) ++count;
+    }
+    if (password) {
+        for (size_t i = 0U; i < count; ++i) shown[i] = '*';
+    } else {
+        for (size_t i = 0U; i < count; ++i) shown[i] = value[i];
+    }
+    shown[count] = '\0';
+    graphics_draw_text(x + 10U, y + 26U, shown, 1U, 242U, 247U, 255U);
+}
+
+static void desktop_account_gate_draw(void) {
+    const uint64_t width = screen_width;
+    const uint64_t height = screen_height;
+    graphics_fill_gradient(0U, 0U, width, height,
+        5U, 13U, 28U, 10U, 30U, 54U,
+        7U, 22U, 44U, 14U, 43U, 71U);
+    graphics_blend_circle(width * 4U / 5U, height / 4U,
+                          (uint32_t)(height / 5U), 45U, 177U, 202U, 24U);
+    graphics_draw_text_aa(42U, 34U, "NEXUS", 196608U,
+                          244U, 249U, 255U);
+    graphics_draw_text(44U, 70U, "SECURE ACCOUNT SESSION", 1U,
+                       111U, 216U, 232U);
+
+    const uint64_t x = 44U;
+    const uint64_t y = 125U;
+    if (desktop_account_gate_stage == DESKTOP_GATE_BLOCKED) {
+        const enum nexus_accounts_status status =
+            nexus_accounts_get_status();
+        desktop_settings_draw_heading(x, y, "ACCOUNT STORAGE UNAVAILABLE",
+            "Nexus cannot establish a trusted user session.");
+        if (status == NEXUS_ACCOUNTS_CORRUPT) {
+            graphics_draw_text(x, y + 68U,
+                "THE ACCOUNT DATABASE FAILED INTEGRITY VALIDATION.",
+                1U, 242U, 176U, 120U);
+        } else if (status == NEXUS_ACCOUNTS_READ_ONLY) {
+            graphics_draw_text(x, y + 68U,
+                "NO ACCOUNT DATABASE EXISTS ON WRITABLE NEXUS DATA.",
+                1U, 242U, 176U, 120U);
+        } else {
+            graphics_draw_text(x, y + 68U,
+                "PERSISTENT ACCOUNT STORAGE OR HARDWARE ENTROPY IS UNAVAILABLE.",
+                1U, 242U, 176U, 120U);
+        }
+        graphics_draw_text(x, y + 112U,
+            "DESKTOP ACCESS IS LOCKED. RECOVERY IS REQUIRED.",
+            1U, 226U, 232U, 240U);
+        return;
+    }
+
+    if (desktop_account_gate_stage == DESKTOP_GATE_SETUP_USERNAME ||
+        desktop_account_gate_stage == DESKTOP_GATE_SETUP_PASSWORD ||
+        desktop_account_gate_stage == DESKTOP_GATE_SETUP_CONFIRM) {
+        desktop_settings_draw_heading(x, y, "CREATE THE FIRST ADMINISTRATOR",
+            "Account data is stored only on writable Nexus Data storage.");
+        desktop_account_gate_draw_field(x, y + 62U, "USERNAME",
+            desktop_gate_username, false,
+            desktop_account_gate_stage == DESKTOP_GATE_SETUP_USERNAME);
+        desktop_account_gate_draw_field(x, y + 120U, "PASSWORD (12+ CHARACTERS)",
+            desktop_gate_password, true,
+            desktop_account_gate_stage == DESKTOP_GATE_SETUP_PASSWORD);
+        desktop_account_gate_draw_field(x, y + 178U, "CONFIRM PASSWORD",
+            desktop_gate_confirm, true,
+            desktop_account_gate_stage == DESKTOP_GATE_SETUP_CONFIRM);
+    } else {
+        desktop_settings_draw_heading(x, y, "WELCOME BACK",
+            "Sign in to open your personal Nexus workspace.");
+        desktop_account_gate_draw_field(x, y + 62U, "USERNAME",
+            desktop_gate_username, false,
+            desktop_account_gate_stage == DESKTOP_GATE_LOGIN_USERNAME);
+        desktop_account_gate_draw_field(x, y + 120U, "PASSWORD",
+            desktop_gate_password, true,
+            desktop_account_gate_stage == DESKTOP_GATE_LOGIN_PASSWORD);
+    }
+
+    graphics_draw_text(x, y + 246U,
+        "TAB SWITCHES FIELDS     ENTER CONTINUES     BACKSPACE EDITS",
+        1U, 173U, 195U, 215U);
+    graphics_draw_text(x, y + 282U, desktop_account_message, 1U,
+        desktop_account_message[0] == '\0' ? 118U : 243U,
+        desktop_account_message[0] == '\0' ? 173U : 181U,
+        desktop_account_message[0] == '\0' ? 190U : 124U);
+}
+
+static unsigned desktop_account_gate_field_count(void) {
+    switch (desktop_account_gate_stage) {
+        case DESKTOP_GATE_SETUP_USERNAME:
+        case DESKTOP_GATE_SETUP_PASSWORD:
+        case DESKTOP_GATE_SETUP_CONFIRM:
+            return 3U;
+        case DESKTOP_GATE_LOGIN_USERNAME:
+        case DESKTOP_GATE_LOGIN_PASSWORD:
+            return 2U;
+        default:
+            return 0U;
+    }
+}
+
+static unsigned desktop_account_gate_field_index(void) {
+    switch (desktop_account_gate_stage) {
+        case DESKTOP_GATE_LOGIN_USERNAME:
+        case DESKTOP_GATE_SETUP_USERNAME: return 0U;
+        case DESKTOP_GATE_LOGIN_PASSWORD:
+        case DESKTOP_GATE_SETUP_PASSWORD: return 1U;
+        case DESKTOP_GATE_SETUP_CONFIRM: return 2U;
+        default: return 0U;
+    }
+}
+
+static char *desktop_account_gate_field_buffer(unsigned index,
+                                                size_t *capacity) {
+    if (capacity != NULL) *capacity = DESKTOP_ACCOUNT_FIELD_BYTES;
+    if (index == 0U) {
+        if (capacity != NULL) *capacity = sizeof(desktop_gate_username);
+        return desktop_gate_username;
+    }
+    if (index == 1U) return desktop_gate_password;
+    return desktop_gate_confirm;
+}
+
+static void desktop_account_gate_advance(void) {
+    if (desktop_account_gate_stage == DESKTOP_GATE_SETUP_USERNAME)
+        desktop_account_gate_stage = DESKTOP_GATE_SETUP_PASSWORD;
+    else if (desktop_account_gate_stage == DESKTOP_GATE_SETUP_PASSWORD)
+        desktop_account_gate_stage = DESKTOP_GATE_SETUP_CONFIRM;
+    else if (desktop_account_gate_stage == DESKTOP_GATE_LOGIN_USERNAME)
+        desktop_account_gate_stage = DESKTOP_GATE_LOGIN_PASSWORD;
+}
+
+static void desktop_account_gate_submit(void) {
+    if (desktop_account_gate_stage == DESKTOP_GATE_SETUP_CONFIRM) {
+        size_t i = 0U;
+        while (desktop_gate_password[i] != '\0' &&
+               desktop_gate_confirm[i] != '\0' &&
+               desktop_gate_password[i] == desktop_gate_confirm[i]) ++i;
+        if (desktop_gate_password[i] != '\0' ||
+            desktop_gate_confirm[i] != '\0') {
+            desktop_copy_text(desktop_account_message, "PASSWORDS DO NOT MATCH",
+                      sizeof(desktop_account_message));
+            desktop_secure_clear(desktop_gate_password,
+                                 sizeof(desktop_gate_password));
+            desktop_secure_clear(desktop_gate_confirm,
+                                 sizeof(desktop_gate_confirm));
+            desktop_account_gate_stage = DESKTOP_GATE_SETUP_PASSWORD;
+            return;
+        }
+        if (!nexus_accounts_bootstrap_admin(desktop_gate_username,
+                                             desktop_gate_password)) {
+            desktop_copy_text(desktop_account_message,
+                "SETUP FAILED: CHECK PASSWORD, STORAGE AND HARDWARE RNG",
+                sizeof(desktop_account_message));
+            desktop_secure_clear(desktop_gate_password,
+                                 sizeof(desktop_gate_password));
+            desktop_secure_clear(desktop_gate_confirm,
+                                 sizeof(desktop_gate_confirm));
+            desktop_account_gate_stage = DESKTOP_GATE_SETUP_PASSWORD;
+            return;
+        }
+        desktop_secure_clear(desktop_gate_password,
+                             sizeof(desktop_gate_password));
+        desktop_secure_clear(desktop_gate_confirm,
+                             sizeof(desktop_gate_confirm));
+        desktop_account_gate_stage = DESKTOP_GATE_LOGIN_USERNAME;
+        desktop_copy_text(desktop_account_message,
+                  "ADMINISTRATOR CREATED. SIGN IN TO CONTINUE.",
+                  sizeof(desktop_account_message));
+        return;
+    }
+
+    if (desktop_account_gate_stage == DESKTOP_GATE_LOGIN_PASSWORD) {
+        if (!nexus_accounts_login(desktop_gate_username,
+                                  desktop_gate_password)) {
+            desktop_copy_text(desktop_account_message,
+                      "SIGN IN FAILED. CHECK CREDENTIALS OR WAIT FOR LOCKOUT.",
+                      sizeof(desktop_account_message));
+            desktop_secure_clear(desktop_gate_password,
+                                 sizeof(desktop_gate_password));
+            desktop_account_gate_stage = DESKTOP_GATE_LOGIN_PASSWORD;
+            return;
+        }
+        desktop_secure_clear(desktop_gate_password,
+                             sizeof(desktop_gate_password));
+        desktop_secure_clear(desktop_gate_confirm,
+                             sizeof(desktop_gate_confirm));
+        desktop_account_gate_active = false;
+        desktop_account_message[0] = '\0';
+        desktop_account_form = DESKTOP_ACCOUNT_FORM_NONE;
+        desktop_profile_loaded_uid = 0U;
+        desktop_accounts_load_profile();
+        draw_shell();
+        draw_pointer();
+    }
+}
+
+static void desktop_account_handle_key(uint8_t scancode) {
+    if (scancode == 0x2AU) { keyboard_left_shift = true; return; }
+    if (scancode == 0x36U) { keyboard_right_shift = true; return; }
+    if (scancode == 0xAAU) { keyboard_left_shift = false; return; }
+    if (scancode == 0xB6U) { keyboard_right_shift = false; return; }
+    if (scancode == 0x3AU) {
+        keyboard_caps_lock = !keyboard_caps_lock;
+        draw_shell();
+        return;
+    }
+    if ((scancode & 0x80U) != 0U || scancode == 0x00U) return;
+
+    if (desktop_account_gate_active) {
+        if (desktop_account_gate_stage == DESKTOP_GATE_BLOCKED) return;
+        const unsigned field_count = desktop_account_gate_field_count();
+        if (scancode == 0x0FU) {
+            desktop_account_gate_advance();
+        } else if (scancode == 0x1CU) {
+            if (desktop_account_gate_stage == DESKTOP_GATE_SETUP_CONFIRM ||
+                desktop_account_gate_stage == DESKTOP_GATE_LOGIN_PASSWORD)
+                desktop_account_gate_submit();
+            else
+                desktop_account_gate_advance();
+        } else if (scancode == 0x0EU) {
+            size_t capacity = 0U;
+            char *buffer = desktop_account_gate_field_buffer(
+                desktop_account_gate_field_index(), &capacity);
+            size_t length = 0U;
+            while (length + 1U < capacity && buffer[length] != '\0') ++length;
+            if (length != 0U) buffer[length - 1U] = '\0';
+            desktop_account_message[0] = '\0';
+        } else {
+            const char ch = terminal_scancode_char(scancode);
+            if (ch >= 0x20 && ch <= 0x7E) {
+                size_t capacity = 0U;
+                char *buffer = desktop_account_gate_field_buffer(
+                    desktop_account_gate_field_index(), &capacity);
+                size_t length = 0U;
+                while (length + 1U < capacity && buffer[length] != '\0')
+                    ++length;
+                if (length + 1U < capacity) {
+                    buffer[length] = ch;
+                    buffer[length + 1U] = '\0';
+                    desktop_account_message[0] = '\0';
+                }
+            }
+        }
+        (void)field_count;
+        draw_shell();
+        return;
+    }
+
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_NONE) return;
+    unsigned field_count = 3U;
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_RESET_PASSWORD)
+        field_count = 2U;
+    else if (desktop_account_form == DESKTOP_ACCOUNT_FORM_STARTUP_ADD)
+        field_count = 1U;
+
+    if (scancode == 0x1BU) {
+        desktop_account_form = DESKTOP_ACCOUNT_FORM_NONE;
+        for (size_t i = 0U; i < 3U; ++i)
+            desktop_secure_clear(desktop_account_form_values[i],
+                                 sizeof(desktop_account_form_values[i]));
+    } else if (scancode == 0x0FU) {
+        desktop_account_form_field =
+            (desktop_account_form_field + 1U) % field_count;
+    } else if (scancode == 0x1CU) {
+        if (desktop_account_form_field + 1U < field_count)
+            ++desktop_account_form_field;
+        else
+            desktop_account_form_submit();
+    } else if (scancode == 0x0EU) {
+        char *buffer = desktop_account_form_values[desktop_account_form_field];
+        size_t length = 0U;
+        while (length + 1U < DESKTOP_ACCOUNT_FIELD_BYTES &&
+               buffer[length] != '\0') ++length;
+        if (length != 0U) buffer[length - 1U] = '\0';
+    } else {
+        const char ch = terminal_scancode_char(scancode);
+        char *buffer = desktop_account_form_values[desktop_account_form_field];
+        size_t length = 0U;
+        while (length + 1U < DESKTOP_ACCOUNT_FIELD_BYTES &&
+               buffer[length] != '\0') ++length;
+        if (ch >= 0x20 && ch <= 0x7E &&
+            length + 1U < DESKTOP_ACCOUNT_FIELD_BYTES) {
+            buffer[length] = ch;
+            buffer[length + 1U] = '\0';
+        }
+    }
+    draw_shell();
+}
+
+static unsigned desktop_account_form_field_count(void) {
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_RESET_PASSWORD) return 2U;
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_STARTUP_ADD) return 1U;
+    return 3U;
+}
+
+static void desktop_account_form_submit(void) {
+    bool success = false;
+    const char *message = "ACCOUNT OPERATION FAILED";
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_STANDARD ||
+        desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN) {
+        if (desktop_account_form_values[1][0] == '\0' ||
+            desktop_account_form_values[2][0] == '\0') {
+            message = "PASSWORD FIELDS ARE REQUIRED";
+        } else {
+            size_t i = 0U;
+            while (desktop_account_form_values[1][i] != '\0' &&
+                   desktop_account_form_values[2][i] != '\0' &&
+                   desktop_account_form_values[1][i] ==
+                       desktop_account_form_values[2][i]) ++i;
+            if (desktop_account_form_values[1][i] != '\0' ||
+                desktop_account_form_values[2][i] != '\0') {
+                message = "PASSWORDS DO NOT MATCH";
+            } else {
+                const enum nexus_account_role role =
+                    desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN
+                        ? NEXUS_ACCOUNT_ROLE_ADMIN
+                        : NEXUS_ACCOUNT_ROLE_STANDARD;
+                success = nexus_accounts_create_user(
+                    desktop_account_form_values[0],
+                    desktop_account_form_values[1], role);
+                message = success ? "USER ACCOUNT CREATED"
+                                  : "CREATE FAILED: CHECK ADMIN ROLE, NAME AND PASSWORD";
+            }
+        }
+    } else if (desktop_account_form ==
+               DESKTOP_ACCOUNT_FORM_CHANGE_PASSWORD) {
+        size_t i = 0U;
+        while (desktop_account_form_values[1][i] != '\0' &&
+               desktop_account_form_values[2][i] != '\0' &&
+               desktop_account_form_values[1][i] ==
+                   desktop_account_form_values[2][i]) ++i;
+        if (desktop_account_form_values[1][i] != '\0' ||
+            desktop_account_form_values[2][i] != '\0') {
+            message = "NEW PASSWORDS DO NOT MATCH";
+        } else {
+            success = nexus_accounts_change_own_password(
+                desktop_account_form_values[0],
+                desktop_account_form_values[1]);
+            message = success ? "PASSWORD CHANGED"
+                              : "PASSWORD CHANGE FAILED";
+        }
+    } else if (desktop_account_form ==
+               DESKTOP_ACCOUNT_FORM_RESET_PASSWORD) {
+        size_t i = 0U;
+        while (desktop_account_form_values[0][i] != '\0' &&
+               desktop_account_form_values[1][i] != '\0' &&
+               desktop_account_form_values[0][i] ==
+                   desktop_account_form_values[1][i]) ++i;
+        if (desktop_account_form_values[0][i] != '\0' ||
+            desktop_account_form_values[1][i] != '\0') {
+            message = "NEW PASSWORDS DO NOT MATCH";
+        } else {
+            struct nexus_account_info user;
+            if (nexus_accounts_get_info(desktop_account_selected_user,
+                                        &user)) {
+                success = nexus_accounts_admin_reset_password(
+                    user.uid, desktop_account_form_values[0]);
+            }
+            message = success ? "PASSWORD RESET" :
+                "RESET FAILED: ADMIN REQUIRED";
+        }
+    } else if (desktop_account_form == DESKTOP_ACCOUNT_FORM_STARTUP_ADD) {
+        success = nexus_accounts_add_startup_app(
+            nexus_accounts_current_uid(), desktop_account_form_values[0]);
+        message = success ? "STARTUP APPLICATION SAVED" :
+            "STARTUP APP NOT SAVED: CHECK NAME OR PROFILE LIMIT";
+    }
+
+    desktop_copy_text(desktop_account_message, message,
+              sizeof(desktop_account_message));
+    desktop_account_form = DESKTOP_ACCOUNT_FORM_NONE;
+    desktop_account_form_field = 0U;
+    for (size_t i = 0U; i < 3U; ++i)
+        desktop_secure_clear(desktop_account_form_values[i],
+                             sizeof(desktop_account_form_values[i]));
+    draw_shell();
+}
+
+static void desktop_account_draw_form(uint64_t x, uint64_t y) {
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_NONE) return;
+    graphics_blend_round_rect(x, y + 52U, 460U, 296U, 10U,
+                              12U, 23U, 41U, 248U);
+    const char *title = "ACCOUNT ACTION";
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_STANDARD)
+        title = "CREATE STANDARD USER";
+    else if (desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN)
+        title = "CREATE ADMINISTRATOR";
+    else if (desktop_account_form == DESKTOP_ACCOUNT_FORM_CHANGE_PASSWORD)
+        title = "CHANGE YOUR PASSWORD";
+    else if (desktop_account_form == DESKTOP_ACCOUNT_FORM_RESET_PASSWORD)
+        title = "RESET SELECTED USER PASSWORD";
+    else if (desktop_account_form == DESKTOP_ACCOUNT_FORM_STARTUP_ADD)
+        title = "ADD STARTUP APPLICATION";
+    graphics_draw_text(x + 14U, y + 66U, title, 1U,
+                       240U, 247U, 255U);
+    const char *labels[3] = {"USERNAME / APPLICATION", "PASSWORD", "CONFIRM PASSWORD"};
+    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_CHANGE_PASSWORD) {
+        labels[0] = "CURRENT PASSWORD";
+        labels[1] = "NEW PASSWORD";
+        labels[2] = "CONFIRM NEW PASSWORD";
+    } else if (desktop_account_form == DESKTOP_ACCOUNT_FORM_RESET_PASSWORD) {
+        labels[0] = "NEW PASSWORD";
+        labels[1] = "CONFIRM NEW PASSWORD";
+    }
+    const unsigned fields = desktop_account_form_field_count();
+    for (unsigned i = 0U; i < fields; ++i) {
+        const uint64_t row_y = y + 100U + (uint64_t)i * 58U;
+        graphics_draw_text(x + 14U, row_y, labels[i], 1U,
+                           172U, 196U, 214U);
+        graphics_blend_round_rect(x + 14U, row_y + 15U, 420U, 30U, 5U,
+            i == desktop_account_form_field ? 42U : 26U,
+            i == desktop_account_form_field ? 80U : 39U,
+            i == desktop_account_form_field ? 104U : 55U, 245U);
+        char shown[40];
+        size_t count = 0U;
+        while (desktop_account_form_values[i][count] != '\0' &&
+               count < 34U) ++count;
+        const bool secret =
+            (desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_STANDARD ||
+             desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN)
+                ? i != 0U
+                : desktop_account_form != DESKTOP_ACCOUNT_FORM_STARTUP_ADD;
+        for (size_t j = 0U; j < count; ++j)
+            shown[j] = secret ? '*' : desktop_account_form_values[i][j];
+        shown[count] = '\0';
+        graphics_draw_text(x + 24U, row_y + 24U, shown, 1U,
+                           242U, 247U, 255U);
+    }
+    graphics_draw_text(x + 14U, y + 286U,
+        "TAB / ENTER: NEXT FIELD    ESC: CANCEL", 1U,
+        173U, 195U, 215U);
+}
+
+static void desktop_accounts_draw_page(uint64_t x, uint64_t y) {
+    struct nexus_account_session session;
+    (void)nexus_accounts_get_session(&session);
+    const bool admin = nexus_accounts_is_admin();
+    desktop_settings_draw_heading(x, y, "USER ACCOUNTS",
+        "Manage login sessions, credentials and per-user profiles.");
+    char line[96];
+    graphics_draw_text(x, y + 53U, "SIGNED IN:", 1U,
+                       142U, 174U, 199U);
+    graphics_draw_text(x + 91U, y + 53U, session.username, 1U,
+                       239U, 247U, 255U);
+    graphics_draw_text(x + 245U, y + 53U,
+        admin ? "ADMINISTRATOR" : "STANDARD USER", 1U,
+        admin ? 108U : 171U, admin ? 216U : 191U,
+        admin ? 229U : 211U);
+    desktop_settings_draw_button(x, y + 76U, 112U, 30U,
+                                 "LOG OUT", false);
+    desktop_settings_draw_button(x + 122U, y + 76U, 166U, 30U,
+                                 "CHANGE PASSWORD", false);
+    desktop_settings_draw_button(x + 298U, y + 76U, 132U, 30U,
+                                 "ADD STARTUP APP", false);
+    if (admin) {
+        desktop_settings_draw_button(x, y + 115U, 142U, 30U,
+                                     "ADD STANDARD", false);
+        desktop_settings_draw_button(x + 152U, y + 115U, 132U, 30U,
+                                     "ADD ADMIN", false);
+        desktop_settings_draw_button(x + 294U, y + 115U, 138U, 30U,
+                                     "RESET PASSWORD", false);
+        desktop_settings_draw_button(x, y + 154U, 142U, 30U,
+                                     "ENABLE / DISABLE", false);
+        desktop_settings_draw_button(x + 152U, y + 154U, 92U, 30U,
+                                     "DELETE", false);
+        desktop_settings_draw_button(x + 294U, y + 154U, 138U, 30U,
+                                     "REMOVE STARTUP", false);
+    }
+    graphics_draw_text(x, y + 198U, "LOCAL ACCOUNTS", 1U,
+                       142U, 174U, 199U);
+    const size_t count = nexus_accounts_count();
+    const size_t visible = count < NEXUS_ACCOUNT_MAX_USERS
+        ? count : NEXUS_ACCOUNT_MAX_USERS;
+    for (size_t i = 0U; i < visible; ++i) {
+        struct nexus_account_info info;
+        if (!nexus_accounts_get_info(i, &info)) continue;
+        const uint64_t row_y = y + 220U + (uint64_t)i * 22U;
+        char uid[21];
+        format_u64(info.uid, uid);
+        line[0] = '\0';
+        size_t length = 0U;
+        hardware_append_text(line, sizeof(line), &length, "UID ");
+        hardware_append_text(line, sizeof(line), &length, uid);
+        hardware_append_text(line, sizeof(line), &length, "  ");
+        hardware_append_text(line, sizeof(line), &length, info.username);
+        hardware_append_text(line, sizeof(line), &length,
+            info.role == NEXUS_ACCOUNT_ROLE_ADMIN ? "  ADMIN" : "  STANDARD");
+        hardware_append_text(line, sizeof(line), &length,
+            info.active ? "  ENABLED" : "  DISABLED");
+        graphics_draw_text(x, row_y, line, 1U,
+            i == desktop_account_selected_user ? 108U : 184U,
+            i == desktop_account_selected_user ? 216U : 198U,
+            i == desktop_account_selected_user ? 229U : 211U);
+    }
+    if (count == 0U)
+        graphics_draw_text(x, y + 222U, "NO ACCOUNTS FOUND",
+                           1U, 231U, 183U, 127U);
+
+    struct nexus_account_profile profile;
+    if (nexus_accounts_get_profile(session.uid, &profile)) {
+        format_labeled_u64("STARTUP APPLICATIONS: ",
+                           profile.startup_count, line);
+        graphics_draw_text(x, y + 397U, line, 1U,
+                           171U, 191U, 211U);
+        if (profile.startup_count != 0U) {
+            char apps[48] = {0};
+            size_t used = 0U;
+            hardware_append_text(apps, sizeof(apps), &used,
+                                 profile.startup_apps[0]);
+            if (profile.startup_count > 1U) {
+                hardware_append_text(apps, sizeof(apps), &used, ", ");
+                hardware_append_text(apps, sizeof(apps), &used,
+                                     profile.startup_apps[1]);
+            }
+            graphics_draw_text(x + 180U, y + 397U, apps, 1U,
+                               171U, 191U, 211U);
+        }
+    }
+    graphics_draw_text(x, y + 410U,
+        "AUTO-LAUNCH WAITS FOR THE SIGNED APP TRUST CHAIN.",
+        1U, 171U, 191U, 211U);
+    graphics_draw_text(x, y + 422U, desktop_account_message, 1U,
+        desktop_account_message[0] == '\0' ? 142U : 231U,
+        desktop_account_message[0] == '\0' ? 174U : 183U,
+        desktop_account_message[0] == '\0' ? 199U : 127U);
+    desktop_account_draw_form(x, y);
+}
+
+static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
+    struct nexus_system_monitor_snapshot snapshot;
+    desktop_settings_draw_heading(x, y, "TASK MANAGER",
+        "Live system metrics, processes and background services.");
+    if (!nexus_system_monitor_get_snapshot(&snapshot)) {
+        graphics_draw_text(x, y + 60U, "COLLECTING FIRST SAMPLE...",
+                           1U, 171U, 191U, 211U);
+        return;
+    }
+
+    char line[112], number[24], second[24];
+    if (snapshot.cpu_usage_available) {
+        format_u64(snapshot.cpu_usage_percent, number);
+        desktop_copy_text(line, "CPU USAGE: ", sizeof(line));
+        size_t used = 11U;
+        hardware_append_text(line, sizeof(line), &used, number);
+        hardware_append_text(line, sizeof(line), &used, "% (BSP)");
+    } else {
+        desktop_copy_text(line, "CPU USAGE: SAMPLING / UNAVAILABLE", sizeof(line));
+    }
+    graphics_draw_text(x, y + 52U, line, 1U, 108U, 216U, 229U);
+    format_u64(snapshot.online_core_count, number);
+    desktop_copy_text(line, "ONLINE CORES: ", sizeof(line));
+    size_t used = 14U;
+    hardware_append_text(line, sizeof(line), &used, number);
+    graphics_draw_text(x + 235U, y + 52U, line, 1U,
+                       171U, 191U, 211U);
+
+    uint64_t core_y = y + 77U;
+    for (uint32_t i = 0U; i < NEXUS_SMP_MAX_CPUS; ++i) {
+        const struct nexus_monitor_core *core = &snapshot.cores[i];
+        if (!core->online) continue;
+        char apic[21];
+        format_u64(core->apic_id, apic);
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, "CORE ");
+        hardware_append_text(line, sizeof(line), &used, apic);
+        hardware_append_text(line, sizeof(line), &used, ": ");
+        if (core->usage_available) {
+            format_u64(core->usage_percent, number);
+            hardware_append_text(line, sizeof(line), &used, number);
+            hardware_append_text(line, sizeof(line), &used, "%");
+        } else {
+            hardware_append_text(line, sizeof(line), &used, "N/A (NO AP ACCOUNTING)");
+        }
+        graphics_draw_text(x, core_y, line, 1U,
+                           171U, 191U, 211U);
+        core_y += 20U;
+        if (core_y > y + 115U) break;
+    }
+
+    if (snapshot.ram_available) {
+        format_u64(snapshot.ram_used_bytes / (1024U * 1024U), number);
+        format_u64(snapshot.ram_total_bytes / (1024U * 1024U), second);
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, "MANAGED RAM: ");
+        hardware_append_text(line, sizeof(line), &used, number);
+        hardware_append_text(line, sizeof(line), &used, " / ");
+        hardware_append_text(line, sizeof(line), &used, second);
+        hardware_append_text(line, sizeof(line), &used, " MiB USED / TOTAL");
+    } else {
+        desktop_copy_text(line, "MANAGED RAM: UNAVAILABLE", sizeof(line));
+    }
+    graphics_draw_text(x, y + 139U, line, 1U, 239U, 247U, 255U);
+
+    if (snapshot.gpu_detected) {
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, "GPU: ");
+        hardware_append_text(line, sizeof(line), &used, snapshot.gpu_name);
+        hardware_append_text(line, sizeof(line), &used, " / UTILIZATION N/A");
+    } else {
+        desktop_copy_text(line, "GPU: NOT DETECTED", sizeof(line));
+    }
+    graphics_draw_text(x, y + 161U, line, 1U, 171U, 191U, 211U);
+
+    if (snapshot.storage_available) {
+        format_u64(snapshot.storage_file_data_bytes / (1024U * 1024U), number);
+        format_u64(snapshot.storage_capacity_bytes / (1024U * 1024U), second);
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, "NXFS FILE DATA: ");
+        hardware_append_text(line, sizeof(line), &used, number);
+        hardware_append_text(line, sizeof(line), &used, " / ");
+        hardware_append_text(line, sizeof(line), &used, second);
+        hardware_append_text(line, sizeof(line), &used, " MiB");
+    } else {
+        desktop_copy_text(line, "STORAGE: NXFS NOT MOUNTED", sizeof(line));
+    }
+    graphics_draw_text(x, y + 183U, line, 1U, 171U, 191U, 211U);
+
+    if (snapshot.network_available) {
+        format_u64(snapshot.network_transmit_bytes_per_second, number);
+        format_u64(snapshot.network_receive_bytes_per_second, second);
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, "NET TX/RX B/S: ");
+        hardware_append_text(line, sizeof(line), &used, number);
+        hardware_append_text(line, sizeof(line), &used, " / ");
+        hardware_append_text(line, sizeof(line), &used, second);
+    } else {
+        desktop_copy_text(line, "NETWORK: NO REGISTERED ADAPTER", sizeof(line));
+    }
+    graphics_draw_text(x, y + 205U, line, 1U, 171U, 191U, 211U);
+
+    if (snapshot.disk_io_available) {
+        format_u64(snapshot.disk_read_bytes_per_second, number);
+        format_u64(snapshot.disk_write_bytes_per_second, second);
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, "DISK READ/WRITE B/S: ");
+        hardware_append_text(line, sizeof(line), &used, number);
+        hardware_append_text(line, sizeof(line), &used, " / ");
+        hardware_append_text(line, sizeof(line), &used, second);
+    } else {
+        desktop_copy_text(line, "DISK I/O: NO REGISTERED DEVICES", sizeof(line));
+    }
+    graphics_draw_text(x, y + 227U, line, 1U, 171U, 191U, 211U);
+
+    graphics_draw_text(x, y + 253U, "PROCESSES (FOREGROUND RUNTIME)", 1U,
+                       142U, 174U, 199U);
+    const size_t process_visible = snapshot.process_count < 4U
+        ? snapshot.process_count : 4U;
+    for (size_t i = 0U; i < process_visible; ++i) {
+        const struct nexus_process_info *process =
+            &snapshot.processes[i].process;
+        format_u64(process->pid, number);
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, "PID ");
+        hardware_append_text(line, sizeof(line), &used, number);
+        hardware_append_text(line, sizeof(line), &used, " UID ");
+        format_u64(process->owner_uid, second);
+        hardware_append_text(line, sizeof(line), &used, second);
+        hardware_append_text(line, sizeof(line), &used, " ");
+        hardware_append_text(line, sizeof(line), &used, process->name);
+        hardware_append_text(line, sizeof(line), &used, " ");
+        hardware_append_text(line, sizeof(line), &used,
+                             process_state_name(process->state));
+        graphics_draw_text(x, y + 274U + (uint64_t)i * 18U, line, 1U,
+            i == desktop_task_selected_process ? 108U : 171U,
+            i == desktop_task_selected_process ? 216U : 191U,
+            i == desktop_task_selected_process ? 229U : 211U);
+    }
+
+    graphics_draw_text(x + 256U, y + 253U, "SERVICES", 1U,
+                       142U, 174U, 199U);
+    const size_t service_visible = snapshot.service_count < 4U
+        ? snapshot.service_count : 4U;
+    for (size_t i = 0U; i < service_visible; ++i) {
+        const struct nexus_service_info *service =
+            &snapshot.services[i].service;
+        line[0] = '\0';
+        used = 0U;
+        hardware_append_text(line, sizeof(line), &used, service->name);
+        hardware_append_text(line, sizeof(line), &used, " ");
+        hardware_append_text(line, sizeof(line), &used,
+                             nexus_service_state_name(service->state));
+        hardware_append_text(line, sizeof(line), &used,
+            service->startup_enabled ? " AUTO" : " MANUAL");
+        graphics_draw_text(x + 256U, y + 274U + (uint64_t)i * 18U,
+            line, 1U, i == desktop_task_selected_service ? 108U : 171U,
+            i == desktop_task_selected_service ? 216U : 191U,
+            i == desktop_task_selected_service ? 229U : 211U);
+    }
+
+    graphics_draw_text(x, y + 354U,
+        "APP RESPONSIVENESS: N/A (FOREGROUND PROCESS CANNOT BE TIMED OUT)",
+        1U, 231U, 183U, 127U);
+    if (nexus_accounts_is_admin()) {
+        desktop_settings_draw_button(x, y + 376U, 142U, 28U,
+                                     "START / STOP SERVICE", false);
+        desktop_settings_draw_button(x + 152U, y + 376U, 160U, 28U,
+                                     "AUTO FLAG (RAM ONLY)", false);
+        desktop_settings_draw_button(x + 324U, y + 376U, 132U, 28U,
+                                     "CANCEL READY", false);
+    } else {
+        graphics_draw_text(x, y + 378U,
+            "SERVICE / PROCESS CONTROL REQUIRES ADMINISTRATOR PRIVILEGES.",
+            1U, 171U, 191U, 211U);
+    }
+}
+
+static void desktop_account_form_submit(void);
+
+void desktop_update(void) {
+    if (!desktop_ready || installer_session_mode ||
+        desktop_account_gate_active) return;
+    const uint64_t now = timer_ticks();
+    if (desktop_last_monitor_tick != 0U &&
+        now >= desktop_last_monitor_tick &&
+        now - desktop_last_monitor_tick < 50U) return;
+    desktop_last_monitor_tick = now;
+    (void)nexus_system_monitor_sample();
+    if (active_view == DESKTOP_SETTINGS &&
+        settings_page == SETTINGS_TASK_MANAGER) {
+        draw_shell();
+        draw_pointer();
+    }
+}
 static void draw_shell(void) {
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
+
+    if (!installer_session_mode && desktop_account_gate_active) {
+        desktop_account_gate_draw();
+        return;
+    }
 
     if (installer_session_mode) {
         /* The dedicated installer uses one smooth, single-pass gradient. */
@@ -2385,7 +3243,8 @@ static void draw_shell(void) {
     } else if (active_view == DESKTOP_SETTINGS) {
         static const char *const tab_labels[SETTINGS_PAGE_COUNT] = {
             "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "DEVICES",
-            "NETWORK", "STORAGE", "POWER", "SECURITY", "APPS", "ABOUT"
+            "NETWORK", "STORAGE", "POWER", "SECURITY", "APPS", "ABOUT",
+            "USERS", "TASKS"
         };
         const uint64_t tab_y = text_y - 2U;
         if ((size_t)settings_page < settings_tab_first_page)
@@ -3034,6 +3893,10 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 253U,
                 "ED25519 VERIFIER AND RELEASE TRUST KEY.",
                 1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_ACCOUNTS) {
+            desktop_accounts_draw_page(text_x, content_y);
+        } else if (settings_page == SETTINGS_TASK_MANAGER) {
+            desktop_task_manager_draw_page(text_x, content_y);
         } else if (settings_page == SETTINGS_ABOUT) {
             char line[96];
             desktop_settings_draw_heading(text_x, content_y,
@@ -3409,6 +4272,29 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     if (!nexus_display_init(framebuffer))
         serial_write("DISPLAY: monitor or mode discovery unavailable\r\n");
 
+    if (!installer_session_mode) {
+        nexus_accounts_init();
+        const enum nexus_accounts_status status =
+            nexus_accounts_get_status();
+        desktop_account_gate_active = true;
+        desktop_gate_username[0] = '\0';
+        desktop_gate_password[0] = '\0';
+        desktop_gate_confirm[0] = '\0';
+        desktop_account_message[0] = '\0';
+        if (status == NEXUS_ACCOUNTS_SETUP_REQUIRED) {
+            desktop_account_gate_stage = DESKTOP_GATE_SETUP_USERNAME;
+        } else if ((status == NEXUS_ACCOUNTS_READY ||
+                    status == NEXUS_ACCOUNTS_READ_ONLY) &&
+                   nexus_accounts_count() != 0U) {
+            desktop_account_gate_stage = DESKTOP_GATE_LOGIN_USERNAME;
+        } else {
+            desktop_account_gate_stage = DESKTOP_GATE_BLOCKED;
+        }
+    } else {
+        desktop_account_gate_active = false;
+    }
+    nexus_system_monitor_init();
+
     struct nexus_graphics_surface surface = {
         .address = framebuffer->address,
         .width = framebuffer->width,
@@ -3554,6 +4440,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     keyboard_windows_used = false;
     keyboard_caps_lock_down = false;
     desktop_ready = true;
+    if (!installer_session_mode && !desktop_account_gate_active &&
+        nexus_accounts_is_logged_in())
+        desktop_accounts_load_profile();
 #ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
     serial_write("NEXUS INSTALLER WRITE GATE ENABLED\r\n");
 #else
@@ -6518,6 +7407,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             event = &normalized_event;
         }
     }
+    if (desktop_account_gate_active && !installer_session_mode) {
+        if (event->type == NEXUS_INPUT_KEYBOARD)
+            desktop_account_handle_key((uint8_t)event->scancode);
+        return;
+    }
+    if (desktop_account_form != DESKTOP_ACCOUNT_FORM_NONE &&
+        active_view == DESKTOP_SETTINGS &&
+        settings_page == SETTINGS_ACCOUNTS) {
+        if (event->type == NEXUS_INPUT_KEYBOARD)
+            desktop_account_handle_key((uint8_t)event->scancode);
+        return;
+    }
     if (event->type == NEXUS_INPUT_MOUSE) {
         const int64_t sensitivity =
             desktop_settings.mouse_sensitivity_percent;
@@ -6996,6 +7897,163 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     py >= content_y + 190U && py < content_y + 222U &&
                     px >= sx && px < sx + 136U)
                     (void)wifi_scan();
+            } else if (settings_page == SETTINGS_ACCOUNTS) {
+                if (py >= content_y + 76U && py < content_y + 106U) {
+                    if (px >= sx && px < sx + 112U) {
+                        nexus_accounts_logout();
+                        desktop_profile_loaded_uid = 0U;
+                        desktop_account_gate_active = true;
+                        desktop_account_gate_stage = DESKTOP_GATE_LOGIN_USERNAME;
+                        desktop_secure_clear(desktop_gate_password,
+                                             sizeof(desktop_gate_password));
+                        desktop_gate_username[0] = '\0';
+                        desktop_account_message[0] = '\0';
+                        active_view = DESKTOP_HOME;
+                        draw_shell();
+                        return;
+                    } else if (px >= sx + 122U && px < sx + 288U) {
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_CHANGE_PASSWORD;
+                        desktop_account_form_field = 0U;
+                        for (size_t i = 0U; i < 3U; ++i)
+                            desktop_secure_clear(desktop_account_form_values[i],
+                                sizeof(desktop_account_form_values[i]));
+                    } else if (px >= sx + 298U && px < sx + 430U) {
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_STARTUP_ADD;
+                        desktop_account_form_field = 0U;
+                        for (size_t i = 0U; i < 3U; ++i)
+                            desktop_secure_clear(desktop_account_form_values[i],
+                                sizeof(desktop_account_form_values[i]));
+                    }
+                } else if (py >= content_y + 115U &&
+                           py < content_y + 145U && nexus_accounts_is_admin()) {
+                    if (px >= sx && px < sx + 142U)
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_ADD_STANDARD;
+                    else if (px >= sx + 152U && px < sx + 284U)
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_ADD_ADMIN;
+                    else if (px >= sx + 294U && px < sx + 432U)
+                        desktop_account_form = DESKTOP_ACCOUNT_FORM_RESET_PASSWORD;
+                    if (desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_STANDARD ||
+                        desktop_account_form == DESKTOP_ACCOUNT_FORM_ADD_ADMIN ||
+                        desktop_account_form == DESKTOP_ACCOUNT_FORM_RESET_PASSWORD) {
+                        desktop_account_form_field = 0U;
+                        for (size_t i = 0U; i < 3U; ++i)
+                            desktop_secure_clear(desktop_account_form_values[i],
+                                sizeof(desktop_account_form_values[i]));
+                    }
+                } else if (py >= content_y + 154U &&
+                           py < content_y + 184U) {
+                    if (nexus_accounts_is_admin() &&
+                        px >= sx && px < sx + 142U) {
+                        struct nexus_account_info user;
+                        if (nexus_accounts_get_info(
+                                desktop_account_selected_user, &user)) {
+                            const bool active = !user.active;
+                            const bool ok = nexus_accounts_set_user_active(
+                                user.uid, active);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "ACCOUNT STATUS UPDATED"
+                                   : "STATUS CHANGE DENIED",
+                                sizeof(desktop_account_message));
+                        }
+                    } else if (nexus_accounts_is_admin() &&
+                               px >= sx + 152U && px < sx + 244U) {
+                        struct nexus_account_info user;
+                        if (nexus_accounts_get_info(
+                                desktop_account_selected_user, &user)) {
+                            const bool ok =
+                                nexus_accounts_delete_user(user.uid);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "ACCOUNT DELETED"
+                                   : "DELETE DENIED: SELF OR LAST ADMIN",
+                                sizeof(desktop_account_message));
+                            if (desktop_account_selected_user >=
+                                nexus_accounts_count())
+                                desktop_account_selected_user = 0U;
+                        }
+                    } else if (px >= sx + 298U && px < sx + 430U) {
+                        struct nexus_account_profile profile;
+                        if (nexus_accounts_get_profile(
+                                nexus_accounts_current_uid(), &profile) &&
+                            profile.startup_count != 0U) {
+                            const bool ok = nexus_accounts_remove_startup_app(
+                                nexus_accounts_current_uid(),
+                                profile.startup_apps[0]);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "STARTUP APP REMOVED"
+                                   : "STARTUP APP REMOVE FAILED",
+                                sizeof(desktop_account_message));
+                        }
+                    }
+                } else if (py >= content_y + 220U &&
+                           py < content_y + 396U &&
+                           px >= sx && px < sx + 460U) {
+                    const size_t row =
+                        (size_t)(py - (content_y + 220U)) / 22U;
+                    if (row < nexus_accounts_count())
+                        desktop_account_selected_user = row;
+                }
+            } else if (settings_page == SETTINGS_TASK_MANAGER) {
+                if (py >= content_y + 274U && py < content_y + 346U) {
+                    const size_t row =
+                        (size_t)(py - (content_y + 274U)) / 18U;
+                    if (px >= sx && px < sx + 232U &&
+                        row < NEXUS_MONITOR_MAX_PROCESSES)
+                        desktop_task_selected_process = row;
+                    else if (px >= sx + 256U && px < sx + 500U &&
+                             row < NEXUS_MONITOR_MAX_SERVICES)
+                        desktop_task_selected_service = row;
+                } else if (nexus_accounts_is_admin() &&
+                           py >= content_y + 376U &&
+                           py < content_y + 404U) {
+                    if (px >= sx && px < sx + 142U) {
+                        struct nexus_system_monitor_snapshot snapshot;
+                        if (nexus_system_monitor_get_snapshot(&snapshot) &&
+                            desktop_task_selected_service <
+                                snapshot.service_count) {
+                            const struct nexus_service_info *service =
+                                &snapshot.services[
+                                    desktop_task_selected_service].service;
+                            const bool ok =
+                                service->state == NEXUS_SERVICE_RUNNING
+                                    ? nexus_service_manager_stop(service->name)
+                                    : nexus_service_manager_start(service->name);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "SERVICE STATE UPDATED"
+                                   : "SERVICE TRANSITION DENIED",
+                                sizeof(desktop_account_message));
+                        }
+                    } else if (px >= sx + 152U && px < sx + 312U) {
+                        struct nexus_system_monitor_snapshot snapshot;
+                        if (nexus_system_monitor_get_snapshot(&snapshot) &&
+                            desktop_task_selected_service <
+                                snapshot.service_count) {
+                            const struct nexus_service_info *service =
+                                &snapshot.services[
+                                    desktop_task_selected_service].service;
+                            (void)nexus_service_manager_set_startup_enabled(
+                                service->name, !service->startup_enabled);
+                        }
+                    } else if (px >= sx + 324U && px < sx + 456U) {
+                        struct nexus_system_monitor_snapshot snapshot;
+                        if (nexus_system_monitor_get_snapshot(&snapshot) &&
+                            desktop_task_selected_process <
+                                snapshot.process_count) {
+                            const struct nexus_process_info *process =
+                                &snapshot.processes[
+                                    desktop_task_selected_process].process;
+                            bool ok = false;
+                            if (process->state == NEXUS_PROCESS_READY)
+                                ok = process_terminate_ready(process->pid);
+                            else if (process->state == NEXUS_PROCESS_EXITED ||
+                                     process->state == NEXUS_PROCESS_FAILED)
+                                ok = process_reap(process->pid);
+                            desktop_copy_text(desktop_account_message,
+                                ok ? "PROCESS STOPPED OR REAPED"
+                                   : "PROCESS CANNOT BE STOPPED WHILE RUNNING",
+                                sizeof(desktop_account_message));
+                        }
+                    }
+                }
             }
             if (changed) desktop_preferences_save();
             else desktop_settings_apply();

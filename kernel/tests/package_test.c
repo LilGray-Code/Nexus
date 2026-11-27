@@ -323,6 +323,18 @@ int main(void) {
     assert(!nexus_package_install(package, package_length,
                                   mock_ed25519_verify, NULL, NULL));
 
+    struct nexus_security_event audit_events[32];
+    uint64_t audit_cursor = 1U;
+    const size_t audit_count = nexus_security_audit_read(
+        &audit_cursor, audit_events, 32U);
+    bool package_rejection_logged = false;
+    for (size_t i = 0U; i < audit_count; ++i) {
+        if (audit_events[i].type == NEXUS_SECURITY_EVENT_PACKAGE_REJECTED) {
+            package_rejection_logged = true;
+            break;
+        }
+    }
+    assert(package_rejection_logged);
     puts("NEXUS SIGNED PACKAGE TESTS PASSED");
     return 0;
 }

@@ -5,8 +5,7 @@
 #include <stdint.h>
 
 static char log_bytes[NEXUS_LOG_BUFFER_CAPACITY];
-static size_t log_write_index;
-static size_t log_count;
+static uint64_t log_head;
 static uint64_t log_dropped;
 static volatile uint8_t log_lock;
 
@@ -22,13 +21,9 @@ static void log_unlock(void) {
     __atomic_clear(&log_lock, __ATOMIC_RELEASE);
 }
 
-/* The count is reset instead of clearing the whole byte array. No stale byte
- * is observable while count is zero, and initialization stays O(1).
- */
 void nexus_log_buffer_init(void) {
     if (!log_try_lock()) return;
-    log_write_index = 0U;
-    log_count = 0U;
+    log_head = 0U;
     log_dropped = 0U;
     log_unlock();
 }
@@ -57,26 +52,30 @@ void nexus_log_buffer_append(const char *text, size_t length) {
         return;
     }
 
-    /* An append at least as large as the ring supersedes all old data. Keep
-     * only the newest capacity bytes and write them from index zero.
-     */
-    if (length >= NEXUS_LOG_BUFFER_CAPACITY) {
-        text += length - NEXUS_LOG_BUFFER_CAPACITY;
-        length = NEXUS_LOG_BUFFER_CAPACITY;
-        log_write_index = 0U;
-        log_count = 0U;
+    /* Preserve the low-overhead scalar path for tiny records. */
+    if (length < 16U) {
+        for (size_t i = 0U; i < length; ++i) {
+            log_bytes[(size_t)(log_head % NEXUS_LOG_BUFFER_CAPACITY)] = text[i];
+            ++log_head;
+        }
+        log_unlock();
+        return;
     }
 
-    log_copy_into_ring(log_write_index, text, length);
-    log_write_index += length;
-    if (log_write_index >= NEXUS_LOG_BUFFER_CAPACITY)
-        log_write_index -= NEXUS_LOG_BUFFER_CAPACITY;
+    size_t copy_length = length;
+    size_t destination =
+        (size_t)(log_head & (NEXUS_LOG_BUFFER_CAPACITY - 1U));
+    if (copy_length >= NEXUS_LOG_BUFFER_CAPACITY) {
+        const size_t skipped = copy_length - NEXUS_LOG_BUFFER_CAPACITY;
+        text += skipped;
+        copy_length = NEXUS_LOG_BUFFER_CAPACITY;
+        destination = (destination +
+            (skipped & (NEXUS_LOG_BUFFER_CAPACITY - 1U))) &
+            (NEXUS_LOG_BUFFER_CAPACITY - 1U);
+    }
 
-    if (length >= NEXUS_LOG_BUFFER_CAPACITY - log_count)
-        log_count = NEXUS_LOG_BUFFER_CAPACITY;
-    else
-        log_count += length;
-
+    log_copy_into_ring(destination, text, copy_length);
+    log_head += (uint64_t)length;
     log_unlock();
 }
 
@@ -85,11 +84,14 @@ size_t nexus_log_buffer_read_recent(char *output, size_t capacity) {
     output[0] = '\0';
     if (!log_try_lock()) return 0U;
 
-    const size_t count = log_count < capacity - 1U
-        ? log_count : capacity - 1U;
-    const size_t start = log_write_index >= count
-        ? log_write_index - count
-        : NEXUS_LOG_BUFFER_CAPACITY - (count - log_write_index);
+    uint64_t count64 = log_head;
+    if (count64 > NEXUS_LOG_BUFFER_CAPACITY)
+        count64 = NEXUS_LOG_BUFFER_CAPACITY;
+    if (count64 >= capacity) count64 = capacity - 1U;
+
+    const size_t count = (size_t)count64;
+    const size_t start = (size_t)((log_head - count64) &
+        (NEXUS_LOG_BUFFER_CAPACITY - 1U));
     const size_t first = count < NEXUS_LOG_BUFFER_CAPACITY - start
         ? count : NEXUS_LOG_BUFFER_CAPACITY - start;
 

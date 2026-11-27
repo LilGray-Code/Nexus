@@ -24,7 +24,7 @@ static void test_query_encoding(void) {
     assert(nexus_browser_search_build_bing_path(
         query, sizeof(query) - 1U, path, sizeof(path), &length));
     assert(strcmp(path,
-        "/search?q=Nexus%20OS%20%26%20Wi-Fi%3F&count=8&setlang=en&cc=us") == 0);
+        "/search?q=Nexus%20OS%20%26%20Wi-Fi%3F&format=rss&setlang=en&cc=us") == 0);
     assert(length == strlen(path));
     assert(!nexus_browser_search_build_path(
         "", 0U, path, sizeof(path), &length));
@@ -163,8 +163,37 @@ static void test_bing_parser_rejects_malformed_tracking_links(void) {
     assert(count == 0U);
 }
 
+static void test_bing_rss_results_and_entities(void) {
+    static const uint8_t xml[] =
+        "<?xml version=\"1.0\"?><rss><channel>"
+        "<item><title>Example &amp; Documentation</title>"
+        "<link>https://example.com/docs?x=1&amp;y=2</link>"
+        "<description><![CDATA[A useful <b>documentation</b> page.]]>"
+        "</description></item>"
+        "<item><title>Nexus OS</title>"
+        "<link>https://nexus.example/</link>"
+        "<description>Original operating system project.</description>"
+        "</item></channel></rss>";
+    struct nexus_browser_search_result results[NEXUS_BROWSER_SEARCH_MAX_RESULTS];
+    size_t count = 0U;
+    assert(nexus_browser_search_parse_bing_rss(
+        xml, sizeof(xml) - 1U, results,
+        NEXUS_BROWSER_SEARCH_MAX_RESULTS, &count));
+    assert(count == 2U);
+    assert(strcmp(results[0].title, "Example & Documentation") == 0);
+    assert(strcmp(results[0].url,
+        "https://example.com/docs?x=1&y=2") == 0);
+    assert(strstr(results[0].snippet, "documentation") != NULL);
+    assert(strcmp(results[1].title, "Nexus OS") == 0);
+    assert(strcmp(results[1].url, "https://nexus.example/") == 0);
+    assert(strcmp(results[1].snippet,
+                  "Original operating system project.") == 0);
+}
+
+int main(void) {
 int main(void) {
     test_query_encoding();
+    test_bing_rss_results_and_entities();
     test_bing_results_and_tracker_urls();
     test_bing_parser_rejects_malformed_tracking_links();
     test_result_parse_and_redirect_decode();

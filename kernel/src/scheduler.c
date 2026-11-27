@@ -1,6 +1,7 @@
 #include "scheduler.h"
 
 #include "timer.h"
+#include "trace.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -184,6 +185,13 @@ void scheduler_start(void) {
     __asm__ volatile ("sti" : : : "memory");
 }
 
+static uint64_t scheduler_trace_thread_id(const struct nexus_thread *thread) {
+    if (thread == &main_thread) return 0U;
+    for (size_t i = 0U; i < thread_count; ++i)
+        if (thread == &threads[i]) return (uint64_t)i + 1U;
+    return UINT64_MAX;
+}
+
 void scheduler_yield(void) {
     /*
      * Preserve the caller's interrupt state, then take the scheduler lock
@@ -207,6 +215,9 @@ void scheduler_yield(void) {
         return;
     }
 
+    nexus_trace_emit(NEXUS_TRACE_EVENT_SCHEDULER_SWITCH, timer_ticks(),
+                     scheduler_trace_thread_id(old),
+                     scheduler_trace_thread_id(next));
     old->saved_interrupts_enabled = restore_if;
     current_thread = next;
     arch_context_switch(&old->saved_stack, next->saved_stack);

@@ -1098,7 +1098,7 @@ static void desktop_draw_hardware_overview(uint64_t x, uint64_t y) {
     }
     graphics_draw_text(x, row, line, 1U, 170U, 191U, 211U);
     format_labeled_u64("PCI FUNCTIONS: ", pci_device_count(), line);
-    graphics_draw_text(x + 180U, row, line, 1U, 170U, 191U);
+    graphics_draw_text(x + 180U, row, line, 1U, 170U, 191U, 211U);
     row += 18U;
 
     size_t bound_devices = 0U;

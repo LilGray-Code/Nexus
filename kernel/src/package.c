@@ -1,5 +1,6 @@
 #include "package.h"
 #include "process.h"
+#include "security.h"
 
 #include "elf64.h"
 #include "nxfs.h"
@@ -297,17 +298,24 @@ bool nexus_package_verify(const void *package_bytes, size_t package_length,
                           struct nexus_package_manifest *manifest) {
     struct nexus_package_manifest parsed;
     if (verifier == NULL ||
-        !parse_header(package_bytes, package_length, true, &parsed))
+        !parse_header(package_bytes, package_length, true, &parsed)) {
+        nexus_security_audit(NEXUS_SECURITY_EVENT_PACKAGE_REJECTED, 0U,
+            NEXUS_SECURITY_REASON_PACKAGE_VERIFICATION, package_length, 0U);
         return false;
+    }
     const uint8_t *bytes = (const uint8_t *)package_bytes;
     uint8_t digest[NEXUS_PACKAGE_DIGEST_BYTES];
     nexus_sha256(bytes + parsed.payload_offset, parsed.payload_size, digest);
     const bool digest_matches =
         digest_equal(digest, parsed.payload_sha256, sizeof(digest));
     for (size_t i = 0U; i < sizeof(digest); ++i) digest[i] = 0U;
-    if (!digest_matches) return false;
-    if (!verify_signature(bytes, &parsed, verifier, verifier_context))
+    if (!digest_matches ||
+        !verify_signature(bytes, &parsed, verifier, verifier_context)) {
+        nexus_security_audit(NEXUS_SECURITY_EVENT_PACKAGE_REJECTED, 0U,
+            NEXUS_SECURITY_REASON_PACKAGE_VERIFICATION,
+            parsed.payload_size, 0U);
         return false;
+    }
     if (manifest != NULL) *manifest = parsed;
     return true;
 }
@@ -607,7 +615,9 @@ bool nexus_package_launch(const char *id, nexus_package_signature_verifier verif
     if (!nexus_package_is_installed(id, verifier, verifier_context, &installed)) return false;
     struct nexus_process_result process_result = {0};
     enum nexus_process_error process_error = NEXUS_PROCESS_ERROR_NONE;
-    if (!process_execute_root_file(installed.executable_path, &process_result, &process_error)) return false;
+    if (!process_execute_root_file_with_capabilities(
+            installed.executable_path, &process_result, &process_error,
+            NEXUS_CAP_PACKAGE_DEFAULT)) return false;
     if (exit_status != NULL) *exit_status = process_result.exit_status;
     return true;
 }

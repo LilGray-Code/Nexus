@@ -8,7 +8,6 @@
 #include <time.h>
 
 #define CAPACITY NEXUS_LOG_BUFFER_CAPACITY
-#define APPEND_LENGTH 48U
 #define APPEND_ITERATIONS 1000000U
 #define SMALL_READ_ITERATIONS 1000000U
 #define FULL_READ_ITERATIONS 10000U
@@ -128,7 +127,7 @@ int main(void) {
         legacy_read, 112U, SMALL_READ_ITERATIONS);
     const uint64_t optimized_small = bench_read(
         nexus_log_buffer_read_recent, 112U, SMALL_READ_ITERATIONS);
-    report("read-112B", legacy_small, optimized_small,
+    report("read-112B-capacity", legacy_small, optimized_small,
            SMALL_READ_ITERATIONS);
 
     const uint64_t legacy_full = bench_read(

@@ -706,11 +706,16 @@ bool nexus_accounts_delete_user(uint32_t uid) {
 
     const struct account_database original = database;
     secure_zero(&database.users[index], sizeof(database.users[index]));
-    for (size_t i = index; i + 1U < database.user_count; ++i)
+    for (size_t i = index; i + 1U < database.user_count; ++i) {
         database.users[i] = database.users[i + 1U];
+        login_failures[i] = login_failures[i + 1U];
+        lockout_until[i] = lockout_until[i + 1U];
+    }
     --database.user_count;
     secure_zero(&database.users[database.user_count],
                 sizeof(database.users[database.user_count]));
+    login_failures[database.user_count] = 0U;
+    lockout_until[database.user_count] = 0U;
     return save_with_rollback(&original);
 }
 
@@ -753,6 +758,10 @@ bool nexus_accounts_change_own_password(const char *old_password,
     const struct account_database original = database;
     database.users[index] = replacement;
     const bool saved = save_with_rollback(&original);
+    if (saved) {
+        login_failures[index] = 0U;
+        lockout_until[index] = 0U;
+    }
     secure_zero(&replacement, sizeof(replacement));
     return saved;
 }
@@ -777,6 +786,10 @@ bool nexus_accounts_admin_reset_password(uint32_t uid,
     const struct account_database original = database;
     database.users[index] = replacement;
     const bool saved = save_with_rollback(&original);
+    if (saved) {
+        login_failures[index] = 0U;
+        lockout_until[index] = 0U;
+    }
     secure_zero(&replacement, sizeof(replacement));
     return saved;
 }

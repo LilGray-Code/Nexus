@@ -389,14 +389,16 @@ int main(void) {
     assert(vfs_root_entry_count() == 2U);
     read_current_file("COPY.TXT", payload);
     assert(vfs_copy_file_absolute("/DOCUMENTS/PROJECTS/NOTE.TXT",
-                                  "/DOCUMENTS/PROJECTS/ABSOLUTE.TXT"));
+                                  "/DOCUMENTS/ABSOLUTE.TXT"));
+    assert(vfs_change_directory("/DOCUMENTS"));
     read_current_file("ABSOLUTE.TXT", payload);
-    assert(vfs_move_file_absolute("/DOCUMENTS/PROJECTS/ABSOLUTE.TXT",
+    assert(vfs_move_file_absolute("/DOCUMENTS/ABSOLUTE.TXT",
                                   "/DOCUMENTS/PROJECTS/RENAMED.TXT"));
+    assert(vfs_change_directory("/DOCUMENTS/PROJECTS"));
     read_current_file("RENAMED.TXT", payload);
     assert(!vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
     assert(!vfs_move_file("COPY.TXT", "DOCUMENTS/PROJECTS/NOTE.TXT"));
-    /* NOTE, COPY and the absolute-path rename are now all in this directory. */
+    /* NOTE, COPY and the absolute-path move are now in this directory. */
     assert(vfs_root_entry_count() == 3U);
     assert(vfs_move_file("COPY.TXT", "DOCUMENTS/MOVED.TXT"));
     struct nexus_vfs_file copy_probe;

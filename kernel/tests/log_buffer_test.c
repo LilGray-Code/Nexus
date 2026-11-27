@@ -34,5 +34,23 @@ int main(void) {
     assert(nexus_log_buffer_read_recent(small, sizeof(small)) == 4U);
     assert(small[4] == '\0');
     assert(nexus_log_buffer_dropped() == 0U);
+
+    /* Exercise a split copy across the physical ring boundary. */
+    nexus_log_buffer_init();
+    static char prefix[4090U];
+    for (size_t i = 0U; i < sizeof(prefix); ++i) prefix[i] = 'P';
+    nexus_log_buffer_append(prefix, sizeof(prefix));
+    nexus_log_buffer_append("0123456789", 10U);
+    count = nexus_log_buffer_read_recent(output, sizeof(output));
+    assert(count == NEXUS_LOG_BUFFER_CAPACITY);
+    for (size_t i = 0U; i < NEXUS_LOG_BUFFER_CAPACITY - 10U; ++i)
+        assert(output[i] == 'P');
+    assert(strcmp(output + NEXUS_LOG_BUFFER_CAPACITY - 10U,
+                  "0123456789") == 0);
+
+    /* Reinitialization must make old contents unreachable without a memset. */
+    nexus_log_buffer_init();
+    assert(nexus_log_buffer_read_recent(output, sizeof(output)) == 0U);
+    assert(output[0] == '\\0');
     return 0;
 }

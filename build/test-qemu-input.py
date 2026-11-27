@@ -317,15 +317,19 @@ def main() -> None:
         )
         qmp = None
         try:
-            required = (
-                "NEXUS K0 BOOT COMPLETE",
-                "NEXUS USB HID KEYBOARD READY",
-                "NEXUS USB HID MOUSE READY",
-                "INPUT: USB HID boot keyboard available",
-                "INPUT: USB HID boot mouse available",
-            )
             if args.topology == "hub":
-                required += ("NEXUS USB HUB READY",)
+                required = (
+                    "NEXUS K0 BOOT COMPLETE",
+                    "NEXUS USB HUB READY",
+                )
+            else:
+                required = (
+                    "NEXUS K0 BOOT COMPLETE",
+                    "NEXUS USB HID KEYBOARD READY",
+                    "NEXUS USB HID MOUSE READY",
+                    "INPUT: USB HID boot keyboard available",
+                    "INPUT: USB HID boot mouse available",
+                )
             if args.mode == "installer":
                 required += (
                     "NEXUS BOOT MODE: DEDICATED INSTALLER",
@@ -351,6 +355,16 @@ def main() -> None:
             if qmp is None:
                 raise RuntimeError("QEMU QMP socket did not become available")
             wait_for_log(serial_log, required, args.timeout)
+            if args.topology == "hub":
+                wait_for_predicate(
+                    serial_log,
+                    lambda log: (
+                        "NEXUS USB HID KEYBOARD READY" in log
+                        and "NEXUS USB HID MOUSE READY" in log
+                    ),
+                    "keyboard and mouse enumeration downstream of USB hub",
+                    timeout=args.timeout,
+                )
             exercise_usb_inputs(qmp, serial_log, args.topology)
             final_log = serial_log.read_text(encoding="utf-8", errors="replace")
             print(f"NEXUS {args.mode.upper()} USB INPUT INTEGRATION TEST PASSED (topology={args.topology})")

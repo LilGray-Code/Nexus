@@ -203,7 +203,7 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
     wait_for_predicate(
         serial_log,
         lambda log: (
-            "INPUT: USB HID mouse report" in log
+            "INPUT: USB HID mouse first report" in log
             and usb_mouse_click_dispatched(log)
         ),
         "USB mouse motion and left-button events in the desktop event dispatcher",

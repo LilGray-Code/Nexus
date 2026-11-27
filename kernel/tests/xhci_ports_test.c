@@ -26,6 +26,10 @@ int main(void) {
 
     assert(!nexus_xhci_port_connected(0U));
     assert(nexus_xhci_port_connected(1U));
+    assert(nexus_xhci_port_connection_changed(false, 1U));
+    assert(!nexus_xhci_port_connection_changed(true, 1U));
+    assert(nexus_xhci_port_connection_changed(true, 0U));
+    assert(!nexus_xhci_port_connection_changed(false, 0U));
     assert(nexus_xhci_port_speed_id(3U << 10) == 3U);
     assert(nexus_xhci_port_speed_id(5U << 10) == 5U);
     assert(nexus_xhci_port_change_bits((1U << 17) | (1U << 22)) ==

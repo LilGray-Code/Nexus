@@ -10,9 +10,9 @@ The 4 KiB serial log ring previously performed ring-index modulo arithmetic for 
 
 The optimized implementation:
 
-- Tracks the next write index and number of retained bytes separately.
+- Keeps a monotonic write head and derives the retained byte count from it, avoiding extra per-append count bookkeeping.
 - Copies at most two contiguous spans when a write or read crosses the ring boundary.
-- Uses x86-64 `rep movsb` for the bounded contiguous copies.
+- Uses the original scalar path for records shorter than 16 bytes and x86-64 `rep movsb` for larger contiguous spans.
 - Resets only the ring metadata during initialization; it does not clear 4 KiB of data.
 - Retains the non-blocking lock behavior. On contention, the append is dropped and the dropped-write counter is incremented; it never spins in an interrupt/panic-sensitive path.
 - Preserves the same external API and bounded recent-log behavior.
@@ -27,19 +27,25 @@ Host: AMD EPYC 9V74 (80-Core), x86-64, Linux 6.18.57, GCC 14.2.0. Build flags: `
 
 | Operation | Previous implementation | Optimized implementation | Median speedup |
 |---|---:|---:|---:|
-| Append one 43-byte log payload | 15.9 ns/op | 8.5 ns/op | 1.91× |
-| Read up to 111 payload bytes into a 112-byte output buffer | 48.7 ns/op | 8.3 ns/op | 5.91× |
-| Read full 4 KiB ring | 1,655.8 ns/op | 58.0 ns/op | 29.52× |
+| Append 1 byte | 2.2 ns/op | 2.8 ns/op | 0.79× |
+| Append 8 bytes | 4.1 ns/op | 4.8 ns/op | 0.84× |
+| Append one 43-byte log payload | 16.3 ns/op | 8.2 ns/op | 1.95× |
+| Read up to 111 payload bytes into a 112-byte output buffer | 47.6 ns/op | 8.2 ns/op | 5.82× |
+| Read full 4 KiB ring | 1,648.8 ns/op | 51.0 ns/op | 32.52× |
 
 The measured ranges across those seven runs were:
 
 | Operation | Previous range | Optimized range |
 |---|---:|---:|
-| Append | 15.4–20.2 ns/op | 8.0–10.0 ns/op |
-| Read up to 111 bytes (112-byte buffer) | 47.7–56.4 ns/op | 8.0–9.1 ns/op |
-| Read 4 KiB | 1,593.3–3,159.6 ns/op | 51.5–85.9 ns/op |
+| Append 1 byte | 2.1–2.7 ns/op | 2.6–3.1 ns/op |
+| Append 8 bytes | 3.9–4.3 ns/op | 4.7–5.2 ns/op |
+| Append 43 bytes | 15.5–17.1 ns/op | 7.9–9.4 ns/op |
+| Read up to 111 bytes (112-byte buffer) | 46.6–54.5 ns/op | 8.0–9.0 ns/op |
+| Read 4 KiB | 1,595.3–1,867.4 ns/op | 49.6–61.2 ns/op |
 
-These are host microbenchmark results for the log ring only. They are not boot-time, whole-kernel, physical-PC, storage-throughput, or application-startup measurements. Absolute timings vary with CPU, power state, virtualization, compiler, and system load. The dedicated GitHub Actions workflow also runs the benchmark and prints its measurements; CI timing is informational and does not fail on a noisy speedup threshold.
+The short-record results are a measured tradeoff: the ring's added dispatch/head bookkeeping makes isolated 1-byte and 8-byte appends modestly slower. The serial hexadecimal logger was therefore changed to format each value into one 18-byte record instead of taking the log lock once per digit. Long normal log records and reads are substantially faster in this microbenchmark.
+
+These are host microbenchmark results for the log ring only. They are not boot-time, whole-kernel, physical-PC, storage-throughput, or application-startup measurements. Absolute timings vary with CPU, power state, virtualization, compiler, and system load. The dedicated GitHub Actions workflow also runs five benchmark samples and prints their measurements; CI timing is informational and does not fail on a noisy speedup threshold.
 
 ## Optimization policy by subsystem
 

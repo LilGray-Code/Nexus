@@ -227,22 +227,24 @@ bool storage_probe(void) {
             serial_write("\r\n");
         }
 
-        if ((device->subclass == 0x06 &&
-             device->programming_interface == 0x01) ||
-            (device->subclass == 0x08 &&
-             device->programming_interface == 0x02)) {
-            if (!nexus_driver_manager_probe_pci_device(device)) {
-                serial_write("STORAGE: no matching driver bound at ");
-                serial_write_hex(device->bus);
-                serial_write(":");
-                serial_write_hex(device->slot);
-                serial_write(".");
-                serial_write_hex(device->function);
-                serial_write("\r\n");
-            }
-        }
-
     }
+
+    /*
+     * Publish the entire retained PCI inventory, not just storage-class
+     * functions. Unsupported and unbound hardware remains visible to PnP
+     * diagnostics, and newly registered drivers can retry it later.
+     */
+    const size_t newly_discovered =
+        nexus_driver_manager_discover_pci_devices();
+    serial_write("PNP: PCI devices inventoried=");
+    serial_write_hex(nexus_driver_manager_device_count());
+    serial_write(" new=");
+    serial_write_hex(newly_discovered);
+    serial_write(" binding records=");
+    serial_write_hex(nexus_driver_manager_binding_count());
+    serial_write(" failures=");
+    serial_write_hex(nexus_driver_manager_failure_count());
+    serial_write("\r\n");
 
     serial_write("STORAGE: controllers discovered: ");
     serial_write_hex(controller_count);

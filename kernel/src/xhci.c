@@ -2055,7 +2055,23 @@ void xhci_poll(void) {
     if (now >= xhci->last_root_scan_tick &&
         now - xhci->last_root_scan_tick >= 20U) {
         xhci->last_root_scan_tick = now;
-        xhci_rescan_root_ports_internal(xhci);
+
+        /* A kernel may return from firmware/platform sleep while the xHCI
+         * controller has lost power or reset its operational state. Monitor
+         * RUN/HALTED/CNR after wake and rebuild DMA state before queueing any
+         * new endpoint transfers. If MMIO is temporarily unavailable, resume
+         * fails closed and the next watchdog interval retries. */
+        uint32_t command = 0U;
+        uint32_t status = 0U;
+        if (!xhci_read32(xhci, (uint64_t)xhci->cap_length, &command) ||
+            !xhci_read32(xhci, (uint64_t)xhci->cap_length + 4U, &status) ||
+            nexus_xhci_resume_decide(command, status) !=
+                NEXUS_XHCI_RESUME_RETAINED) {
+            (void)xhci_resume();
+            if (!xhci->initialized) return;
+        } else {
+            xhci_rescan_root_ports_internal(xhci);
+        }
     }
 
     struct xhci_trb event;

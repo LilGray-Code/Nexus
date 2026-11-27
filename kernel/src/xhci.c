@@ -1739,6 +1739,10 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
         xhci_notify_gamepad_disconnected(device);
         xhci_free_hid_device_dma(xhci, device);
     }
+    for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
+        struct xhci_hid_device *hub = &xhci->hubs[i];
+        if (hub->active) xhci_free_hid_device_dma(xhci, hub);
+    }
 }
 
 static void xhci_release_controller_dma(struct xhci_controller *xhci) {

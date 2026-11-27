@@ -143,3 +143,121 @@ bool nexus_bt_hci_parse_command_status(
     };
     return true;
 }
+
+void nexus_bt_hci_host_init(struct nexus_bt_hci_host *host) {
+    if (host == NULL) return;
+    *host = (struct nexus_bt_hci_host){
+        .state = NEXUS_BT_HCI_HOST_RESET_PENDING,
+        .command_credits = 1U
+    };
+}
+
+bool nexus_bt_hci_host_next_command(struct nexus_bt_hci_host *host,
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    if (host == NULL || packet == NULL || packet_length == NULL ||
+        host->command_credits == 0U ||
+        host->outstanding_opcode != 0U) return false;
+
+    uint16_t opcode = 0U;
+    switch (host->state) {
+        case NEXUS_BT_HCI_HOST_RESET_PENDING:
+            opcode = NEXUS_BT_HCI_OPCODE_RESET;
+            host->state = NEXUS_BT_HCI_HOST_RESET_IN_FLIGHT;
+            break;
+        case NEXUS_BT_HCI_HOST_VERSION_PENDING:
+            opcode = NEXUS_BT_HCI_OPCODE_READ_LOCAL_VERSION;
+            host->state = NEXUS_BT_HCI_HOST_VERSION_IN_FLIGHT;
+            break;
+        case NEXUS_BT_HCI_HOST_ADDRESS_PENDING:
+            opcode = NEXUS_BT_HCI_OPCODE_READ_BD_ADDR;
+            host->state = NEXUS_BT_HCI_HOST_ADDRESS_IN_FLIGHT;
+            break;
+        default:
+            return false;
+    }
+
+    if (!nexus_bt_hci_build_command(opcode, NULL, 0U,
+            packet, capacity, packet_length)) {
+        host->state = NEXUS_BT_HCI_HOST_FAILED;
+        return false;
+    }
+    --host->command_credits;
+    host->outstanding_opcode = opcode;
+    return true;
+}
+
+bool nexus_bt_hci_host_handle_event(
+    struct nexus_bt_hci_host *host,
+    const struct nexus_bt_hci_event_view *event) {
+    if (host == NULL || event == NULL ||
+        host->state == NEXUS_BT_HCI_HOST_STOPPED ||
+        host->state == NEXUS_BT_HCI_HOST_FAILED ||
+        host->state == NEXUS_BT_HCI_HOST_READY) return false;
+
+    struct nexus_bt_hci_command_result result = {0};
+    if (!nexus_bt_hci_parse_command_complete(event, &result)) {
+        if (event->event_code == NEXUS_BT_HCI_EVENT_COMMAND_STATUS) {
+            if (!nexus_bt_hci_parse_command_status(event, &result))
+                return false;
+            /* Bring-up commands are synchronous; Command Status without the
+             * matching Command Complete is not enough to advance the state. */
+            if (result.opcode != host->outstanding_opcode ||
+                result.status != 0U) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                host->outstanding_opcode = 0U;
+                return false;
+            }
+            host->command_credits = result.command_packets_allowed;
+            return true;
+        }
+        return false;
+    }
+
+    if (result.opcode != host->outstanding_opcode) return false;
+    host->outstanding_opcode = 0U;
+    host->command_credits = result.command_packets_allowed;
+    if (result.status != 0U) {
+        host->state = NEXUS_BT_HCI_HOST_FAILED;
+        return false;
+    }
+
+    switch (host->state) {
+        case NEXUS_BT_HCI_HOST_RESET_IN_FLIGHT:
+            if (result.opcode != NEXUS_BT_HCI_OPCODE_RESET) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
+            host->state = NEXUS_BT_HCI_HOST_VERSION_PENDING;
+            return true;
+
+        case NEXUS_BT_HCI_HOST_VERSION_IN_FLIGHT:
+            if (result.opcode != NEXUS_BT_HCI_OPCODE_READ_LOCAL_VERSION ||
+                result.return_parameters == NULL ||
+                result.return_parameter_length < 8U) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
+            host->hci_version = result.return_parameters[0];
+            host->lmp_version = result.return_parameters[3];
+            host->manufacturer = get_le16(result.return_parameters + 4U);
+            host->subversion = get_le16(result.return_parameters + 6U);
+            host->state = NEXUS_BT_HCI_HOST_ADDRESS_PENDING;
+            return true;
+
+        case NEXUS_BT_HCI_HOST_ADDRESS_IN_FLIGHT:
+            if (result.opcode != NEXUS_BT_HCI_OPCODE_READ_BD_ADDR ||
+                result.return_parameters == NULL ||
+                result.return_parameter_length < 6U) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
+            for (size_t i = 0U; i < 6U; ++i)
+                host->controller_address[i] = result.return_parameters[i];
+            host->state = NEXUS_BT_HCI_HOST_READY;
+            return true;
+
+        default:
+            host->state = NEXUS_BT_HCI_HOST_FAILED;
+            return false;
+    }
+}

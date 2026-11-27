@@ -439,6 +439,16 @@ jobs:
             --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
             --firmware-vars /tmp/nexus-input-installer-vars.fd
 
+      - name: Test USB keyboard and mouse through a USB 2 hub (xHCI)
+        run: |
+          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-input-hub-installer-vars.fd
+          python3 build/test-qemu-input.py \
+            --mode installer \
+            --topology hub \
+            --iso release/NexusOS-OriginalKernel-x86_64.iso \
+            --firmware-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --firmware-vars /tmp/nexus-input-hub-installer-vars.fd
+
       - name: Verify kernel ELF and ISO
         run: |
           file build/nexus-kernel.elf release/NexusOS-OriginalKernel-x86_64.iso

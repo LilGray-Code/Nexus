@@ -761,13 +761,18 @@ static bool xhci_setup_device_context(struct xhci_controller *xhci,
     /*
      * xHCI slot context routing for devices below hubs:
      *   DW0[19:0] route string, DW0[23:20] speed, DW0[31:27] context entries.
-     *   DW1[7:0] parent hub slot, [15:8] parent port, [23:16] root port.
+     *   DW1[23:16] root hub port; DW2 carries TT Hub Slot ID/Port only
+     *   when a low/full-speed device is behind a high-speed USB 2 hub.
      */
     slot[0] = (path->route_string & 0x000FFFFFU) |
               ((uint32_t)speed << 20) | (1U << 27);
-    slot[1] = (uint32_t)path->parent_hub_slot |
-              ((uint32_t)path->parent_port << 8) |
-              ((uint32_t)path->root_port << 16);
+    slot[1] = (uint32_t)path->root_port << 16;
+    if (path->parent_hub_uses_tt) {
+        /* xHCI TT Hub Slot ID and TT Port Number live in Slot Context DW2. */
+        volatile uint32_t *slot_dw2 = slot + 2U;
+        *slot_dw2 = (uint32_t)path->parent_hub_slot |
+                    ((uint32_t)path->parent_port << 8);
+    }
 
     ep0[1] = (3U << 1) | (4U << 3) | ((uint32_t)ep0_packet << 16);
     ep0[2] = (uint32_t)(device->ep0_ring.physical | 1U);

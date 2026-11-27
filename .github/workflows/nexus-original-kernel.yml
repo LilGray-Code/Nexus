@@ -170,6 +170,14 @@ jobs:
             -o /tmp/nexus-usb-hub-requests-test
           /tmp/nexus-usb-hub-requests-test
 
+      - name: Test BLE HID GATT discovery and ATT requests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/bluetooth_gatt.c \
+            kernel/tests/bluetooth_gatt_test.c \
+            -o /tmp/nexus-bluetooth-gatt-test
+          /tmp/nexus-bluetooth-gatt-test
+
       - name: Test USB Bluetooth HCI endpoint discovery
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

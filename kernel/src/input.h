@@ -29,6 +29,8 @@ bool input_ps2_keyboard_ready(void);
 bool input_ps2_mouse_ready(void);
 void input_keyboard_interrupt(void);
 void input_mouse_interrupt(void);
+/* Bounded PS/2 controller drain used as a fallback when IRQ routing fails. */
+size_t input_poll_ps2(void);
 /* Called by the boot CPU while draining the single-producer input queue. */
 bool input_pop_event(struct nexus_input_event *event);
 /* Number of input events dropped because the shared ring was full. */
@@ -47,6 +49,8 @@ bool input_pop_gamepad_event(struct nexus_usb_gamepad_event *event);
 void input_test_keyboard_scancode(uint8_t scancode);
 void input_test_mouse_device_id(uint8_t id);
 void input_test_mouse_byte(uint8_t value);
+void input_test_ps2_ready(bool keyboard, bool mouse);
+void input_test_ps2_byte(uint8_t status, uint8_t value);
 #endif
 
 #endif

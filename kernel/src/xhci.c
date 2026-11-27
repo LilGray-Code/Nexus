@@ -1632,7 +1632,7 @@ static void xhci_release_controller_dma(struct xhci_controller *xhci) {
 
 static bool xhci_reinitialize_after_power_loss(struct xhci_controller *xhci) {
     if (xhci == NULL || xhci->pci_device == NULL ||
-        xhci->hcsparams1 == 0U || xhci->hccparams1 == 0U) return false;
+        xhci->hcsparams1 == 0U) return false;
 
     /* Stop DMA before releasing any controller/device memory. If halt cannot
      * be confirmed, deliberately retain the DMA buffers to avoid use-after-free

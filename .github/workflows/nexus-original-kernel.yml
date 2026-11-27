@@ -842,9 +842,12 @@ jobs:
           command({"execute": "qmp_capabilities"})
 
           def key(name):
+              # Keep PS/2 make codes present long enough for the kernel's
+              # bounded polling fallback, then leave time for the break code
+              # to drain before sending the next key.
               command({"execute": "human-monitor-command",
-                       "arguments": {"command-line": f"sendkey {name} 90"}})
-              time.sleep(0.25)
+                       "arguments": {"command-line": f"sendkey {name} 250"}})
+              time.sleep(0.5)
 
           # The installer opens the drive list on first entry. Close that
           # list before choosing the firmware layout or opening confirmation.
@@ -1214,9 +1217,12 @@ jobs:
           command({"execute": "qmp_capabilities"})
 
           def key(name):
+              # Keep PS/2 make codes present long enough for the kernel's
+              # bounded polling fallback, then leave time for the break code
+              # to drain before sending the next key.
               command({"execute": "human-monitor-command",
-                       "arguments": {"command-line": f"sendkey {name} 90"}})
-              time.sleep(0.25)
+                       "arguments": {"command-line": f"sendkey {name} 250"}})
+              time.sleep(0.5)
 
           key("f1")
           key("n")

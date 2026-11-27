@@ -355,6 +355,8 @@ static bool decode_database(const uint8_t *input, size_t length) {
         user->role = (enum nexus_account_role)input[offset++];
         if (input[offset] > 1U) return false;
         user->active = input[offset++] != 0U;
+        if (input[offset + NEXUS_ACCOUNT_NAME_MAX - 1U] != 0U)
+            return false;
         copy_bytes((uint8_t *)user->username, input + offset,
                    NEXUS_ACCOUNT_NAME_MAX);
         offset += NEXUS_ACCOUNT_NAME_MAX;
@@ -381,7 +383,7 @@ static bool decode_database(const uint8_t *input, size_t length) {
         if (user->uid == 0U ||
             (user->role != NEXUS_ACCOUNT_ROLE_STANDARD &&
              user->role != NEXUS_ACCOUNT_ROLE_ADMIN) ||
-            !user->active || !valid_username(user->username) ||
+            !valid_username(user->username) ||
             user->iterations < NEXUS_ACCOUNT_MIN_PBKDF2_ITERATIONS ||
             user->iterations > ACCOUNT_DB_MAX_ITERATIONS ||
             !profile_valid(&user->profile) || user->uid >= next_uid)
@@ -400,7 +402,8 @@ static bool decode_database(const uint8_t *input, size_t length) {
 
     bool has_admin = false;
     for (size_t i = 0U; i < count; ++i)
-        if (candidate.users[i].role == NEXUS_ACCOUNT_ROLE_ADMIN)
+        if (candidate.users[i].active &&
+            candidate.users[i].role == NEXUS_ACCOUNT_ROLE_ADMIN)
             has_admin = true;
     if (count != 0U && !has_admin) return false;
 
@@ -565,6 +568,7 @@ void nexus_accounts_init(void) {
         .random = system_random,
         .ticks = system_ticks,
         .ticks_per_second = 100U,
+        .persistent_writable = nxfs_is_writable(),
         .context = NULL
     };
     (void)nexus_accounts_init_with_backend(&backend);
@@ -597,9 +601,10 @@ bool nexus_accounts_init_with_backend(
         return false;
     }
     if (loaded == NEXUS_ACCOUNT_LOAD_MISSING) {
-        accounts_status = NEXUS_ACCOUNTS_SETUP_REQUIRED;
+        accounts_status = active_backend.persistent_writable
+            ? NEXUS_ACCOUNTS_SETUP_REQUIRED : NEXUS_ACCOUNTS_READ_ONLY;
         secure_zero(data, sizeof(data));
-        return true;
+        return accounts_status == NEXUS_ACCOUNTS_SETUP_REQUIRED;
     }
 
     const bool decoded = decode_database(data, length);
@@ -609,8 +614,8 @@ bool nexus_accounts_init_with_backend(
         accounts_status = NEXUS_ACCOUNTS_CORRUPT;
         return false;
     }
-    accounts_status = active_backend.store == NULL
-        ? NEXUS_ACCOUNTS_READ_ONLY : NEXUS_ACCOUNTS_READY;
+    accounts_status = active_backend.persistent_writable
+        ? NEXUS_ACCOUNTS_READY : NEXUS_ACCOUNTS_READ_ONLY;
     return true;
 }
 
@@ -808,7 +813,8 @@ bool nexus_accounts_login(const char *username, const char *password) {
             lockout_until[index] - now);
         return false;
     }
-    if (!user->active || !verify_record_password(user, password)) {
+    const bool password_matches = verify_record_password(user, password);
+    if (!user->active || !password_matches) {
         if (login_failures[index] < UINT8_MAX) ++login_failures[index];
         if (login_failures[index] >= NEXUS_ACCOUNT_LOCKOUT_FAILURES) {
             const uint64_t duration =

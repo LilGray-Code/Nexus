@@ -550,7 +550,10 @@ static bool desktop_settings_import(void) {
     }
     desktop_settings = imported;
     desktop_settings_apply();
-    settings_status_set("Imported validated appearance, input and sound preferences.");
+    desktop_preferences_save();
+    settings_status_set(desktop_preferences_persistent
+        ? "Imported validated preferences and saved them to Nexus Data."
+        : "Imported and applied validated preferences; persistent storage is unavailable.");
     return true;
 }
 

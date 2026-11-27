@@ -63,15 +63,6 @@ static void append_hex(char *output, size_t capacity, size_t *length,
     }
 }
 
-static const char *bus_name(enum nexus_driver_bus bus) {
-    switch (bus) {
-        case NEXUS_DRIVER_BUS_PCI: return "PCI";
-        case NEXUS_DRIVER_BUS_PLATFORM: return "platform";
-        case NEXUS_DRIVER_BUS_USB: return "USB";
-        default: return "unknown";
-    }
-}
-
 static bool command_cpu(char *out, size_t cap, size_t *len) {
     const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
     if (cpu == NULL || !cpu->cpuid_available) {
@@ -251,8 +242,17 @@ bool nexus_diagnostics_command(const char *command,
     size_t length = 0U;
 
     if (text_equal(command, "cpu")) return command_cpu(output, capacity, &length);
-    if (text_equal(command, "pci") || text_equal(command, "hardware"))
+    if (text_equal(command, "pci"))
         return command_pci(output, capacity, &length);
+    if (text_equal(command, "hardware")) {
+        (void)command_cpu(output, capacity, &length);
+        append_text(output, capacity, &length, "; ");
+        (void)command_pci(output, capacity, &length);
+        append_text(output, capacity, &length, "; driver bindings ");
+        append_u64(output, capacity, &length,
+                   nexus_driver_manager_binding_count());
+        return true;
+    }
     if (text_equal(command, "drivers")) return command_drivers(output, capacity, &length);
     if (text_equal(command, "netdiag")) return command_net(output, capacity, &length);
     if (text_equal(command, "storage")) return command_storage(output, capacity, &length);

@@ -45,6 +45,30 @@ struct nexus_usb_hid_generic_layout {
     bool wheel_relative;
 };
 
+#define NEXUS_USB_HID_GENERIC_MAX_REPORTS 8U
+
+struct nexus_usb_hid_generic_multi_layout {
+    uint8_t report_count;
+    uint8_t max_report_bytes;
+    struct nexus_usb_hid_generic_layout reports[
+        NEXUS_USB_HID_GENERIC_MAX_REPORTS];
+};
+
+/* Parse multiple independent keyboard or mouse input report IDs. All reports
+ * in one interface must be of the same device class. */
+bool usb_hid_generic_parse_descriptor_multi(
+    const uint8_t *descriptor, size_t descriptor_length,
+    struct nexus_usb_hid_generic_multi_layout *layout);
+
+bool usb_hid_generic_decode_keyboard_multi(
+    const struct nexus_usb_hid_generic_multi_layout *layout,
+    const uint8_t *report, size_t report_length, uint8_t boot_report[8]);
+
+bool usb_hid_generic_decode_mouse_multi(
+    const struct nexus_usb_hid_generic_multi_layout *layout,
+    const uint8_t *report, size_t report_length,
+    struct nexus_usb_mouse_event *event);
+
 /* Parse a bounded HID report descriptor containing one keyboard or mouse
  * input report. Multiple report IDs in one interface are deliberately
  * rejected; callers may still use the boot-protocol interface when present. */

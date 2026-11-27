@@ -1835,6 +1835,8 @@ jobs:
           path: |
             release/NexusOS-OriginalKernel-x86_64.iso
             release/SHA256SUMS.txt
+            release/BUILD-INFO.txt
+            release/RELEASE-MANIFEST.TXT
             build/nexus-kernel.elf
           if-no-files-found: error
           retention-days: 30

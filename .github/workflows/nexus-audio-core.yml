@@ -13,6 +13,7 @@ on:
       - "kernel/src/settings.h"
       - "kernel/src/desktop.c"
       - "kernel/src/main.c"
+      - "kernel/src/usermode.c"
       - "kernel/tests/audio_test.c"
       - "kernel/tests/settings_test.c"
       - "kernel/Makefile"

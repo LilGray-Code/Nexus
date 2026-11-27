@@ -1201,6 +1201,16 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 usb_hid_keyboard_state_reset(&xhci->keyboards[i].keyboard_state);
                 serial_write("NEXUS USB HID KEYBOARD READY slot=");
                 serial_write_hex(device->slot_id);
+                serial_write(" vendor/product=");
+                serial_write_hex(device->vendor_id);
+                serial_write("/");
+                serial_write_hex(device->product_id);
+                serial_write(" root-port=");
+                serial_write_hex(device->usb_path.root_port);
+                serial_write(" route=");
+                serial_write_hex(device->usb_path.route_string);
+                serial_write(" depth=");
+                serial_write_hex(device->usb_path.depth);
                 serial_write("\r\n");
                 return true;
             }
@@ -1211,6 +1221,16 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 xhci->mice[i] = *device;
                 serial_write("NEXUS USB HID MOUSE READY slot=");
                 serial_write_hex(device->slot_id);
+                serial_write(" vendor/product=");
+                serial_write_hex(device->vendor_id);
+                serial_write("/");
+                serial_write_hex(device->product_id);
+                serial_write(" root-port=");
+                serial_write_hex(device->usb_path.root_port);
+                serial_write(" route=");
+                serial_write_hex(device->usb_path.route_string);
+                serial_write(" depth=");
+                serial_write_hex(device->usb_path.depth);
                 serial_write("\r\n");
                 return true;
             }
@@ -1225,6 +1245,12 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 serial_write_hex(device->vendor_id);
                 serial_write("/");
                 serial_write_hex(device->product_id);
+                serial_write(" root-port=");
+                serial_write_hex(device->usb_path.root_port);
+                serial_write(" route=");
+                serial_write_hex(device->usb_path.route_string);
+                serial_write(" depth=");
+                serial_write_hex(device->usb_path.depth);
                 serial_write("\r\n");
                 return true;
             }
@@ -1237,6 +1263,16 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 serial_write_hex(device->slot_id);
                 serial_write(" ports=");
                 serial_write_hex(device->hub_descriptor.port_count);
+                serial_write(" vendor/product=");
+                serial_write_hex(device->vendor_id);
+                serial_write("/");
+                serial_write_hex(device->product_id);
+                serial_write(" root-port=");
+                serial_write_hex(device->usb_path.root_port);
+                serial_write(" route=");
+                serial_write_hex(device->usb_path.route_string);
+                serial_write(" depth=");
+                serial_write_hex(device->usb_path.depth);
                 serial_write("\r\n");
                 return true;
             }

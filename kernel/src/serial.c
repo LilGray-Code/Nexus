@@ -1,4 +1,5 @@
 #include "serial.h"
+#include "log_buffer.h"
 
 #include <stdint.h>
 
@@ -29,22 +30,35 @@ void serial_init(void) {
     outb(0x3FB, 0x03);
     outb(0x3FA, 0xC7);
     outb(0x3FC, 0x0B);
+    nexus_log_buffer_init();
 }
 
 void serial_write(const char *text) {
-    if (text == 0) return;
-    while (*text) serial_putc(*text++);
+    if (text == NULL) return;
+    size_t length = 0U;
+    while (text[length] != '\\0') ++length;
+    serial_write_n(text, length);
 }
 
 void serial_write_n(const char *text, size_t length) {
-    if (text == 0) return;
-    for (size_t i = 0; i < length; ++i) serial_putc(text[i]);
+    if (text == NULL || length == 0U) return;
+    nexus_log_buffer_append(text, length);
+    for (size_t i = 0U; i < length; ++i) serial_putc(text[i]);
 }
 
 void serial_write_hex(uint64_t value) {
     static const char digits[] = "0123456789ABCDEF";
     serial_write("0x");
     for (int shift = 60; shift >= 0; shift -= 4) {
-        serial_putc(digits[(value >> shift) & 0x0F]);
+        const char digit = digits[(value >> (unsigned int)shift) & 0x0FU];
+        serial_write_n(&digit, 1U);
     }
+}
+
+size_t serial_log_read_recent(char *output, size_t capacity) {
+    return nexus_log_buffer_read_recent(output, capacity);
+}
+
+uint64_t serial_log_dropped(void) {
+    return nexus_log_buffer_dropped();
 }

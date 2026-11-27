@@ -309,8 +309,9 @@ def verify(args: argparse.Namespace) -> None:
     config = (ROOT / "boot/limine.conf").read_text(encoding="utf-8")
     if not iso.is_file() or iso.stat().st_size == 0:
         raise RuntimeError(f"ISO is missing or empty: {iso}")
-    raw = iso.read_bytes()[:17 * 2048]
-    if len(raw) < 17 * 2048 or len(raw) % 2048 != 0:
+    with iso.open("rb") as stream:
+        raw = stream.read(17 * 2048)
+    if len(raw) < 17 * 2048 or iso.stat().st_size % 2048 != 0:
         raise RuntimeError("ISO size is not a whole number of 2048-byte sectors")
     pvd = raw[16 * 2048:17 * 2048]
     if pvd[:7] != b"\x01CD001\x01":
@@ -340,7 +341,6 @@ def verify(args: argparse.Namespace) -> None:
             boot_report,
         ):
             raise RuntimeError(f"ISO El Torito catalog has no bootable {platform} entry\n{boot_report}")
-    run(["readelf", "-h", str(kernel)])
     elf_header = run(["readelf", "-h", str(kernel)], capture=True)
     if "ELF64" not in elf_header or "Advanced Micro Devices X86-64" not in elf_header:
         raise RuntimeError("kernel image is not a 64-bit x86-64 ELF executable")

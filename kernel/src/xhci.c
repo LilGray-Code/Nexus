@@ -1275,28 +1275,30 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     }
 
     bool has_usb_hub_interface = false;
+    bool hub_multi_tt = false;
     for (size_t descriptor_offset = 0U;
-         descriptor_offset + 9U <= total_length;) {
+         descriptor_offset + 2U <= total_length;) {
         const uint8_t descriptor_length = config_buffer[descriptor_offset];
         const uint8_t descriptor_type =
             config_buffer[descriptor_offset + 1U];
         if (descriptor_length < 2U ||
-            descriptor_offset + descriptor_length > total_length) break;
+            descriptor_offset + descriptor_length > total_length) {
+            (void)memory_free_page(config_buffer_physical);
+            goto failed;
+        }
         if (descriptor_type == 4U && descriptor_length >= 9U &&
-            config_buffer[descriptor_offset + 5U] == 9U)
+            config_buffer[descriptor_offset + 5U] == 9U) {
             has_usb_hub_interface = true;
+            hub_multi_tt = config_buffer[descriptor_offset + 7U] == 2U;
+        }
         descriptor_offset += descriptor_length;
     }
     if (has_usb_hub_interface) {
-        serial_write("xHCI: USB hub detected at root port ");
-        serial_write_hex(path->root_port);
-        serial_write(" VID/PID=");
-        serial_write_hex(device->vendor_id);
-        serial_write("/");
-        serial_write_hex(device->product_id);
-        serial_write("; hub/child-port enumeration is not yet supported; connect keyboard/mouse directly to a controller port\r\n");
+        const bool initialized = xhci_initialize_hub(xhci, device, speed,
+            config_buffer[5], hub_multi_tt);
         (void)memory_free_page(config_buffer_physical);
-        goto failed;
+        if (!initialized) goto failed;
+        return true;
     }
 
     uint8_t interface_number = 0U;

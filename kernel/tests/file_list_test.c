@@ -151,7 +151,7 @@ int main(void) {
         name[5] = (char)('0' + (i / 100U));
         name[6] = (char)('0' + ((i / 10U) % 10U));
         name[7] = (char)('0' + (i % 10U));
-        name[8] = '\\0';
+        name[8] = '\0';
         set_item(&maximum[NEXUS_FILE_LIST_MAX_ENTRIES - 1U - i],
                  name, (i % 7U) == 0U, (uint32_t)i);
     }

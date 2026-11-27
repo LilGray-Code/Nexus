@@ -5806,8 +5806,8 @@ static const char *terminal_command_argument(const char *input,
                                                const char *command) {
     if (input == NULL || command == NULL) return NULL;
     size_t i = 0U;
-    while (command[i] != '\\0' && input[i] == command[i]) ++i;
-    if (command[i] != '\\0' || input[i] != ' ' || input[i + 1U] == '\\0')
+    while (command[i] != '\0' && input[i] == command[i]) ++i;
+    if (command[i] != '\0' || input[i] != ' ' || input[i + 1U] == '\0')
         return NULL;
     return input + i + 1U;
 }
@@ -5815,11 +5815,11 @@ static const char *terminal_command_argument(const char *input,
 static void terminal_set_message(const char *message) {
     size_t i = 0U;
     if (message == NULL) message = "";
-    while (message[i] != '\\0' && i < sizeof(terminal_output) - 1U) {
+    while (message[i] != '\0' && i < sizeof(terminal_output) - 1U) {
         terminal_output[i] = message[i];
         ++i;
     }
-    terminal_output[i] = '\\0';
+    terminal_output[i] = '\0';
 }
 
 static void terminal_execute(void) {

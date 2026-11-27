@@ -24,7 +24,7 @@ This is an implementation ledger, not a hardware compatibility claim. A parser u
 - Root-port count is not the same as the number of input-device slots. Keyboard, mouse, and gamepad storage remains explicitly bounded.
 - USB 2 hub child enumeration is integrated into xHCI using class GET_STATUS polling. SuperSpeed hub descriptors/port status and route handling exist, but full SuperSpeed companion-topology and endpoint-companion coverage still requires validation. Do not claim every hub/USB3 topology works.
 - Composite HID now supports a primary endpoint plus one secondary keyboard/mouse endpoint on a single USB slot. It does not yet generalize to arbitrary numbers of endpoints or arbitrary composite collections.
-- Multi-report-ID support is for bounded generic keyboard/mouse reports. Unsupported report layouts must fail closed and must not be misclassified as boot-protocol devices.
+- Multi-report-ID support is for bounded generic keyboard/mouse reports. Generic relative mouse X/Y movement preserves signed 16-bit values to the desktop; wheel remains an 8-bit signed step value. Unsupported report layouts must fail closed and must not be misclassified as boot-protocol devices.
 - HCI framing and link-event decoding do not establish Bluetooth HID support. A controller is not "connected" to the input stack until a complete authenticated HIDP/HOGP path delivers reports.
 - UHCI/OHCI/EHCI PCI recognition is inventory only; it must not be described as a driver.
 - The resume watchdog refuses to free DMA buffers if controller halt cannot be confirmed. After confirmed halt it rebuilds controller resources; actual ACPI wake wiring and hardware power-loss tests remain.

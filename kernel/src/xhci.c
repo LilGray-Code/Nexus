@@ -119,7 +119,7 @@ struct xhci_hid_device {
     uint16_t product_id;
     struct nexus_usb_gamepad_layout gamepad_layout;
     struct nexus_usb_keyboard_state keyboard_state;
-    struct nexus_usb_hid_generic_layout generic_layout;
+    struct nexus_usb_hid_generic_multi_layout generic_multi_layout;
     bool generic_report_protocol;
     uint64_t device_context_physical;
     uint64_t input_context_physical;
@@ -1190,16 +1190,15 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
                 (void *)(uintptr_t)device->report_buffer,
                 report_descriptor_length)) goto failed;
 
-        if (usb_hid_generic_parse_descriptor(
+        if (usb_hid_generic_parse_descriptor_multi(
                 (const uint8_t *)(uintptr_t)device->report_buffer,
-                report_descriptor_length, &device->generic_layout)) {
+                report_descriptor_length, &device->generic_multi_layout)) {
             device->generic_report_protocol = true;
-            kind = device->generic_layout.kind ==
+            kind = device->generic_multi_layout.reports[0].kind ==
                     NEXUS_USB_HID_GENERIC_KEYBOARD
                 ? XHCI_HID_KEYBOARD : XHCI_HID_MOUSE;
-            const uint16_t required = (uint16_t)device->generic_layout.input_bytes +
-                (device->generic_layout.has_report_id ? 1U : 0U);
-            if (required > max_packet) goto failed;
+            if (device->generic_multi_layout.max_report_bytes > max_packet)
+                goto failed;
         } else if (!usb_hid_gamepad_parse_descriptor(
                 (const uint8_t *)(uintptr_t)device->report_buffer,
                 report_descriptor_length, &device->gamepad_layout)) {
@@ -1564,8 +1563,8 @@ void xhci_poll(void) {
                 if (device->kind == XHCI_HID_KEYBOARD) {
                     if (device->generic_report_protocol) {
                         uint8_t boot_report[8];
-                        if (usb_hid_generic_decode_keyboard(
-                                &device->generic_layout, report, received,
+                        if (usb_hid_generic_decode_keyboard_multi(
+                                &device->generic_multi_layout, report, received,
                                 boot_report)) {
                             input_usb_keyboard_report_state(
                                 &device->keyboard_state, boot_report);
@@ -1577,8 +1576,8 @@ void xhci_poll(void) {
                 } else if (device->kind == XHCI_HID_MOUSE) {
                     if (device->generic_report_protocol) {
                         struct nexus_usb_mouse_event decoded;
-                        if (usb_hid_generic_decode_mouse(
-                                &device->generic_layout, report, received,
+                        if (usb_hid_generic_decode_mouse_multi(
+                                &device->generic_multi_layout, report, received,
                                 &decoded)) {
                             const uint8_t normalized[4] = {
                                 decoded.buttons,

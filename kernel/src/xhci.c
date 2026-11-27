@@ -825,8 +825,14 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
                                        protocol == 1U;
             const bool boot_mouse = hid_class && subclass == 1U &&
                                     protocol == 2U;
-            const bool generic_hid = hid_class && subclass == 0U &&
-                                     protocol == 0U;
+            /*
+             * HID class interfaces that do not advertise a boot keyboard or
+             * boot mouse protocol may still expose standard Generic Desktop
+             * Keyboard/Mouse report collections. Fetch and parse their report
+             * descriptor instead of incorrectly assuming they are gamepads.
+             */
+            const bool generic_hid = hid_class &&
+                !boot_keyboard && !boot_mouse;
             in_hid_interface = boot_keyboard || boot_mouse || generic_hid;
             if (in_hid_interface) {
                 *interface_number = configuration[offset + 2U];

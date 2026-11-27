@@ -7,6 +7,10 @@ on:
     paths:
       - "kernel/src/driver_manager.*"
       - "kernel/src/storage.c"
+      - "kernel/src/ac97.*"
+      - "kernel/src/xhci.*"
+      - "kernel/src/virtio_gpu.*"
+      - "kernel/src/main.c"
       - "kernel/src/service_manager.*"
       - "docs/architecture/PLATFORM-SERVICES-AND-DRIVERS.md"
       - "docs/hardware/**"
@@ -44,8 +48,9 @@ jobs:
       - name: Compile the production driver registry and storage integration
         run: |
           flags="-std=gnu11 -Os -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -Ikernel/include -Ikernel/src -Iinstaller"
-          cc $flags -c kernel/src/driver_manager.c -o /tmp/nexus-driver-manager.o
-          cc $flags -c kernel/src/storage.c -o /tmp/nexus-storage-driver-dispatch.o
+          for src in driver_manager storage ac97 xhci virtio_gpu main; do
+            cc $flags -c "kernel/src/$src.c" -o "/tmp/nexus-$src.o"
+          done
       - name: Test checksummed boot-time system pack
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

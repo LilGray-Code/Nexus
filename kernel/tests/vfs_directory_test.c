@@ -385,6 +385,12 @@ int main(void) {
     assert(vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
     assert(vfs_root_entry_count() == 2U);
     read_current_file("COPY.TXT", payload);
+    assert(vfs_copy_file_absolute("/DOCUMENTS/PROJECTS/NOTE.TXT",
+                                  "/DOCUMENTS/PROJECTS/ABSOLUTE.TXT"));
+    read_current_file("ABSOLUTE.TXT", payload);
+    assert(vfs_move_file_absolute("/DOCUMENTS/PROJECTS/ABSOLUTE.TXT",
+                                  "/DOCUMENTS/PROJECTS/RENAMED.TXT"));
+    read_current_file("RENAMED.TXT", payload);
     assert(!vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
     assert(!vfs_move_file("COPY.TXT", "DOCUMENTS/PROJECTS/NOTE.TXT"));
     assert(vfs_root_entry_count() == 2U);

@@ -12,7 +12,9 @@
 #define NEXUS_ACCOUNT_VERIFIER_BYTES 32U
 #define NEXUS_ACCOUNT_STARTUP_MAX 4U
 #define NEXUS_ACCOUNT_STARTUP_NAME_MAX 24U
+#ifndef NEXUS_ACCOUNT_PBKDF2_ITERATIONS
 #define NEXUS_ACCOUNT_PBKDF2_ITERATIONS 600000U
+#endif
 #define NEXUS_ACCOUNT_MIN_PBKDF2_ITERATIONS 100000U
 #define NEXUS_ACCOUNT_LOCKOUT_FAILURES 5U
 #define NEXUS_ACCOUNT_LOCKOUT_SECONDS 30U
@@ -73,6 +75,7 @@ struct nexus_account_backend {
     bool (*random)(void *context, void *buffer, size_t length);
     uint64_t (*ticks)(void *context);
     uint32_t ticks_per_second;
+    bool persistent_writable;
     void *context;
 };
 

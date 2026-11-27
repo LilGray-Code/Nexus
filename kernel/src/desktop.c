@@ -7781,8 +7781,80 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_SETTINGS) {
         if ((event->scancode & 0x80U) != 0U) return;
+        if (settings_search_focused) {
+            if (event->scancode == 0x01U) {
+                settings_search_clear();
+                settings_status_set("");
+            } else if (event->scancode == 0x0EU) {
+                if (settings_search_length != 0U)
+                    settings_search_query[--settings_search_length] = '\0';
+                if (settings_visible_category_count() != 0U)
+                    settings_page = settings_visible_category_at(0U);
+            } else if (event->scancode == 0x1CU) {
+                const enum desktop_settings_page match =
+                    settings_visible_category_at(0U);
+                if (match < SETTINGS_PAGE_COUNT) {
+                    settings_page = match;
+                    settings_search_focused = false;
+                    settings_status_set("Search result opened.");
+                } else {
+                    settings_status_set("No matching settings category. Try another search.");
+                }
+            } else {
+                const char value = terminal_scancode_char(event->scancode);
+                if (value >= 0x20 && value <= 0x7E &&
+                    settings_search_length < NEXUS_SETTINGS_SEARCH_MAX) {
+                    settings_search_query[settings_search_length++] = value;
+                    settings_search_query[settings_search_length] = '\0';
+                    const enum desktop_settings_page match =
+                        settings_visible_category_at(0U);
+                    if (match < SETTINGS_PAGE_COUNT)
+                        settings_page = match;
+                    else
+                        settings_status_set("No matching settings categories.");
+                }
+            }
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (settings_wifi_password_focused) {
+            if (event->scancode == 0x01U) {
+                for (size_t i = 0U; i < sizeof(settings_wifi_password); ++i)
+                    settings_wifi_password[i] = '\0';
+                settings_wifi_password_length = 0U;
+                settings_wifi_password_focused = false;
+                settings_status_set("Wi-Fi password entry cleared.");
+            } else if (event->scancode == 0x0EU) {
+                if (settings_wifi_password_length != 0U)
+                    settings_wifi_password[--settings_wifi_password_length] = '\0';
+            } else if (event->scancode == 0x1CU) {
+                (void)settings_wifi_connect_selected();
+            } else {
+                const char value = terminal_scancode_char(event->scancode);
+                if (value >= 0x20 && value <= 0x7E &&
+                    settings_wifi_password_length < NEXUS_WIFI_PASSPHRASE_MAX) {
+                    settings_wifi_password[settings_wifi_password_length++] = value;
+                    settings_wifi_password[settings_wifi_password_length] = '\0';
+                }
+            }
+            draw_shell();
+            draw_pointer();
+            return;
+        }
+        if (keyboard_left_control && event->scancode == 0x21U) {
+            settings_search_focused = true;
+            draw_shell();
+            draw_pointer();
+            return;
+        }
         if (event->scancode == 0x01U) {
-            desktop_open_view(DESKTOP_HOME);
+            if (settings_search_length != 0U) {
+                settings_search_clear();
+                settings_status_set("");
+            } else {
+                desktop_open_view(DESKTOP_HOME);
+            }
         } else if (event->scancode == 0x4BU) {
             settings_page = settings_page == 0U
                 ? (enum desktop_settings_page)(SETTINGS_PAGE_COUNT - 1U)
@@ -7790,18 +7862,29 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else if (event->scancode == 0x4DU || event->scancode == 0x0FU) {
             settings_page = (enum desktop_settings_page)(
                 ((uint32_t)settings_page + 1U) % SETTINGS_PAGE_COUNT);
-        } else if (event->scancode >= 0x02U && event->scancode <= 0x08U) {
+        } else if (event->scancode == 0x48U) {
             settings_page = (enum desktop_settings_page)(
-                event->scancode - 0x02U);
+                ((uint32_t)settings_page + SETTINGS_PAGE_COUNT - 8U) %
+                SETTINGS_PAGE_COUNT);
+        } else if (event->scancode == 0x50U) {
+            settings_page = (enum desktop_settings_page)(
+                ((uint32_t)settings_page + 8U) % SETTINGS_PAGE_COUNT);
+        } else if (event->scancode >= 0x02U && event->scancode <= 0x0AU) {
+            const size_t slot = (size_t)(event->scancode - 0x02U);
+            const enum desktop_settings_page page =
+                settings_visible_category_at(slot);
+            if (page < SETTINGS_PAGE_COUNT) settings_page = page;
         } else if (event->scancode == 0x14U) {
             desktop_toggle_theme();
         } else if (event->scancode == 0x1EU) {
             desktop_cycle_accent();
         } else if (event->scancode == 0x23U) {
-            settings_page = SETTINGS_DEVICES;
+            settings_page = SETTINGS_BLUETOOTH_DEVICES;
         } else if (event->scancode == 0x25U) {
             desktop_settings.high_contrast = !desktop_settings.high_contrast;
             desktop_preferences_save();
+        } else if (event->scancode == 0x35U) {
+            settings_search_focused = true;
         } else {
             return;
         }

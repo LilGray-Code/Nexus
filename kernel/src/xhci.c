@@ -1509,7 +1509,7 @@ bool xhci_init(void) {
         if (!nexus_usb_host_controller_driver_available(host_kind)) {
             serial_write("USB: detected legacy ");
             serial_write(nexus_usb_host_controller_name(host_kind));
-            serial_write(" host controller; controller driver is not yet available\\r\\n");
+            serial_write(" host controller; controller driver is not yet available\r\n");
             continue;
         }
         ++candidates;
@@ -1548,7 +1548,7 @@ bool xhci_resume(void) {
         return false;
     if ((command & XHCI_USBCMD_RUN) == 0U ||
         (status & XHCI_USBSTS_HALTED) != 0U) {
-        serial_write("xHCI: controller did not retain its running state across resume; full controller reinitialization is required\\r\\n");
+        serial_write("xHCI: controller did not retain its running state across resume; full controller reinitialization is required\r\n");
         return false;
     }
     xhci_rescan_root_ports_internal(xhci);

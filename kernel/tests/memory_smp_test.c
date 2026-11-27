@@ -11,7 +11,9 @@
 #define TEST_PAGE_COUNT (TEST_THREAD_COUNT * TEST_PAGES_PER_THREAD)
 #define TEST_MEMORY_BASE 0x100000ULL
 #define TEST_MEMORY_SIZE (64ULL * 1024ULL * 1024ULL)
-#define TEST_MAX_TRACKED_PAGES (TEST_MEMORY_SIZE / NEXUS_PAGE_SIZE)
+#define TEST_EXHAUSTION_MEMORY_SIZE (2ULL * 1024ULL * 1024ULL)
+#define TEST_MAX_TRACKED_PAGES \
+    (TEST_EXHAUSTION_MEMORY_SIZE / NEXUS_PAGE_SIZE)
 
 static struct limine_memmap_entry memory_region = {
     .base = TEST_MEMORY_BASE,
@@ -103,17 +105,37 @@ static bool check_released_pages(void) {
  * freeing every held page restores the exact pre-exhaustion free-byte count.
  */
 static bool test_exhaustion_and_recovery(void) {
+    /*
+     * Use a separate small region that fits entirely in the allocator's
+     * bounded reclaimed-page list. This tests exhaustion/recovery without
+     * confusing a free-list capacity limit with lost pages.
+     */
+    struct limine_memmap_entry small_region = {
+        .base = TEST_MEMORY_BASE,
+        .length = TEST_EXHAUSTION_MEMORY_SIZE,
+        .type = LIMINE_MEMMAP_USABLE
+    };
+    struct limine_memmap_entry *small_entries[] = { &small_region };
+    const struct limine_memmap_response small_map = {
+        .revision = 0U,
+        .entry_count = 1U,
+        .entries = small_entries
+    };
+    if (!memory_init(&small_map, &hhdm)) return false;
+
     struct memory_allocator_stats before;
     if (!memory_get_allocator_stats(&before)) return false;
 
     size_t allocated = 0U;
     while (allocated < TEST_MAX_TRACKED_PAGES) {
         uint64_t physical = 0U;
-        if (!memory_alloc_page(&physical)) break;
-        if (physical == 0U) return false;
+        if (!memory_alloc_page(&physical) || physical == 0U) return false;
         exhaustion_pages[allocated++] = physical;
     }
-    if (allocated == 0U || allocated == TEST_MAX_TRACKED_PAGES) return false;
+
+    /* The first failed request must be observable, not just inferred. */
+    uint64_t unavailable = 0U;
+    if (memory_alloc_page(&unavailable)) return false;
 
     struct memory_allocator_stats exhausted;
     if (!memory_get_allocator_stats(&exhausted) ||
@@ -128,6 +150,8 @@ static bool test_exhaustion_and_recovery(void) {
     struct memory_allocator_stats recovered;
     if (!memory_get_allocator_stats(&recovered) ||
         !memory_allocator_validate()) return false;
+    for (size_t i = 0U; i < allocated; ++i)
+        if (memory_page_is_allocated(exhaustion_pages[i])) return false;
     return recovered.free_bytes == before.free_bytes &&
            recovered.used_bytes == before.used_bytes &&
            recovered.allocation_failures > before.allocation_failures &&

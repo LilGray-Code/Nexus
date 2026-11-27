@@ -1653,6 +1653,119 @@ static void xhci_detach_port(struct xhci_controller *xhci,
     }
 }
 
+static void xhci_hub_clear_port_changes(
+    struct xhci_controller *xhci, struct xhci_hid_device *hub,
+    uint8_t port, uint16_t changes) {
+    if ((changes & (1U << 0)) != 0U)
+        (void)xhci_hub_clear_change(xhci, hub, port,
+            NEXUS_USB_HUB_FEATURE_C_PORT_CONNECTION);
+    if ((changes & (1U << 1)) != 0U)
+        (void)xhci_hub_clear_change(xhci, hub, port,
+            NEXUS_USB_HUB_FEATURE_C_PORT_ENABLE);
+    if ((changes & (1U << 3)) != 0U)
+        (void)xhci_hub_clear_change(xhci, hub, port,
+            NEXUS_USB_HUB_FEATURE_C_PORT_OVER_CURRENT);
+    if ((changes & (1U << 4)) != 0U)
+        (void)xhci_hub_clear_change(xhci, hub, port,
+            hub->hub_descriptor.superspeed
+                ? NEXUS_USB3_HUB_FEATURE_C_PORT_BH_RESET
+                : NEXUS_USB_HUB_FEATURE_C_PORT_RESET);
+    if (hub->hub_descriptor.superspeed &&
+        (changes & (1U << 5)) != 0U)
+        (void)xhci_hub_clear_change(xhci, hub, port,
+            NEXUS_USB3_HUB_FEATURE_C_PORT_BH_RESET);
+}
+
+static bool xhci_hub_reset_and_enumerate_child(
+    struct xhci_controller *xhci, struct xhci_hid_device *hub,
+    uint8_t port) {
+    const uint16_t reset_feature = hub->hub_descriptor.superspeed
+        ? NEXUS_USB3_HUB_FEATURE_PORT_BH_RESET
+        : NEXUS_USB_HUB_FEATURE_PORT_RESET;
+    const uint16_t reset_change = hub->hub_descriptor.superspeed
+        ? NEXUS_USB3_HUB_FEATURE_C_PORT_BH_RESET
+        : NEXUS_USB_HUB_FEATURE_C_PORT_RESET;
+
+    if (!xhci_hub_set_feature(xhci, hub, port, reset_feature)) return false;
+
+    struct nexus_usb_hub_port_status status = {0};
+    bool reset_done = false;
+    for (uint32_t spin = 0U; spin < 5000U; ++spin) {
+        if (!xhci_hub_get_port_status(xhci, hub, port, &status))
+            return false;
+        if (!status.connected) return false;
+        if (!status.resetting && status.enabled) {
+            reset_done = true;
+            break;
+        }
+        __asm__ volatile ("pause");
+    }
+    if (!reset_done || status.speed == NEXUS_USB_SPEED_UNKNOWN)
+        return false;
+
+    (void)xhci_hub_clear_change(xhci, hub, port, reset_change);
+    struct nexus_usb_path child_path = {0};
+    if (!nexus_usb_path_child(&hub->usb_path, hub->slot_id,
+                              port, &child_path)) return false;
+    child_path.parent_hub_uses_tt =
+        hub->speed == 3U &&
+        (status.speed == NEXUS_USB_SPEED_LOW ||
+         status.speed == NEXUS_USB_SPEED_FULL);
+
+    struct xhci_hid_device child = {0};
+    if (!xhci_enumerate_hid_port(xhci, &child_path,
+            (uint8_t)status.speed, &child)) return false;
+    if (!xhci_attach_hid_device(xhci, &child)) {
+        xhci_release_hid_device(xhci, &child);
+        return false;
+    }
+
+    serial_write("USB: downstream input device enumerated through hub slot ");
+    serial_write_hex(hub->slot_id);
+    serial_write(" port=");
+    serial_write_hex(port);
+    serial_write("\r\n");
+    return true;
+}
+
+/* Poll one downstream port per hub per scheduler pass. Hub class GET_STATUS
+ * is used as a fallback notification path until the hub interrupt-IN endpoint
+ * is connected to the generic xHCI endpoint scheduler. */
+static void xhci_poll_usb_hubs(struct xhci_controller *xhci) {
+    if (xhci == NULL || !xhci->initialized) return;
+    for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
+        struct xhci_hid_device *hub = &xhci->hubs[i];
+        if (!hub->active || hub->kind != XHCI_HID_HUB ||
+            hub->hub_descriptor.port_count == 0U) continue;
+
+        hub->hub_scan_cursor = (uint8_t)(
+            (hub->hub_scan_cursor % hub->hub_descriptor.port_count) + 1U);
+        const uint8_t port = hub->hub_scan_cursor;
+        struct nexus_usb_hub_port_status status = {0};
+        if (!xhci_hub_get_port_status(xhci, hub, port, &status)) continue;
+
+        const bool was_connected = hub->hub_port_connected[port];
+        const bool connection_change = (status.change_bits & 1U) != 0U;
+        if (was_connected != status.connected ||
+            (connection_change && status.connected)) {
+            if (was_connected || connection_change)
+                xhci_detach_hub_children(xhci, hub->slot_id, port);
+            hub->hub_port_connected[port] = false;
+            if (status.connected) {
+                hub->hub_port_connected[port] =
+                    xhci_hub_reset_and_enumerate_child(xhci, hub, port);
+            } else {
+                serial_write("USB: downstream hub port disconnected slot=");
+                serial_write_hex(hub->slot_id);
+                serial_write(" port=");
+                serial_write_hex(port);
+                serial_write("\r\n");
+            }
+        }
+        xhci_hub_clear_port_changes(xhci, hub, port, status.change_bits);
+    }
+}
+
 static void xhci_rescan_root_ports_internal(struct xhci_controller *xhci) {
     if (xhci == NULL || !xhci->initialized) return;
     for (uint16_t port = 1U; port <= xhci->max_ports; ++port) {

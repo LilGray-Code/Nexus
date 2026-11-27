@@ -272,8 +272,12 @@ int main(void) {
     assert(strcmp(launched_path, "APPS/DEMO-1.0.0.ELF") == 0);
     assert(exit_status == 42U);
     assert(launched_capabilities == NEXUS_CAP_PACKAGE_DEFAULT);
+    assert((launched_capabilities & (NEXUS_CAP_FILE_READ |
+        NEXUS_CAP_INPUT | NEXUS_CAP_DISPLAY)) ==
+        (NEXUS_CAP_FILE_READ | NEXUS_CAP_INPUT | NEXUS_CAP_DISPLAY));
     assert((launched_capabilities & (NEXUS_CAP_FILE_WRITE |
-        NEXUS_CAP_AUDIO | NEXUS_CAP_ADMIN | NEXUS_CAP_DRIVER_MANAGE)) == 0U);
+        NEXUS_CAP_AUDIO | NEXUS_CAP_GAMEPAD | NEXUS_CAP_NETWORK |
+        NEXUS_CAP_ADMIN | NEXUS_CAP_DRIVER_MANAGE)) == 0U);
     assert(!nexus_package_launch("DEMO", NULL, NULL, &exit_status));
 
     /* An update stages the new image, commits its receipt, then reclaims old. */

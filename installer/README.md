@@ -98,7 +98,12 @@ is mounted, RAM-only file saves are volatile and do not survive a reboot.
 ## Keyboard, mouse, and display compatibility
 
 The input stack supports legacy PS/2 keyboards and mice plus xHCI USB HID
-boot-protocol keyboards and mice. The PS/2 keyboard parser handles E0 extended
+boot-protocol keyboards and mice. The xHCI port-speed decoder recognizes
+USB low/full/high-speed and SuperSpeed/SuperSpeedPlus link IDs, including the
+SuperSpeed warm-reset and 512-byte endpoint-zero packet-size rules. This
+improves initial enumeration compatibility for USB 3.x devices, but it does
+not certify every controller or receiver implementation. The PS/2 keyboard
+parser handles E0 extended
 keys, keeps right Ctrl/Alt separate from their left-side counterparts, filters
 Print Screen's fake Shift bytes, and safely consumes the multi-byte Pause
 sequence. PS/2 IntelliMouse negotiation enables four-byte wheel packets for

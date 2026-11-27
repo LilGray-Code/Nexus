@@ -48,11 +48,17 @@ void serial_write_n(const char *text, size_t length) {
 
 void serial_write_hex(uint64_t value) {
     static const char digits[] = "0123456789ABCDEF";
-    serial_write("0x");
-    for (int shift = 60; shift >= 0; shift -= 4) {
-        const char digit = digits[(value >> (unsigned int)shift) & 0x0FU];
-        serial_write_n(&digit, 1U);
+    char text[18];
+    text[0] = '0';
+    text[1] = 'x';
+    for (unsigned int i = 0U; i < 16U; ++i) {
+        const unsigned int shift = 60U - (i * 4U);
+        text[i + 2U] = digits[(value >> shift) & 0x0FU];
     }
+    /* Append the formatted value as one log record instead of locking the
+     * ring once for the prefix and once per hexadecimal digit.
+     */
+    serial_write_n(text, sizeof(text));
 }
 
 size_t serial_log_read_recent(char *output, size_t capacity) {

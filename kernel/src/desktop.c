@@ -33,6 +33,9 @@
 #include "wifi.h"
 #include "wifi_pci.h"
 #include "firmware.h"
+#include "acpi.h"
+#include "service_manager.h"
+#include "xhci.h"
 #include "virtio_gpu.h"
 #include "input.h"
 #include "serial.h"
@@ -69,21 +72,37 @@ enum desktop_view {
 
 static enum desktop_view active_view = DESKTOP_HOME;
 enum desktop_settings_page {
-    SETTINGS_PERSONAL = 0,
-    SETTINGS_DISPLAY,
-    SETTINGS_INPUT,
-    SETTINGS_ACCESSIBILITY,
-    SETTINGS_SYSTEM,
-    SETTINGS_AUDIO,
-    SETTINGS_STORAGE,
-    SETTINGS_DEVICES,
-    SETTINGS_PAGE_COUNT
+    SETTINGS_PERSONAL = NEXUS_SETTINGS_PERSONALIZATION,
+    SETTINGS_DISPLAY = NEXUS_SETTINGS_DISPLAY,
+    SETTINGS_SOUND = NEXUS_SETTINGS_SOUND,
+    SETTINGS_NETWORK = NEXUS_SETTINGS_NETWORK,
+    SETTINGS_BLUETOOTH_DEVICES = NEXUS_SETTINGS_BLUETOOTH_DEVICES,
+    SETTINGS_INPUT = NEXUS_SETTINGS_INPUT_ACCESSORIES,
+    SETTINGS_ACCESSIBILITY = NEXUS_SETTINGS_ACCESSIBILITY,
+    SETTINGS_APPLICATIONS = NEXUS_SETTINGS_APPLICATIONS,
+    SETTINGS_STORAGE = NEXUS_SETTINGS_STORAGE,
+    SETTINGS_PRIVACY_SECURITY = NEXUS_SETTINGS_PRIVACY_SECURITY,
+    SETTINGS_ACCOUNTS_USERS = NEXUS_SETTINGS_ACCOUNTS_USERS,
+    SETTINGS_POWER_BATTERY = NEXUS_SETTINGS_POWER_BATTERY,
+    SETTINGS_GAMING = NEXUS_SETTINGS_GAMING,
+    SETTINGS_UPDATES_RECOVERY = NEXUS_SETTINGS_UPDATES_RECOVERY,
+    SETTINGS_SYSTEM_INFORMATION = NEXUS_SETTINGS_SYSTEM_INFORMATION,
+    SETTINGS_DEVELOPER = NEXUS_SETTINGS_DEVELOPER,
+    SETTINGS_PAGE_COUNT = NEXUS_SETTINGS_CATEGORY_COUNT
 };
 static enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
 #define DESKTOP_STORE_VISIBLE_ROWS 8U
 static size_t store_selected_index;
 static size_t store_first_index;
 static size_t storage_selected_device_index;
+static char settings_search_query[NEXUS_SETTINGS_SEARCH_MAX + 1U];
+static size_t settings_search_length;
+static bool settings_search_focused;
+static char settings_status_message[96];
+static size_t settings_wifi_selected_index;
+static char settings_wifi_password[NEXUS_WIFI_PASSPHRASE_MAX + 1U];
+static size_t settings_wifi_password_length;
+static bool settings_wifi_password_focused;
 static bool store_installed[NEXUS_STORE_MAX_APPS];
 static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
@@ -448,6 +467,118 @@ static void desktop_window_restore_for_view(enum desktop_view view) {
 
 static bool desktop_theme_is_light(void) {
     return desktop_settings.theme == NEXUS_SETTINGS_THEME_LIGHT;
+}
+
+static void settings_status_set(const char *message) {
+    if (message == NULL) message = "";
+    size_t i = 0U;
+    while (message[i] != '\0' && i < sizeof(settings_status_message) - 1U) {
+        settings_status_message[i] = message[i];
+        ++i;
+    }
+    settings_status_message[i] = '\0';
+}
+
+static bool settings_category_matches_query(size_t category) {
+    return nexus_settings_category_matches(
+        (enum nexus_settings_category)category, settings_search_query);
+}
+
+static enum desktop_settings_page settings_visible_category_at(size_t index) {
+    for (size_t category = 0U; category < SETTINGS_PAGE_COUNT; ++category) {
+        if (!settings_category_matches_query(category)) continue;
+        if (index == 0U) return (enum desktop_settings_page)category;
+        --index;
+    }
+    return (enum desktop_settings_page)SETTINGS_PAGE_COUNT;
+}
+
+static size_t settings_visible_category_count(void) {
+    size_t count = 0U;
+    for (size_t category = 0U; category < SETTINGS_PAGE_COUNT; ++category)
+        if (settings_category_matches_query(category)) ++count;
+    return count;
+}
+
+static void settings_search_clear(void) {
+    settings_search_length = 0U;
+    settings_search_query[0] = '\0';
+    settings_search_focused = false;
+}
+
+static bool desktop_settings_export(void) {
+    uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
+    if (!nexus_settings_encode(&desktop_settings, record)) {
+        settings_status_set("Export refused: current settings failed validation.");
+        return false;
+    }
+    if (!vfs_write_root_file("NEXUS.EXP", record, sizeof(record))) {
+        settings_status_set("Export failed: writable Nexus Data storage is unavailable.");
+        return false;
+    }
+    settings_status_set(vfs_nxfs_writable()
+        ? "Exported validated settings to /NEXUS.EXP."
+        : "Exported settings to temporary storage; not persistent.");
+    return true;
+}
+
+static bool desktop_settings_import(void) {
+    struct nexus_vfs_file file;
+    if (!vfs_open_root_readonly("NEXUS.EXP", &file)) {
+        settings_status_set("Import failed: /NEXUS.EXP was not found.");
+        return false;
+    }
+    uint32_t file_size = 0U;
+    uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
+    size_t bytes_read = 0U;
+    const bool size_ok = vfs_file_size(&file, &file_size) &&
+                         file_size == NEXUS_SETTINGS_RECORD_BYTES;
+    const bool read_ok = size_ok &&
+        vfs_read(&file, record, sizeof(record), &bytes_read) &&
+        bytes_read == sizeof(record);
+    vfs_close(&file);
+    struct nexus_settings imported;
+    if (!read_ok || !nexus_settings_decode(record, sizeof(record), &imported)) {
+        settings_status_set("Import refused: file is incomplete, corrupt or unsupported.");
+        return false;
+    }
+    if (!nexus_settings_valid(&imported)) {
+        settings_status_set("Import refused: one or more settings are invalid.");
+        return false;
+    }
+    desktop_settings = imported;
+    desktop_settings_apply();
+    settings_status_set("Imported validated appearance, input and sound preferences.");
+    return true;
+}
+
+static bool desktop_settings_restore_defaults(void) {
+    nexus_settings_defaults(&desktop_settings);
+    if (!nexus_settings_valid(&desktop_settings)) {
+        settings_status_set("Restore defaults failed validation; current settings retained.");
+        return false;
+    }
+    desktop_settings_apply();
+    desktop_preferences_save();
+    settings_status_set(desktop_preferences_persistent
+        ? "Defaults restored and saved to Nexus Data."
+        : "Defaults applied; persistent storage is unavailable.");
+    return true;
+}
+
+static void settings_copy_ssid(const struct nexus_wifi_network *network,
+                               char output[40]) {
+    if (output == NULL) return;
+    size_t out = 0U;
+    if (network == NULL) {
+        output[0] = '\0';
+        return;
+    }
+    for (size_t i = 0U; i < network->ssid_length && out < 38U; ++i) {
+        const uint8_t ch = network->ssid[i];
+        output[out++] = ch >= 0x20U && ch <= 0x7EU ? (char)ch : '?';
+    }
+    output[out] = '\0';
 }
 
 static void desktop_settings_apply(void) {

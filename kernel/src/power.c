@@ -58,9 +58,13 @@ static void cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx,
 
 static bool local_hwp_epp_supported(void) {
     uint32_t max_leaf = 0U;
+    uint32_t vendor_ebx = 0U, vendor_ecx = 0U, vendor_edx = 0U;
     uint32_t leaf1_edx = 0U;
-    cpuid(0U, &max_leaf, NULL, NULL, NULL);
-    if (max_leaf < 6U) return false;
+    cpuid(0U, &max_leaf, &vendor_ebx, &vendor_ecx, &vendor_edx);
+    if (max_leaf < 6U ||
+        vendor_ebx != 0x756E6547U ||
+        vendor_edx != 0x49656E69U ||
+        vendor_ecx != 0x6C65746EU) return false;
     cpuid(1U, NULL, NULL, NULL, &leaf1_edx);
     if ((leaf1_edx & (1U << 5)) == 0U) return false; /* MSR */
     uint32_t leaf6_eax = 0U;

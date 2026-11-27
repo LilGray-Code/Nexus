@@ -3875,7 +3875,7 @@ static void draw_shell(void) {
                     108U, 30U, "PERFORMANCE",
                     power.current_profile == NEXUS_POWER_PROFILE_PERFORMANCE);
                 graphics_draw_text(text_x, content_y + 195U,
-                    "HWP SETS CPU PREFERENCE; IT DOES NOT GUARANTEE CLOCK RATE.",
+                    "HWP IS A CPU PERFORMANCE HINT, NOT A FIXED CLOCK; RESETS AT REBOOT.",
                     1U, 171U, 191U, 211U);
             } else {
                 graphics_draw_text(text_x, content_y + 140U,

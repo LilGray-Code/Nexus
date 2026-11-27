@@ -1562,6 +1562,10 @@ bool virtio_gpu_active(void) {
     return active;
 }
 
+bool virtio_gpu_owns_pci_device(const struct nexus_pci_device *device) {
+    return active && device != NULL && transport.pci == device;
+}
+
 void virtio_gpu_stop(void) {
     gpu_virgl_destroy_context();
     virgl_command_submission_ready = false;

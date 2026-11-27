@@ -23,12 +23,12 @@ Correctness tests cover empty reads, appended ordering, full-ring overwrite, a w
 
 The benchmark compares the exact previous per-byte-indexing algorithm with the optimized production API in one process, using identical payloads, buffer sizes, compiler options, and loop counts. Values below are the median of seven runs on the same host.
 
-<text>Host: AMD EPYC 9V74 (80-Core), x86-64, Linux 6.18.57, GCC 14.2.0. Build flags: `-std=c11 -O2 -Wall -Wextra -Werror -pedantic`.</text>
+Host: AMD EPYC 9V74 (80-Core), x86-64, Linux 6.18.57, GCC 14.2.0. Build flags: `-std=c11 -O2 -Wall -Wextra -Werror -pedantic`.
 
 | Operation | Previous implementation | Optimized implementation | Median speedup |
 |---|---:|---:|---:|
-| Append one 45-byte log payload | 15.9 ns/op | 8.5 ns/op | 1.91× |
-| Read latest 112 bytes | 48.7 ns/op | 8.3 ns/op | 5.91× |
+| Append one 43-byte log payload | 15.9 ns/op | 8.5 ns/op | 1.91× |
+| Read through a 112-byte output buffer (111 payload bytes) | 48.7 ns/op | 8.3 ns/op | 5.91× |
 | Read full 4 KiB ring | 1,655.8 ns/op | 58.0 ns/op | 29.52× |
 
 The measured ranges across those seven runs were:

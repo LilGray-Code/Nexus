@@ -105,19 +105,20 @@ static void report(const char *name, uint64_t legacy, uint64_t optimized,
 }
 
 int main(void) {
-    static const char payload[APPEND_LENGTH] =
-        "NEXUS kernel diagnostics performance sample 0123456789";
+    static const char payload[] =
+        "NEXUS performance benchmark data 0123456789";
     char legacy_output[CAPACITY + 1U];
     char optimized_output[CAPACITY + 1U];
 
     legacy_init();
     nexus_log_buffer_init();
 
-    const uint64_t legacy_append = bench_append(
-        legacy_append, payload, sizeof(payload), APPEND_ITERATIONS);
-    const uint64_t optimized_append = bench_append(
-        nexus_log_buffer_append, payload, sizeof(payload), APPEND_ITERATIONS);
-    report("append-48B", legacy_append, optimized_append,
+    const size_t payload_length = sizeof(payload) - 1U;
+    const uint64_t legacy_append_ns = bench_append(
+        legacy_append, payload, payload_length, APPEND_ITERATIONS);
+    const uint64_t optimized_append_ns = bench_append(
+        nexus_log_buffer_append, payload, payload_length, APPEND_ITERATIONS);
+    report("append-payload", legacy_append_ns, optimized_append_ns,
            APPEND_ITERATIONS);
 
     (void)legacy_read(legacy_output, sizeof(legacy_output));

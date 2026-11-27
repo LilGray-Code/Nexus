@@ -22,7 +22,7 @@ int main(void) {
     assert(nexus_xhci_port_register_offset(0x40U, 32U, &offset));
     assert(offset == 0x630U);
     assert(nexus_xhci_port_register_offset(0x40U, 255U, &offset));
-    assert(offset == 0x1430U);
+    assert(offset == 0x1420U);
 
     assert(!nexus_xhci_port_connected(0U));
     assert(nexus_xhci_port_connected(1U));

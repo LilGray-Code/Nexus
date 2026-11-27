@@ -69,7 +69,7 @@ bool nexus_bt_hci_connection_complete(
         };
         /* LE connection complete uses address at parameters[5..10]. */
         for (size_t i = 0U; i < 6U; ++i)
-            connection->peer_address[i] = event->parameters[5U + i];
+            connection->peer_address[i] = event->parameters[6U + i];
         return true;
     }
     return false;

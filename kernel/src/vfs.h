@@ -82,6 +82,11 @@ bool vfs_create_directory(const char *name);
 bool vfs_rename_file(const char *name, const char *new_name);
 bool vfs_copy_file(const char *name, const char *destination_path);
 bool vfs_move_file(const char *name, const char *destination_path);
+/* NXFS-only absolute-path operations support clipboard transfers across tabs. */
+bool vfs_copy_file_absolute(const char *source_path,
+                            const char *destination_path);
+bool vfs_move_file_absolute(const char *source_path,
+                            const char *destination_path);
 bool vfs_remove_directory(const char *name);
 bool vfs_has_filesystem(void);
 bool vfs_ramfs_create(const char *name);

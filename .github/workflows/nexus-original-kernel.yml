@@ -867,7 +867,9 @@ jobs:
               log = open(log_path, encoding="utf-8", errors="replace").read()
               match = re.search(r"NEXUS INSTALLER TARGET: ([A-Za-z0-9_-]+)", log)
               if match:
-                  stable_id = match.group(1)
+                  # QEMU HMP sendkey accepts lowercase key names; the
+                  # installer validates the complete stable ID case-insensitively.
+                  stable_id = match.group(1).lower()
                   break
               time.sleep(0.2)
           if stable_id is None:

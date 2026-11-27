@@ -396,7 +396,8 @@ int main(void) {
     read_current_file("RENAMED.TXT", payload);
     assert(!vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
     assert(!vfs_move_file("COPY.TXT", "DOCUMENTS/PROJECTS/NOTE.TXT"));
-    assert(vfs_root_entry_count() == 2U);
+    /* NOTE, COPY and the absolute-path rename are now all in this directory. */
+    assert(vfs_root_entry_count() == 3U);
     assert(vfs_move_file("COPY.TXT", "DOCUMENTS/MOVED.TXT"));
     struct nexus_vfs_file copy_probe;
     assert(!vfs_open_readonly("COPY.TXT", &copy_probe));

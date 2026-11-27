@@ -1098,7 +1098,46 @@ static void desktop_draw_hardware_overview(uint64_t x, uint64_t y) {
     }
     graphics_draw_text(x, row, line, 1U, 170U, 191U, 211U);
     format_labeled_u64("PCI FUNCTIONS: ", pci_device_count(), line);
-    graphics_draw_text(x + 180U, row, line, 1U, 170U, 191U, 211U);
+    graphics_draw_text(x + 180U, row, line, 1U, 170U, 191U);
+    row += 18U;
+
+    size_t bound_devices = 0U;
+    size_t failed_devices = 0U;
+    size_t unsupported_devices = 0U;
+    for (size_t i = 0U; i < nexus_driver_manager_device_count(); ++i) {
+        struct nexus_pnp_device_info pnp;
+        if (!nexus_driver_manager_device_at(i, &pnp)) continue;
+        if (pnp.state == NEXUS_PNP_DEVICE_ACTIVE) ++bound_devices;
+        else if (pnp.state == NEXUS_PNP_DEVICE_FAILED) ++failed_devices;
+        else if (pnp.state == NEXUS_PNP_DEVICE_UNSUPPORTED)
+            ++unsupported_devices;
+    }
+
+    size_t manager_length = 0U;
+    line[0] = '\0';
+    hardware_append_text(line, sizeof(line), &manager_length,
+                         "DRIVER MANAGER: ");
+    format_u64(nexus_driver_manager_driver_count(), number);
+    hardware_append_text(line, sizeof(line), &manager_length, number);
+    hardware_append_text(line, sizeof(line), &manager_length, " DRIVERS / ");
+    format_u64(nexus_driver_manager_device_count(), number);
+    hardware_append_text(line, sizeof(line), &manager_length, number);
+    hardware_append_text(line, sizeof(line), &manager_length, " DEVICES");
+    graphics_draw_text(x, row, line, 1U, 170U, 225U, 190U);
+    row += 18U;
+
+    manager_length = 0U;
+    line[0] = '\0';
+    hardware_append_text(line, sizeof(line), &manager_length, "BOUND / FAILED / UNSUPPORTED: ");
+    format_u64(bound_devices, number);
+    hardware_append_text(line, sizeof(line), &manager_length, number);
+    hardware_append_text(line, sizeof(line), &manager_length, " / ");
+    format_u64(failed_devices, number);
+    hardware_append_text(line, sizeof(line), &manager_length, number);
+    hardware_append_text(line, sizeof(line), &manager_length, " / ");
+    format_u64(unsupported_devices, number);
+    hardware_append_text(line, sizeof(line), &manager_length, number);
+    graphics_draw_text(x, row, line, 1U, 170U, 191U, 211U);
 }
 
 static void format_ipv4_address(const uint8_t address[4], char output[16]) {

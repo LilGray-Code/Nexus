@@ -172,7 +172,8 @@ int main(void) {
     };
     pci_test_device_count = 2U;
     assert(nexus_driver_manager_discover_pci_devices() == 2U);
-    assert(nexus_driver_manager_device_count() == 4U);
+    /* Three retained records plus two newly discovered PCI functions. */
+    assert(nexus_driver_manager_device_count() == 5U);
     const size_t final_devices = nexus_driver_manager_device_count();
     assert(nexus_driver_manager_discover_pci_devices() == 0U);
     assert(nexus_driver_manager_device_count() == final_devices);

@@ -1139,6 +1139,31 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         goto failed;
     }
 
+    bool has_usb_hub_interface = false;
+    for (size_t descriptor_offset = 0U;
+         descriptor_offset + 9U <= total_length;) {
+        const uint8_t descriptor_length = config_buffer[descriptor_offset];
+        const uint8_t descriptor_type =
+            config_buffer[descriptor_offset + 1U];
+        if (descriptor_length < 2U ||
+            descriptor_offset + descriptor_length > total_length) break;
+        if (descriptor_type == 4U && descriptor_length >= 9U &&
+            config_buffer[descriptor_offset + 5U] == 9U)
+            has_usb_hub_interface = true;
+        descriptor_offset += descriptor_length;
+    }
+    if (has_usb_hub_interface) {
+        serial_write("xHCI: USB hub detected at root port ");
+        serial_write_hex(port_number);
+        serial_write(" VID/PID=");
+        serial_write_hex(device->vendor_id);
+        serial_write("/");
+        serial_write_hex(device->product_id);
+        serial_write("; hub/child-port enumeration is not yet supported; connect keyboard/mouse directly to a controller port\\r\\n");
+        (void)memory_free_page(config_buffer_physical);
+        goto failed;
+    }
+
     uint8_t interface_number = 0U;
     uint8_t configuration_value = 0U;
     uint8_t endpoint_address = 0U;
@@ -1199,6 +1224,13 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     return true;
 
 failed:
+    serial_write("xHCI: HID enumeration failed on root port ");
+    serial_write_hex(port_number);
+    serial_write(" VID/PID=");
+    serial_write_hex(device->vendor_id);
+    serial_write("/");
+    serial_write_hex(device->product_id);
+    serial_write("\\r\\n");
     xhci_release_hid_device(xhci, device);
     return false;
 }
@@ -1426,14 +1458,32 @@ static void xhci_handle_port_status_change(struct xhci_controller *xhci,
 
 bool xhci_init(void) {
     usb_hid_keyboard_reset();
+    uint32_t candidates = 0U;
+    serial_write("USB: scanning PCI inventory for xHCI host controllers\\r\\n");
     for (uint32_t i = 0U; i < pci_device_count(); ++i) {
         const struct nexus_pci_device *device = pci_device_at(i);
         if (device == NULL || device->class_code != 0x0CU ||
             device->subclass != 0x03U ||
             device->programming_interface != 0x30U) continue;
+        ++candidates;
+        serial_write("USB: xHCI controller BDF/vendor/device=");
+        serial_write_hex(device->bus);
+        serial_write(":");
+        serial_write_hex(device->slot);
+        serial_write(".");
+        serial_write_hex(device->function);
+        serial_write(" ");
+        serial_write_hex(device->vendor_id);
+        serial_write("/");
+        serial_write_hex(device->device_id);
+        serial_write("\\r\\n");
         if (xhci_try_controller(device)) return true;
     }
-    serial_write("USB: no usable xHCI HID keyboard, mouse, or gamepad\\r\\n");
+    if (candidates == 0U) {
+        serial_write("USB: no PCI xHCI controller found; PS/2 or a supported legacy host controller is required\\r\\n");
+    } else {
+        serial_write("USB: xHCI controllers found but no supported directly attached HID device was initialized\\r\\n");
+    }
     return false;
 }
 

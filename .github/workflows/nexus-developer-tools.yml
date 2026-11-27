@@ -63,6 +63,14 @@ jobs:
             cc $flags -c "kernel/src/$src.c" -o "/tmp/nexus-$src.o"
           done
 
+      - name: Benchmark legacy versus optimized kernel log ring
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/log_buffer.c \
+            kernel/tests/log_buffer_bench.c \
+            -o /tmp/nexus-log-buffer-bench
+          /tmp/nexus-log-buffer-bench
+
       - name: Build and inspect the native application SDK
         run: |
           make -C sdk CROSS_COMPILE=

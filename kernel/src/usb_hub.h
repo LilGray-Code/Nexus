@@ -37,6 +37,7 @@ struct nexus_usb_path {
     uint8_t parent_port;
     uint8_t depth;
     uint32_t route_string;
+    bool parent_hub_uses_tt;
 };
 
 struct nexus_usb_hub_port_status {

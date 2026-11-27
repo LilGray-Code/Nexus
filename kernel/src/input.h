@@ -25,6 +25,8 @@ struct nexus_input_event {
 };
 
 bool input_init(void);
+bool input_ps2_keyboard_ready(void);
+bool input_ps2_mouse_ready(void);
 void input_keyboard_interrupt(void);
 void input_mouse_interrupt(void);
 /* Called by the boot CPU while draining the single-producer input queue. */

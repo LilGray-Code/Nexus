@@ -2087,6 +2087,8 @@ static void desktop_accounts_draw_page(uint64_t x, uint64_t y) {
                                      "ENABLE / DISABLE", false);
         desktop_settings_draw_button(x + 152U, y + 154U, 92U, 30U,
                                      "DELETE", false);
+        desktop_settings_draw_button(x + 294U, y + 154U, 138U, 30U,
+                                     "REMOVE STARTUP", false);
     }
     graphics_draw_text(x, y + 198U, "LOCAL ACCOUNTS", 1U,
                        142U, 174U, 199U);
@@ -2205,13 +2207,13 @@ static void desktop_task_manager_draw_page(uint64_t x, uint64_t y) {
         format_u64(snapshot.ram_total_bytes / (1024U * 1024U), second);
         line[0] = '\0';
         used = 0U;
-        hardware_append_text(line, sizeof(line), &used, "RAM: ");
+        hardware_append_text(line, sizeof(line), &used, "MANAGED RAM: ");
         hardware_append_text(line, sizeof(line), &used, number);
         hardware_append_text(line, sizeof(line), &used, " / ");
         hardware_append_text(line, sizeof(line), &used, second);
         hardware_append_text(line, sizeof(line), &used, " MiB USED / TOTAL");
     } else {
-        desktop_copy_text(line, "RAM: UNAVAILABLE", sizeof(line));
+        desktop_copy_text(line, "MANAGED RAM: UNAVAILABLE", sizeof(line));
     }
     graphics_draw_text(x, y + 139U, line, 1U, 239U, 247U, 255U);
 

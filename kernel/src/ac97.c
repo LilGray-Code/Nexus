@@ -244,6 +244,7 @@ bool ac97_init(void) {
     io_out32((uint16_t)(busmaster_base + AC97_PCM_OUT_BASE +
                         AC97_PCM_OUT_BDBAR), (uint32_t)bdl_physical);
     initialized = true;
+    active_pci_device = device;
     serial_write("NEXUS AC97 AUDIO READY: 48 kHz S16 stereo DMA output\r\n");
     return true;
 }

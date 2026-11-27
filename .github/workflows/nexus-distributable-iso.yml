@@ -107,7 +107,6 @@ jobs:
             build/limine-binary/limine-bios.sys build/system-pack/NEXUS-SYSTEM.NXP \
             /tmp/nexus-installed-uefi.img
 
-          # Validate the FAT32 EFI System Partition and installed boot menu.
           dd if=/tmp/nexus-installed-uefi.img of=/tmp/nexus-installed-esp.img \
             bs=512 skip=2048 count=1048576 status=none
           fsck.fat -n /tmp/nexus-installed-esp.img
@@ -115,78 +114,7 @@ jobs:
           mdir -i /tmp/nexus-installed-esp.img ::/boot/limine
           mtype -i /tmp/nexus-installed-esp.img ::/boot/limine/limine.conf \
             > /tmp/nexus-installed-limine.conf
-          grep -q '^/Nexus OS - Installed Desktop        shell: bash
-        run: |
-          set -euo pipefail
-          cp /usr/share/OVMF/OVMF_VARS_4M.fd /tmp/nexus-iso-uefi-vars.fd
-          set +e
-          timeout -k 2s 24s qemu-system-x86_64 \
-            -machine q35 -cpu qemu64 -m 512M \
-            -netdev user,id=n0 -device e1000,netdev=n0 \
-            -device virtio-gpu-pci,disable-legacy=on \
-            -audiodev none,id=audio0 -device AC97,audiodev=audio0 \
-            -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE_4M.fd \
-            -drive if=pflash,format=raw,file=/tmp/nexus-iso-uefi-vars.fd \
-            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
-            -boot d -display none -serial file:distributable-uefi.log \
-            -monitor none -no-reboot -no-shutdown
-          status=$?
-          set -e
-          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
-            echo "UEFI QEMU exited unexpectedly: $status"
-            exit "$status"
-          fi
-          cat distributable-uefi.log
-          grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" distributable-uefi.log
-          grep -q "NEXUS INSTALLER SESSION READY" distributable-uefi.log
-          grep -q "NEXUS K0 BOOT COMPLETE" distributable-uefi.log
-          if grep -q "VIRTIO GPU: 2D resource attached; CPU raster buffer now drives GPU scanout" distributable-uefi.log; then
-            echo "UEFI boot used the VirtIO-GPU 2D scanout path."
-          else
-            grep -q "DESKTOP: using firmware framebuffer backend" distributable-uefi.log
-            echo "UEFI boot succeeded with firmware-framebuffer fallback; VirtIO-GPU acceleration was not initialized."
-          fi
-
-      - name: Boot-check the distributable ISO with legacy BIOS
-        shell: bash
-        run: |
-          set -euo pipefail
-          set +e
-          timeout -k 2s 24s qemu-system-x86_64 \
-            -machine pc -cpu max -m 512M \
-            -netdev user,id=n0 -device e1000,netdev=n0 \
-            -cdrom release/NexusOS-OriginalKernel-x86_64.iso \
-            -boot d -display none -serial file:distributable-bios.log \
-            -monitor none -no-reboot -no-shutdown
-          status=$?
-          set -e
-          if [[ "$status" -ne 124 && "$status" -ne 137 && "$status" -ne 0 ]]; then
-            echo "BIOS QEMU exited unexpectedly: $status"
-            exit "$status"
-          fi
-          cat distributable-bios.log
-          grep -q "NEXUS BOOT MODE: DEDICATED INSTALLER" distributable-bios.log
-          grep -q "NEXUS INSTALLER SESSION READY" distributable-bios.log
-          grep -q "NEXUS K0 BOOT COMPLETE" distributable-bios.log
-
-      - name: Upload the boot-tested distributable Nexus ISO and release evidence
-        uses: actions/upload-artifact@v4
-        with:
-          name: NexusOS-OriginalKernel-x86_64-${{ github.sha }}
-          path: |
-            release/NexusOS-OriginalKernel-x86_64.iso
-            release/SHA256SUMS.txt
-            release/BUILD-INFO.txt
-            release/RELEASE-MANIFEST.TXT
-            build/nexus-kernel.elf
-            build/system-pack/NEXUS-SYSTEM.NXP
-            distributable-uefi.log
-            distributable-bios.log
-            installed-uefi-serial.log
-            installed-bios-serial.log
-          if-no-files-found: error
-          retention-days: 90
- /tmp/nexus-installed-limine.conf
+          grep -q '^/Nexus OS - Installed Desktop$' /tmp/nexus-installed-limine.conf
           grep -q 'cmdline: nexus.mode=desktop' /tmp/nexus-installed-limine.conf
           ! grep -q 'nexus.mode=installer' /tmp/nexus-installed-limine.conf
 
@@ -286,13 +214,20 @@ jobs:
           grep -q "NEXUS INSTALLER SESSION READY" distributable-bios.log
           grep -q "NEXUS K0 BOOT COMPLETE" distributable-bios.log
 
-      - name: Upload the distributable Nexus ISO and checksum
+      - name: Upload the boot-tested distributable Nexus ISO and release evidence
         uses: actions/upload-artifact@v4
         with:
-          name: NexusOS-OriginalKernel-x86_64
+          name: NexusOS-OriginalKernel-x86_64-${{ github.sha }}
           path: |
             release/NexusOS-OriginalKernel-x86_64.iso
             release/SHA256SUMS.txt
+            release/BUILD-INFO.txt
+            release/RELEASE-MANIFEST.TXT
             build/nexus-kernel.elf
+            build/system-pack/NEXUS-SYSTEM.NXP
+            distributable-uefi.log
+            distributable-bios.log
+            installed-uefi-serial.log
+            installed-bios-serial.log
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

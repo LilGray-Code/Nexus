@@ -3884,8 +3884,6 @@ static void draw_pointer(void) {
     }
 }
 
-}
-
 static void refresh_files_listing(void) {
     files_vfs_ready = vfs_has_filesystem();
     files_listing_count = 0U;

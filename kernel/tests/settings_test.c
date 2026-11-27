@@ -23,6 +23,10 @@ int main(void) {
         NEXUS_SETTINGS_ACCOUNTS_USERS, "gpu"));
     assert(nexus_settings_category_matches(
         NEXUS_SETTINGS_STORAGE, ""));
+    assert(!nexus_settings_category_matches(
+        NEXUS_SETTINGS_CATEGORY_INVALID, ""));
+    assert(!nexus_settings_category_matches(
+        NEXUS_SETTINGS_CATEGORY_INVALID, "settings"));
     assert(nexus_settings_category_at(16U) == NULL);
     struct nexus_settings settings;
     nexus_settings_defaults(&settings);

@@ -72,8 +72,57 @@ static void test_le_connection(void) {
            connection.peer_address[5] == 6U);
 }
 
+
+static void test_hci_command_build_and_responses(void) {
+    uint8_t packet[16] = {0U};
+    size_t packet_length = 0U;
+    assert(nexus_bt_hci_build_command(NEXUS_BT_HCI_OPCODE_RESET,
+        NULL, 0U, packet, sizeof(packet), &packet_length));
+    assert(packet_length == 4U);
+    assert(packet[0] == NEXUS_BT_HCI_PACKET_COMMAND);
+    assert(packet[1] == 0x03U && packet[2] == 0x0CU && packet[3] == 0U);
+
+    const uint8_t parameter[] = {0x01U,0x02U};
+    assert(nexus_bt_hci_build_command(NEXUS_BT_HCI_OPCODE_READ_LOCAL_VERSION,
+        parameter, sizeof(parameter), packet, sizeof(packet), &packet_length));
+    assert(packet_length == 6U && packet[1] == 0x01U && packet[2] == 0x10U);
+    assert(packet[3] == 2U && packet[5] == 2U);
+    assert(!nexus_bt_hci_build_command(0x1001U, parameter, 2U,
+        packet, 4U, &packet_length));
+    assert(!nexus_bt_hci_build_command(0x1001U, NULL, 1U,
+        packet, sizeof(packet), &packet_length));
+
+    const uint8_t complete_parameters[] = {
+        1U,0x03U,0x0CU,0U,0x09U,0x01U
+    };
+    const struct nexus_bt_hci_event_view complete = {
+        .event_code = NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE,
+        .parameters = complete_parameters,
+        .parameter_length = sizeof(complete_parameters)
+    };
+    struct nexus_bt_hci_command_result result = {0};
+    assert(nexus_bt_hci_parse_command_complete(&complete, &result));
+    assert(result.opcode == NEXUS_BT_HCI_OPCODE_RESET);
+    assert(result.status == 0U && result.command_packets_allowed == 1U);
+    assert(result.return_parameter_length == 2U);
+    assert(result.return_parameters[0] == 0x09U);
+
+    const uint8_t status_parameters[] = {0U,1U,0x01U,0x10U};
+    const struct nexus_bt_hci_event_view status = {
+        .event_code = NEXUS_BT_HCI_EVENT_COMMAND_STATUS,
+        .parameters = status_parameters,
+        .parameter_length = sizeof(status_parameters)
+    };
+    assert(nexus_bt_hci_parse_command_status(&status, &result));
+    assert(result.opcode == NEXUS_BT_HCI_OPCODE_READ_LOCAL_VERSION);
+    assert(result.status == 0U && result.command_packets_allowed == 1U);
+    assert(result.return_parameters == NULL &&
+           result.return_parameter_length == 0U);
+}
+
 int main(void) {
     test_event_framing();
+    test_hci_command_build_and_responses();
     test_acl_framing();
     test_classic_connection_and_disconnect();
     test_le_connection();

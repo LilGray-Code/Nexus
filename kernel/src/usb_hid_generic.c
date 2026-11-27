@@ -497,7 +497,6 @@ static bool hid_multi_scan_ids(
         return false;
     *id_count = 0U;
     *has_report_ids = false;
-    uint8_t current_id = 0U;
     bool report_id_seen = false;
     size_t offset = 0U;
     while (offset < descriptor_length) {
@@ -519,7 +518,6 @@ static bool hid_multi_scan_ids(
         if (item_type == 1U && item_tag == 8U) {
             if (item_size != 1U || value == 0U || value > 255U)
                 return false;
-            current_id = (uint8_t)value;
             report_id_seen = true;
             *has_report_ids = true;
             if (!hid_multi_add_id(ids, id_count, current_id)) return false;

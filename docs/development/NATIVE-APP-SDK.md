@@ -21,9 +21,13 @@ Install an x86-64 bare-metal GCC cross compiler, then run:
 
 ```sh
 make -C sdk
+make -C sdk inspect
 ```
 
 This produces `sdk/build/kinetic_demo.elf`, `sdk/build/gamepad_demo.elf`, `sdk/build/audio_demo.elf`, and `sdk/build/pie_demo.elf`. The first three are static ET_EXEC images. The PIE demo is a static ET_DYN image that verifies the kernel's relative-relocation handling; none of these demos requires external shared libraries or a dynamic interpreter. Put a demo on a readable Nexus volume and use the desktop Files app's Run action to launch it. Press Escape to exit each demo. The gamepad demo displays normalized axis bars and button state, and clears its connected state when xHCI reports a controller disconnect. The audio demo requests one 1,024-frame AC'97 PCM chunk at a time and plays a 440 Hz stereo test tone when a supported controller is present.
+
+
+The `inspect` target also reports ELF headers/program headers and a short disassembly using `file`, `readelf`, and `objdump`. It is a host-side build/inspection workflow; these tools are not yet shipped as native Nexus applications.
 
 Override the toolchain prefix when needed:
 

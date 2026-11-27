@@ -2522,67 +2522,46 @@ static void draw_shell(void) {
                 1U, 108U, 216U, 229U);
         } else if (settings_page == SETTINGS_SYSTEM_INFORMATION) {
             desktop_settings_draw_heading(text_x, content_y,
-                "SYSTEM", "Sound, connectivity and system status.");
-            graphics_draw_text(text_x, content_y + 66U, "MASTER VOLUME",
-                               1U, 142U, 174U, 199U);
-            static const uint8_t volumes[5] = {0U, 25U, 50U, 75U, 100U};
-            for (size_t i = 0U; i < 5U; ++i) {
-                char label[8] = {
-                    (char)('0' + volumes[i] / 100U),
-                    (char)('0' + (volumes[i] / 10U) % 10U),
-                    (char)('0' + volumes[i] % 10U), '%', '\0'
-                };
-                desktop_settings_draw_button(text_x + (uint64_t)i * 82U,
-                    content_y + 83U, 74U, 30U, label,
-                    desktop_settings.volume_percent == volumes[i]);
-            }
-            const bool audio_output_ready =
-                nexus_audio_default_device(NEXUS_AUDIO_PLAYBACK) != 0U;
-            graphics_draw_text(text_x, content_y + 137U,
-                audio_output_ready
-                    ? "AUDIO MIXER OUTPUT READY"
-                    : "NO PLAYBACK DRIVER - VOLUME SAVED FOR LATER",
-                1U, audio_output_ready ? 108U : 231U,
-                audio_output_ready ? 216U : 183U,
-                audio_output_ready ? 229U : 127U);
-            struct nexus_net_info info;
-            const char *network_status = "NO NETWORK ADAPTER";
-            if (net_get_info(&info) && info.interface_ready)
-                network_status = !info.link_up ? "ETHERNET LINK DOWN"
-                    : (info.ipv4_configured ? "ETHERNET CONNECTED"
-                                            : "ETHERNET WAITING FOR DHCP");
-            graphics_draw_text(text_x, content_y + 184U, "NETWORK",
-                               1U, 142U, 174U, 199U);
-            graphics_draw_text(text_x + 84U, content_y + 184U,
-                network_status, 1U, 108U, 216U, 229U);
-            const char *wifi_status = "WI-FI NOT DETECTED";
-            if (wifi_available()) {
-                switch (wifi_get_state()) {
-                    case NEXUS_WIFI_READY: wifi_status = "RADIO READY"; break;
-                    case NEXUS_WIFI_SCANNING: wifi_status = "SCANNING"; break;
-                    case NEXUS_WIFI_CONNECTING: wifi_status = "CONNECTING"; break;
-                    case NEXUS_WIFI_CONNECTED: wifi_status = "CONNECTED"; break;
-                    case NEXUS_WIFI_FAILED: wifi_status = "RADIO ERROR"; break;
-                    default: wifi_status = "RADIO UNAVAILABLE"; break;
-                }
-            } else if (wifi_pci_candidate_count() != 0U) {
-                wifi_status = "DEVICE FOUND - DRIVER NEEDED";
-            }
-            graphics_draw_text(text_x, content_y + 211U, "WI-FI",
-                               1U, 142U, 174U, 199U);
-            graphics_draw_text(text_x + 84U, content_y + 211U,
-                wifi_status, 1U, 108U, 216U, 229U);
-            char mem_line[64];
-            format_labeled_u64("FREE MEMORY: ", memory_free_bytes(), mem_line);
-            graphics_draw_text(text_x, content_y + 252U,
-                mem_line, 1U, 231U, 239U, 247U);
-            format_labeled_u64("UPTIME: ", timer_ticks() / 100U, mem_line);
-            graphics_draw_text(text_x, content_y + 276U,
-                mem_line, 1U, 171U, 191U, 211U);
-            graphics_draw_text(text_x, content_y + 310U,
+                "SYSTEM INFORMATION", "Live CPU, graphics, firmware and kernel state.");
+            const struct nexus_cpu_info *cpu = nexus_cpu_get_info();
+            graphics_draw_text(text_x, content_y + 62U,
+                cpu != NULL && cpu->brand[0] != '\0'
+                    ? cpu->brand : "CPU IDENTIFICATION UNAVAILABLE",
+                1U, 231U, 239U, 247U);
+            graphics_draw_text(text_x, content_y + 90U,
+                cpu != NULL ? cpu->vendor : "CPU VENDOR UNKNOWN",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 124U,
+                gpu_primary_name(), 1U, 108U, 216U, 229U);
+            graphics_draw_text(text_x, content_y + 150U,
+                gpu_render_path_name(), 1U, 171U, 191U, 211U);
+            char line[64];
+            format_labeled_u64("PCI DEVICES: ", pci_device_count(), line);
+            graphics_draw_text(text_x, content_y + 184U, line, 1U,
+                171U, 191U, 211U);
+            format_labeled_u64("FREE MEMORY BYTES: ", memory_free_bytes(), line);
+            graphics_draw_text(text_x, content_y + 210U, line, 1U,
+                171U, 191U, 211U);
+            format_labeled_u64("UPTIME SECONDS: ", timer_ticks() / 100U, line);
+            graphics_draw_text(text_x, content_y + 236U, line, 1U,
+                171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 270U,
+                nexus_firmware_type_label(), 1U, 171U, 191U, 211U);
+            const struct nexus_firmware_info *firmware = nexus_firmware_get_info();
+            graphics_draw_text(text_x, content_y + 296U,
+                firmware != NULL && firmware->smbios_present
+                    ? "SMBIOS INVENTORY: AVAILABLE"
+                    : "SMBIOS INVENTORY: NOT AVAILABLE",
+                1U, 171U, 191U, 211U);
+            const struct nexus_acpi_topology *topology = acpi_get_topology();
+            graphics_draw_text(text_x + 340U, content_y + 184U,
+                topology != NULL ? "ACPI TABLES: AVAILABLE"
+                                 : "ACPI TABLES: NOT AVAILABLE",
+                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x + 340U, content_y + 210U,
                 desktop_preferences_persistent
-                    ? "PREFERENCES ARE STORED ON NEXUS DATA"
-                    : "PREFERENCES ARE NOT YET STORED PERSISTENTLY",
+                    ? "SETTINGS: PERSISTENT"
+                    : "SETTINGS: VOLATILE / UNSAVED",
                 1U, desktop_preferences_persistent ? 108U : 231U,
                 desktop_preferences_persistent ? 216U : 183U,
                 desktop_preferences_persistent ? 229U : 127U);
@@ -2943,7 +2922,7 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 322U,
                 "SERIAL DIAGNOSTICS REMAIN ENABLED BY THE KERNEL BUILD.",
                 1U, 171U, 191U, 211U);
-        }
+        } else if (settings_page == SETTINGS_STORAGE) {
             desktop_settings_draw_heading(text_x, content_y,
                 "STORAGE", "Inspect disks, partitions, transport and I/O health.");
             graphics_draw_text(text_x, content_y + 58U, "CONNECTED DISKS",
@@ -3093,8 +3072,11 @@ static void draw_shell(void) {
                 1U, 171U, 191U, 211U);
         } else {
             desktop_settings_draw_heading(text_x, content_y,
-                "DEVICES", "Detected hardware, active driver path and capabilities.");
-            desktop_draw_hardware_overview(text_x, content_y + 58U);
+                "SETTINGS", "Select a category or search for a setting.");
+            if (settings_visible_category_count() == 0U)
+                graphics_draw_text(text_x, content_y + 64U,
+                    "NO SETTINGS CATEGORIES MATCH YOUR SEARCH.",
+                    1U, 231U, 183U, 127U);
         }
     } else if (active_view == DESKTOP_STORE) {
         graphics_draw_text_aa(text_x, text_y, "NEXUS APP STORE",

@@ -567,6 +567,26 @@ static bool desktop_settings_restore_defaults(void) {
     return true;
 }
 
+static bool settings_wifi_connect_selected(void) {
+    struct nexus_wifi_network network;
+    if (!wifi_scan_result_at(settings_wifi_selected_index, &network)) {
+        settings_status_set("Connect failed: select a discovered network first.");
+        return false;
+    }
+    const char *password = network.security == NEXUS_WIFI_SECURITY_OPEN
+        ? "" : settings_wifi_password;
+    if (!wifi_connect(&network, password)) {
+        settings_status_set("Connect request rejected: password or radio state is invalid.");
+        return false;
+    }
+    settings_status_set("Connect request accepted by radio driver.");
+    for (size_t i = 0U; i < sizeof(settings_wifi_password); ++i)
+        settings_wifi_password[i] = '\0';
+    settings_wifi_password_length = 0U;
+    settings_wifi_password_focused = false;
+    return true;
+}
+
 static void settings_copy_ssid(const struct nexus_wifi_network *network,
                                char output[40]) {
     if (output == NULL) return;
@@ -2777,7 +2797,7 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 340U,
                 "CONNECTIONS ARE REQUESTED THROUGH THE REGISTERED RADIO DRIVER.",
                 1U, 171U, 191U, 211U);
-        } else if (settings_page == SETTINGS_INPUT_ACCESSORIES) {
+        } else if (settings_page == SETTINGS_INPUT) {
             desktop_settings_draw_heading(text_x, content_y,
                 "INPUT & ACCESSORIES", "Live pointer, scroll and handedness settings.");
             graphics_draw_text(text_x, content_y + 64U,
@@ -7049,23 +7069,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 } else if (py >= content_y + 222U &&
                            py < content_y + 250U &&
                            px >= sx + 270U && px < sx + 390U) {
-                    struct nexus_wifi_network network;
-                    if (!wifi_scan_result_at(settings_wifi_selected_index, &network)) {
-                        settings_status_set("Connect failed: select a discovered network first.");
-                    } else {
-                        const char *password =
-                            network.security == NEXUS_WIFI_SECURITY_OPEN
-                                ? "" : settings_wifi_password;
-                        if (!wifi_connect(&network, password)) {
-                            settings_status_set("Connect request rejected: password or radio state is invalid.");
-                        } else {
-                            settings_status_set("Connect request accepted by radio driver.");
-                            for (size_t i = 0U; i < sizeof(settings_wifi_password); ++i)
-                                settings_wifi_password[i] = '\0';
-                            settings_wifi_password_length = 0U;
-                            settings_wifi_password_focused = false;
-                        }
-                    }
+                    (void)settings_wifi_connect_selected();
                 }
             } else if (settings_page == SETTINGS_SOUND) {
                 if (py >= content_y + 76U && py < content_y + 172U) {

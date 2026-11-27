@@ -5,6 +5,7 @@
 
 #include "acpi.h"
 #include "ac97.h"
+#include "audio.h"
 #include "cpu.h"
 #include "fpu.h"
 #include "blockdev.h"
@@ -813,7 +814,7 @@ void kmain(void) {
     for (;;) {
         net_poll();
         xhci_poll();
-        ac97_poll();
+        nexus_audio_poll();
         struct nexus_input_event event;
         while (input_pop_event(&event)) {
             desktop_handle_input(&event);

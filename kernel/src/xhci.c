@@ -2,6 +2,7 @@
 #include "xhci_speed.h"
 #include "xhci_ownership.h"
 #include "xhci_ports.h"
+#include "xhci_power.h"
 #include "usb_host_controller.h"
 
 #include "input.h"
@@ -1670,8 +1671,9 @@ bool xhci_resume(void) {
     const bool registers_read =
         xhci_read32(xhci, (uint64_t)xhci->cap_length, &command) &&
         xhci_read32(xhci, (uint64_t)xhci->cap_length + 4U, &status);
-    if (registers_read && (command & XHCI_USBCMD_RUN) != 0U &&
-        (status & XHCI_USBSTS_HALTED) == 0U) {
+    if (registers_read &&
+        nexus_xhci_resume_decide(command, status) ==
+            NEXUS_XHCI_RESUME_RETAINED) {
         xhci_rescan_root_ports_internal(xhci);
         return true;
     }

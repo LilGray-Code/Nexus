@@ -914,14 +914,18 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
 static bool xhci_load_generic_hid_report_protocol(
     struct xhci_controller *xhci, struct xhci_hid_device *device,
     uint8_t interface_number, uint16_t descriptor_length,
-    uint16_t max_packet, enum xhci_hid_kind expected_kind) {
+    uint16_t max_packet, enum xhci_hid_kind expected_kind,
+    bool select_report_protocol) {
     if (xhci == NULL || device == NULL || device->report_buffer == NULL ||
         descriptor_length == 0U || descriptor_length > 512U ||
         (expected_kind != XHCI_HID_KEYBOARD &&
          expected_kind != XHCI_HID_MOUSE) ||
         max_packet == 0U) return false;
 
-    if (!xhci_control_transfer(xhci, device, 0x81U, 0x06U,
+    if ((select_report_protocol &&
+         !xhci_control_transfer(xhci, device, 0x21U, 0x0BU,
+             1U, interface_number, NULL, 0U)) ||
+        !xhci_control_transfer(xhci, device, 0x81U, 0x06U,
             0x2200U, interface_number,
             (void *)(uintptr_t)device->report_buffer, descriptor_length) ||
         !usb_hid_generic_parse_descriptor_multi(
@@ -1074,21 +1078,39 @@ static bool xhci_configure_secondary_hid_interface(
     const bool selected_boot_interface = selected->subclass == 1U &&
         (selected->protocol == 1U || selected->protocol == 2U);
     bool boot_protocol_ready = false;
-    if (selected_boot_interface) {
+    bool report_protocol_ready = false;
+    if (selected_boot_interface && wanted == XHCI_HID_MOUSE) {
+        /* Mouse report protocol retains wheels and extra buttons which the
+         * three-byte boot format cannot represent. Prefer it when valid. */
+        report_protocol_ready = xhci_load_generic_hid_report_protocol(
+            xhci, &endpoint, selected->number,
+            selected->report_descriptor_length, endpoint.max_packet,
+            wanted, true);
+    }
+    if (selected_boot_interface && !report_protocol_ready) {
         const uint16_t minimum = wanted == XHCI_HID_KEYBOARD ? 8U : 3U;
         boot_protocol_ready = endpoint.max_packet >= minimum &&
             xhci_control_transfer(xhci, &endpoint, 0x21U, 0x0BU,
                 0U, selected->number, NULL, 0U);
     }
-    if (!boot_protocol_ready &&
-        !xhci_load_generic_hid_report_protocol(xhci, &endpoint,
-            selected->number, selected->report_descriptor_length,
-            endpoint.max_packet, wanted)) {
+    if (!selected_boot_interface) {
+        report_protocol_ready = xhci_load_generic_hid_report_protocol(
+            xhci, &endpoint, selected->number,
+            selected->report_descriptor_length, endpoint.max_packet,
+            wanted, false);
+    } else if (!boot_protocol_ready && !report_protocol_ready) {
+        report_protocol_ready = xhci_load_generic_hid_report_protocol(
+            xhci, &endpoint, selected->number,
+            selected->report_descriptor_length, endpoint.max_packet,
+            wanted, true);
+    }
+    if (!boot_protocol_ready && !report_protocol_ready) {
         (void)memory_free_page(endpoint.report_buffer_physical);
         return false;
     }
-    if (selected_boot_interface && !boot_protocol_ready)
-        serial_write("xHCI: secondary HID boot protocol unavailable; using report protocol fallback\\r\\n");
+    if (selected_boot_interface && wanted == XHCI_HID_MOUSE &&
+        report_protocol_ready)
+        serial_write("xHCI: secondary mouse using HID report protocol (wheel/buttons enabled)\\r\\n");
 
     if (!xhci_configure_interrupt_endpoint(xhci, &endpoint,
             selected->endpoint_in, selected->max_packet,
@@ -1578,16 +1600,26 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
                 report_descriptor_length, &device->gamepad_layout)) {
             goto failed;
         }
+    } else if (kind == XHCI_HID_MOUSE) {
+        /* Prefer the mouse's Report protocol so wheel, side buttons, and
+         * higher-resolution axes are not lost to the 3-byte Boot format. */
+        if (!xhci_load_generic_hid_report_protocol(xhci, device,
+                interface_number, report_descriptor_length,
+                max_packet, kind, true)) {
+            if (!xhci_control_transfer(xhci, device, 0x21U, 0x0BU,
+                    0U, interface_number, NULL, 0U)) goto failed;
+            serial_write("xHCI: mouse report protocol unavailable; using boot protocol fallback\\r\\n");
+        } else {
+            serial_write("xHCI: mouse report protocol active (wheel/buttons enabled)\\r\\n");
+        }
     } else {
-        /* HID Set_Protocol(Boot) is preferred, but some otherwise usable
-         * boot-class mice reject the request. Fall back to their Report
-         * descriptor instead of dropping the entire mouse interface. */
+        /* Keyboard boot reports remain the most widely compatible path. */
         if (!xhci_control_transfer(xhci, device, 0x21U, 0x0BU,
                                    0U, interface_number, NULL, 0U)) {
             if (!xhci_load_generic_hid_report_protocol(xhci, device,
                     interface_number, report_descriptor_length,
-                    max_packet, kind)) goto failed;
-            serial_write("xHCI: HID boot protocol unavailable; using report protocol fallback\\r\\n");
+                    max_packet, kind, true)) goto failed;
+            serial_write("xHCI: keyboard boot protocol unavailable; using report protocol fallback\\r\\n");
         }
     }
     if (!xhci_configure_interrupt_endpoint(xhci, device, endpoint_address,

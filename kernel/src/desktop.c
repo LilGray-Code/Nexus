@@ -2584,10 +2584,13 @@ static void draw_shell(void) {
                                        stats_line);
                     graphics_draw_text(detail_x + 172U, content_y + 166U,
                         stats_line, 1U, 171U, 191U, 211U);
-                    format_labeled_u64("I/O ERRORS: ",
-                        io_stats.read_errors + io_stats.write_errors +
-                            io_stats.flush_errors, stats_line);
+                    format_labeled_u64("READ ERR: ", io_stats.read_errors,
+                                       stats_line);
                     graphics_draw_text(detail_x, content_y + 188U,
+                        stats_line, 1U, 231U, 183U, 127U);
+                    format_labeled_u64("WRITE ERR: ", io_stats.write_errors,
+                                       stats_line);
+                    graphics_draw_text(detail_x + 172U, content_y + 188U,
                         stats_line, 1U, 231U, 183U, 127U);
                 }
 
@@ -6645,9 +6648,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (settings_page == SETTINGS_STORAGE) {
                 if (py >= content_y + 76U &&
                     py < content_y + 216U && px >= sx && px < sx + 250U) {
-                    const size_t row =
-                        (size_t)(py - (content_y + 76U)) / 35U;
-                    if (row < blockdev_count() && row < 4U) {
+                    const uint64_t relative_y =
+                        py - (content_y + 76U);
+                    const size_t row = (size_t)(relative_y / 35U);
+                    if (relative_y % 35U < 30U &&
+                        row < blockdev_count() && row < 4U) {
                         storage_selected_device_index = row;
                     }
                 } else if (py >= content_y + 350U &&

@@ -20,7 +20,7 @@ int main(void) {
         oversized[i] = (char)('A' + (i % 26U));
     nexus_log_buffer_append(oversized, sizeof(oversized));
 
-    const size_t count =
+    size_t count =
         nexus_log_buffer_read_recent(output, sizeof(output));
     assert(count == NEXUS_LOG_BUFFER_CAPACITY);
     assert(output[count] == '\0');

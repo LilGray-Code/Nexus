@@ -7,6 +7,7 @@
 
 #include "blockdev.h"
 #include "gpt.h"
+#include "mbr.h"
 #include "fat32.h"
 #include "boot_pack.h"
 
@@ -40,6 +41,9 @@ struct nexus_vfs_file {
 
 bool vfs_mount_root_fat32(const struct nexus_block_device *device,
                           const struct nexus_gpt_partition *partition);
+bool vfs_mount_root_fat32_mbr(
+    const struct nexus_block_device *device,
+    const struct nexus_mbr_partition *partition);
 bool vfs_mount_root_nxfs(const struct nexus_block_device *device,
                          const struct nexus_gpt_partition *partition);
 bool vfs_nxfs_mounted(void);

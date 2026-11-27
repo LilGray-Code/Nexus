@@ -1,5 +1,6 @@
 #include "xhci.h"
 #include "xhci_speed.h"
+#include "xhci_ownership.h"
 
 #include "input.h"
 #include "memory.h"
@@ -22,6 +23,7 @@
 #define XHCI_MAX_GAMEPADS      32U
 #define XHCI_MAX_SCRATCHPADS    512U
 #define XHCI_POLL_LIMIT         5000000U
+#define XHCI_BIOS_HANDOFF_TIMEOUT 5000000U
 #define XHCI_COMMAND_TIMEOUT    5000000U
 #define XHCI_TRANSFER_TIMEOUT   5000000U
 _Static_assert(XHCI_MAX_KEYBOARDS == XHCI_MAX_PORTS,
@@ -194,6 +196,23 @@ static bool xhci_read32(struct xhci_controller *xhci, uint64_t offset,
     if (reg == NULL || value == NULL) return false;
     *value = *reg;
     return *value != UINT32_MAX;
+}
+
+static bool xhci_read8(struct xhci_controller *xhci, uint64_t offset,
+                       uint8_t *value) {
+    volatile uint32_t *reg = xhci_map_register(xhci, offset);
+    if (reg == NULL || value == NULL) return false;
+    *value = *(volatile uint8_t *)(uintptr_t)reg;
+    return *value != UINT8_MAX;
+}
+
+static bool xhci_write8(struct xhci_controller *xhci, uint64_t offset,
+                        uint8_t value) {
+    volatile uint32_t *reg = xhci_map_register(xhci, offset);
+    if (reg == NULL) return false;
+    *(volatile uint8_t *)(uintptr_t)reg = value;
+    __asm__ volatile ("sfence" : : : "memory");
+    return true;
 }
 
 static bool xhci_write32(struct xhci_controller *xhci, uint64_t offset,
@@ -1164,6 +1183,72 @@ failed:
     return false;
 }
 
+/*
+ * Request exclusive xHCI ownership from system firmware before resetting or
+ * programming the controller. The ownership semaphores are byte-addressable;
+ * use byte accesses so the OS never races a BIOS update to the adjacent byte.
+ */
+static bool xhci_handoff_bios(struct xhci_controller *xhci,
+                              uint32_t hccparams1) {
+    uint32_t offset = nexus_xhci_extended_cap_start(hccparams1);
+    if (offset == 0U) return true; /* Legacy handoff capability is optional. */
+
+    for (uint32_t visited = 0U; visited < 256U; ++visited) {
+        if (offset < 0x20U || (offset & 0x03U) != 0U) {
+            serial_write("xHCI: invalid extended-capability pointer\r\n");
+            return false;
+        }
+        uint32_t header = 0U;
+        if (!xhci_read32(xhci, offset, &header)) {
+            serial_write("xHCI: unable to read extended-capability chain\r\n");
+            return false;
+        }
+        if (nexus_xhci_legacy_capability_id(header) == 1U) {
+            uint8_t bios_owned = 0U;
+            uint8_t os_owned = 0U;
+            if (!xhci_read8(xhci, (uint64_t)offset + 2U, &bios_owned) ||
+                !xhci_read8(xhci, (uint64_t)offset + 3U, &os_owned)) {
+                serial_write("xHCI: unable to read BIOS/OS ownership semaphores\r\n");
+                return false;
+            }
+            if (!xhci_write8(xhci, (uint64_t)offset + 3U,
+                    nexus_xhci_request_os_ownership(os_owned))) {
+                serial_write("xHCI: unable to request OS controller ownership\r\n");
+                return false;
+            }
+
+            bool released = nexus_xhci_bios_ownership_released(bios_owned);
+            for (uint32_t spin = 0U; !released &&
+                 spin < XHCI_BIOS_HANDOFF_TIMEOUT; ++spin) {
+                if (!xhci_read8(xhci, (uint64_t)offset + 2U, &bios_owned))
+                    return false;
+                released = nexus_xhci_bios_ownership_released(bios_owned);
+                if (!released) __asm__ volatile ("pause");
+            }
+            if (!released) {
+                serial_write("xHCI: firmware did not release BIOS ownership; refusing unsafe takeover\r\n");
+                return false;
+            }
+
+            uint32_t control_status = 0U;
+            if (!xhci_read32(xhci, (uint64_t)offset + 4U,
+                             &control_status) ||
+                !xhci_write32(xhci, (uint64_t)offset + 4U,
+                    nexus_xhci_disable_legacy_smi(control_status))) {
+                serial_write("xHCI: unable to disable firmware SMI sources\r\n");
+                return false;
+            }
+            serial_write("xHCI: BIOS ownership released; OS owns controller, legacy SMIs disabled\r\n");
+            return true;
+        }
+
+        offset = nexus_xhci_extended_cap_next(offset, header);
+        if (offset == 0U) return true;
+    }
+    serial_write("xHCI: extended-capability chain exceeded safety bound\r\n");
+    return false;
+}
+
 static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     struct xhci_controller *xhci = &controller;
     *xhci = (struct xhci_controller){0};
@@ -1193,6 +1278,8 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         !xhci_read32(xhci, 0x10U, &hccparams) ||
         !xhci_read32(xhci, 0x14U, &db_offset) ||
         !xhci_read32(xhci, 0x18U, &rt_offset)) return false;
+
+    if (!xhci_handoff_bios(xhci, hccparams)) return false;
 
     xhci->max_ports = (uint8_t)((hcsparams1 >> 24) & 0xFFU);
     if (xhci->max_ports == 0U) return false;

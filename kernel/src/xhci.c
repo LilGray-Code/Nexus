@@ -911,6 +911,36 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
     return *configuration_value != 0U;
 }
 
+static bool xhci_load_generic_hid_report_protocol(
+    struct xhci_controller *xhci, struct xhci_hid_device *device,
+    uint8_t interface_number, uint16_t descriptor_length,
+    uint16_t max_packet, enum xhci_hid_kind expected_kind) {
+    if (xhci == NULL || device == NULL || device->report_buffer == NULL ||
+        descriptor_length == 0U || descriptor_length > 512U ||
+        (expected_kind != XHCI_HID_KEYBOARD &&
+         expected_kind != XHCI_HID_MOUSE) ||
+        max_packet == 0U) return false;
+
+    if (!xhci_control_transfer(xhci, device, 0x81U, 0x06U,
+            0x2200U, interface_number,
+            (void *)(uintptr_t)device->report_buffer, descriptor_length) ||
+        !usb_hid_generic_parse_descriptor_multi(
+            (const uint8_t *)(uintptr_t)device->report_buffer,
+            descriptor_length, &device->generic_multi_layout))
+        return false;
+
+    const enum nexus_usb_hid_generic_kind expected =
+        expected_kind == XHCI_HID_KEYBOARD
+            ? NEXUS_USB_HID_GENERIC_KEYBOARD
+            : NEXUS_USB_HID_GENERIC_MOUSE;
+    if (device->generic_multi_layout.reports[0].kind != expected ||
+        device->generic_multi_layout.max_report_bytes > max_packet)
+        return false;
+
+    device->generic_report_protocol = true;
+    return true;
+}
+
 static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
     if (interval == 0U) interval = 1U;
     if (speed >= 3U) {
@@ -1041,37 +1071,24 @@ static bool xhci_configure_secondary_hid_interface(
     if (!xhci_alloc_page(&endpoint.report_buffer_physical,
                          &endpoint.report_buffer)) return false;
 
-    if (selected->subclass == 1U &&
-        (selected->protocol == 1U || selected->protocol == 2U)) {
+    const bool selected_boot_interface = selected->subclass == 1U &&
+        (selected->protocol == 1U || selected->protocol == 2U);
+    bool boot_protocol_ready = false;
+    if (selected_boot_interface) {
         const uint16_t minimum = wanted == XHCI_HID_KEYBOARD ? 8U : 3U;
-        if (endpoint.max_packet < minimum ||
-            !xhci_control_transfer(xhci, &endpoint, 0x21U, 0x0BU,
-                0U, selected->number, NULL, 0U)) {
-            (void)memory_free_page(endpoint.report_buffer_physical);
-            return false;
-        }
-    } else {
-        if (selected->report_descriptor_length == 0U ||
-            selected->report_descriptor_length > 512U ||
-            !xhci_control_transfer(xhci, &endpoint, 0x81U, 0x06U,
-                0x2200U, selected->number,
-                (void *)(uintptr_t)endpoint.report_buffer,
-                selected->report_descriptor_length) ||
-            !usb_hid_generic_parse_descriptor_multi(
-                (const uint8_t *)(uintptr_t)endpoint.report_buffer,
-                selected->report_descriptor_length,
-                &endpoint.generic_multi_layout) ||
-            endpoint.generic_multi_layout.reports[0].kind !=
-                (wanted == XHCI_HID_KEYBOARD
-                    ? NEXUS_USB_HID_GENERIC_KEYBOARD
-                    : NEXUS_USB_HID_GENERIC_MOUSE) ||
-            endpoint.generic_multi_layout.max_report_bytes >
-                endpoint.max_packet) {
-            (void)memory_free_page(endpoint.report_buffer_physical);
-            return false;
-        }
-        endpoint.generic_report_protocol = true;
+        boot_protocol_ready = endpoint.max_packet >= minimum &&
+            xhci_control_transfer(xhci, &endpoint, 0x21U, 0x0BU,
+                0U, selected->number, NULL, 0U);
     }
+    if (!boot_protocol_ready &&
+        !xhci_load_generic_hid_report_protocol(xhci, &endpoint,
+            selected->number, selected->report_descriptor_length,
+            endpoint.max_packet, wanted)) {
+        (void)memory_free_page(endpoint.report_buffer_physical);
+        return false;
+    }
+    if (selected_boot_interface && !boot_protocol_ready)
+        serial_write("xHCI: secondary HID boot protocol unavailable; using report protocol fallback\\r\\n");
 
     if (!xhci_configure_interrupt_endpoint(xhci, &endpoint,
             selected->endpoint_in, selected->max_packet,
@@ -1562,10 +1579,16 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
             goto failed;
         }
     } else {
-        /* HID Set_Protocol(Boot) on the selected keyboard/mouse interface. */
+        /* HID Set_Protocol(Boot) is preferred, but some otherwise usable
+         * boot-class mice reject the request. Fall back to their Report
+         * descriptor instead of dropping the entire mouse interface. */
         if (!xhci_control_transfer(xhci, device, 0x21U, 0x0BU,
-                                   0U, interface_number, NULL, 0U))
-            goto failed;
+                                   0U, interface_number, NULL, 0U)) {
+            if (!xhci_load_generic_hid_report_protocol(xhci, device,
+                    interface_number, report_descriptor_length,
+                    max_packet, kind)) goto failed;
+            serial_write("xHCI: HID boot protocol unavailable; using report protocol fallback\\r\\n");
+        }
     }
     if (!xhci_configure_interrupt_endpoint(xhci, device, endpoint_address,
                                            max_packet, interval, speed))

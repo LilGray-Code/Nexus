@@ -711,6 +711,8 @@ static void desktop_settings_draw_button(uint64_t x, uint64_t y,
 static void desktop_settings_draw_heading(uint64_t x, uint64_t y,
                                           const char *title,
                                           const char *subtitle) {
+    if (settings_status_message[0] != '\0')
+        subtitle = settings_status_message;
     graphics_draw_text_aa(x, y, title, 131072U,
         desktop_theme_is_light() ? 34U : 241U,
         desktop_theme_is_light() ? 49U : 248U,
@@ -2394,12 +2396,18 @@ static void draw_shell(void) {
                 light_theme ? 87U : 171U,
                 light_theme ? 103U : 192U,
                 light_theme ? 126U : 211U);
-            graphics_draw_text(text_x, content_y + 287U,
+            desktop_settings_draw_button(text_x, content_y + 278U,
+                104U, 27U, "EXPORT", false);
+            desktop_settings_draw_button(text_x + 112U, content_y + 278U,
+                104U, 27U, "IMPORT", false);
+            desktop_settings_draw_button(text_x + 224U, content_y + 278U,
+                132U, 27U, "RESTORE DEFAULTS", false);
+            graphics_draw_text(text_x, content_y + 315U,
                 desktop_preferences_persistent
                     ? "SETTINGS SAVED TO NEXUS DATA"
                     : (desktop_preferences_saved
                         ? "SETTINGS SAVED TO RAM ONLY"
-                        : "SETTINGS WILL BE SAVED WHEN YOU CHANGE AN OPTION"),
+                        : "SETTINGS NOT YET SAVED"),
                 1U, desktop_preferences_persistent ? 109U : 229U,
                 desktop_preferences_persistent ? 219U : 186U,
                 desktop_preferences_persistent ? 181U : 130U);

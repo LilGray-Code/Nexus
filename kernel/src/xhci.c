@@ -152,6 +152,9 @@ struct xhci_controller {
     uint16_t event_dequeue;
     uint8_t event_cycle;
     uint64_t last_root_scan_tick;
+    /* Last observed CCS state prevents periodic polling from repeatedly
+     * resetting unrelated connected devices after failed HID probing. */
+    bool root_port_connected[NEXUS_XHCI_MAX_ROOT_PORTS + 1U];
     uint64_t erst_physical;
     struct xhci_mmio_mapping mappings[XHCI_MAX_MMIO_PAGES];
     size_t mapping_count;
@@ -1330,6 +1333,14 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
      */
     for (uint16_t port = 1U; port <= xhci->max_ports; ++port) {
         const uint8_t port_number = (uint8_t)port;
+        uint64_t port_offset = 0U;
+        uint32_t port_status = 0U;
+        if (!nexus_xhci_port_register_offset(xhci->cap_length,
+                port_number, &port_offset) ||
+            !xhci_read32(xhci, port_offset, &port_status)) continue;
+        xhci->root_port_connected[port_number] =
+            nexus_xhci_port_connected(port_status);
+        if (!xhci->root_port_connected[port_number]) continue;
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port_number, &speed)) continue;
         serial_write("xHCI: connected root port ");
@@ -1416,14 +1427,21 @@ static void xhci_rescan_root_ports_internal(struct xhci_controller *xhci) {
         if (!nexus_xhci_port_register_offset(xhci->cap_length,
                 port_number, &port_offset) ||
             !xhci_read32(xhci, port_offset, &port_status)) continue;
-        if (!nexus_xhci_port_connected(port_status)) {
+
+        /* Only enumerate on an observed disconnected -> connected edge.
+         * This keeps periodic recovery polling from resetting attached
+         * storage, hubs, audio, or other non-HID devices over and over. */
+        if (!nexus_xhci_port_connection_changed(
+                xhci->root_port_connected[port_number], port_status))
+            continue;
+        xhci->root_port_connected[port_number] =
+            nexus_xhci_port_connected(port_status);
+
+        if (!xhci->root_port_connected[port_number]) {
             xhci_detach_port(xhci, port_number);
             continue;
         }
-        if (xhci_device_on_port(xhci, port_number)) continue;
 
-        /* Periodic rescan is a recovery path for missed PORT_STATUS_CHANGE
-         * events and for devices whose first enumeration attempt failed. */
         uint8_t speed = 0U;
         if (!xhci_port_reset(xhci, port_number, &speed)) continue;
         struct xhci_hid_device device = {0};
@@ -1447,11 +1465,14 @@ static void xhci_handle_port_status_change(struct xhci_controller *xhci,
                                          port_number, &port_offset)) return;
     if (!xhci_read32(xhci, port_offset, &port_status)) return;
 
-    if ((port_status & XHCI_PORT_CCS) == 0U) {
+    const bool was_connected = xhci->root_port_connected[port_number];
+    xhci->root_port_connected[port_number] =
+        nexus_xhci_port_connected(port_status);
+    if (!xhci->root_port_connected[port_number]) {
         xhci_detach_port(xhci, port_number);
         return;
     }
-    if (xhci_device_on_port(xhci, port_number)) return;
+    if (was_connected || xhci_device_on_port(xhci, port_number)) return;
 
     /* A new keyboard or receiver may be plugged in after the desktop boots. */
     uint8_t speed = 0U;

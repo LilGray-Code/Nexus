@@ -115,8 +115,9 @@ size_t storage_controller_count(void) { return 1U; }
 bool memory_get_allocator_stats(struct memory_allocator_stats *stats) {
     if (stats == NULL) return false;
     memset(stats, 0, sizeof(*stats));
-    stats->total_bytes = 8192U * 1024U * 1024U;
-    stats->free_bytes = 2048U * 1024U * 1024U;
+    /* Keep the byte-size arithmetic 64-bit before assignment. */
+    stats->total_bytes = 8192ULL * 1024ULL * 1024ULL;
+    stats->free_bytes = 2048ULL * 1024ULL * 1024ULL;
     return true;
 }
 uint64_t timer_ticks(void) { return 2300U; }

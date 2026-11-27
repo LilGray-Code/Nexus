@@ -5703,12 +5703,16 @@ browser_retry:
                     "Cache-Control: no-cache\r\nConnection: close\r\n\r\n"))
             : (search_request
                 ? browser_append_text(request, sizeof(request), &request_length,
-                    "\r\nUser-Agent: Mozilla/5.0 (X11; Nexus OS x86_64; rv:128.0) "
-                    "Gecko/20100101 NexusBrowser/1.0\r\n"
+                    "\r\nUser-Agent: Mozilla/5.0 (X11; Linux x86_64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\r\n"
                     "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n"
-                    "Accept-Language: en-US,en;q=0.8\r\n"
+                    "Accept-Language: en-US,en;q=0.9\r\n"
                     "Accept-Encoding: identity\r\n"
-                    "Cache-Control: no-cache\r\nConnection: close\r\n\r\n")
+                    "Upgrade-Insecure-Requests: 1\r\n"
+                    "Cache-Control: no-cache\r\nPragma: no-cache\r\n"
+                    "Sec-Fetch-Dest: document\r\nSec-Fetch-Mode: navigate\r\n"
+                    "Sec-Fetch-Site: none\r\nSec-Fetch-User: ?1\r\n"
+                    "Connection: close\r\n\r\n")
                 : browser_append_text(request, sizeof(request), &request_length,
                     "\r\nUser-Agent: NexusBrowser/0.3\r\n"
                     "Accept: text/html,text/plain,*/*\r\n"
@@ -5977,9 +5981,33 @@ browser_retry:
                 : "Search provider response was not encrypted");
             return;
         }
-        serial_write(search_use_bing
-            ? "NEXUS BING SEARCH NO COMPATIBLE RESULT LINKS\r\n"
-            : "NEXUS DUCKDUCKGO SEARCH NO COMPATIBLE RESULT LINKS\r\n");
+        if (search_use_bing) {
+            serial_write("NEXUS BING SEARCH NO COMPATIBLE RESULT LINKS status=");
+            serial_write_hex(parsed.status_code);
+            serial_write(" body-bytes=");
+            serial_write_hex(parsed.body_length);
+            serial_write(" content-type=");
+            serial_write(parsed.has_content_type
+                ? parsed.content_type : "(missing)");
+            serial_write("\r\nNEXUS BING RESPONSE PREFIX:\r\n");
+            size_t debug_length = parsed.body_length < 192U
+                ? parsed.body_length : 192U;
+            char debug_line[49];
+            for (size_t offset = 0U; offset < debug_length; offset += 48U) {
+                size_t amount = debug_length - offset;
+                if (amount > 48U) amount = 48U;
+                for (size_t i = 0U; i < amount; ++i) {
+                    const uint8_t value = body[offset + i];
+                    debug_line[i] = value >= 0x20U && value <= 0x7EU
+                        ? (char)value : '.';
+                }
+                debug_line[amount] = '\0';
+                serial_write(debug_line);
+                serial_write("\r\n");
+            }
+        } else {
+            serial_write("NEXUS DUCKDUCKGO SEARCH NO COMPATIBLE RESULT LINKS\r\n");
+        }
         if (browser_search_fallback(
                 search_request, &search_use_bing,
                 &search_fallback_attempted)) goto browser_retry;

@@ -51,6 +51,15 @@ static bool device_type_valid(enum nexus_audio_device_type type) {
            type <= NEXUS_AUDIO_DEVICE_BLUETOOTH;
 }
 
+static bool labels_equal(const char *left, const char *right) {
+    if (left == NULL || right == NULL) return false;
+    for (size_t i = 0U; i <= NEXUS_AUDIO_DEVICE_LABEL_MAX; ++i) {
+        if (left[i] != right[i]) return false;
+        if (left[i] == '\0') return true;
+    }
+    return false;
+}
+
 static bool label_valid(const char label[NEXUS_AUDIO_DEVICE_LABEL_MAX + 1U]) {
     if (label == NULL || label[0] == '\0') return false;
     for (size_t i = 0U; i <= NEXUS_AUDIO_DEVICE_LABEL_MAX; ++i) {
@@ -201,7 +210,8 @@ uint32_t nexus_audio_register_device(
             devices[i].description.type == description->type &&
             devices[i].description.direction == description->direction &&
             devices[i].description.sample_rate == description->sample_rate &&
-            devices[i].description.channels == description->channels) {
+            devices[i].description.channels == description->channels &&
+            labels_equal(devices[i].description.label, description->label)) {
             devices[i].description = *description;
             devices[i].ready = true;
             return devices[i].id;

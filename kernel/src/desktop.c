@@ -206,6 +206,7 @@ static void files_tabs_new(void);
 static void files_tabs_close(void);
 static void files_tabs_cycle(int direction);
 static bool files_file_clipboard_cut_selected(void);
+static bool files_file_clipboard_copy_selected(void);
 static bool files_file_clipboard_paste(void);
 static const char *files_detect_type(const char *name);
 static int64_t pointer_x;
@@ -4841,6 +4842,8 @@ static void files_tabs_capture_active(void) {
 
 static void files_tabs_restore_state(size_t index) {
     if (index >= FILES_TAB_COUNT || !files_tabs[index].used) return;
+    const size_t saved_selected = files_tabs[index].selected;
+    const size_t saved_first = files_tabs[index].first;
     size_t i = 0U;
     while (i + 1U < sizeof(files_search_query) &&
            files_tabs[index].query[i] != '\0') {
@@ -4851,8 +4854,8 @@ static void files_tabs_restore_state(size_t index) {
     files_search_query_length = i;
     files_filter_mode = files_tabs[index].filter;
     refresh_files_listing();
-    files_selected_index = files_tabs[index].selected;
-    files_listing_first_index = files_tabs[index].first;
+    files_selected_index = saved_selected;
+    files_listing_first_index = saved_first;
     files_listing_ensure_selection_visible();
 }
 

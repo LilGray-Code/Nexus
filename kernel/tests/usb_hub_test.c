@@ -23,6 +23,15 @@ static void test_hub_descriptor(void) {
     assert(hub.no_power_switching && hub.multi_tt);
     assert(!nexus_usb_hub_parse_descriptor(no_switch, 6U, false, &hub));
 
+    const uint8_t qemu_eight_port_short_bitmap[] = {
+        10U, 0x29U, 8U, 0x00U, 0x00U, 50U, 0U, 0x00U, 0x00U, 0x00U
+    };
+    assert(nexus_usb_hub_parse_descriptor(
+        qemu_eight_port_short_bitmap,
+        sizeof(qemu_eight_port_short_bitmap), false, &hub));
+    assert(hub.port_count == 8U);
+    assert(hub.power_on_to_good_2ms == 50U);
+
     const uint8_t too_many[] = {
         9U, 0x29U, 16U, 1U, 0U, 5U, 0U, 0U, 0U
     };

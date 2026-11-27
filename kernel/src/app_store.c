@@ -3,6 +3,7 @@
 #include "vfs.h"
 #include "boot_pack.h"
 #include "process.h"
+#include "security.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -59,35 +60,43 @@ static const struct nexus_store_application applications[NEXUS_STORE_MAX_APPS] =
         "Launch a bouncing-ball framebuffer demo. Press Escape to return.",
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - KEYBOARD / DISPLAY",
-        "KINETIC.ELF"
+        "KINETIC.ELF",
+        NEXUS_CAP_CONSOLE_WRITE | NEXUS_CAP_INPUT |
+            NEXUS_CAP_DISPLAY | NEXUS_CAP_CLOCK
     },
     {
         "GAMEPAD", "Gamepad Tester", "Nexus Project", "NATIVE DEMO",
         "Inspect connected USB HID controllers, axes and buttons. Press Escape to return.",
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - USB HID GAMEPAD",
-        "GAMEPAD.ELF"
+        "GAMEPAD.ELF",
+        NEXUS_CAP_CONSOLE_WRITE | NEXUS_CAP_INPUT |
+            NEXUS_CAP_GAMEPAD | NEXUS_CAP_CLOCK
     },
     {
         "AUDIO", "Audio Test", "Nexus Project", "NATIVE DEMO",
         "Play a 440 Hz stereo tone when supported AC97 audio exists. Press Escape to stop.",
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - AC97 AUDIO OPTIONAL",
-        "AUDIO.ELF"
+        "AUDIO.ELF",
+        NEXUS_CAP_CONSOLE_WRITE | NEXUS_CAP_AUDIO | NEXUS_CAP_CLOCK
     },
     {
         "PIE", "Native Runtime Check", "Nexus Project", "NATIVE DEMO",
         "Check the Nexus static-PIE loader and relative relocations.",
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - STATIC PIE",
-        "PIE.ELF"
+        "PIE.ELF",
+        0U
     },
     {
         "ARCADE", "Nexus Breakout", "Nexus Project", "GAMES",
         "A native keyboard and USB gamepad Breakout game. Press Escape to return.",
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - KEYBOARD / USB HID GAMEPAD",
-        "ARCADE.ELF"
+        "ARCADE.ELF",
+        NEXUS_CAP_CONSOLE_WRITE | NEXUS_CAP_INPUT |
+            NEXUS_CAP_GAMEPAD | NEXUS_CAP_DISPLAY | NEXUS_CAP_CLOCK
     },
     {
         "M365", "Microsoft 365", "Microsoft", "PRODUCTIVITY",
@@ -312,7 +321,8 @@ bool nexus_store_launch_native(size_t index, uint64_t *exit_status) {
 
     struct nexus_process_result result = {0};
     enum nexus_process_error error = NEXUS_PROCESS_ERROR_NONE;
-    if (!process_execute_root_file(app->native_filename, &result, &error))
+    if (!process_execute_root_file_with_capabilities(
+            app->native_filename, &result, &error, app->capabilities))
         return false;
     if (exit_status != NULL) *exit_status = result.exit_status;
     return true;

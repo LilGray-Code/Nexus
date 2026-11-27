@@ -785,11 +785,14 @@ static bool xhci_setup_device_context(struct xhci_controller *xhci,
     slot[0] = (path->route_string & 0x000FFFFFU) |
               ((uint32_t)speed << 20) | (1U << 27);
     slot[1] = (uint32_t)path->root_port << 16;
-    if (path->parent_hub_uses_tt) {
-        /* xHCI TT Hub Slot ID and TT Port Number live in Slot Context DW2. */
+    if (path->parent_hub_uses_tt && path->tt_hub_slot != 0U &&
+        path->tt_port != 0U) {
+        /* xHCI TT Hub Slot ID and TT Port Number live in Slot Context DW2.
+         * They refer to the nearest high-speed hub, which may be an ancestor
+         * rather than the immediate parent of a nested full-speed hub. */
         volatile uint32_t *slot_dw2 = slot + 2U;
-        *slot_dw2 = (uint32_t)path->parent_hub_slot |
-                    ((uint32_t)path->parent_port << 8);
+        *slot_dw2 = (uint32_t)path->tt_hub_slot |
+                    ((uint32_t)path->tt_port << 8);
     }
 
     ep0[1] = (3U << 1) | (4U << 3) | ((uint32_t)ep0_packet << 16);
@@ -1952,10 +1955,21 @@ static bool xhci_hub_reset_and_enumerate_child(
     struct nexus_usb_path child_path = {0};
     if (!nexus_usb_path_child(&hub->usb_path, hub->slot_id,
                               port, &child_path)) return false;
-    child_path.parent_hub_uses_tt =
-        hub->speed == 3U &&
-        (status.speed == NEXUS_USB_SPEED_LOW ||
-         status.speed == NEXUS_USB_SPEED_FULL);
+    const bool child_needs_tt =
+        status.speed == NEXUS_USB_SPEED_LOW ||
+        status.speed == NEXUS_USB_SPEED_FULL;
+    if (child_needs_tt && hub->speed == 3U) {
+        /* This high-speed hub is the nearest TT provider. */
+        child_path.parent_hub_uses_tt = true;
+        child_path.tt_hub_slot = hub->slot_id;
+        child_path.tt_port = port;
+    } else if (child_needs_tt && hub->usb_path.parent_hub_uses_tt) {
+        /* Preserve an upstream translator through an intervening full-speed
+         * hub so its low/full-speed descendants reference the actual TT. */
+        child_path.parent_hub_uses_tt = true;
+        child_path.tt_hub_slot = hub->usb_path.tt_hub_slot;
+        child_path.tt_port = hub->usb_path.tt_port;
+    }
 
     struct xhci_hid_device child = {0};
     if (!xhci_enumerate_hid_port(xhci, &child_path,

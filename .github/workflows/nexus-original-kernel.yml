@@ -853,6 +853,9 @@ jobs:
               deadline = time.time() + timeout
               while time.time() < deadline:
                   log = open(log_path, encoding="utf-8", errors="replace").read()
+                  if "NEXUS INSTALLER TARGET ID MISMATCH" in log:
+                      print(log)
+                      raise SystemExit("Installer rejected the typed stable disk ID")
                   if marker in log:
                       return log
                   time.sleep(0.2)

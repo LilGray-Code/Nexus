@@ -231,6 +231,40 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
     print("USB keyboard A make/break reached Nexus input dispatcher")
     print("USB mouse motion/click reached Nexus input dispatcher")
 
+    # Exercise USB hot-unplug/replug, not just boot-time enumeration. The
+    # kernel must release device state and discover the reinserted peripherals.
+    qmp.command("device_del", {"id": "nexus-usb-keyboard"})
+    wait_for_predicate(
+        serial_log,
+        lambda log: "USB: HID keyboard disconnected from xHCI port" in log,
+        "USB keyboard disconnect after QMP hot-unplug",
+    )
+    qmp.command("device_del", {"id": "nexus-usb-mouse"})
+    wait_for_predicate(
+        serial_log,
+        lambda log: "USB: HID mouse disconnected from xHCI port" in log,
+        "USB mouse disconnect after QMP hot-unplug",
+    )
+
+    qmp.command("device_add", {
+        "driver": "usb-kbd", "id": "nexus-usb-keyboard-replugged",
+        "bus": "xhci.0",
+    })
+    qmp.command("device_add", {
+        "driver": "usb-mouse", "id": "nexus-usb-mouse-replugged",
+        "bus": "xhci.0",
+    })
+    wait_for_predicate(
+        serial_log,
+        lambda log: (
+            log.count("NEXUS USB HID KEYBOARD READY") >= 2
+            and log.count("NEXUS USB HID MOUSE READY") >= 2
+        ),
+        "USB keyboard and mouse re-enumeration after hot-replug",
+        timeout=20,
+    )
+    print("USB keyboard and mouse hot-unplug/replug recovered")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)

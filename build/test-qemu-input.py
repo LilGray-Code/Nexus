@@ -131,6 +131,14 @@ def build_command(args: argparse.Namespace, qmp_socket: Path,
     return command
 
 
+def usb_mouse_click_dispatched(log: str) -> bool:
+    return any(
+        line.startswith("INPUT: mouse dx=")
+        and "buttons=0x0000000000000001" in line
+        for line in log.splitlines()
+    )
+
+
 def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
     mice = qmp.command("query-mice")
     if not isinstance(mice, list):
@@ -180,6 +188,7 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
             "INPUT: USB HID keyboard scancode=0x000000000000001E" in log
             and "INPUT: USB HID keyboard scancode=0x000000000000009E" in log
             and "INPUT: keyboard scancode=0x000000000000001E" in log
+            and "INPUT: keyboard scancode=0x000000000000009E" in log
         ),
         "USB keyboard make/break in the desktop event dispatcher",
     )
@@ -195,8 +204,7 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
         serial_log,
         lambda log: (
             "INPUT: USB HID mouse report" in log
-            and "INPUT: mouse dx=" in log
-            and "buttons=0x0000000000000001" in log
+            and usb_mouse_click_dispatched(log)
         ),
         "USB mouse motion and left-button events in the desktop event dispatcher",
     )

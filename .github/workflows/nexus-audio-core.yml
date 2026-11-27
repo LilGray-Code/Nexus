@@ -1,0 +1,47 @@
+name: Nexus audio core and control panel
+
+on:
+  push:
+    branches:
+      - nexus-audio-core-mixer-control-panel
+    paths:
+      - "kernel/src/audio.c"
+      - "kernel/src/audio.h"
+      - "kernel/src/ac97.c"
+      - "kernel/src/ac97.h"
+      - "kernel/src/settings.c"
+      - "kernel/src/settings.h"
+      - "kernel/src/desktop.c"
+      - "kernel/src/main.c"
+      - "kernel/src/usermode.c"
+      - "kernel/tests/audio_test.c"
+      - "kernel/tests/settings_test.c"
+      - "kernel/Makefile"
+      - ".github/workflows/nexus-audio-core.yml"
+  pull_request:
+    branches:
+      - nexus-gaming-frame-pacing-telemetry
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audio-host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test audio device registry, mixer, resampler and capture rings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/audio.c kernel/tests/audio_test.c \
+            -o /tmp/nexus-audio-test
+          /tmp/nexus-audio-test
+      - name: Test settings persistence including audio mute and volume
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/settings.c kernel/tests/settings_test.c \
+            -o /tmp/nexus-settings-test
+          /tmp/nexus-settings-test
+      - name: Compile complete freestanding kernel
+        run: make -C kernel

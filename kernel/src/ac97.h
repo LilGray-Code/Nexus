@@ -33,6 +33,8 @@ bool nexus_ac97_build_bdl_entry(uint64_t buffer_physical,
 
 bool ac97_init(void);
 bool ac97_is_ready(void);
+/* True when initialized PCM DMA is idle and can accept another buffer. */
+bool ac97_playback_idle(void);
 /* Set codec master output volume from 0 (mute) to 100 (maximum). */
 bool ac97_set_master_volume(uint8_t percent);
 void ac97_poll(void);

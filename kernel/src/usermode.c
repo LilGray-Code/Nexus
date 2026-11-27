@@ -3,6 +3,7 @@
 
 #include "elf64.h"
 #include "ac97.h"
+#include "audio.h"
 #include "cpu.h"
 #include "smp.h"
 #include "fpu.h"
@@ -481,6 +482,12 @@ int64_t usermode_sys_audio_write(uint64_t user_samples,
     const size_t bytes = (size_t)sample_frames * 4U;
     if (!paging_copy_from_user(audio_staging, user_samples, bytes))
         return -NEXUS_EFAULT;
+    /* Preserve ABI v1's direct AC'97 submission path, but apply the same
+     * global master gain/mute configured by the shared audio control panel.
+     */
+    if (!nexus_audio_apply_master_gain_s16_stereo(
+            (int16_t *)audio_staging, (uint32_t)sample_frames))
+        return -NEXUS_EINVAL;
     const enum nexus_ac97_submit_result result =
         ac97_write_pcm_s16_stereo_48k(
             (const int16_t *)audio_staging, (uint32_t)sample_frames);

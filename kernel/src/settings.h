@@ -25,6 +25,7 @@ struct nexus_settings {
     uint8_t volume_percent;
     bool left_handed_mouse;
     bool high_contrast;
+    bool audio_muted;
 };
 
 void nexus_settings_defaults(struct nexus_settings *settings);

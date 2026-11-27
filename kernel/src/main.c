@@ -5,6 +5,7 @@
 
 #include "acpi.h"
 #include "ac97.h"
+#include "audio.h"
 #include "cpu.h"
 #include "fpu.h"
 #include "blockdev.h"
@@ -256,8 +257,18 @@ static bool service_input_start(void *c) {
     return true;
 }
 static bool service_audio_start(void *c) {
-    (void)c; if (ac97_init()) return true;
-    serial_write("AUDIO: no supported AC97 device initialized\r\n"); return false;
+    (void)c;
+    if (!ac97_init())
+        serial_write("AUDIO: AC97 backend unavailable; checking other audio endpoints\r\n");
+    if (!nexus_audio_init()) {
+        serial_write("AUDIO: shared audio manager initialization failed\r\n");
+        return false;
+    }
+    if (nexus_audio_device_count() == 0U)
+        serial_write("AUDIO: no supported playback/capture driver initialized\r\n");
+    else
+        serial_write("AUDIO: device registry and software mixer ready\r\n");
+    return true;
 }
 static bool service_desktop_start(void *c) {
     (void)c;
@@ -813,7 +824,7 @@ void kmain(void) {
     for (;;) {
         net_poll();
         xhci_poll();
-        ac97_poll();
+        nexus_audio_poll();
         struct nexus_input_event event;
         while (input_pop_event(&event)) {
             desktop_handle_input(&event);

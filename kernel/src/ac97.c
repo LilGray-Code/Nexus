@@ -250,6 +250,12 @@ bool ac97_is_ready(void) {
     return initialized;
 }
 
+bool ac97_playback_idle(void) {
+    if (!initialized) return false;
+    ac97_poll();
+    return !playback_active;
+}
+
 bool ac97_set_master_volume(uint8_t percent) {
     if (!initialized || percent > 100U) return false;
     const uint16_t port = (uint16_t)(mixer_base + AC97_MIXER_MASTER_VOLUME);

@@ -181,6 +181,7 @@ static bool keyboard_windows_used;
 static bool keyboard_caps_lock;
 static bool keyboard_caps_lock_down;
 static void draw_pointer(void);
+static void desktop_preferences_save(void);
 static void desktop_store_refresh(void);
 static const char *installer_transport_label(
     const struct nexus_block_device *device);
@@ -590,17 +591,28 @@ static void desktop_settings_apply(void) {
 
 static void desktop_preferences_save(void) {
     uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
+    if (!nexus_settings_valid(&desktop_settings) ||
+        !nexus_settings_encode(&desktop_settings, record)) {
+        desktop_preferences_saved = false;
+        desktop_preferences_persistent = false;
+        settings_status_set("Settings rejected: configuration validation failed.");
+        return;
+    }
     desktop_settings_apply();
     desktop_preferences_saved =
-        nexus_settings_encode(&desktop_settings, record) &&
         vfs_write_root_file("NEXUS.CFG", record, sizeof(record));
     desktop_preferences_persistent =
         desktop_preferences_saved && vfs_nxfs_writable();
-    serial_write(desktop_preferences_persistent
-        ? "DESKTOP: system settings saved to persistent NXFS\r\n"
-        : (desktop_preferences_saved
-            ? "DESKTOP: system settings saved to volatile RAM only\r\n"
-            : "DESKTOP: system settings save unavailable\r\n"));
+    if (desktop_preferences_persistent) {
+        settings_status_set("Settings saved persistently to Nexus Data.");
+        serial_write("DESKTOP: system settings saved to persistent NXFS\\r\\n");
+    } else if (desktop_preferences_saved) {
+        settings_status_set("Settings applied and saved to temporary RAM only.");
+        serial_write("DESKTOP: system settings saved to volatile RAM only\\r\\n");
+    } else {
+        settings_status_set("Settings applied, but saving failed; changes are volatile.");
+        serial_write("DESKTOP: system settings save unavailable\\r\\n");
+    }
 }
 
 static void desktop_preferences_load(void) {
@@ -648,6 +660,9 @@ static void desktop_preferences_load(void) {
     desktop_preferences_saved = true;
     desktop_preferences_persistent = from_nxfs;
     desktop_settings_apply();
+    settings_status_set(from_nxfs
+        ? "Loaded persistent settings from Nexus Data."
+        : "Loaded settings from temporary storage; changes may not survive restart.");
     serial_write("DESKTOP: system settings loaded from volume root\r\n");
 }
 

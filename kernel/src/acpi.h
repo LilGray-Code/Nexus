@@ -6,6 +6,25 @@
 #define NEXUS_ACPI_MAX_ISO 16U
 #define NEXUS_ACPI_MAX_MCFG_REGIONS 8U
 #define NEXUS_ACPI_HPET_ADDRESS_SPACE_SYSTEM_MEMORY 0U
+
+/* Only ACPI controls whose registers and firmware sleep description have
+ * been validated are published to power-management clients.
+ */
+struct nexus_acpi_power_info {
+    bool fadt_present;
+    bool shutdown_supported;
+    bool reset_supported;
+    uint16_t pm1a_control_port;
+    uint16_t pm1b_control_port;
+    uint16_t reset_port;
+    uint8_t reset_value;
+    uint8_t pm1_control_length;
+    uint8_t preferred_profile;
+    uint8_t s5_type_a;
+    uint8_t s5_type_b;
+};
+
+const struct nexus_acpi_power_info *acpi_get_power_info(void);
 struct nexus_acpi_mcfg_region {
     uint64_t base_address;
     uint16_t segment_group;

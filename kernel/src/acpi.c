@@ -116,6 +116,197 @@ struct acpi_mcfg_allocation {
     uint32_t reserved;
 } __attribute__((packed));
 
+struct acpi_power_gas {
+    uint8_t space_id;
+    uint8_t bit_width;
+    uint8_t bit_offset;
+    uint8_t access_size;
+    uint64_t address;
+} __attribute__((packed));
+
+static struct nexus_acpi_power_info power_info;
+
+static bool signature_equals(const char *actual, const char *expected,
+                             size_t length);
+static const struct acpi_sdt_header *physical_table(uint64_t physical);
+static bool validate_sdt(const struct acpi_sdt_header *header,
+                         const char *expected_signature);
+
+static uint32_t read_le32(const uint8_t *bytes) {
+    return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
+           ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
+}
+
+static uint64_t read_le64(const uint8_t *bytes) {
+    return (uint64_t)read_le32(bytes) |
+           ((uint64_t)read_le32(bytes + 4U) << 32);
+}
+
+/* Decode only AML integer encodings needed by the fixed _S5 package. */
+static bool aml_read_small_integer(const uint8_t *aml, size_t end,
+                                   size_t *cursor, uint64_t *value) {
+    if (aml == NULL || cursor == NULL || value == NULL ||
+        *cursor >= end) return false;
+    const uint8_t opcode = aml[(*cursor)++];
+    if (opcode == 0x00U) { *value = 0U; return true; } /* ZeroOp */
+    if (opcode == 0x01U) { *value = 1U; return true; } /* OneOp */
+    size_t bytes = 0U;
+    if (opcode == 0x0AU) bytes = 1U;       /* BytePrefix */
+    else if (opcode == 0x0BU) bytes = 2U;  /* WordPrefix */
+    else if (opcode == 0x0CU) bytes = 4U;  /* DWordPrefix */
+    else if (opcode == 0x0EU) bytes = 8U;  /* QWordPrefix */
+    else return false;
+    if (bytes > end - *cursor) return false;
+    uint64_t result = 0U;
+    for (size_t i = 0U; i < bytes; ++i)
+        result |= (uint64_t)aml[(*cursor)++] << (i * 8U);
+    *value = result;
+    return true;
+}
+
+/* Parse the AML Package length encoding with strict enclosing-table bounds. */
+static bool aml_read_package_length(const uint8_t *aml, size_t end,
+                                    size_t *cursor, size_t *package_end) {
+    if (aml == NULL || cursor == NULL || package_end == NULL ||
+        *cursor >= end) return false;
+    const size_t package_start = *cursor;
+    const uint8_t lead = aml[(*cursor)++];
+    const size_t follow = (size_t)(lead >> 6);
+    uint64_t length = follow == 0U ? (uint64_t)(lead & 0x3FU)
+                                   : (uint64_t)(lead & 0x0FU);
+    if (follow > end - *cursor) return false;
+    for (size_t i = 0U; i < follow; ++i)
+        length |= (uint64_t)aml[(*cursor)++] << (4U + i * 8U);
+    if (length < (*cursor - package_start) ||
+        length > (uint64_t)(end - package_start)) return false;
+    *package_end = package_start + (size_t)length;
+    return true;
+}
+
+static bool parse_dsdt_s5(const struct acpi_sdt_header *dsdt,
+                          uint8_t *type_a, uint8_t *type_b) {
+    if (!validate_sdt(dsdt, "DSDT") ||
+        dsdt->length <= sizeof(struct acpi_sdt_header) ||
+        type_a == NULL || type_b == NULL) return false;
+    const uint8_t *aml = (const uint8_t *)dsdt + sizeof(*dsdt);
+    const size_t aml_length =
+        (size_t)dsdt->length - sizeof(struct acpi_sdt_header);
+
+    for (size_t i = 0U; i + 6U < aml_length; ++i) {
+        /* NameOp, "_S5_", PackageOp. Other namespace paths are not guessed. */
+        if (aml[i] != 0x08U || aml[i + 1U] != '_' ||
+            aml[i + 2U] != 'S' || aml[i + 3U] != '5' ||
+            aml[i + 4U] != '_' || aml[i + 5U] != 0x12U) continue;
+        size_t cursor = i + 6U;
+        size_t package_end = 0U;
+        if (!aml_read_package_length(aml, aml_length, &cursor,
+                                     &package_end) ||
+            cursor >= package_end) return false;
+        const uint8_t element_count = aml[cursor++];
+        if (element_count < 2U) return false;
+        uint64_t a = 0U, b = 0U;
+        if (!aml_read_small_integer(aml, package_end, &cursor, &a) ||
+            !aml_read_small_integer(aml, package_end, &cursor, &b) ||
+            a > 7U || b > 7U) return false;
+        *type_a = (uint8_t)a;
+        *type_b = (uint8_t)b;
+        return true;
+    }
+    return false;
+}
+
+static bool gas_io_port(const uint8_t *bytes, uint8_t required_width,
+                        uint16_t *port) {
+    if (bytes == NULL || port == NULL) return false;
+    const struct acpi_power_gas *gas =
+        (const struct acpi_power_gas *)bytes;
+    if (gas->space_id != 1U || gas->bit_offset != 0U ||
+        gas->bit_width < required_width ||
+        gas->address == 0U || gas->address > UINT16_MAX ||
+        (required_width == 16U && gas->address == UINT16_MAX)) return false;
+    if (required_width == 16U &&
+        gas->access_size != 0U && gas->access_size != 2U) return false;
+    if (required_width == 8U &&
+        gas->access_size != 0U && gas->access_size != 1U) return false;
+    *port = (uint16_t)gas->address;
+    return true;
+}
+
+static bool parse_fadt(const struct acpi_sdt_header *header) {
+    if (!validate_sdt(header, "FACP") || header->length < 90U) return false;
+    const uint8_t *bytes = (const uint8_t *)header;
+    power_info = (struct nexus_acpi_power_info){0};
+    power_info.fadt_present = true;
+    power_info.preferred_profile = bytes[45U];
+    power_info.pm1_control_length = bytes[89U];
+
+    if (power_info.pm1_control_length >= 2U) {
+        const uint32_t legacy_a = read_le32(bytes + 64U);
+        const uint32_t legacy_b = read_le32(bytes + 68U);
+        if (legacy_a >= 0x100U && legacy_a <= UINT16_MAX - 1U)
+            power_info.pm1a_control_port = (uint16_t)legacy_a;
+        if (legacy_b >= 0x100U && legacy_b <= UINT16_MAX - 1U)
+            power_info.pm1b_control_port = (uint16_t)legacy_b;
+        /* ACPI 2+ extended GAS entries take precedence when usable. */
+        if (header->length >= 184U) {
+            uint16_t extended = 0U;
+            if (gas_io_port(bytes + 172U, 16U, &extended) && extended >= 0x100U)
+                power_info.pm1a_control_port = extended;
+        }
+        if (header->length >= 196U) {
+            uint16_t extended = 0U;
+            if (gas_io_port(bytes + 184U, 16U, &extended) && extended >= 0x100U)
+                power_info.pm1b_control_port = extended;
+        }
+    }
+
+    /* The reset GAS is optional (introduced with FADT revision 2). */
+    const uint32_t fadt_flags =
+        header->length >= 116U ? read_le32(bytes + 112U) : 0U;
+    if (header->length >= 129U && (fadt_flags & (1U << 10)) != 0U) {
+        uint16_t reset_port = 0U;
+        if (gas_io_port(bytes + 116U, 8U, &reset_port)) {
+            power_info.reset_port = reset_port;
+            power_info.reset_value = bytes[128U];
+            power_info.reset_supported = true;
+        }
+    }
+
+    uint64_t dsdt_physical = 0U;
+    if (header->length >= 148U)
+        dsdt_physical = read_le64(bytes + 140U);
+    if (dsdt_physical == 0U)
+        dsdt_physical = read_le32(bytes + 40U);
+    if (dsdt_physical != 0U) {
+        const struct acpi_sdt_header *dsdt =
+            physical_table(dsdt_physical);
+        power_info.shutdown_supported =
+            power_info.pm1a_control_port != 0U &&
+            parse_dsdt_s5(dsdt, &power_info.s5_type_a,
+                          &power_info.s5_type_b);
+    }
+    return true;
+}
+
+static bool find_and_parse_fadt(const struct acpi_root_info *root) {
+    if (root == NULL || root->header == NULL) return false;
+    const uint8_t *cursor =
+        (const uint8_t *)root->header + sizeof(struct acpi_sdt_header);
+    const uint8_t *end =
+        (const uint8_t *)root->header + root->header->length;
+    const size_t pointer_size = root->xsdt ? sizeof(uint64_t) : sizeof(uint32_t);
+    while (cursor < end) {
+        if ((size_t)(end - cursor) < pointer_size) return false;
+        const uint64_t physical = root->xsdt
+            ? read_le64(cursor) : (uint64_t)read_le32(cursor);
+        const struct acpi_sdt_header *table = physical_table(physical);
+        if (table != NULL && signature_equals(table->signature, "FACP", 4U))
+            return parse_fadt(table);
+        cursor += pointer_size;
+    }
+    return false;
+}
+
 static struct nexus_acpi_topology topology;
 static bool topology_valid;
 
@@ -472,6 +663,7 @@ static bool find_and_parse_hpet(const struct acpi_root_info *root) {
 
 bool acpi_init(const void *rsdp_address) {
     topology_valid = false;
+    power_info = (struct nexus_acpi_power_info){0};
     topology.local_apic_physical_address = 0;
     topology.local_apic_flags = 0;
     topology.enabled_processor_count = 0;
@@ -513,6 +705,15 @@ bool acpi_init(const void *rsdp_address) {
         serial_write("\r\n");
     }
 
+    if (find_and_parse_fadt(&root)) {
+        serial_write("ACPI: validated FADT; ");
+        serial_write(power_info.shutdown_supported
+            ? "S5 power-off available" : "S5 power-off unavailable");
+        serial_write(power_info.reset_supported
+            ? "; reset register available\r\n"
+            : "; reset register unavailable\r\n");
+    }
+
     /* MCFG is optional: legacy PCI configuration remains available when the
        firmware does not expose PCIe enhanced configuration windows. */
     if (find_and_parse_mcfg(&root) && topology.mcfg_region_count != 0U) {
@@ -539,6 +740,10 @@ bool acpi_init(const void *rsdp_address) {
     serial_write("\r\n");
 
     return true;
+}
+
+const struct nexus_acpi_power_info *acpi_get_power_info(void) {
+    return power_info.fadt_present ? &power_info : NULL;
 }
 
 const struct nexus_acpi_topology *acpi_get_topology(void) {

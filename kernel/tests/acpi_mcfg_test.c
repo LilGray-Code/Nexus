@@ -12,6 +12,8 @@
 #define TEST_MADT 0x300U
 #define TEST_MCFG 0x400U
 #define TEST_HPET 0x500U
+#define TEST_FADT 0x600U
+#define TEST_DSDT 0x700U
 #define TEST_ARENA_SIZE 0x1000U
 
 static uint8_t arena[TEST_ARENA_SIZE];
@@ -62,10 +64,10 @@ static void build_tables(const uint16_t *segments, const uint8_t *starts,
     finish_checksum(rsdp, 20U, 8U);
     finish_checksum(rsdp, 36U, 32U);
 
-    const uint32_t xsdt_length = 36U + 3U * 8U;
+    const uint32_t xsdt_length = 36U + 4U * 8U;
     uint8_t *xsdt = &arena[TEST_XSDT];
     make_sdt(xsdt, "XSDT", xsdt_length);
-    const uint64_t table_addresses[3] = {TEST_MADT, TEST_MCFG, TEST_HPET};
+    const uint64_t table_addresses[4] = {TEST_MADT, TEST_MCFG, TEST_HPET, TEST_FADT};
     memcpy(xsdt + 36U, table_addresses, sizeof(table_addresses));
     finish_checksum(xsdt, xsdt_length, 9U);
 
@@ -98,6 +100,36 @@ static void build_tables(const uint16_t *segments, const uint8_t *starts,
     memcpy(hpet + 53U, &minimum_tick, sizeof(minimum_tick));
     hpet[55] = 0U;
     finish_checksum(hpet, 56U, 9U);
+
+    /* DSDT Name(_S5_, Package(2){Byte(5), Byte(5)}). */
+    uint8_t *dsdt = &arena[TEST_DSDT];
+    make_sdt(dsdt, "DSDT", 48U);
+    const uint8_t s5_aml[] = {
+        0x08U, '_', 'S', '5', '_', 0x12U, 0x06U,
+        0x02U, 0x0AU, 0x05U, 0x0AU, 0x05U
+    };
+    memcpy(dsdt + 36U, s5_aml, sizeof(s5_aml));
+    finish_checksum(dsdt, 48U, 9U);
+
+    uint8_t *fadt = &arena[TEST_FADT];
+    make_sdt(fadt, "FACP", 148U);
+    fadt[8U] = 3U;
+    const uint32_t legacy_dsdt = TEST_DSDT;
+    const uint32_t pm1a = 0x404U;
+    memcpy(fadt + 40U, &legacy_dsdt, sizeof(legacy_dsdt));
+    memcpy(fadt + 64U, &pm1a, sizeof(pm1a));
+    fadt[89U] = 2U;
+    const uint32_t flags = (1U << 10); /* RESET_REG_SUP */
+    memcpy(fadt + 112U, &flags, sizeof(flags));
+    fadt[116U] = 1U;  /* System I/O */
+    fadt[117U] = 8U;  /* 8-bit reset */
+    fadt[119U] = 1U;  /* Byte access */
+    const uint64_t reset_port = 0xCF9U;
+    memcpy(fadt + 120U, &reset_port, sizeof(reset_port));
+    fadt[128U] = 0x06U;
+    const uint64_t extended_dsdt = TEST_DSDT;
+    memcpy(fadt + 140U, &extended_dsdt, sizeof(extended_dsdt));
+    finish_checksum(fadt, 148U, 9U);
 }
 
 static void test_multiple_segments_and_bus_bounds(void) {
@@ -165,11 +197,63 @@ static void test_bad_checksum_and_unaligned_base_are_ignored(void) {
     assert(acpi_get_topology()->mcfg_region_count == 0U);
 }
 
+static void test_fadt_shutdown_and_reset_discovery(void) {
+    const uint16_t segments[] = {0U};
+    const uint8_t starts[] = {0U};
+    const uint8_t ends[] = {0xFFU};
+    const uint64_t bases[] = {0xB0000000ULL};
+    build_tables(segments, starts, ends, bases, 1U, false);
+
+    assert(acpi_init(&arena[TEST_RSDP]));
+    const struct nexus_acpi_power_info *power = acpi_get_power_info();
+    assert(power != NULL && power->fadt_present);
+    assert(power->shutdown_supported);
+    assert(power->pm1a_control_port == 0x404U);
+    assert(power->s5_type_a == 5U && power->s5_type_b == 5U);
+    assert(power->reset_supported);
+    assert(power->reset_port == 0xCF9U && power->reset_value == 0x06U);
+}
+
+static void test_invalid_s5_and_reset_gas_are_not_published(void) {
+    const uint16_t segments[] = {0U};
+    const uint8_t starts[] = {0U};
+    const uint8_t ends[] = {0xFFU};
+    const uint64_t bases[] = {0xB0000000ULL};
+    build_tables(segments, starts, ends, bases, 1U, false);
+
+    /* An out-of-range SLP_TYP must never enable power-off. */
+    arena[TEST_DSDT + 47U] = 0x08U;
+    finish_checksum(&arena[TEST_DSDT], 48U, 9U);
+    assert(acpi_init(&arena[TEST_RSDP]));
+    const struct nexus_acpi_power_info *power = acpi_get_power_info();
+    assert(power != NULL && !power->shutdown_supported);
+    assert(power->reset_supported);
+
+    /* A memory-space reset GAS is not supported by the I/O-only backend. */
+    build_tables(segments, starts, ends, bases, 1U, false);
+    arena[TEST_FADT + 116U] = 0U;
+    finish_checksum(&arena[TEST_FADT], 148U, 9U);
+    assert(acpi_init(&arena[TEST_RSDP]));
+    power = acpi_get_power_info();
+    assert(power != NULL && !power->reset_supported);
+
+    /* The reset address must be explicitly declared supported by FADT. */
+    build_tables(segments, starts, ends, bases, 1U, false);
+    const uint32_t no_reset_flag = 0U;
+    memcpy(&arena[TEST_FADT + 112U], &no_reset_flag, sizeof(no_reset_flag));
+    finish_checksum(&arena[TEST_FADT], 148U, 9U);
+    assert(acpi_init(&arena[TEST_RSDP]));
+    power = acpi_get_power_info();
+    assert(power != NULL && !power->reset_supported);
+}
+
 int main(void) {
     test_multiple_segments_and_bus_bounds();
     test_invalid_hpet_is_not_published();
     test_overlapping_segment_windows_rejected();
     test_bad_checksum_and_unaligned_base_are_ignored();
-    puts("NEXUS ACPI MCFG AND HPET TESTS PASSED");
+    test_fadt_shutdown_and_reset_discovery();
+    test_invalid_s5_and_reset_gas_are_not_published();
+    puts("NEXUS ACPI MCFG, HPET AND POWER TESTS PASSED");
     return 0;
 }

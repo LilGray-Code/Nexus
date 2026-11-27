@@ -1,0 +1,50 @@
+name: Nexus power and laptop foundation
+
+on:
+  push:
+    branches:
+      - power-laptop-management
+    paths:
+      - "kernel/src/acpi.*"
+      - "kernel/src/power.*"
+      - "kernel/src/smp.*"
+      - "kernel/tests/acpi_mcfg_test.c"
+      - "kernel/tests/power_policy_test.c"
+      - "kernel/Makefile"
+      - ".github/workflows/nexus-power-laptop.yml"
+  pull_request:
+    branches:
+      - user-accounts-task-manager
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acpi-power-discovery:
+    name: ACPI power table validation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile with strict host warnings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/include -Ikernel/src \
+            kernel/src/acpi.c kernel/tests/acpi_mcfg_test.c \
+            -o /tmp/nexus-acpi-power-test
+      - name: Validate ACPI tables and power register publication
+        run: /tmp/nexus-acpi-power-test
+
+  power-policy:
+    name: CPU power policy and temperature decoding
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run policy helper tests
+        run: |
+          cc -std=gnu11 -O2 -Wall -Wextra -Werror \
+            -ffunction-sections -fdata-sections \
+            -Ikernel/include -Ikernel/src \
+            kernel/src/power.c kernel/tests/power_policy_test.c \
+            -Wl,--gc-sections -o /tmp/nexus-power-policy-test
+          /tmp/nexus-power-policy-test

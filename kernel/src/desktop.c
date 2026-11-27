@@ -34,6 +34,7 @@
 #include "wifi.h"
 #include "wifi_pci.h"
 #include "firmware.h"
+#include "power.h"
 #include "virtio_gpu.h"
 #include "input.h"
 #include "serial.h"
@@ -123,6 +124,13 @@ static size_t desktop_task_selected_process;
 static size_t desktop_task_selected_service;
 static uint64_t desktop_last_monitor_tick;
 static uint32_t desktop_profile_loaded_uid;
+static char desktop_power_status[88] = "Power options depend on validated hardware support.";
+enum desktop_power_armed_action {
+    DESKTOP_POWER_ARM_NONE = 0,
+    DESKTOP_POWER_ARM_SHUTDOWN,
+    DESKTOP_POWER_ARM_RESTART
+};
+static enum desktop_power_armed_action desktop_power_armed;
 
 static void draw_shell(void);
 static void desktop_settings_apply(void);
@@ -2347,7 +2355,8 @@ void desktop_update(void) {
     desktop_last_monitor_tick = now;
     (void)nexus_system_monitor_sample();
     if (active_view == DESKTOP_SETTINGS &&
-        settings_page == SETTINGS_TASK_MANAGER) {
+        (settings_page == SETTINGS_TASK_MANAGER ||
+         settings_page == SETTINGS_POWER)) {
         draw_shell();
         draw_pointer();
     }
@@ -3815,26 +3824,87 @@ static void draw_shell(void) {
                     "NO STORAGE DEVICES REGISTERED",
                     1U, 231U, 183U, 127U);
         } else if (settings_page == SETTINGS_POWER) {
+            struct nexus_power_snapshot power = {0};
+            (void)nexus_power_get_snapshot(&power);
             desktop_settings_draw_heading(text_x, content_y,
-                "POWER", "Power-management capabilities currently detected.");
-            graphics_draw_text(text_x, content_y + 68U,
-                "CPU POWER STATES: BASIC TIMER / SCHEDULER ONLY",
-                1U, 171U, 191U, 211U);
-            graphics_draw_text(text_x, content_y + 104U,
-                "SUSPEND AND HIBERNATE: NOT IMPLEMENTED",
-                1U, 231U, 183U, 127U);
-            graphics_draw_text(text_x, content_y + 140U,
-                "BATTERY TELEMETRY: NO ACPI BATTERY DRIVER",
-                1U, 231U, 183U, 127U);
-            graphics_draw_text(text_x, content_y + 176U,
-                "THERMAL / FAN CONTROL: NOT IMPLEMENTED",
-                1U, 231U, 183U, 127U);
+                "POWER & LAPTOP", "Only firmware and CPU controls verified on this machine are enabled.");
+            graphics_draw_text(text_x, content_y + 54U,
+                power.acpi_shutdown_available
+                    ? "ACPI SHUTDOWN: AVAILABLE (VALIDATED FADT S5)"
+                    : "ACPI SHUTDOWN: UNAVAILABLE / FIRMWARE NOT VERIFIED",
+                1U, power.acpi_shutdown_available ? 108U : 231U,
+                power.acpi_shutdown_available ? 216U : 183U,
+                power.acpi_shutdown_available ? 229U : 127U);
+            graphics_draw_text(text_x, content_y + 80U,
+                power.acpi_restart_available
+                    ? "ACPI RESET: AVAILABLE (VALIDATED RESET REGISTER)"
+                    : "ACPI RESET: UNAVAILABLE / NO VALIDATED RESET REGISTER",
+                1U, power.acpi_restart_available ? 108U : 231U,
+                power.acpi_restart_available ? 216U : 183U,
+                power.acpi_restart_available ? 229U : 127U);
+            char temperature_line[64];
+            if (power.cpu_temperature_available) {
+                format_labeled_u64("CPU CORE TEMPERATURE: ",
+                    power.cpu_temperature_celsius, temperature_line);
+                size_t length = 0U;
+                while (temperature_line[length] != '\0' &&
+                       length + 3U < sizeof(temperature_line)) ++length;
+                temperature_line[length++] = ' ';
+                temperature_line[length++] = 'C';
+                temperature_line[length] = '\0';
+            } else {
+                desktop_copy_text(temperature_line,
+                    "CPU TEMPERATURE: NOT AVAILABLE",
+                    sizeof(temperature_line));
+            }
+            graphics_draw_text(text_x, content_y + 106U, temperature_line,
+                               1U, power.cpu_temperature_available ? 108U : 231U,
+                               power.cpu_temperature_available ? 216U : 183U,
+                               power.cpu_temperature_available ? 229U : 127U);
+            if (power.cpu_hwp_profile_available) {
+                graphics_draw_text(text_x, content_y + 140U,
+                    "CPU ENERGY / PERFORMANCE PREFERENCE (HWP / EPP)",
+                    1U, 171U, 191U, 211U);
+                desktop_settings_draw_button(text_x, content_y + 158U,
+                    108U, 30U, "SAVER",
+                    power.current_profile == NEXUS_POWER_PROFILE_POWER_SAVER);
+                desktop_settings_draw_button(text_x + 116U, content_y + 158U,
+                    108U, 30U, "BALANCED",
+                    power.current_profile == NEXUS_POWER_PROFILE_BALANCED);
+                desktop_settings_draw_button(text_x + 232U, content_y + 158U,
+                    108U, 30U, "PERFORMANCE",
+                    power.current_profile == NEXUS_POWER_PROFILE_PERFORMANCE);
+                graphics_draw_text(text_x, content_y + 195U,
+                    "HWP IS A CPU PERFORMANCE HINT, NOT A FIXED CLOCK; RESETS AT REBOOT.",
+                    1U, 171U, 191U, 211U);
+            } else {
+                graphics_draw_text(text_x, content_y + 140U,
+                    "CPU POWER PROFILE: NO ALL-CORE HWP / EPP CONTROL",
+                    1U, 231U, 183U, 127U);
+            }
             graphics_draw_text(text_x, content_y + 224U,
-                "NEXUS WILL NOT OFFER SLEEP CONTROLS UNTIL A",
+                "BATTERY / AC / CHARGING: AML + EMBEDDED-CONTROLLER DRIVER NEEDED",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 248U,
+                "FAN / LID: NO VALIDATED AML OR EMBEDDED-CONTROLLER DRIVER",
+                1U, 231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 272U,
+                "BRIGHTNESS: SOFTWARE FRAMEBUFFER ONLY (DISPLAY SETTINGS)",
                 1U, 171U, 191U, 211U);
-            graphics_draw_text(text_x, content_y + 245U,
-                "PLATFORM DRIVER CAN COMPLETE THEM SAFELY.",
-                1U, 171U, 191U, 211U);
+            graphics_draw_text(text_x, content_y + 296U,
+                "SLEEP / SUSPEND / HIBERNATE: DISABLED UNTIL RESUME IS VERIFIED",
+                1U, 231U, 183U, 127U);
+            const uint64_t action_y = content_y + 326U;
+            if (power.acpi_shutdown_available)
+                desktop_settings_draw_button(text_x, action_y, 144U, 30U,
+                    desktop_power_armed == DESKTOP_POWER_ARM_SHUTDOWN
+                        ? "CONFIRM SHUTDOWN" : "SHUT DOWN", false);
+            if (power.acpi_restart_available)
+                desktop_settings_draw_button(text_x + 154U, action_y, 144U, 30U,
+                    desktop_power_armed == DESKTOP_POWER_ARM_RESTART
+                        ? "CONFIRM RESTART" : "RESTART", false);
+            graphics_draw_text(text_x, content_y + 366U, desktop_power_status,
+                               1U, 171U, 191U, 211U);
         } else if (settings_page == SETTINGS_SECURITY) {
             desktop_settings_draw_heading(text_x, content_y,
                 "SECURITY", "Runtime protection and trust capabilities.");
@@ -7897,6 +7967,68 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     py >= content_y + 190U && py < content_y + 222U &&
                     px >= sx && px < sx + 136U)
                     (void)wifi_scan();
+            } else if (settings_page == SETTINGS_POWER) {
+                struct nexus_power_snapshot power = {0};
+                (void)nexus_power_get_snapshot(&power);
+                if (py >= content_y + 158U && py < content_y + 188U &&
+                    power.cpu_hwp_profile_available && px >= sx) {
+                    const uint64_t col = (px - sx) / 116U;
+                    enum nexus_power_profile profile =
+                        NEXUS_POWER_PROFILE_UNKNOWN;
+                    if (col == 0U && (px - sx) % 116U < 108U)
+                        profile = NEXUS_POWER_PROFILE_POWER_SAVER;
+                    else if (col == 1U && (px - sx) % 116U < 108U)
+                        profile = NEXUS_POWER_PROFILE_BALANCED;
+                    else if (col == 2U && (px - sx) % 116U < 108U)
+                        profile = NEXUS_POWER_PROFILE_PERFORMANCE;
+                    if (profile != NEXUS_POWER_PROFILE_UNKNOWN) {
+                        const bool changed_profile =
+                            nexus_power_set_profile(profile);
+                        desktop_copy_text(desktop_power_status,
+                            changed_profile
+                                ? (profile == NEXUS_POWER_PROFILE_POWER_SAVER
+                                    ? "CPU profile changed to Power Saver."
+                                    : (profile == NEXUS_POWER_PROFILE_BALANCED
+                                        ? "CPU profile changed to Balanced."
+                                        : "CPU profile changed to Performance."))
+                                : "CPU profile change failed; previous state restored where possible.",
+                            sizeof(desktop_power_status));
+                    }
+                } else if (py >= content_y + 326U &&
+                           py < content_y + 356U && px >= sx) {
+                    if (px < sx + 144U && power.acpi_shutdown_available) {
+                        if (desktop_power_armed == DESKTOP_POWER_ARM_SHUTDOWN) {
+                            (void)nexus_power_shutdown();
+                            desktop_copy_text(desktop_power_status,
+                                "Shutdown request did not complete.",
+                                sizeof(desktop_power_status));
+                            desktop_power_armed = DESKTOP_POWER_ARM_NONE;
+                        } else {
+                            desktop_power_armed = DESKTOP_POWER_ARM_SHUTDOWN;
+                            desktop_copy_text(desktop_power_status,
+                                "Click SHUT DOWN again to confirm.",
+                                sizeof(desktop_power_status));
+                        }
+                    } else if (px >= sx + 154U && px < sx + 298U &&
+                               power.acpi_restart_available) {
+                        if (desktop_power_armed == DESKTOP_POWER_ARM_RESTART) {
+                            (void)nexus_power_restart();
+                            desktop_copy_text(desktop_power_status,
+                                "Restart request did not complete.",
+                                sizeof(desktop_power_status));
+                            desktop_power_armed = DESKTOP_POWER_ARM_NONE;
+                        } else {
+                            desktop_power_armed = DESKTOP_POWER_ARM_RESTART;
+                            desktop_copy_text(desktop_power_status,
+                                "Click RESTART again to confirm.",
+                                sizeof(desktop_power_status));
+                        }
+                    } else {
+                        desktop_power_armed = DESKTOP_POWER_ARM_NONE;
+                    }
+                } else {
+                    desktop_power_armed = DESKTOP_POWER_ARM_NONE;
+                }
             } else if (settings_page == SETTINGS_ACCOUNTS) {
                 if (py >= content_y + 76U && py < content_y + 106U) {
                     if (px >= sx && px < sx + 112U) {

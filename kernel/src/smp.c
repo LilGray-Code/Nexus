@@ -47,6 +47,7 @@ static volatile uint32_t work_completed;
 static uint32_t work_item_count;
 static nexus_smp_task_fn work_task;
 static void *work_context;
+static volatile uint32_t work_each_cpu;
 
 static uint64_t read_msr(uint32_t msr) {
     uint32_t low = 0U, high = 0U;
@@ -180,8 +181,13 @@ void nexus_smp_ipi_interrupt(void) {
     if (__atomic_load_n(&work_active, __ATOMIC_ACQUIRE) != 0U) {
         const uint32_t slot = current_cpu_slot();
         if (slot != UINT32_MAX && slot != 0U) {
-            run_claimed_work(slot);
-            __atomic_fetch_add(&work_completed, 1U, __ATOMIC_RELEASE);
+            if (__atomic_load_n(&work_each_cpu, __ATOMIC_RELAXED) != 0U) {
+                work_task(slot, slot, work_context);
+                __atomic_fetch_add(&work_completed, 1U, __ATOMIC_RELEASE);
+            } else {
+                run_claimed_work(slot);
+                __atomic_fetch_add(&work_completed, 1U, __ATOMIC_RELEASE);
+            }
         }
     }
     local_apic_eoi();
@@ -232,6 +238,7 @@ bool nexus_smp_init(struct limine_mp_response *response) {
     work_active = 0U;
     work_next = 0U;
     work_completed = 0U;
+    work_each_cpu = 0U;
 
     if (response == NULL || response->cpu_count == 0U ||
         response->cpus == NULL) {
@@ -336,6 +343,47 @@ bool nexus_smp_cpu_info_at(uint32_t cpu_slot,
     return true;
 }
 
+bool nexus_smp_call_each_cpu(nexus_smp_task_fn task, void *context) {
+    if (!smp_initialized || task == NULL ||
+        __atomic_load_n(&work_active, __ATOMIC_ACQUIRE) != 0U)
+        return false;
+    if (nexus_smp_online_cpu_count() > 1U && current_cpu_slot() != 0U)
+        return false;
+
+    work_task = task;
+    work_context = context;
+    work_item_count = 0U;
+    __atomic_store_n(&work_completed, 0U, __ATOMIC_RELAXED);
+    __atomic_store_n(&work_each_cpu, 1U, __ATOMIC_RELAXED);
+    __atomic_store_n(&work_active, 1U, __ATOMIC_RELEASE);
+
+    uint32_t remote_count = 0U;
+    bool dispatch_ok = true;
+    for (uint32_t slot = 1U; slot < expected_cpu_count; ++slot) {
+        if (__atomic_load_n(&cpu_online[slot], __ATOMIC_ACQUIRE) == 0U)
+            continue;
+        if (!send_fixed_ipi(lapic_ids[slot])) {
+            dispatch_ok = false;
+            continue;
+        }
+        ++remote_count;
+    }
+
+    task(0U, 0U, context);
+    bool completed = false;
+    for (uint64_t spin = 0U; spin < SMP_WAIT_SPINS; ++spin) {
+        if (__atomic_load_n(&work_completed, __ATOMIC_ACQUIRE) >=
+            remote_count) {
+            completed = true;
+            break;
+        }
+        __asm__ volatile ("pause" ::: "memory");
+    }
+    __atomic_store_n(&work_active, 0U, __ATOMIC_RELEASE);
+    __atomic_store_n(&work_each_cpu, 0U, __ATOMIC_RELEASE);
+    return dispatch_ok && completed;
+}
+
 bool nexus_smp_parallel_for(uint32_t item_count,
                             nexus_smp_task_fn task,
                             void *context) {
@@ -348,6 +396,7 @@ bool nexus_smp_parallel_for(uint32_t item_count,
 
     work_task = task;
     work_context = context;
+    work_each_cpu = 0U;
     work_item_count = item_count;
     __atomic_store_n(&work_next, 0U, __ATOMIC_RELAXED);
     __atomic_store_n(&work_completed, 0U, __ATOMIC_RELAXED);

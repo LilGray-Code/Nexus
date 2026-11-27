@@ -292,11 +292,26 @@ static bool service_storage_start(void *c) { (void)c; return storage_probe(); }
 static bool service_timer_start(void *c) { (void)c; timer_init(100U); return true; }
 static bool service_network_start(void *c) { (void)c; return netdev_ready() && net_init(); }
 static bool service_input_start(void *c) {
-    (void)c; const bool ps2 = input_init(); (void)xhci_init();
-    const bool keyboard = xhci_keyboard_ready(), mouse = xhci_mouse_ready();
-    if (!ps2 && !keyboard) serial_write("INPUT: no PS/2 or USB HID keyboard detected; keyboard input unavailable\r\n");
-    if (keyboard) serial_write("INPUT: USB HID boot keyboard available\r\n");
-    if (mouse) serial_write("INPUT: USB HID boot mouse available\r\n");
+    (void)c;
+    (void)input_init();
+    const bool ps2_keyboard = input_ps2_keyboard_ready();
+    const bool ps2_mouse = input_ps2_mouse_ready();
+    (void)xhci_init();
+    const bool usb_keyboard = xhci_keyboard_ready();
+    const bool usb_mouse = xhci_mouse_ready();
+    const bool keyboard = ps2_keyboard || usb_keyboard;
+    const bool mouse = ps2_mouse || usb_mouse;
+
+    serial_write(keyboard
+        ? "INPUT: keyboard backend ready (PS/2 or USB HID)\r\n"
+        : "WARNING: no supported keyboard backend detected\r\n");
+    serial_write(mouse
+        ? "INPUT: mouse backend ready (PS/2 or USB HID)\r\n"
+        : "WARNING: no supported mouse backend detected\r\n");
+    if (usb_keyboard)
+        serial_write("INPUT: USB HID boot keyboard available\r\n");
+    if (usb_mouse)
+        serial_write("INPUT: USB HID boot mouse available\r\n");
     return true;
 }
 static bool service_audio_start(void *c) {

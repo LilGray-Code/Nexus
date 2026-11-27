@@ -8,6 +8,7 @@
 #include "pci.h"
 #include "serial.h"
 #include "usb_hid.h"
+#include "usb_hid_generic.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -117,6 +118,8 @@ struct xhci_hid_device {
     uint16_t product_id;
     struct nexus_usb_gamepad_layout gamepad_layout;
     struct nexus_usb_keyboard_state keyboard_state;
+    struct nexus_usb_hid_generic_layout generic_layout;
+    bool generic_report_protocol;
     uint64_t device_context_physical;
     uint64_t input_context_physical;
     uint64_t report_buffer_physical;
@@ -854,7 +857,7 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
                 ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
             const uint16_t minimum_packet =
                 *kind == XHCI_HID_KEYBOARD ? 8U :
-                *kind == XHCI_HID_MOUSE ? 3U : 8U;
+                *kind == XHCI_HID_MOUSE ? 3U : 1U;
             if ((address & 0x80U) != 0U && attributes == 3U &&
                 packet >= minimum_packet && packet <= 1024U) {
                 *endpoint_address = address;
@@ -1150,8 +1153,19 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         if (!xhci_control_transfer(xhci, device, 0x81U, 0x06U,
                 0x2200U, interface_number,
                 (void *)(uintptr_t)device->report_buffer,
-                report_descriptor_length) ||
-            !usb_hid_gamepad_parse_descriptor(
+                report_descriptor_length)) goto failed;
+
+        if (usb_hid_generic_parse_descriptor(
+                (const uint8_t *)(uintptr_t)device->report_buffer,
+                report_descriptor_length, &device->generic_layout)) {
+            device->generic_report_protocol = true;
+            kind = device->generic_layout.kind ==
+                    NEXUS_USB_HID_GENERIC_KEYBOARD
+                ? XHCI_HID_KEYBOARD : XHCI_HID_MOUSE;
+            const uint16_t required = (uint16_t)device->generic_layout.input_bytes +
+                (device->generic_layout.has_report_id ? 1U : 0U);
+            if (required > max_packet) goto failed;
+        } else if (!usb_hid_gamepad_parse_descriptor(
                 (const uint8_t *)(uintptr_t)device->report_buffer,
                 report_descriptor_length, &device->gamepad_layout)) {
             goto failed;
@@ -1482,12 +1496,36 @@ void xhci_poll(void) {
                 const uint8_t *report =
                     (const uint8_t *)(uintptr_t)device->report_buffer;
                 if (device->kind == XHCI_HID_KEYBOARD) {
-                    if (received >= 8U)
+                    if (device->generic_report_protocol) {
+                        uint8_t boot_report[8];
+                        if (usb_hid_generic_decode_keyboard(
+                                &device->generic_layout, report, received,
+                                boot_report)) {
+                            input_usb_keyboard_report_state(
+                                &device->keyboard_state, boot_report);
+                        }
+                    } else if (received >= 8U) {
                         input_usb_keyboard_report_state(&device->keyboard_state,
                                                         report);
+                    }
                 } else if (device->kind == XHCI_HID_MOUSE) {
-                    if (received >= 3U)
+                    if (device->generic_report_protocol) {
+                        struct nexus_usb_mouse_event decoded;
+                        if (usb_hid_generic_decode_mouse(
+                                &device->generic_layout, report, received,
+                                &decoded)) {
+                            const uint8_t normalized[4] = {
+                                decoded.buttons,
+                                (uint8_t)(int8_t)decoded.dx,
+                                (uint8_t)(int8_t)-decoded.dy,
+                                (uint8_t)decoded.wheel
+                            };
+                            input_usb_mouse_report_sized(normalized,
+                                                         sizeof(normalized));
+                        }
+                    } else if (received >= 3U) {
                         input_usb_mouse_report_sized(report, received);
+                    }
                 } else if (device->kind == XHCI_HID_GAMEPAD) {
                     struct nexus_usb_gamepad_event gamepad_event;
                     if (usb_hid_gamepad_decode(&device->gamepad_layout,

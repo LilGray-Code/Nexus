@@ -40,6 +40,23 @@ static void test_usb_mouse_wheel_reaches_input_queue(void) {
     assert(event.type == NEXUS_INPUT_MOUSE && event.mouse_wheel == -1);
 }
 
+static void test_decoded_high_resolution_mouse_event_reaches_input_queue(void) {
+    const struct nexus_usb_mouse_event decoded = {
+        .buttons = 0x09U,
+        .dx = 300,
+        .dy = -300,
+        .wheel = 2
+    };
+    struct nexus_input_event event = {0};
+    input_usb_mouse_event(&decoded);
+    assert(input_pop_event(&event));
+    assert(event.type == NEXUS_INPUT_MOUSE);
+    assert(event.mouse_buttons == 0x09U);
+    assert(event.mouse_dx == 300);
+    assert(event.mouse_dy == -300);
+    assert(event.mouse_wheel == 2);
+}
+
 static void test_usb_keyboard_report_preserves_right_control(void) {
     const uint8_t down[8] = {0x10U, 0U, 0U, 0U, 0U, 0U, 0U, 0U};
     const uint8_t up[8] = {0U};
@@ -60,6 +77,7 @@ int main(void) {
     test_usb_mouse_report_reaches_desktop_queue();
     test_mouse_buttons_and_stationary_report();
     test_usb_mouse_wheel_reaches_input_queue();
+    test_decoded_high_resolution_mouse_event_reaches_input_queue();
     test_usb_keyboard_report_preserves_right_control();
     puts("NEXUS USB MOUSE INPUT QUEUE TESTS PASSED");
     return 0;

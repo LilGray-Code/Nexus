@@ -35,6 +35,7 @@ uint32_t pci_stored_device_count(void) { return 12U; }
 
 size_t nexus_driver_manager_device_count(void) { return 5U; }
 size_t nexus_driver_manager_driver_count(void) { return 3U; }
+size_t nexus_driver_manager_binding_count(void) { return 4U; }
 bool nexus_driver_manager_device_at(size_t index,
                                     struct nexus_pnp_device_info *info) {
     if (info == NULL || index >= 5U) return false;

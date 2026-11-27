@@ -5942,7 +5942,10 @@ browser_retry:
     if (search_request &&
         (!parsed.has_content_type ||
          browser_content_type_is(parsed.content_type, "text/html") ||
-         browser_content_type_is(parsed.content_type, "application/xhtml+xml"))) {
+         browser_content_type_is(parsed.content_type, "application/xhtml+xml") ||
+         browser_content_type_is(parsed.content_type, "application/rss+xml") ||
+         browser_content_type_is(parsed.content_type, "application/xml") ||
+         browser_content_type_is(parsed.content_type, "text/xml"))) {
         size_t result_count = 0U;
         if (nexus_browser_search_is_challenge(body, parsed.body_length)) {
             serial_write(search_use_bing
@@ -5957,13 +5960,21 @@ browser_retry:
             browser_render_plain_body(body, parsed.body_length);
             return;
         }
-        const bool results_ready = search_use_bing
-            ? nexus_browser_search_parse_bing(
+        const bool bing_rss = search_use_bing && parsed.has_content_type &&
+            (browser_content_type_is(parsed.content_type, "application/rss+xml") ||
+             browser_content_type_is(parsed.content_type, "application/xml") ||
+             browser_content_type_is(parsed.content_type, "text/xml"));
+        const bool results_ready = bing_rss
+            ? nexus_browser_search_parse_bing_rss(
                 body, parsed.body_length, browser_search_results,
                 NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count)
-            : nexus_browser_search_parse(
-                body, parsed.body_length, browser_search_results,
-                NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count);
+            : search_use_bing
+                ? nexus_browser_search_parse_bing(
+                    body, parsed.body_length, browser_search_results,
+                    NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count)
+                : nexus_browser_search_parse(
+                    body, parsed.body_length, browser_search_results,
+                    NEXUS_BROWSER_SEARCH_MAX_RESULTS, &result_count);
         if (results_ready) {
             browser_search_result_count = result_count;
             browser_search_selected = 0U;

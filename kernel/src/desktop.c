@@ -4167,9 +4167,16 @@ static void files_editor_begin_directory(void) {
 static void files_editor_begin_selected(void) {
     struct nexus_vfs_dirent selected;
     if (files_selected_index >= files_filtered_count ||
-        !files_listing_get_entry(files_selected_index, &selected) ||
-        selected.type != NEXUS_VFS_FILE ||
+        !files_listing_get_entry(files_selected_index, &selected)) {
+        serial_write("FILES: editor open refused; no selected entry\\r\\n");
+        files_edit_status[0] = '\0';
+        return;
+    }
+    if (selected.type != NEXUS_VFS_FILE ||
         selected.size > FILES_EDITOR_MAX_BYTES) {
+        serial_write("FILES: editor open refused for selected entry ");
+        serial_write(selected.name);
+        serial_write(" type/size unsupported\\r\\n");
         files_edit_status[0] = '\0';
         const char *message = "FILE EXCEEDS 4096-BYTE EDITOR LIMIT - UNCHANGED";
         size_t i = 0U;
@@ -4181,6 +4188,9 @@ static void files_editor_begin_selected(void) {
         return;
     }
     if (!vfs_file_writable(selected.name)) {
+        serial_write("FILES: editor refused read-only file ");
+        serial_write(selected.name);
+        serial_write("\\r\\n");
         const char *message = "READ ONLY - CREATE A WRITABLE COPY FIRST";
         size_t i = 0U;
         while (message[i] != '\0' && i < sizeof(files_edit_status) - 1U) {
@@ -4191,12 +4201,22 @@ static void files_editor_begin_selected(void) {
         return;
     }
     struct nexus_vfs_file file;
-    if (!vfs_open_readonly(selected.name, &file)) return;
+    if (!vfs_open_readonly(selected.name, &file)) {
+        serial_write("FILES: editor read open failed for ");
+        serial_write(selected.name);
+        serial_write("\\r\\n");
+        return;
+    }
     size_t bytes_read = 0U;
     const bool read_ok = vfs_read(&file, files_edit_content,
                                   selected.size, &bytes_read);
     vfs_close(&file);
-    if (!read_ok || bytes_read != selected.size) return;
+    if (!read_ok || bytes_read != selected.size) {
+        serial_write("FILES: editor read failed for ");
+        serial_write(selected.name);
+        serial_write("\\r\\n");
+        return;
+    }
     for (size_t i = 0U; i < sizeof(files_edit_name); ++i)
         files_edit_name[i] = selected.name[i];
     files_edit_name_length = 0U;
@@ -4209,6 +4229,11 @@ static void files_editor_begin_selected(void) {
     files_editor_scroll_to_end();
     files_edit_status[0] = '\0';
     files_editor_state = FILES_EDITOR_CONTENT;
+    serial_write("FILES: editor opened ");
+    serial_write(files_edit_name);
+    serial_write(" bytes=");
+    serial_write_hex((uint64_t)files_edit_content_length);
+    serial_write("\\r\\n");
 }
 
 static void files_open_selected(void) {
@@ -4528,6 +4553,11 @@ static void files_editor_handle_key(const struct nexus_input_event *event) {
         return;
     }
     if (event->scancode == 0x44U) {
+        serial_write("FILES: editor save requested ");
+        serial_write(files_edit_name);
+        serial_write(" bytes=");
+        serial_write_hex((uint64_t)files_edit_content_length);
+        serial_write("\\r\\n");
         const bool saved = vfs_write_file(files_edit_name, files_edit_content,
                                           files_edit_content_length);
         const char *message = saved

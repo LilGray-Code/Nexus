@@ -1037,6 +1037,8 @@ void kmain(void) {
                 serial_write_hex((uint16_t)event.mouse_dy);
                 serial_write(" buttons=");
                 serial_write_hex(event.mouse_buttons);
+                serial_write(" wheel=");
+                serial_write_hex((uint8_t)event.mouse_wheel);
                 serial_write("\r\n");
             }
         }

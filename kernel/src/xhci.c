@@ -1497,7 +1497,7 @@ bool xhci_init(void) {
         if (xhci_try_controller(device)) return true;
     }
     if (candidates == 0U) {
-        serial_write("USB: no PCI xHCI controller found; no operational USB host-controller driver available; use another supported input path\r\n");
+        serial_write("USB: no operational USB host-controller driver found; use another supported input path\r\n");
     } else {
         serial_write("USB: xHCI controllers found but no supported directly attached HID device was initialized\r\n");
     }

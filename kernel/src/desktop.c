@@ -1,5 +1,7 @@
 #include "desktop.h"
 
+#include "accounts.h"
+#include "system_monitor.h"
 #include "blockdev.h"
 #include "storage.h"
 #include "gpt.h"
@@ -79,11 +81,57 @@ enum desktop_settings_page {
     SETTINGS_SECURITY,
     SETTINGS_APPS,
     SETTINGS_ABOUT,
+    SETTINGS_ACCOUNTS,
+    SETTINGS_TASK_MANAGER,
     SETTINGS_PAGE_COUNT
 };
 #define SETTINGS_VISIBLE_TABS 5U
 static enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
 static size_t settings_tab_first_page;
+
+enum desktop_account_gate_stage {
+    DESKTOP_GATE_BLOCKED = 0,
+    DESKTOP_GATE_LOGIN_USERNAME,
+    DESKTOP_GATE_LOGIN_PASSWORD,
+    DESKTOP_GATE_SETUP_USERNAME,
+    DESKTOP_GATE_SETUP_PASSWORD,
+    DESKTOP_GATE_SETUP_CONFIRM
+};
+
+enum desktop_account_form_kind {
+    DESKTOP_ACCOUNT_FORM_NONE = 0,
+    DESKTOP_ACCOUNT_FORM_ADD_STANDARD,
+    DESKTOP_ACCOUNT_FORM_ADD_ADMIN,
+    DESKTOP_ACCOUNT_FORM_CHANGE_PASSWORD,
+    DESKTOP_ACCOUNT_FORM_RESET_PASSWORD,
+    DESKTOP_ACCOUNT_FORM_STARTUP_ADD
+};
+
+#define DESKTOP_ACCOUNT_FIELD_BYTES (NEXUS_ACCOUNT_PASSWORD_MAX + 1U)
+static bool desktop_account_gate_active;
+static enum desktop_account_gate_stage desktop_account_gate_stage;
+static char desktop_gate_username[NEXUS_ACCOUNT_NAME_MAX];
+static char desktop_gate_password[DESKTOP_ACCOUNT_FIELD_BYTES];
+static char desktop_gate_confirm[DESKTOP_ACCOUNT_FIELD_BYTES];
+static char desktop_account_message[72];
+static enum desktop_account_form_kind desktop_account_form;
+static unsigned desktop_account_form_field;
+static char desktop_account_form_values[3][DESKTOP_ACCOUNT_FIELD_BYTES];
+static size_t desktop_account_selected_user;
+static size_t desktop_account_selected_startup;
+static size_t desktop_task_selected_process;
+static size_t desktop_task_selected_service;
+static uint64_t desktop_last_monitor_tick;
+static uint32_t desktop_profile_loaded_uid;
+
+static void draw_shell(void);
+static void desktop_settings_apply(void);
+static void desktop_accounts_load_profile(void);
+static void desktop_account_handle_key(uint8_t scancode);
+static void desktop_account_form_submit(void);
+static void desktop_account_gate_draw(void);
+static void desktop_accounts_draw_page(uint64_t x, uint64_t y);
+static void desktop_task_manager_draw_page(uint64_t x, uint64_t y);
 
 static void desktop_settings_select_page(enum desktop_settings_page page) {
     if (page >= SETTINGS_PAGE_COUNT) return;

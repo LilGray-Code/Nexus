@@ -135,8 +135,12 @@ bool nexus_usb3_hub_decode_port_status(
         (uint16_t)(status[2] | ((uint16_t)status[3] << 8));
     const uint8_t speed = (uint8_t)((value >> 10) & 0x07U);
     enum nexus_usb_speed decoded_speed;
+    const bool connected = (value & (1U << 0)) != 0U;
     switch (speed) {
-        case 0U: decoded_speed = NEXUS_USB_SPEED_FULL; break;
+        case 0U:
+            if (connected) return false;
+            decoded_speed = NEXUS_USB_SPEED_UNKNOWN;
+            break;
         case 1U: decoded_speed = NEXUS_USB_SPEED_LOW; break;
         case 2U: decoded_speed = NEXUS_USB_SPEED_HIGH; break;
         case 3U: decoded_speed = NEXUS_USB_SPEED_SUPER; break;
@@ -144,7 +148,7 @@ bool nexus_usb3_hub_decode_port_status(
         default: return false;
     }
     *decoded = (struct nexus_usb_hub_port_status){
-        .connected = (value & (1U << 0)) != 0U,
+        .connected = connected,
         .enabled = (value & (1U << 1)) != 0U,
         .resetting = (value & (1U << 4)) != 0U,
         .low_speed = decoded_speed == NEXUS_USB_SPEED_LOW,

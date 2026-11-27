@@ -7,6 +7,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct nexus_pci_device;
+
 /*
  * Start a VirtIO-GPU 2D scanout and return a CPU-writable backing surface.
  * The CPU rasterizer draws to that resource; present uploads modified
@@ -115,6 +117,7 @@ bool virtio_gpu_3d_clear_rgba32(uint32_t resource_id,
 bool virtio_gpu_3d_submit(const void *stream, size_t stream_length,
                           uint64_t *completed_fence);
 bool virtio_gpu_active(void);
+bool virtio_gpu_owns_pci_device(const struct nexus_pci_device *device);
 void virtio_gpu_stop(void);
 
 #endif

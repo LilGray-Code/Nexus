@@ -1552,6 +1552,16 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         : "USB: generic HID gamepad attached to xHCI port ");
     serial_write_hex(path->root_port);
     serial_write("\r\n");
+
+    /* Common keyboard+mouse 2.4 GHz receivers expose two HID interfaces but
+     * only one USB address/slot. Configure the second HID endpoint under this
+     * same slot so both devices can report concurrently. */
+    if (kind == XHCI_HID_KEYBOARD || kind == XHCI_HID_MOUSE) {
+        if (!xhci_configure_secondary_hid_interface(xhci, device,
+                &hid_interfaces, interface_number, kind, speed)) {
+            serial_write("xHCI: secondary composite HID interface unavailable; primary interface remains active\r\n");
+        }
+    }
     return true;
 
 failed:

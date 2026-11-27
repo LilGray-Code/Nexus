@@ -278,7 +278,9 @@ bool scheduler_sleep_ticks(uint64_t ticks) {
              * pending maskable IRQ, so a timer cannot be lost between the
              * deadline check and entering the idle wait.
              */
+            scheduler_idle_begin();
             __asm__ volatile ("sti; hlt; cli" : : : "memory");
+            scheduler_idle_end();
         }
     }
 
@@ -312,7 +314,9 @@ void scheduler_wait(void) {
             }
         }
         if (!runnable) break;
-        __asm__ volatile ("sti; hlt" : : : "memory");
+        scheduler_idle_begin();
+        __asm__ volatile ("sti; hlt; cli" : : : "memory");
+        scheduler_idle_end();
         /* Timer IRQs wake expired contexts; this is the main-context safe point. */
         scheduler_yield();
     }

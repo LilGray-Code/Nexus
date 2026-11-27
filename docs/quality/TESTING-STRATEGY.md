@@ -83,7 +83,10 @@ user's real disk.
 The current automated integration targets include:
 
 - **QEMU q35 + OVMF:** UEFI boot, installer, installed target, xHCI input,
-  storage, networking, persistent files, and desktop HTTPS flows.
+  storage, networking, persistent files, and desktop HTTPS flows. The ISO
+  release workflow injects USB keyboard press/release and USB mouse movement/
+  click events through QMP in both installer and installed-desktop sessions,
+  and verifies the resulting HID reports and shared input-dispatch events.
 - **QEMU pc + SeaBIOS:** legacy BIOS boot and installed-target checks.
 - **QEMU virtual devices:** NVMe, SATA/AHCI, USB/xHCI, RTL8139, E1000,
   VirtIO network and VirtIO GPU where enabled by the workflow.

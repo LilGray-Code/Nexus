@@ -12,7 +12,9 @@ static bool hid_finish_interface(
     const struct hid_interface_scan *scan,
     struct nexus_usb_hid_interface_set *set) {
     if (scan == NULL || set == NULL) return false;
-    if (!scan->active || !scan->is_hid || scan->item.endpoint_in == 0U)
+    if (!scan->active || !scan->is_hid || scan->item.alternate_setting != 0U ||
+        scan->item.endpoint_in == 0U ||
+        scan->item.report_descriptor_length == 0U)
         return true;
     if (set->interface_count >= NEXUS_USB_HID_MAX_INTERFACES) return false;
     set->interfaces[set->interface_count++] = scan->item;

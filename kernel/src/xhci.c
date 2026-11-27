@@ -12,6 +12,7 @@
 #include "timer.h"
 #include "usb_hid.h"
 #include "usb_hid_generic.h"
+#include "usb_hid_interfaces.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -807,87 +808,51 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
                                 uint16_t *max_packet, uint8_t *interval,
                                 uint16_t *report_descriptor_length,
                                 enum xhci_hid_kind *kind) {
-    if (configuration == NULL || length < 9U || interface_number == NULL ||
+    if (configuration == NULL || interface_number == NULL ||
         configuration_value == NULL || endpoint_address == NULL ||
         max_packet == NULL || interval == NULL ||
         report_descriptor_length == NULL || kind == NULL) return false;
 
-    bool in_hid_interface = false;
-    bool found = false;
-    *configuration_value = configuration[5];
-    *report_descriptor_length = 0U;
-    *kind = XHCI_HID_NONE;
-    size_t offset = 0U;
-    while (offset + 2U <= length) {
-        const uint8_t descriptor_length = configuration[offset];
-        const uint8_t descriptor_type = configuration[offset + 1U];
-        if (descriptor_length < 2U || offset + descriptor_length > length)
-            return false;
+    struct nexus_usb_hid_interface_set interfaces = {0};
+    if (!nexus_usb_hid_collect_interfaces(configuration, length, &interfaces))
+        return false;
 
-        if (descriptor_type == 4U && descriptor_length >= 9U) {
-            const bool hid_class = configuration[offset + 5U] == 3U;
-            const uint8_t subclass = configuration[offset + 6U];
-            const uint8_t protocol = configuration[offset + 7U];
-            const bool boot_keyboard = hid_class && subclass == 1U &&
-                                       protocol == 1U;
-            const bool boot_mouse = hid_class && subclass == 1U &&
-                                    protocol == 2U;
-            /*
-             * HID class interfaces that do not advertise a boot keyboard or
-             * boot mouse protocol may still expose standard Generic Desktop
-             * Keyboard/Mouse report collections. Fetch and parse their report
-             * descriptor instead of incorrectly assuming they are gamepads.
-             */
-            const bool generic_hid = hid_class &&
-                !boot_keyboard && !boot_mouse;
-            in_hid_interface = boot_keyboard || boot_mouse || generic_hid;
-            if (in_hid_interface) {
-                *interface_number = configuration[offset + 2U];
-                *kind = boot_keyboard ? XHCI_HID_KEYBOARD :
-                    boot_mouse ? XHCI_HID_MOUSE : XHCI_HID_GAMEPAD;
-                *report_descriptor_length = 0U;
-            }
-        } else if (descriptor_type == 0x21U &&
-                   descriptor_length >= 9U && in_hid_interface &&
-                   *kind == XHCI_HID_GAMEPAD) {
-            const uint8_t descriptors = configuration[offset + 5U];
-            for (uint8_t i = 0U; i < descriptors; ++i) {
-                const size_t item = offset + 6U + (size_t)i * 3U;
-                if (item + 3U > offset + descriptor_length) return false;
-                if (configuration[item] == 0x22U) {
-                    *report_descriptor_length = (uint16_t)(
-                        configuration[item + 1U] |
-                        ((uint16_t)configuration[item + 2U] << 8));
-                    break;
-                }
-            }
-        } else if (descriptor_type == 5U && descriptor_length >= 7U &&
-                   in_hid_interface) {
-            const uint8_t address = configuration[offset + 2U];
-            const uint8_t attributes = configuration[offset + 3U] & 0x03U;
-            const uint16_t packet = (uint16_t)(
-                configuration[offset + 4U] |
-                ((uint16_t)(configuration[offset + 5U] & 0x07U) << 8));
-            const uint16_t minimum_packet =
-                *kind == XHCI_HID_KEYBOARD ? 8U :
-                *kind == XHCI_HID_MOUSE ? 3U : 1U;
-            if ((address & 0x80U) != 0U && attributes == 3U &&
-                packet >= minimum_packet && packet <= 1024U) {
-                *endpoint_address = address;
-                *max_packet = packet;
-                *interval = configuration[offset + 6U];
-                found = true;
+    const struct nexus_usb_hid_interface *selected = NULL;
+    /* Prefer boot keyboards, then boot mice, then generic HID interfaces.
+     * The parser collects every interface so composite receivers can be
+     * diagnosed; this xHCI endpoint implementation currently activates one. */
+    for (uint8_t priority = 0U; priority < 3U && selected == NULL; ++priority) {
+        for (uint8_t i = 0U; i < interfaces.interface_count; ++i) {
+            const struct nexus_usb_hid_interface *candidate =
+                &interfaces.interfaces[i];
+            const bool boot_keyboard =
+                candidate->subclass == 1U && candidate->protocol == 1U;
+            const bool boot_mouse =
+                candidate->subclass == 1U && candidate->protocol == 2U;
+            const bool generic = !boot_keyboard && !boot_mouse &&
+                                 candidate->report_descriptor_length != 0U;
+            if ((priority == 0U && boot_keyboard) ||
+                (priority == 1U && boot_mouse) ||
+                (priority == 2U && generic)) {
+                selected = candidate;
                 break;
             }
         }
-        offset += descriptor_length;
     }
-    if (!found || *configuration_value == 0U ||
-        *kind == XHCI_HID_NONE) return false;
-    if (*kind == XHCI_HID_GAMEPAD &&
-        (*report_descriptor_length == 0U ||
-         *report_descriptor_length > 512U)) return false;
-    return true;
+    if (selected == NULL || selected->report_descriptor_length > 512U)
+        return false;
+
+    *interface_number = selected->number;
+    *configuration_value = interfaces.configuration_value;
+    *endpoint_address = selected->endpoint_in;
+    *max_packet = selected->max_packet;
+    *interval = selected->interval;
+    *report_descriptor_length = selected->report_descriptor_length;
+    *kind = selected->subclass == 1U && selected->protocol == 1U
+        ? XHCI_HID_KEYBOARD
+        : selected->subclass == 1U && selected->protocol == 2U
+            ? XHCI_HID_MOUSE : XHCI_HID_GAMEPAD;
+    return *configuration_value != 0U;
 }
 
 static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {

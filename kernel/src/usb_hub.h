@@ -41,6 +41,10 @@ struct nexus_usb_path {
     uint8_t depth;
     uint32_t route_string;
     bool parent_hub_uses_tt;
+    /* Nearest upstream high-speed USB2 hub that provides the transaction
+     * translator for a low/full-speed child. Propagated through nested hubs. */
+    uint8_t tt_hub_slot;
+    uint8_t tt_port;
 };
 
 struct nexus_usb_hub_port_status {

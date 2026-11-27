@@ -55,9 +55,9 @@ static void test_classic_connection_and_disconnect(void) {
 
 static void test_le_connection(void) {
     const uint8_t parameters[] = {
-        0x01U,0x00U,0x78U,0x00U, 0x00U,
+        0x01U,0x00U,0x78U,0x00U, 0x00U,0x00U,
         1U,2U,3U,4U,5U,6U,
-        0x18U,0x00U,0x00U,0x00U,0xC8U,0x00U,0x00U,0x00U
+        0x18U,0x00U,0x00U,0x00U,0xC8U,0x00U,0x00U
     };
     const struct nexus_bt_hci_event_view event = {
         .event_code = NEXUS_BT_HCI_EVENT_LE_META,
@@ -68,7 +68,7 @@ static void test_le_connection(void) {
     assert(nexus_bt_hci_connection_complete(&event, &connection));
     assert(connection.connected && connection.low_energy);
     assert(connection.handle == 0x0078U);
-    assert(connection.peer_address[0] == 2U &&
+    assert(connection.peer_address[0] == 1U &&
            connection.peer_address[5] == 6U);
 }
 

@@ -25,7 +25,8 @@ bool nexus_bt_hci_parse_acl(const uint8_t *packet, size_t packet_length,
         packet[0] != NEXUS_BT_HCI_PACKET_ACL) return false;
     const uint16_t handle_flags = get_le16(packet + 1U);
     const uint16_t data_length = get_le16(packet + 3U);
-    if ((size_t)data_length != packet_length - 5U) return false;
+    if ((size_t)data_length != packet_length - 5U ||
+        (handle_flags & 0x0FFFU) == 0U) return false;
 
     *acl = (struct nexus_bt_hci_acl_view){
         .connection_handle = (uint16_t)(handle_flags & 0x0FFFU),

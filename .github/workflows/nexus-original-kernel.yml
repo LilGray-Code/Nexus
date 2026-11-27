@@ -846,8 +846,20 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-          # The ISO starts directly in the dedicated install environment.
-          time.sleep(0.4)
+          # The installer opens the drive list on first entry. Close that
+          # list before choosing the firmware layout or opening confirmation.
+          key("ret")
+          def wait_for_marker(marker, timeout=8):
+              deadline = time.time() + timeout
+              while time.time() < deadline:
+                  log = open(log_path, encoding="utf-8", errors="replace").read()
+                  if marker in log:
+                      return log
+                  time.sleep(0.2)
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit(f"Installer did not reach expected stage: {marker}")
+
+          wait_for_marker("NEXUS INSTALLER DROPDOWN CLOSED")
           import re
           deadline = time.time() + 10
           stable_id = None
@@ -855,20 +867,22 @@ jobs:
               log = open(log_path, encoding="utf-8", errors="replace").read()
               match = re.search(r"NEXUS INSTALLER TARGET: ([A-Za-z0-9_-]+)", log)
               if match:
-                  stable_id = match.group(1).lower()
+                  stable_id = match.group(1)
                   break
               time.sleep(0.2)
           if stable_id is None:
               raise SystemExit("Installer did not expose the selected disk's stable ID")
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
-          key("ret")
+          key("ret")  # Open step 1 after the initial drive list is closed.
+          wait_for_marker("NEXUS INSTALLER TARGET ID CONFIRMATION READY")
           for char in stable_id:
               key("minus" if char == "-" else char)
           key("ret")
-          time.sleep(0.4)
+          wait_for_marker("NEXUS INSTALLER TARGET ID VERIFIED")
           for name in ["e","r","a","s","e"]:
               key(name)
           key("ret")
+          wait_for_marker("NEXUS INSTALLER ERASE PHRASE ACCEPTED")
 
           deadline = time.time() + 120
           while time.time() < deadline:

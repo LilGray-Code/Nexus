@@ -134,6 +134,16 @@ struct xhci_hid_device {
     struct nexus_usb_keyboard_state keyboard_state;
     struct nexus_usb_hid_generic_multi_layout generic_multi_layout;
     bool generic_report_protocol;
+    bool secondary_active;
+    enum xhci_hid_kind secondary_kind;
+    uint8_t secondary_endpoint_id;
+    uint16_t secondary_max_packet;
+    struct nexus_usb_keyboard_state secondary_keyboard_state;
+    struct nexus_usb_hid_generic_multi_layout secondary_generic_multi_layout;
+    bool secondary_generic_report_protocol;
+    uint64_t secondary_report_buffer_physical;
+    volatile uint8_t *secondary_report_buffer;
+    struct xhci_ring secondary_interrupt_ring;
     uint64_t device_context_physical;
     uint64_t input_context_physical;
     uint64_t report_buffer_physical;
@@ -842,19 +852,22 @@ static bool xhci_find_boot_hid(const uint8_t *configuration,
                                 uint8_t *endpoint_address,
                                 uint16_t *max_packet, uint8_t *interval,
                                 uint16_t *report_descriptor_length,
-                                enum xhci_hid_kind *kind) {
+                                enum xhci_hid_kind *kind,
+                                struct nexus_usb_hid_interface_set *all_interfaces) {
     if (configuration == NULL || interface_number == NULL ||
         configuration_value == NULL || endpoint_address == NULL ||
         max_packet == NULL || interval == NULL ||
-        report_descriptor_length == NULL || kind == NULL) return false;
+        report_descriptor_length == NULL || kind == NULL ||
+        all_interfaces == NULL) return false;
 
     struct nexus_usb_hid_interface_set interfaces = {0};
     if (!nexus_usb_hid_collect_interfaces(configuration, length, &interfaces))
         return false;
+    *all_interfaces = interfaces;
     if (interfaces.interface_count > 1U) {
         serial_write("xHCI: composite HID receiver detected; HID interfaces=");
         serial_write_hex(interfaces.interface_count);
-        serial_write("; activating one interface only until multi-endpoint dispatch is implemented\r\n");
+        serial_write("\r\n");
     }
 
     const struct nexus_usb_hid_interface *selected = NULL;
@@ -1320,10 +1333,12 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     uint8_t interval = 0U;
     uint16_t report_descriptor_length = 0U;
     enum xhci_hid_kind kind = XHCI_HID_NONE;
+    struct nexus_usb_hid_interface_set hid_interfaces = {0};
     const bool boot_hid = xhci_find_boot_hid(
         (const uint8_t *)(uintptr_t)config_buffer, total_length,
         &interface_number, &configuration_value, &endpoint_address,
-        &max_packet, &interval, &report_descriptor_length, &kind);
+        &max_packet, &interval, &report_descriptor_length, &kind,
+        &hid_interfaces);
     (void)memory_free_page(config_buffer_physical);
     if (!boot_hid) goto failed;
 

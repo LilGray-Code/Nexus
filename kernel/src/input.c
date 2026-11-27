@@ -291,8 +291,12 @@ bool input_ps2_mouse_ready(void) {
     return mouse_ready;
 }
 
+static void input_route_ps2_byte(uint8_t status, uint8_t value);
+
 void input_keyboard_interrupt(void) {
-    input_process_keyboard_scancode(inb(PS2_DATA_PORT));
+    const uint8_t status = inb(PS2_STATUS_PORT);
+    if ((status & 0x01U) == 0U) return;
+    input_route_ps2_byte(status, inb(PS2_DATA_PORT));
 }
 
 static void input_process_mouse_byte(uint8_t value) {
@@ -327,11 +331,56 @@ static void input_process_mouse_byte(uint8_t value) {
     queue_event(&event);
 }
 
+static void input_route_ps2_byte(uint8_t status, uint8_t value) {
+    /* Parity/timeout errors invalidate this byte; resync mouse packet framing. */
+    if ((status & 0xC0U) != 0U) {
+        if ((status & 0x20U) != 0U) mouse_packet_index = 0U;
+        return;
+    }
+    if ((status & 0x20U) != 0U) {
+        if (mouse_ready) input_process_mouse_byte(value);
+    } else if (keyboard_ready) {
+        input_process_keyboard_scancode(value);
+    }
+}
+
 void input_mouse_interrupt(void) {
-    input_process_mouse_byte(inb(PS2_DATA_PORT));
+    const uint8_t status = inb(PS2_STATUS_PORT);
+    if ((status & 0x01U) == 0U) return;
+    input_route_ps2_byte(status, inb(PS2_DATA_PORT));
+}
+
+/*
+ * IRQ delivery from legacy i8042 controllers is not reliable on every
+ * firmware/APIC routing combination. Drain the controller as a bounded
+ * polling fallback as well. Interrupts are disabled while consuming the
+ * shared data register so the IRQ handlers cannot steal a byte mid-drain.
+ */
+size_t input_poll_ps2(void) {
+    if (!keyboard_ready && !mouse_ready) return 0U;
+    const uint64_t flags = input_interrupt_save();
+    size_t consumed = 0U;
+    for (size_t i = 0U; i < 32U; ++i) {
+        const uint8_t status = inb(PS2_STATUS_PORT);
+        if ((status & 0x01U) == 0U) break;
+        const uint8_t value = inb(PS2_DATA_PORT);
+        input_route_ps2_byte(status, value);
+        ++consumed;
+    }
+    input_interrupt_restore(flags);
+    return consumed;
 }
 
 #ifdef NEXUS_INPUT_HOST_TEST
+void input_test_ps2_ready(bool keyboard, bool mouse) {
+    keyboard_ready = keyboard;
+    mouse_ready = mouse;
+    mouse_packet_index = 0U;
+}
+
+void input_test_ps2_byte(uint8_t status, uint8_t value) {
+    input_route_ps2_byte(status, value);
+}
 void input_test_mouse_device_id(uint8_t id) {
     mouse_packet_index = 0U;
     mouse_explorer_buttons = id == 4U;

@@ -408,7 +408,7 @@ void input_usb_mouse_report_sized(const uint8_t *report,
     serial_write_hex((uint16_t)decoded.dy);
     serial_write(" wheel=");
     serial_write_hex((uint8_t)decoded.wheel);
-    serial_write("\\r\\n");
+    serial_write("\r\n");
 }
 
 void input_usb_mouse_report(const uint8_t report[3]) {

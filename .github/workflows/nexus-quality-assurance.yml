@@ -1,0 +1,135 @@
+name: Nexus Quality Assurance Matrix
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-coverage:
+    name: Validate subsystem test and evidence catalog
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Validate test matrix, workflow ownership and failure/recovery evidence
+        run: python3 build/validate_qa_matrix.py
+
+  memory-cpu-driver:
+    name: Sanitized memory, CPU and driver-manager tests
+    needs: validate-coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Test CPU capability and topology decoding
+        run: |
+          cc -std=gnu11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ikernel/src kernel/src/cpu.c kernel/tests/cpu_test.c \
+            -o /tmp/nexus-qa-cpu
+          /tmp/nexus-qa-cpu
+      - name: Stress allocator, exhaust memory and verify recovery
+        run: |
+          cc -std=gnu11 -O1 -g -Wall -Wextra -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -DNEXUS_MEMORY_HOST_TEST -pthread \
+            -Ikernel/include -Ikernel/src \
+            kernel/src/memory.c kernel/tests/memory_smp_test.c \
+            -o /tmp/nexus-qa-memory
+          ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 /tmp/nexus-qa-memory
+      - name: Test driver matching, dependency gates and safe removal
+        run: |
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -pedantic \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Ikernel/src kernel/src/driver_manager.c \
+            kernel/tests/driver_manager_test.c -o /tmp/nexus-qa-driver
+          ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 /tmp/nexus-qa-driver
+
+  graphics-display-audio:
+    name: Graphics, GPU, display rollback and audio descriptor tests
+    needs: validate-coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Test framebuffer clipping and surface validation
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/graphics.c kernel/tests/graphics_test.c \
+            -o /tmp/nexus-qa-graphics
+          /tmp/nexus-qa-graphics
+      - name: Test display mode selection and rollback
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/include -Ikernel/src kernel/src/display.c \
+            kernel/src/graphics.c kernel/tests/display_test.c \
+            -o /tmp/nexus-qa-display
+          /tmp/nexus-qa-display
+      - name: Test GPU discovery and safe rendering fallback
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/gpu.c kernel/tests/gpu_test.c \
+            -o /tmp/nexus-qa-gpu
+          /tmp/nexus-qa-gpu
+      - name: Test AC97 DMA descriptor bounds
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/ac97_format.c \
+            kernel/tests/ac97_format_test.c -o /tmp/nexus-qa-ac97
+          /tmp/nexus-qa-ac97
+
+  storage-usb-installer:
+    name: Storage authorization, USB recovery and installer journal tests
+    needs: validate-coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Test block-device identity and write authorization
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/blockdev.c kernel/src/gpt.c \
+            kernel/tests/blockdev_identity_test.c \
+            -o /tmp/nexus-qa-blockdev-identity
+          /tmp/nexus-qa-blockdev-identity
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/blockdev.c \
+            kernel/tests/blockdev_data_write_test.c \
+            -o /tmp/nexus-qa-blockdev-write
+          /tmp/nexus-qa-blockdev-write
+      - name: Test USB mass-storage corruption and BOT recovery
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_msc.c kernel/src/blockdev.c \
+            kernel/src/gpt.c kernel/tests/usb_msc_test.c \
+            -o /tmp/nexus-qa-usb-msc
+          /tmp/nexus-qa-usb-msc
+      - name: Test installer journal interruption and recovery
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Iinstaller installer/installer_journal.c \
+            installer/tests/installer_journal_test.c \
+            -o /tmp/nexus-qa-installer-journal
+          /tmp/nexus-qa-installer-journal
+
+  performance-smoke:
+    name: Verify performance benchmark correctness
+    needs: validate-coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Nexus
+        uses: actions/checkout@v4
+      - name: Compare legacy and optimized log-ring implementations
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/log_buffer.c \
+            kernel/tests/log_buffer_bench.c -o /tmp/nexus-qa-log-bench
+          /tmp/nexus-qa-log-bench

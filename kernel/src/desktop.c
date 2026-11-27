@@ -741,13 +741,31 @@ static void desktop_settings_apply(void) {
 }
 
 static void desktop_preferences_save(void) {
-    uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
     desktop_settings_apply();
-    desktop_preferences_saved =
-        nexus_settings_encode(&desktop_settings, record) &&
-        vfs_write_root_file("NEXUS.CFG", record, sizeof(record));
-    desktop_preferences_persistent =
-        desktop_preferences_saved && vfs_nxfs_writable();
+    if (nexus_accounts_is_logged_in()) {
+        struct nexus_account_profile profile;
+        const bool loaded = nexus_accounts_get_profile(
+            nexus_accounts_current_uid(), &profile);
+        if (loaded) {
+            profile.theme = desktop_settings.theme;
+            profile.accent = desktop_settings.accent;
+            profile.wallpaper = desktop_settings.wallpaper;
+            profile.ui_scale_percent = desktop_settings.ui_scale_percent;
+            desktop_preferences_saved = nexus_accounts_set_profile(
+                nexus_accounts_current_uid(), &profile);
+            desktop_preferences_persistent = desktop_preferences_saved;
+        } else {
+            desktop_preferences_saved = false;
+            desktop_preferences_persistent = false;
+        }
+    } else {
+        uint8_t record[NEXUS_SETTINGS_RECORD_BYTES];
+        desktop_preferences_saved =
+            nexus_settings_encode(&desktop_settings, record) &&
+            vfs_write_root_file("NEXUS.CFG", record, sizeof(record));
+        desktop_preferences_persistent =
+            desktop_preferences_saved && vfs_nxfs_writable();
+    }
     serial_write(desktop_preferences_persistent
         ? "DESKTOP: system settings saved to persistent NXFS\r\n"
         : (desktop_preferences_saved
@@ -756,6 +774,10 @@ static void desktop_preferences_save(void) {
 }
 
 static void desktop_preferences_load(void) {
+    if (nexus_accounts_is_logged_in()) {
+        desktop_accounts_load_profile();
+        return;
+    }
     if (desktop_preferences_loaded) return;
     desktop_preferences_loaded = true;
     nexus_settings_defaults(&desktop_settings);
@@ -1552,6 +1574,11 @@ static void draw_shell(void) {
     const uint64_t height = screen_height;
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
     const uint64_t bottom_bar = clamp_min(height / 11U, 48U);
+
+    if (!installer_session_mode && desktop_account_gate_active) {
+        desktop_account_gate_draw();
+        return;
+    }
 
     if (installer_session_mode) {
         /* The dedicated installer uses one smooth, single-pass gradient. */
@@ -2433,7 +2460,8 @@ static void draw_shell(void) {
     } else if (active_view == DESKTOP_SETTINGS) {
         static const char *const tab_labels[SETTINGS_PAGE_COUNT] = {
             "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "DEVICES",
-            "NETWORK", "STORAGE", "POWER", "SECURITY", "APPS", "ABOUT"
+            "NETWORK", "STORAGE", "POWER", "SECURITY", "APPS", "ABOUT",
+            "USERS", "TASKS"
         };
         const uint64_t tab_y = text_y - 2U;
         if ((size_t)settings_page < settings_tab_first_page)
@@ -3082,6 +3110,10 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 253U,
                 "ED25519 VERIFIER AND RELEASE TRUST KEY.",
                 1U, 171U, 191U, 211U);
+        } else if (settings_page == SETTINGS_ACCOUNTS) {
+            desktop_accounts_draw_page(text_x, content_y);
+        } else if (settings_page == SETTINGS_TASK_MANAGER) {
+            desktop_task_manager_draw_page(text_x, content_y);
         } else if (settings_page == SETTINGS_ABOUT) {
             char line[96];
             desktop_settings_draw_heading(text_x, content_y,
@@ -3457,6 +3489,29 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     if (!nexus_display_init(framebuffer))
         serial_write("DISPLAY: monitor or mode discovery unavailable\r\n");
 
+    if (!installer_session_mode) {
+        nexus_accounts_init();
+        const enum nexus_accounts_status status =
+            nexus_accounts_get_status();
+        desktop_account_gate_active = true;
+        desktop_gate_username[0] = '\0';
+        desktop_gate_password[0] = '\0';
+        desktop_gate_confirm[0] = '\0';
+        desktop_account_message[0] = '\0';
+        if (status == NEXUS_ACCOUNTS_SETUP_REQUIRED) {
+            desktop_account_gate_stage = DESKTOP_GATE_SETUP_USERNAME;
+        } else if ((status == NEXUS_ACCOUNTS_READY ||
+                    status == NEXUS_ACCOUNTS_READ_ONLY) &&
+                   nexus_accounts_count() != 0U) {
+            desktop_account_gate_stage = DESKTOP_GATE_LOGIN_USERNAME;
+        } else {
+            desktop_account_gate_stage = DESKTOP_GATE_BLOCKED;
+        }
+    } else {
+        desktop_account_gate_active = false;
+    }
+    nexus_system_monitor_init();
+
     struct nexus_graphics_surface surface = {
         .address = framebuffer->address,
         .width = framebuffer->width,
@@ -3602,6 +3657,9 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     keyboard_windows_used = false;
     keyboard_caps_lock_down = false;
     desktop_ready = true;
+    if (!installer_session_mode && !desktop_account_gate_active &&
+        nexus_accounts_is_logged_in())
+        desktop_accounts_load_profile();
 #ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
     serial_write("NEXUS INSTALLER WRITE GATE ENABLED\r\n");
 #else
@@ -6565,6 +6623,18 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             normalized_event.scancode &= 0x00FFU;
             event = &normalized_event;
         }
+    }
+    if (desktop_account_gate_active && !installer_session_mode) {
+        if (event->type == NEXUS_INPUT_KEYBOARD)
+            desktop_account_handle_key((uint8_t)event->scancode);
+        return;
+    }
+    if (desktop_account_form != DESKTOP_ACCOUNT_FORM_NONE &&
+        active_view == DESKTOP_SETTINGS &&
+        settings_page == SETTINGS_ACCOUNTS) {
+        if (event->type == NEXUS_INPUT_KEYBOARD)
+            desktop_account_handle_key((uint8_t)event->scancode);
+        return;
     }
     if (event->type == NEXUS_INPUT_MOUSE) {
         const int64_t sensitivity =

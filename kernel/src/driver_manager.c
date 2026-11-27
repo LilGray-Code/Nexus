@@ -341,7 +341,8 @@ bool nexus_driver_manager_remove_device(
         removed = true;
     }
     const size_t record = find_pnp_device(device);
-    if (record != pnp_devices_used) {
+    if (record != pnp_devices_used &&
+        pnp_devices[record].info.state != NEXUS_PNP_DEVICE_REMOVED) {
         pnp_devices[record].info.state = NEXUS_PNP_DEVICE_REMOVED;
         pnp_devices[record].info.driver_name[0] = '\0';
         removed = true;

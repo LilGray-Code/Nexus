@@ -1,6 +1,7 @@
 #include "driver_manager.h"
 
 #include "pci.h"
+#include "security.h"
 
 #include <stddef.h>
 
@@ -160,16 +161,31 @@ void nexus_driver_manager_init(void) {
         pnp_devices[i] = (struct pnp_device_record){0};
 }
 
+static bool reject_driver_registration(void) {
+    nexus_security_audit(NEXUS_SECURITY_EVENT_DRIVER_REJECTED, 0U,
+        NEXUS_SECURITY_REASON_DRIVER_UNTRUSTED, 0U, 0U);
+    return false;
+}
+
 bool nexus_driver_manager_register(
     const struct nexus_driver_descriptor *descriptor) {
+    /*
+     * This API registers reviewed, statically linked kernel drivers only.
+     * There is intentionally no path from a disk/network payload to these
+     * function pointers. Unknown or malformed descriptors fail closed.
+     */
     if (descriptor == NULL || descriptor->probe == NULL ||
         drivers_used >= NEXUS_DRIVER_MAX_DRIVERS ||
         descriptor->match.bus < NEXUS_DRIVER_BUS_PCI ||
-        descriptor->match.bus > NEXUS_DRIVER_BUS_USB) return false;
+        descriptor->match.bus > NEXUS_DRIVER_BUS_USB)
+        return reject_driver_registration();
     struct registered_driver candidate = {0};
-    if (!copy_name(candidate.name, descriptor->name)) return false;
-    for (size_t i = 0U; i < drivers_used; ++i)
-        if (names_equal(drivers[i].name, candidate.name)) return false;
+    if (!copy_name(candidate.name, descriptor->name))
+        return reject_driver_registration();
+    for (size_t i = 0U; i < drivers_used; ++i) {
+        if (names_equal(drivers[i].name, candidate.name))
+            return reject_driver_registration();
+    }
     candidate.version = descriptor->version;
     candidate.priority = descriptor->priority;
     candidate.match = descriptor->match;

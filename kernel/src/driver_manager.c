@@ -141,6 +141,20 @@ static bool same_device(const struct nexus_driver_device *a,
         a->segment_group == b->segment_group;
 }
 
+static bool same_hardware_identity(
+    const struct nexus_driver_device *a,
+    const struct nexus_driver_device *b) {
+    return a != NULL && b != NULL &&
+        a->vendor_id == b->vendor_id &&
+        a->device_id == b->device_id &&
+        a->subsystem_vendor_id == b->subsystem_vendor_id &&
+        a->subsystem_device_id == b->subsystem_device_id &&
+        a->revision_id == b->revision_id &&
+        a->class_code == b->class_code &&
+        a->subclass == b->subclass &&
+        a->programming_interface == b->programming_interface;
+}
+
 static size_t find_pnp_device(const struct nexus_driver_device *device) {
     for (size_t i = 0U; i < pnp_devices_used; ++i)
         if (same_device(&pnp_devices[i].device, device)) return i;
@@ -418,8 +432,22 @@ bool nexus_driver_manager_probe_device(
     const size_t count_before = pnp_devices_used;
     const size_t prior = find_pnp_device(device);
     const bool existed = prior != count_before;
-    const enum nexus_pnp_device_state prior_state = existed
+    enum nexus_pnp_device_state prior_state = existed
         ? pnp_devices[prior].info.state : NEXUS_PNP_DEVICE_DISCOVERED;
+
+    /*
+     * A bus address can be reused after hot removal. Never let a new
+     * vendor/device identity inherit an old active binding at the same BDF.
+     * Teardown is routed through the old descriptor before the record is
+     * repurposed for the replacement function.
+     */
+    if (existed &&
+        !same_hardware_identity(&pnp_devices[prior].device, device)) {
+        const struct nexus_driver_device previous = pnp_devices[prior].device;
+        (void)nexus_driver_manager_remove_device(&previous);
+        prior_state = NEXUS_PNP_DEVICE_REMOVED;
+    }
+
     const size_t record = remember_device(device);
     if (record == pnp_devices_used) return false;
     if (existed) {

@@ -78,6 +78,12 @@ struct nexus_driver_binding_info {
     uint16_t segment_group;
 };
 void nexus_driver_manager_init(void);
+/*
+ * Kernel-only registration for statically linked, reviewed driver code.
+ * Never pass descriptors or function pointers originating from disk,
+ * network, PE/ELF compatibility payloads, or other untrusted input. Nexus
+ * does not yet implement a signed external driver/module loader.
+ */
 bool nexus_driver_manager_register(
     const struct nexus_driver_descriptor *descriptor);
 bool nexus_driver_manager_probe_device(

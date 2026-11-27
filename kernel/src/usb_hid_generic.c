@@ -432,10 +432,16 @@ static int32_t hid_signed_value(uint32_t value, uint8_t width,
     return (int32_t)value;
 }
 
-static int16_t hid_clamp_axis(int32_t value) {
-    if (value < -127) return -127;
-    if (value > 127) return 127;
+static int16_t hid_clamp_motion(int32_t value) {
+    if (value < INT16_MIN) return INT16_MIN;
+    if (value > INT16_MAX) return INT16_MAX;
     return (int16_t)value;
+}
+
+static int8_t hid_clamp_wheel(int32_t value) {
+    if (value < INT8_MIN) return INT8_MIN;
+    if (value > INT8_MAX) return INT8_MAX;
+    return (int8_t)value;
 }
 
 bool usb_hid_generic_decode_mouse(
@@ -459,20 +465,20 @@ bool usb_hid_generic_decode_mouse(
     uint32_t raw = 0U;
     if (!hid_read_bits(payload, layout->input_bytes,
             layout->x_bit_offset, layout->x_size, &raw)) return false;
-    event->dx = hid_clamp_axis(hid_signed_value(raw, layout->x_size,
-                                       layout->x_logical_minimum));
+    event->dx = hid_clamp_motion(hid_signed_value(raw, layout->x_size,
+                                          layout->x_logical_minimum));
 
     if (!hid_read_bits(payload, layout->input_bytes,
             layout->y_bit_offset, layout->y_size, &raw)) return false;
-    event->dy = (int16_t)-hid_clamp_axis(hid_signed_value(
+    event->dy = hid_clamp_motion(-hid_signed_value(
         raw, layout->y_size, layout->y_logical_minimum));
 
     if (layout->wheel_size != 0U &&
         hid_read_bits(payload, layout->input_bytes,
             layout->wheel_bit_offset, layout->wheel_size, &raw)) {
-        const int16_t wheel = hid_clamp_axis(hid_signed_value(
-            raw, layout->wheel_size, layout->wheel_logical_minimum));
-        event->wheel = (int8_t)wheel;
+        const int32_t wheel = hid_signed_value(
+            raw, layout->wheel_size, layout->wheel_logical_minimum);
+        event->wheel = hid_clamp_wheel(wheel);
     }
     return true;
 }

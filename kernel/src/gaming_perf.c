@@ -12,7 +12,8 @@ static uint64_t saturating_add(uint64_t left, uint64_t right) {
 }
 
 static uint64_t histogram_bucket(uint64_t value_ns) {
-    const uint64_t bucket = value_ns / NEXUS_GAMING_PERF_BUCKET_WIDTH_NS;
+    const uint64_t bucket = value_ns == 0U ? 0U :
+        (value_ns - 1U) / NEXUS_GAMING_PERF_BUCKET_WIDTH_NS;
     return bucket < NEXUS_GAMING_PERF_HISTOGRAM_BUCKETS
         ? bucket : NEXUS_GAMING_PERF_HISTOGRAM_BUCKETS - 1U;
 }

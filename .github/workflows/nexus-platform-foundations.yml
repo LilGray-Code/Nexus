@@ -6,6 +6,7 @@ on:
       - nexus-original-kernel-roadmap
     paths:
       - "kernel/src/driver_manager.*"
+      - "kernel/src/security.*"
       - "kernel/src/service_manager.*"
       - "kernel/tests/driver_manager_test.c"
       - "kernel/tests/service_manager_test.c"
@@ -34,7 +35,7 @@ jobs:
       - name: Test modular driver registry
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/driver_manager.c \
+            -Ikernel/src kernel/src/driver_manager.c kernel/src/security.c \
             kernel/tests/driver_manager_test.c \
             -o /tmp/nexus-driver-manager-test
           /tmp/nexus-driver-manager-test

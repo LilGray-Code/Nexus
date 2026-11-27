@@ -112,6 +112,10 @@ int main(void) {
     assert(nexus_diagnostics_command("cpu", output, sizeof(output)));
     assert(has(output, "GenuineIntel") && has(output, "AVX2-hw yes"));
 
+    assert(nexus_diagnostics_command("hardware", output, sizeof(output)));
+    assert(has(output, "GenuineIntel") && has(output, "PCI functions 12"));
+    assert(has(output, "driver bindings 4"));
+
     assert(nexus_diagnostics_command("pci", output, sizeof(output)));
     assert(has(output, "PCI functions 12") && has(output, "stored 12/128"));
 

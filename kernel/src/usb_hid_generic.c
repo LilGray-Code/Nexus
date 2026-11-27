@@ -337,13 +337,15 @@ bool usb_hid_generic_parse_descriptor(
         }
     }
 
+    if (collection_depth != 0U || global_depth != 0U) return false;
     if (layout->kind == NEXUS_USB_HID_GENERIC_KEYBOARD) {
         if (layout->key_array_count == 0U ||
             (layout->modifier_mask == 0U &&
              layout->key_array_count == 0U)) return false;
     } else if (layout->kind == NEXUS_USB_HID_GENERIC_MOUSE) {
         if (layout->x_size == 0U || layout->y_size == 0U ||
-            layout->button_count == 0U) return false;
+            layout->button_count == 0U ||
+            !layout->x_relative || !layout->y_relative) return false;
     } else {
         return false;
     }

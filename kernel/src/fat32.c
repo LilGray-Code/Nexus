@@ -17,6 +17,8 @@
 static struct nexus_fat32_entry root_entries[NEXUS_FAT32_MAX_ROOT_ENTRIES];
 static struct nexus_fat32_entry directory_backup[NEXUS_FAT32_MAX_ROOT_ENTRIES];
 static size_t root_entry_count;
+static bool root_directory_truncated;
+static bool directory_backup_truncated;
 static uint8_t sector_buffer[FAT32_MAX_SECTOR_SIZE];
 static uint32_t fat_start;
 static uint32_t fat_sectors;
@@ -153,7 +155,10 @@ static bool add_directory_entry(const uint8_t *raw) {
         reset_lfn();
         return true;
     }
-    if (root_entry_count >= NEXUS_FAT32_MAX_ROOT_ENTRIES) return true;
+    if (root_entry_count >= NEXUS_FAT32_MAX_ROOT_ENTRIES) {
+        root_directory_truncated = true;
+        return true;
+    }
 
     struct nexus_fat32_entry *entry = &root_entries[root_entry_count++];
     if (!copy_lfn_name(entry->name, raw)) decode_short_name(raw, entry->name);
@@ -169,6 +174,8 @@ bool fat32_mount(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition) {
     mounted_device = NULL;
     root_entry_count = 0;
+    root_directory_truncated = false;
+    directory_backup_truncated = false;
     reset_lfn();
     uint32_t mount_stage = 0U;
     if (device == NULL || partition == NULL ||
@@ -258,6 +265,7 @@ uint32_t fat32_root_cluster(void) {
 static bool fat32_read_directory_impl(uint32_t first_cluster) {
     if (mounted_device == NULL || !valid_cluster(first_cluster)) return false;
     root_entry_count = 0U;
+    root_directory_truncated = false;
     reset_lfn();
     uint32_t cluster = first_cluster;
     uint32_t visited[FAT32_MAX_ROOT_CLUSTERS];
@@ -294,6 +302,7 @@ static bool fat32_read_directory_impl(uint32_t first_cluster) {
 
 bool fat32_read_directory(uint32_t first_cluster) {
     const size_t previous_count = root_entry_count;
+    directory_backup_truncated = root_directory_truncated;
     for (size_t i = 0U; i < previous_count; ++i)
         directory_backup[i] = root_entries[i];
 
@@ -301,6 +310,7 @@ bool fat32_read_directory(uint32_t first_cluster) {
 
     /* A failed child-directory read must not destroy the visible parent. */
     root_entry_count = previous_count;
+    root_directory_truncated = directory_backup_truncated;
     for (size_t i = 0U; i < previous_count; ++i)
         root_entries[i] = directory_backup[i];
     reset_lfn();
@@ -309,6 +319,10 @@ bool fat32_read_directory(uint32_t first_cluster) {
 
 size_t fat32_root_entry_count(void) {
     return root_entry_count;
+}
+
+bool fat32_directory_truncated(void) {
+    return root_directory_truncated;
 }
 
 const struct nexus_fat32_entry *fat32_root_entry_at(size_t index) {

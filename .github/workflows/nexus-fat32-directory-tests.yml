@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-file-manager-management
     paths:
       - "kernel/src/fat32.c"
       - "kernel/src/fat32.h"
@@ -12,6 +13,7 @@ on:
   pull_request:
     branches:
       - nexus-original-kernel-roadmap
+      - nexus-desktop-shell-workspaces-panels
     paths:
       - "kernel/src/fat32.c"
       - "kernel/src/fat32.h"

@@ -190,6 +190,9 @@ bool fat32_read_directory(uint32_t first_cluster) {
 size_t fat32_root_entry_count(void) {
     return fat_entry_count;
 }
+bool fat32_directory_truncated(void) {
+    return false;
+}
 const struct nexus_fat32_entry *fat32_root_entry_at(size_t index) {
     return index < fat_entry_count ? &fat_entries[index] : NULL;
 }
@@ -343,6 +346,16 @@ int main(void) {
     assert(vfs_enter_directory("PROJECTS"));
     assert(vfs_current_path(path, sizeof(path)));
     assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
+    assert(vfs_change_directory("/DOCUMENTS"));
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/DOCUMENTS") == 0);
+    assert(vfs_change_directory("/DOCUMENTS/PROJECTS"));
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
+    /* A failed path change is transactional and leaves the working directory. */
+    assert(!vfs_change_directory("/DOCUMENTS/MISSING"));
+    assert(vfs_current_path(path, sizeof(path)));
+    assert(strcmp(path, "/DOCUMENTS/PROJECTS") == 0);
 
     /* Root-scoped preferences never follow the current nested directory. */
     static const uint8_t preferences_a[] = {
@@ -375,9 +388,18 @@ int main(void) {
     assert(vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
     assert(vfs_root_entry_count() == 2U);
     read_current_file("COPY.TXT", payload);
+    assert(vfs_copy_file_absolute("/DOCUMENTS/PROJECTS/NOTE.TXT",
+                                  "/DOCUMENTS/ABSOLUTE.TXT"));
+    assert(vfs_change_directory("/DOCUMENTS"));
+    read_current_file("ABSOLUTE.TXT", payload);
+    assert(vfs_move_file_absolute("/DOCUMENTS/ABSOLUTE.TXT",
+                                  "/DOCUMENTS/PROJECTS/RENAMED.TXT"));
+    assert(vfs_change_directory("/DOCUMENTS/PROJECTS"));
+    read_current_file("RENAMED.TXT", payload);
     assert(!vfs_copy_file("NOTE.TXT", "DOCUMENTS/PROJECTS/COPY.TXT"));
     assert(!vfs_move_file("COPY.TXT", "DOCUMENTS/PROJECTS/NOTE.TXT"));
-    assert(vfs_root_entry_count() == 2U);
+    /* NOTE, COPY and the absolute-path move are now in this directory. */
+    assert(vfs_root_entry_count() == 3U);
     assert(vfs_move_file("COPY.TXT", "DOCUMENTS/MOVED.TXT"));
     struct nexus_vfs_file copy_probe;
     assert(!vfs_open_readonly("COPY.TXT", &copy_probe));
@@ -430,6 +452,7 @@ int main(void) {
     assert(vfs_enter_directory("PROJECTS"));
     read_current_file("NOTE.TXT", payload);
     assert(vfs_remove_file("NOTE.TXT"));
+    assert(vfs_remove_file("RENAMED.TXT"));
     assert(vfs_parent_directory());
     assert(vfs_remove_directory("PROJECTS"));
     assert(vfs_parent_directory());

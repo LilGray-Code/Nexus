@@ -4,10 +4,19 @@ on:
   push:
     branches:
       - nexus-desktop-shell-workspaces-panels
+      - nexus-file-manager-management
     paths:
       - "kernel/src/settings.c"
       - "kernel/src/settings.h"
       - "kernel/src/desktop.c"
+      - "kernel/src/vfs.c"
+      - "kernel/src/vfs.h"
+      - "kernel/src/fat32.c"
+      - "kernel/src/fat32.h"
+      - "kernel/src/file_list.c"
+      - "kernel/src/file_list.h"
+      - "kernel/tests/file_list_test.c"
+      - "kernel/tests/vfs_directory_test.c"
       - "kernel/src/desktop_services.c"
       - "kernel/src/graphics.c"
       - "kernel/src/graphics.h"
@@ -31,6 +40,7 @@ on:
   pull_request:
     branches:
       - nexus-comprehensive-settings-service-integration
+      - nexus-desktop-shell-workspaces-panels
     paths:
       - "kernel/src/settings.c"
       - "kernel/src/settings.h"
@@ -82,5 +92,24 @@ jobs:
             kernel/tests/graphics_readback_test.c \
             -o /tmp/nexus-graphics-readback-test
           /tmp/nexus-graphics-readback-test
+      - name: Compile and run file-list merge sort and filter tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/file_list.c kernel/tests/file_list_test.c \
+            -o /tmp/nexus-file-list-test
+          /tmp/nexus-file-list-test
+      - name: Compile and run VFS directory and absolute-path tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/nxfs.c kernel/src/vfs.c \
+            kernel/src/boot_pack.c kernel/tests/vfs_directory_test.c \
+            -o /tmp/nexus-vfs-directory-test
+          /tmp/nexus-vfs-directory-test
+      - name: Compile and run FAT32 directory cache tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/fat32.c kernel/tests/fat32_mount_test.c \
+            -o /tmp/nexus-fat32-test
+          /tmp/nexus-fat32-test
       - name: Compile complete freestanding Nexus kernel
         run: make -C kernel

@@ -126,6 +126,49 @@ int main(void) {
     assert(!nexus_file_list_filter(filter_items, 5U, oversized_query,
                                    filtered, 5U, &filtered_count));
 
+    assert(nexus_file_list_filter_mode(filter_items, 5U, "",
+        NEXUS_FILE_FILTER_FILES, filtered, 5U, &filtered_count));
+    assert(filtered_count == 4U);
+    assert(filtered[0] == 1U && filtered[3] == 4U);
+    assert(nexus_file_list_filter_mode(filter_items, 5U, "",
+        NEXUS_FILE_FILTER_DIRECTORIES, filtered, 5U, &filtered_count));
+    assert(filtered_count == 1U && filtered[0] == 0U);
+    assert(strcmp(nexus_file_filter_mode_label(NEXUS_FILE_FILTER_ALL),
+                  "FILTER: ALL") == 0);
+    assert(strcmp(nexus_file_filter_mode_label(NEXUS_FILE_FILTER_FILES),
+                  "FILTER: FILES") == 0);
+    assert(strcmp(nexus_file_filter_mode_label(NEXUS_FILE_FILTER_DIRECTORIES),
+                  "FILTER: FOLDERS") == 0);
+    assert(!nexus_file_list_filter_mode(filter_items, 5U, "",
+        (enum nexus_file_filter_mode)99, filtered, 5U, &filtered_count));
+
+    /* Exercise the full 512-entry cache and the merge-sort ordering. */
+    struct nexus_file_list_item maximum[NEXUS_FILE_LIST_MAX_ENTRIES];
+    for (size_t i = 0U; i < NEXUS_FILE_LIST_MAX_ENTRIES; ++i) {
+        char name[NEXUS_FILE_LIST_NAME_MAX];
+        name[0] = 'I'; name[1] = 'T'; name[2] = 'E'; name[3] = 'M';
+        name[4] = '-';
+        name[5] = (char)('0' + (i / 100U));
+        name[6] = (char)('0' + ((i / 10U) % 10U));
+        name[7] = (char)('0' + (i % 10U));
+        name[8] = '\0';
+        set_item(&maximum[NEXUS_FILE_LIST_MAX_ENTRIES - 1U - i],
+                 name, (i % 7U) == 0U, (uint32_t)i);
+    }
+    assert(nexus_file_list_sort(maximum, NEXUS_FILE_LIST_MAX_ENTRIES,
+                                NEXUS_FILE_SORT_NAME));
+    for (size_t i = 1U; i < NEXUS_FILE_LIST_MAX_ENTRIES; ++i) {
+        assert(maximum[i - 1U].directory || !maximum[i].directory);
+        if (maximum[i - 1U].directory == maximum[i].directory)
+            assert(strcmp(maximum[i - 1U].name, maximum[i].name) <= 0);
+    }
+    size_t maximum_filtered[NEXUS_FILE_LIST_MAX_ENTRIES];
+    assert(nexus_file_list_filter_mode(maximum, NEXUS_FILE_LIST_MAX_ENTRIES,
+        "ITEM", NEXUS_FILE_FILTER_FILES, maximum_filtered,
+        NEXUS_FILE_LIST_MAX_ENTRIES, &filtered_count));
+    assert(filtered_count == NEXUS_FILE_LIST_MAX_ENTRIES -
+                             (NEXUS_FILE_LIST_MAX_ENTRIES + 6U) / 7U);
+
     struct nexus_file_list_item malformed[1];
     memset(malformed, 0, sizeof(malformed));
     for (size_t i = 0U; i < NEXUS_FILE_LIST_NAME_MAX; ++i)

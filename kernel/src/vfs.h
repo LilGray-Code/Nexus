@@ -12,6 +12,7 @@
 #include "boot_pack.h"
 
 #define NEXUS_VFS_NAME_MAX 32U /* 31 printable characters plus NUL */
+#define NEXUS_VFS_PATH_MAX 512U
 #define NEXUS_VFS_READ_CHUNK 4096U
 #define NEXUS_VFS_RAM_MAX_FILES 16U
 #define NEXUS_VFS_RAM_MAX_FILE_SIZE 4096U
@@ -71,12 +72,21 @@ size_t vfs_directory_depth(void);
 bool vfs_current_path(char *buffer, size_t capacity);
 bool vfs_enter_directory(const char *name);
 bool vfs_parent_directory(void);
+/* Change to an absolute VFS path. On failure the previous directory is restored. */
+bool vfs_change_directory(const char *absolute_path);
 bool vfs_file_writable(const char *name);
 bool vfs_current_directory_writable(void);
+/* True when the current FAT directory exceeds the bounded metadata cache. */
+bool vfs_directory_truncated(void);
 bool vfs_create_directory(const char *name);
 bool vfs_rename_file(const char *name, const char *new_name);
 bool vfs_copy_file(const char *name, const char *destination_path);
 bool vfs_move_file(const char *name, const char *destination_path);
+/* NXFS-only absolute-path operations support clipboard transfers across tabs. */
+bool vfs_copy_file_absolute(const char *source_path,
+                            const char *destination_path);
+bool vfs_move_file_absolute(const char *source_path,
+                            const char *destination_path);
 bool vfs_remove_directory(const char *name);
 bool vfs_has_filesystem(void);
 bool vfs_ramfs_create(const char *name);

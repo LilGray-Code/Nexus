@@ -198,6 +198,17 @@ static void refresh_files_listing(void);
 static bool files_listing_get_entry(size_t index,
                                      struct nexus_vfs_dirent *entry);
 static void files_search_rebuild(void);
+static void files_set_app_status(const char *message);
+static void files_tabs_ensure(void);
+static void files_tabs_capture_active(void);
+static bool files_tabs_switch(size_t index);
+static void files_tabs_new(void);
+static void files_tabs_close(void);
+static void files_tabs_cycle(int direction);
+static bool files_file_clipboard_cut_selected(void);
+static bool files_file_clipboard_copy_selected(void);
+static bool files_file_clipboard_paste(void);
+static const char *files_detect_type(const char *name);
 static int64_t pointer_x;
 static int64_t pointer_y;
 static bool files_scanned;
@@ -209,8 +220,8 @@ static bool files_vfs_ready;
 #define FILES_EDITOR_MAX_BYTES NEXUS_VFS_RAM_MAX_FILE_SIZE
 #define FILES_EDITOR_VIEW_BYTES 256U
 
-#define FILES_LISTING_MAX_ENTRIES 128U
-#define FILES_LISTING_VISIBLE 6U
+#define FILES_LISTING_MAX_ENTRIES NEXUS_FILE_LIST_MAX_ENTRIES
+#define FILES_LISTING_VISIBLE 4U
 
 static char files_first_name[NEXUS_VFS_NAME_MAX];
 static char files_preview[41];
@@ -225,6 +236,24 @@ static bool files_search_focus;
 static size_t files_selected_index;
 static size_t files_listing_first_index;
 static bool files_listing_truncated;
+static uint64_t files_directory_total_bytes;
+static enum nexus_file_filter_mode files_filter_mode = NEXUS_FILE_FILTER_ALL;
+#define FILES_TAB_COUNT 4U
+struct files_tab_state {
+    bool used;
+    char path[NEXUS_VFS_PATH_MAX];
+    char query[NEXUS_VFS_NAME_MAX];
+    enum nexus_file_filter_mode filter;
+    size_t selected;
+    size_t first;
+};
+static struct files_tab_state files_tabs[FILES_TAB_COUNT];
+static size_t files_active_tab;
+static bool files_tabs_initialized;
+static bool files_property_open;
+static char files_file_clipboard_path[NEXUS_VFS_PATH_MAX];
+static bool files_file_clipboard_valid;
+static bool files_file_clipboard_cut;
 enum files_editor_state {
     FILES_EDITOR_CLOSED = 0,
     FILES_EDITOR_NAME,
@@ -1987,6 +2016,13 @@ bool desktop_capture_screenshot(void) {
 }
 
 static bool desktop_clipboard_copy(void) {
+    if (active_view == DESKTOP_FILES &&
+        files_editor_state == FILES_EDITOR_CLOSED &&
+        files_file_clipboard_copy_selected()) {
+        desktop_notify("Files", "File copied to the file clipboard",
+                       NEXUS_DESKTOP_NOTIFICATION_SUCCESS);
+        return true;
+    }
     char value[NEXUS_DESKTOP_CLIPBOARD_TEXT_MAX];
     size_t length = 0U;
     if (active_view == DESKTOP_FILES &&
@@ -2030,6 +2066,10 @@ static bool desktop_clipboard_copy(void) {
 }
 
 static bool desktop_clipboard_paste(void) {
+    if (active_view == DESKTOP_FILES &&
+        files_editor_state == FILES_EDITOR_CLOSED &&
+        files_file_clipboard_valid)
+        return files_file_clipboard_paste();
     char value[NEXUS_DESKTOP_CLIPBOARD_TEXT_MAX];
     size_t length = 0U;
     if (!nexus_desktop_clipboard_get(0U, value, sizeof(value), &length))
@@ -3079,6 +3119,23 @@ static void draw_shell(void) {
             }
         }
         if (files_vfs_ready) {
+            files_tabs_ensure();
+            for (size_t tab = 0U; tab < FILES_TAB_COUNT; ++tab) {
+                if (!files_tabs[tab].used) continue;
+                const uint64_t tab_x = text_x + (uint64_t)tab * 112U;
+                graphics_fill_rect(tab_x, text_y + 24U, 106U, 22U,
+                    tab == files_active_tab ? 43U : 28U,
+                    tab == files_active_tab ? 91U : 45U,
+                    tab == files_active_tab ? 119U : 66U);
+                graphics_draw_rect(tab_x, text_y + 24U, 106U, 22U,
+                    tab == files_active_tab ? 108U : 80U,
+                    tab == files_active_tab ? 216U : 103U,
+                    tab == files_active_tab ? 229U : 129U);
+                char tab_label[8] = "TAB 1";
+                tab_label[4] = (char)('1' + tab);
+                graphics_draw_text(tab_x + 8U, text_y + 31U, tab_label,
+                                   1U, 234U, 244U, 252U);
+            }
             static const char *const actions[6] = {
                 "NEW FILE", "NEW FOLDER", "OPEN/EDIT", "DELETE", "RUN ELF", "REFRESH"
             };
@@ -3135,6 +3192,10 @@ static void draw_shell(void) {
             graphics_draw_text(text_x + 520U, text_y + 304U,
                                 nexus_file_sort_mode_label(files_sort_mode),
                                 1U, 170U, 191U, 211U);
+            graphics_draw_text(text_x + 680U, text_y + 304U,
+                files_filter_mode == NEXUS_FILE_FILTER_ALL ? "ALL" :
+                (files_filter_mode == NEXUS_FILE_FILTER_FILES ? "FILES" : "FOLDERS"),
+                1U, 108U, 216U, 229U);
             for (size_t slot = 0U; slot < FILES_LISTING_VISIBLE; ++slot) {
                 const size_t visible_index = files_listing_first_index + slot;
                 if (visible_index >= files_filtered_count) break;
@@ -3174,24 +3235,61 @@ static void draw_shell(void) {
                         ? "NO MATCHES" : "NO FILES",
                     1U, 170U, 191U, 211U);
             }
-            if (files_run_output_available) {
-                graphics_draw_text(text_x, text_y + 374U,
+            if (files_property_open &&
+                files_selected_index < files_filtered_count) {
+                struct nexus_vfs_dirent selected;
+                if (files_listing_get_entry(files_selected_index, &selected)) {
+                    char property_size[24];
+                    format_u64(selected.size, property_size);
+                    graphics_draw_text(text_x, text_y + 390U,
+                        selected.name, 1U, 119U, 229U, 211U);
+                    graphics_draw_text(text_x + 260U, text_y + 390U,
+                        files_detect_type(selected.name), 1U,
+                        170U, 191U, 211U);
+                    graphics_draw_text(text_x, text_y + 408U,
+                        property_size, 1U, 233U, 243U, 252U);
+                    graphics_draw_text(text_x + 72U, text_y + 408U,
+                        "BYTES", 1U, 170U, 191U, 211U);
+                    graphics_draw_text(text_x + 140U, text_y + 408U,
+                        selected.type == NEXUS_VFS_DIRECTORY ? "DIRECTORY" :
+                            (vfs_file_writable(selected.name) ? "WRITABLE" : "READ ONLY"),
+                        1U, 170U, 191U, 211U);
+                }
+            } else if (files_run_output_available) {
+                graphics_draw_text(text_x, text_y + 390U,
                     files_run_output, 1U, 188U, 218U, 194U);
+            } else if (files_preview[0] != '\0') {
+                graphics_draw_text(text_x, text_y + 390U,
+                    files_preview, 1U, 170U, 191U, 211U);
             }
-            graphics_draw_text(text_x, text_y + 390U,
-                files_app_status, 1U,
-                files_app_status[0] == '\0' ? 139U : 119U,
-                files_app_status[0] == '\0' ? 163U : 229U,
-                files_app_status[0] == '\0' ? 188U : 190U);
-            graphics_draw_text(text_x, text_y + 408U,
-                "CTRL+F SEARCH  CTRL+ENTER RUN ELF  ENTER OPEN  R RENAME",
-                1, 170, 191, 211);
+            char item_count_text[21], directory_bytes_text[21];
+            format_u64((uint64_t)files_listing_count, item_count_text);
+            format_u64(files_directory_total_bytes, directory_bytes_text);
+            graphics_draw_text(text_x, text_y + 374U, "ITEMS", 1U,
+                               170U, 191U, 211U);
+            graphics_draw_text(text_x + 48U, text_y + 374U,
+                               item_count_text, 1U, 233U, 243U, 252U);
+            graphics_draw_text(text_x + 104U, text_y + 374U,
+                               "FILE BYTES", 1U, 170U, 191U, 211U);
+            graphics_draw_text(text_x + 192U, text_y + 374U,
+                               directory_bytes_text, 1U, 233U, 243U, 252U);
+            if (!files_property_open) {
+                graphics_draw_text(text_x, text_y + 408U,
+                    files_app_status, 1U,
+                    files_app_status[0] == '\0' ? 139U : 119U,
+                    files_app_status[0] == '\0' ? 163U : 229U,
+                    files_app_status[0] == '\0' ? 188U : 190U);
+            }
             if (files_run_output_truncated || files_listing_truncated) {
                 graphics_draw_text(text_x, text_y + 420U,
                     files_run_output_truncated
                         ? "PROGRAM OUTPUT TRUNCATED"
-                        : "LISTING LIMITED TO 128 ENTRIES",
+                        : "DIRECTORY LIST LIMITED TO 512 ENTRIES",
                     1, 239, 177, 119);
+            } else {
+                graphics_draw_text(text_x, text_y + 420U,
+                    "CTRL+T TAB  CTRL+W CLOSE  CTRL+TAB SWITCH  F3 INFO  F4 FILTER",
+                    1, 170, 191, 211);
             }
         }
         }
@@ -4542,15 +4640,17 @@ static void draw_pointer(void) {
 }
 
 static void refresh_files_listing(void) {
+    files_tabs_ensure();
     files_vfs_ready = vfs_has_filesystem();
     files_listing_count = 0U;
     files_filtered_count = 0U;
     files_selected_index = 0U;
     files_listing_first_index = 0U;
     files_listing_truncated = false;
-    for (size_t n = 0; n < sizeof(files_first_name); ++n)
+    files_directory_total_bytes = 0U;
+    for (size_t n = 0U; n < sizeof(files_first_name); ++n)
         files_first_name[n] = '\0';
-    for (size_t n = 0; n < sizeof(files_preview); ++n)
+    for (size_t n = 0U; n < sizeof(files_preview); ++n)
         files_preview[n] = '\0';
     for (size_t n = 0U; n < FILES_LISTING_MAX_ENTRIES; ++n) {
         files_listing[n].directory = false;
@@ -4560,74 +4660,53 @@ static void refresh_files_listing(void) {
     }
     if (!files_vfs_ready) return;
 
-    for (size_t index = 0; index < vfs_root_entry_count(); ++index) {
+    const size_t total = vfs_root_entry_count();
+    for (size_t index = 0U; index < total; ++index) {
         struct nexus_vfs_dirent entry;
         if (!vfs_root_entry(index, &entry)) continue;
-        serial_write("FILES: entry ");
-        serial_write(entry.name);
-        char entry_size_text[21];
-        format_u64(entry.size, entry_size_text);
-        serial_write(" size=");
-        serial_write(entry_size_text);
-        serial_write("\r\n");
-        if (files_listing_count < FILES_LISTING_MAX_ENTRIES) {
-            size_t length = 0U;
-            while (length < NEXUS_VFS_NAME_MAX - 1U &&
-                   entry.name[length] != '\0') {
-                files_listing[files_listing_count].name[length] = entry.name[length];
-                ++length;
-            }
-            files_listing[files_listing_count].name[length] = '\0';
-            files_listing[files_listing_count].directory =
-                entry.type == NEXUS_VFS_DIRECTORY;
-            files_listing[files_listing_count].size = entry.size;
-            ++files_listing_count;
-        } else {
+        if (files_listing_count >= FILES_LISTING_MAX_ENTRIES) {
             files_listing_truncated = true;
             break;
         }
+        size_t length = 0U;
+        while (length < NEXUS_VFS_NAME_MAX - 1U &&
+               entry.name[length] != '\0') {
+            files_listing[files_listing_count].name[length] = entry.name[length];
+            ++length;
+        }
+        files_listing[files_listing_count].name[length] = '\0';
+        files_listing[files_listing_count].directory =
+            entry.type == NEXUS_VFS_DIRECTORY;
+        files_listing[files_listing_count].size = entry.size;
+        if (entry.type == NEXUS_VFS_FILE &&
+            UINT64_MAX - files_directory_total_bytes >= entry.size)
+            files_directory_total_bytes += entry.size;
+        ++files_listing_count;
         if (files_first_name[0] == '\0') {
-            size_t length = 0U;
-            while (length < sizeof(files_first_name) - 1U &&
-                   entry.name[length] != '\0') {
-                files_first_name[length] = entry.name[length];
-                ++length;
+            size_t first_length = 0U;
+            while (first_length < sizeof(files_first_name) - 1U &&
+                   entry.name[first_length] != '\0') {
+                files_first_name[first_length] = entry.name[first_length];
+                ++first_length;
             }
-            files_first_name[length] = '\0';
+            files_first_name[first_length] = '\0';
         }
-        if (entry.type != NEXUS_VFS_FILE || entry.size == 0U ||
-            files_preview[0] != '\0') continue;
-
-        struct nexus_vfs_file file;
-        if (!vfs_open_readonly(entry.name, &file)) continue;
-        uint8_t preview_data[sizeof(files_preview) - 1U];
-        size_t amount = entry.size;
-        if (amount > sizeof(preview_data)) amount = sizeof(preview_data);
-        size_t bytes_read = 0U;
-        const bool read_ok =
-            vfs_read(&file, preview_data, amount, &bytes_read);
-        vfs_close(&file);
-        if (!read_ok) continue;
-        for (size_t n = 0; n < bytes_read; ++n) {
-            const uint8_t ch = preview_data[n];
-            files_preview[n] =
-                (ch >= 0x20U && ch <= 0x7EU) ? (char)ch : ' ';
-        }
-        files_preview[bytes_read] = '\0';
     }
+    files_listing_truncated = files_listing_truncated ||
+                              vfs_directory_truncated();
     if (!nexus_file_list_sort(files_listing, files_listing_count,
                               files_sort_mode)) {
         files_sort_mode = NEXUS_FILE_SORT_NAME;
         (void)nexus_file_list_sort(files_listing, files_listing_count,
                                    files_sort_mode);
-        serial_write("FILES: invalid sort mode; restored name order\r\n");
     }
     files_search_rebuild();
+    files_tabs_capture_active();
 }
 
 static void files_search_rebuild(void) {
-    if (!nexus_file_list_filter(files_listing, files_listing_count,
-            files_search_query, files_filtered_indices,
+    if (!nexus_file_list_filter_mode(files_listing, files_listing_count,
+            files_search_query, files_filter_mode, files_filtered_indices,
             FILES_LISTING_MAX_ENTRIES, &files_filtered_count)) {
         files_search_query[0] = '\0';
         files_search_query_length = 0U;
@@ -4728,6 +4807,366 @@ static void files_listing_ensure_selection_visible(void) {
         ? files_filtered_count - FILES_LISTING_VISIBLE : 0U;
     if (files_listing_first_index > maximum_first)
         files_listing_first_index = maximum_first;
+    files_tabs_capture_active();
+}
+
+
+static void files_tabs_ensure(void) {
+    if (files_tabs_initialized) return;
+    for (size_t i = 0U; i < FILES_TAB_COUNT; ++i) {
+        files_tabs[i] = (struct files_tab_state){0};
+        files_tabs[i].filter = NEXUS_FILE_FILTER_ALL;
+    }
+    files_tabs[0].used = true;
+    files_active_tab = 0U;
+    if (!vfs_current_path(files_tabs[0].path,
+                         sizeof(files_tabs[0].path))) {
+        files_tabs[0].path[0] = '/';
+        files_tabs[0].path[1] = '\0';
+    }
+    files_tabs_initialized = true;
+}
+
+static void files_tabs_capture_active(void) {
+    if (!files_tabs_initialized || files_active_tab >= FILES_TAB_COUNT ||
+        !files_tabs[files_active_tab].used) return;
+    struct files_tab_state *tab = &files_tabs[files_active_tab];
+    (void)vfs_current_path(tab->path, sizeof(tab->path));
+    size_t i = 0U;
+    while (i + 1U < sizeof(tab->query) &&
+           files_search_query[i] != '\0') {
+        tab->query[i] = files_search_query[i];
+        ++i;
+    }
+    tab->query[i] = '\0';
+    tab->filter = files_filter_mode;
+    tab->selected = files_selected_index;
+    tab->first = files_listing_first_index;
+}
+
+static void files_tabs_restore_state(size_t index) {
+    if (index >= FILES_TAB_COUNT || !files_tabs[index].used) return;
+    const size_t saved_selected = files_tabs[index].selected;
+    const size_t saved_first = files_tabs[index].first;
+    size_t i = 0U;
+    while (i + 1U < sizeof(files_search_query) &&
+           files_tabs[index].query[i] != '\0') {
+        files_search_query[i] = files_tabs[index].query[i];
+        ++i;
+    }
+    files_search_query[i] = '\0';
+    files_search_query_length = i;
+    files_filter_mode = files_tabs[index].filter;
+    refresh_files_listing();
+    files_selected_index = saved_selected;
+    files_listing_first_index = saved_first;
+    files_listing_ensure_selection_visible();
+}
+
+static bool files_tabs_switch(size_t index) {
+    files_tabs_ensure();
+    if (index >= FILES_TAB_COUNT || !files_tabs[index].used ||
+        index == files_active_tab) return false;
+    files_tabs_capture_active();
+    if (!vfs_change_directory(files_tabs[index].path)) {
+        files_set_app_status("TAB PATH IS NO LONGER AVAILABLE");
+        return false;
+    }
+    files_active_tab = index;
+    files_tabs_restore_state(index);
+    files_property_open = false;
+    return true;
+}
+
+static void files_tabs_new(void) {
+    files_tabs_ensure();
+    files_tabs_capture_active();
+    size_t free_slot = FILES_TAB_COUNT;
+    for (size_t i = 0U; i < FILES_TAB_COUNT; ++i) {
+        if (!files_tabs[i].used) { free_slot = i; break; }
+    }
+    if (free_slot >= FILES_TAB_COUNT) {
+        files_set_app_status("MAXIMUM OF FOUR FILE TABS");
+        return;
+    }
+    files_tabs[free_slot] = files_tabs[files_active_tab];
+    files_tabs[free_slot].used = true;
+    files_tabs[free_slot].selected = 0U;
+    files_tabs[free_slot].first = 0U;
+    files_active_tab = free_slot;
+    files_tabs_restore_state(free_slot);
+    files_set_app_status("NEW TAB OPENED");
+}
+
+static void files_tabs_close(void) {
+    files_tabs_ensure();
+    size_t count = 0U;
+    for (size_t i = 0U; i < FILES_TAB_COUNT; ++i)
+        if (files_tabs[i].used) ++count;
+    if (count <= 1U) {
+        (void)vfs_change_directory("/");
+        files_search_query[0] = '\0';
+        files_search_query_length = 0U;
+        files_filter_mode = NEXUS_FILE_FILTER_ALL;
+        files_selected_index = 0U;
+        files_listing_first_index = 0U;
+        files_property_open = false;
+        refresh_files_listing();
+        files_set_app_status("LAST TAB RESET TO ROOT");
+        return;
+    }
+    files_tabs_capture_active();
+    size_t target = files_active_tab;
+    for (size_t step = 1U; step < FILES_TAB_COUNT; ++step) {
+        const size_t candidate =
+            (files_active_tab + FILES_TAB_COUNT - step) % FILES_TAB_COUNT;
+        if (files_tabs[candidate].used) { target = candidate; break; }
+    }
+    files_tabs[files_active_tab].used = false;
+    files_active_tab = target;
+    if (vfs_change_directory(files_tabs[target].path))
+        files_tabs_restore_state(target);
+    else {
+        (void)vfs_change_directory("/");
+        files_search_reset();
+        refresh_files_listing();
+    }
+    files_property_open = false;
+    files_set_app_status("TAB CLOSED");
+}
+
+static void files_tabs_cycle(int direction) {
+    files_tabs_ensure();
+    for (size_t step = 1U; step < FILES_TAB_COUNT; ++step) {
+        const size_t candidate = direction >= 0
+            ? (files_active_tab + step) % FILES_TAB_COUNT
+            : (files_active_tab + FILES_TAB_COUNT - step) % FILES_TAB_COUNT;
+        if (files_tabs[candidate].used) {
+            (void)files_tabs_switch(candidate);
+            return;
+        }
+    }
+}
+
+static void files_listing_cycle_filter(void) {
+    files_filter_mode = (enum nexus_file_filter_mode)
+        (((unsigned int)files_filter_mode + 1U) %
+         NEXUS_FILE_FILTER_MODE_COUNT);
+    files_search_rebuild();
+    files_selected_index = 0U;
+    files_listing_first_index = 0U;
+    files_tabs_capture_active();
+}
+
+static bool files_name_equal_ci(const char *left, const char *right) {
+    size_t i = 0U;
+    while (left[i] != '\0' && right[i] != '\0') {
+        char a = left[i], b = right[i];
+        if (a >= 'a' && a <= 'z') a = (char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = (char)(b - 'a' + 'A');
+        if (a != b) return false;
+        ++i;
+    }
+    return left[i] == right[i];
+}
+
+static bool files_directory_has_name(const char *name) {
+    for (size_t i = 0U; i < vfs_root_entry_count(); ++i) {
+        struct nexus_vfs_dirent entry;
+        if (vfs_root_entry(i, &entry) &&
+            files_name_equal_ci(entry.name, name)) return true;
+    }
+    return false;
+}
+
+static bool files_make_clipboard_target(char output[NEXUS_VFS_PATH_MAX]) {
+    char current[NEXUS_VFS_PATH_MAX];
+    if (!vfs_current_path(current, sizeof(current))) return false;
+    size_t source_length = 0U;
+    while (source_length < sizeof(files_file_clipboard_path) &&
+           files_file_clipboard_path[source_length] != '\0')
+        ++source_length;
+    if (source_length == 0U ||
+        source_length >= sizeof(files_file_clipboard_path)) return false;
+    size_t leaf_start = source_length;
+    while (leaf_start > 0U &&
+           files_file_clipboard_path[leaf_start - 1U] != '/') --leaf_start;
+    if (leaf_start >= source_length) return false;
+    const char *leaf = files_file_clipboard_path + leaf_start;
+    size_t leaf_length = source_length - leaf_start;
+    if (files_file_clipboard_cut) {
+        if (files_directory_has_name(leaf)) return false;
+        size_t current_length = 0U;
+        while (current[current_length] != '\0') ++current_length;
+        if (current_length + (current_length == 1U ? 0U : 1U) +
+            leaf_length + 1U > NEXUS_VFS_PATH_MAX) return false;
+        size_t out = 0U;
+        for (size_t i = 0U; i < current_length; ++i)
+            output[out++] = current[i];
+        if (current_length > 1U) output[out++] = '/';
+        for (size_t i = 0U; i < leaf_length; ++i)
+            output[out++] = leaf[i];
+        output[out] = '\0';
+        return true;
+    }
+    size_t dot = leaf_length;
+    for (size_t i = 1U; i < leaf_length; ++i)
+        if (leaf[i] == '.') dot = i;
+    const size_t extension_length = leaf_length - dot;
+
+    for (unsigned int attempt = 0U; attempt < 99U; ++attempt) {
+        char suffix[8];
+        size_t suffix_length = 0U;
+        if (attempt == 0U) {
+            const char *copy = "_COPY";
+            while (copy[suffix_length] != '\0') {
+                suffix[suffix_length] = copy[suffix_length];
+                ++suffix_length;
+            }
+        } else {
+            suffix[suffix_length++] = '_';
+            unsigned int n = attempt + 1U;
+            char digits[4]; size_t count = 0U;
+            do { digits[count++] = (char)('0' + n % 10U); n /= 10U; }
+            while (n != 0U && count < sizeof(digits));
+            while (count != 0U) suffix[suffix_length++] = digits[--count];
+        }
+        if (suffix_length + extension_length >= NEXUS_VFS_NAME_MAX)
+            return false;
+        const size_t available = NEXUS_VFS_NAME_MAX - 1U -
+                                 suffix_length - extension_length;
+        const size_t stem = dot < available ? dot : available;
+        char candidate[NEXUS_VFS_NAME_MAX];
+        size_t out = 0U;
+        for (size_t i = 0U; i < stem; ++i) candidate[out++] = leaf[i];
+        for (size_t i = 0U; i < suffix_length; ++i)
+            candidate[out++] = suffix[i];
+        for (size_t i = dot; i < leaf_length; ++i)
+            candidate[out++] = leaf[i];
+        candidate[out] = '\0';
+        if (files_directory_has_name(candidate)) continue;
+        size_t path_length = 0U;
+        while (current[path_length] != '\0') ++path_length;
+        if (path_length + (path_length == 1U ? 0U : 1U) + out + 1U >
+            NEXUS_VFS_PATH_MAX) return false;
+        size_t pos = 0U;
+        for (size_t i = 0U; i < path_length; ++i)
+            output[pos++] = current[i];
+        if (path_length > 1U) output[pos++] = '/';
+        for (size_t i = 0U; i < out; ++i) output[pos++] = candidate[i];
+        output[pos] = '\0';
+        return true;
+    }
+    return false;
+}
+
+static bool files_file_clipboard_cut_selected(void) {
+    struct nexus_vfs_dirent selected;
+    if (!vfs_nxfs_writable() ||
+        files_selected_index >= files_filtered_count ||
+        !files_listing_get_entry(files_selected_index, &selected) ||
+        selected.type != NEXUS_VFS_FILE ||
+        !vfs_file_writable(selected.name)) {
+        files_set_app_status("CUT REQUIRES A WRITABLE NXFS FILE");
+        return false;
+    }
+    char current[NEXUS_VFS_PATH_MAX];
+    if (!vfs_current_path(current, sizeof(current))) return false;
+    size_t used = 0U;
+    while (current[used] != '\0') ++used;
+    size_t name_length = 0U;
+    while (name_length < sizeof(selected.name) &&
+           selected.name[name_length] != '\0') ++name_length;
+    if (used + (used == 1U ? 0U : 1U) + name_length + 1U >
+        sizeof(files_file_clipboard_path)) return false;
+    size_t out = 0U;
+    for (size_t i = 0U; i < used; ++i)
+        files_file_clipboard_path[out++] = current[i];
+    if (used > 1U) files_file_clipboard_path[out++] = '/';
+    for (size_t i = 0U; i < name_length; ++i)
+        files_file_clipboard_path[out++] = selected.name[i];
+    files_file_clipboard_path[out] = '\0';
+    files_file_clipboard_valid = true;
+    files_file_clipboard_cut = true;
+    files_set_app_status("FILE MARKED TO MOVE - CTRL+V TO PASTE");
+    return true;
+}
+
+static bool files_file_clipboard_copy_selected(void) {
+    struct nexus_vfs_dirent selected;
+    if (!vfs_nxfs_writable() ||
+        files_selected_index >= files_filtered_count ||
+        !files_listing_get_entry(files_selected_index, &selected) ||
+        selected.type != NEXUS_VFS_FILE ||
+        !vfs_file_writable(selected.name)) return false;
+    char current[NEXUS_VFS_PATH_MAX];
+    if (!vfs_current_path(current, sizeof(current))) return false;
+    size_t used = 0U;
+    while (current[used] != '\0') ++used;
+    size_t name_length = 0U;
+    while (name_length < sizeof(selected.name) &&
+           selected.name[name_length] != '\0') ++name_length;
+    if (used + (used == 1U ? 0U : 1U) + name_length + 1U >
+        sizeof(files_file_clipboard_path)) return false;
+    size_t out = 0U;
+    for (size_t i = 0U; i < used; ++i)
+        files_file_clipboard_path[out++] = current[i];
+    if (used > 1U) files_file_clipboard_path[out++] = '/';
+    for (size_t i = 0U; i < name_length; ++i)
+        files_file_clipboard_path[out++] = selected.name[i];
+    files_file_clipboard_path[out] = '\0';
+    files_file_clipboard_valid = true;
+    files_file_clipboard_cut = false;
+    files_set_app_status("FILE COPIED - CTRL+V TO PASTE");
+    return true;
+}
+
+static bool files_file_clipboard_paste(void) {
+    if (!files_file_clipboard_valid || !vfs_nxfs_writable() ||
+        !vfs_current_directory_writable()) {
+        files_set_app_status("FILE CLIPBOARD NEEDS WRITABLE NXFS STORAGE");
+        return true;
+    }
+    char target[NEXUS_VFS_PATH_MAX];
+    if (!files_make_clipboard_target(target)) {
+        files_set_app_status("NO UNIQUE DESTINATION NAME AVAILABLE");
+        return true;
+    }
+    const bool success = files_file_clipboard_cut
+        ? vfs_move_file_absolute(files_file_clipboard_path, target)
+        : vfs_copy_file_absolute(files_file_clipboard_path, target);
+    if (success) {
+        files_file_clipboard_valid = !files_file_clipboard_cut;
+        files_file_clipboard_cut = false;
+        files_set_app_status("FILE TRANSFER COMPLETED");
+        refresh_files_listing();
+    } else {
+        files_set_app_status("FILE TRANSFER FAILED - CHECK PATH OR STORAGE");
+    }
+    return true;
+}
+
+static const char *files_detect_type(const char *name) {
+    if (name == NULL) return "UNKNOWN";
+    size_t length = 0U;
+    while (name[length] != '\0' && length < NEXUS_VFS_NAME_MAX) ++length;
+    size_t dot = length;
+    for (size_t i = 0U; i < length; ++i)
+        if (name[i] == '.') dot = i;
+    const char *ext = dot < length ? name + dot : "";
+    if (files_name_equal_ci(ext, ".TXT") || files_name_equal_ci(ext, ".MD") ||
+        files_name_equal_ci(ext, ".CFG") || files_name_equal_ci(ext, ".LOG"))
+        return "TEXT";
+    if (files_name_equal_ci(ext, ".PNG") || files_name_equal_ci(ext, ".JPG") ||
+        files_name_equal_ci(ext, ".JPEG") || files_name_equal_ci(ext, ".BMP") ||
+        files_name_equal_ci(ext, ".GIF") || files_name_equal_ci(ext, ".WEBP"))
+        return "IMAGE";
+    if (files_name_equal_ci(ext, ".ZIP") || files_name_equal_ci(ext, ".TAR") ||
+        files_name_equal_ci(ext, ".GZ") || files_name_equal_ci(ext, ".7Z"))
+        return "ARCHIVE";
+    if (files_name_equal_ci(ext, ".ELF")) return "NEXUS ELF";
+    if (files_name_equal_ci(ext, ".PPM")) return "PORTABLE IMAGE";
+    return "BINARY";
 }
 
 static void files_listing_page(int direction) {
@@ -8290,6 +8729,15 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t tx = px + 32U;
             const uint64_t ty = py + 82U;
             const int64_t relative_x = pointer_x - (int64_t)tx;
+            const int64_t relative_tab_y =
+                pointer_y - (int64_t)(ty + 24U);
+            if (relative_tab_y >= 0 && relative_tab_y < 22 &&
+                relative_x >= 0 && relative_x < 448) {
+                const size_t tab = (size_t)relative_x / 112U;
+                if (tab < FILES_TAB_COUNT && files_tabs[tab].used)
+                    (void)files_tabs_switch(tab);
+                draw_shell(); draw_pointer(); return;
+            }
             const int64_t relative_search_x = relative_x - 312;
             const int64_t relative_search_y =
                 pointer_y - (int64_t)(ty + 297U);
@@ -8342,7 +8790,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
             const int64_t relative_list_y =
                 pointer_y - (int64_t)(ty + 321U);
-            if (relative_list_y >= 0 && relative_list_y < 60 &&
+            if (relative_list_y >= 0 && relative_list_y < 48 &&
                 relative_x >= 0 && relative_x < 500) {
                 const size_t row = (size_t)relative_list_y / 24U;
                 const size_t column = (size_t)relative_x / 260U;
@@ -8505,6 +8953,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             (void)desktop_capture_screenshot();
             draw_shell(); draw_pointer(); return;
         }
+    }
+    if (active_view == DESKTOP_FILES && keyboard_left_control &&
+        key_code == 0x2DU) {
+        (void)files_file_clipboard_cut_selected();
+        draw_shell(); draw_pointer(); return;
     }
     if (active_view != DESKTOP_INSTALLER && keyboard_left_control &&
         key_code == 0x2EU && desktop_clipboard_copy()) {
@@ -9010,6 +9463,24 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     }
     if (active_view == DESKTOP_FILES && files_vfs_ready) {
         if ((event->scancode & 0x80U) != 0U) return;
+        if (keyboard_left_control && event->scancode == 0x14U) {
+            files_tabs_new(); draw_shell(); draw_pointer(); return;
+        }
+        if (keyboard_left_control && event->scancode == 0x11U) {
+            files_tabs_close(); draw_shell(); draw_pointer(); return;
+        }
+        if (keyboard_left_control && event->scancode == 0x0FU) {
+            files_tabs_cycle(keyboard_left_shift ? -1 : 1);
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x3DU) {
+            files_property_open = !files_property_open;
+            draw_shell(); draw_pointer(); return;
+        }
+        if (event->scancode == 0x3EU) {
+            files_listing_cycle_filter();
+            draw_shell(); draw_pointer(); return;
+        }
         if (keyboard_left_control && event->scancode == 0x21U) {
             files_search_focus = true;
             draw_shell(); draw_pointer(); return;

@@ -3251,7 +3251,8 @@ static void draw_shell(void) {
                     graphics_draw_text(text_x + 72U, text_y + 390U,
                         "BYTES", 1U, 170U, 191U, 211U);
                     graphics_draw_text(text_x + 140U, text_y + 390U,
-                        vfs_file_writable(selected.name) ? "WRITABLE" : "READ ONLY",
+                        selected.type == NEXUS_VFS_DIRECTORY ? "DIRECTORY" :
+                            (vfs_file_writable(selected.name) ? "WRITABLE" : "READ ONLY"),
                         1U, 170U, 191U, 211U);
                 }
             } else if (files_run_output_available) {
@@ -4990,6 +4991,21 @@ static bool files_make_clipboard_target(char output[NEXUS_VFS_PATH_MAX]) {
     if (leaf_start >= source_length) return false;
     const char *leaf = files_file_clipboard_path + leaf_start;
     size_t leaf_length = source_length - leaf_start;
+    if (files_file_clipboard_cut) {
+        if (files_directory_has_name(leaf)) return false;
+        size_t current_length = 0U;
+        while (current[current_length] != '\0') ++current_length;
+        if (current_length + (current_length == 1U ? 0U : 1U) +
+            leaf_length + 1U > NEXUS_VFS_PATH_MAX) return false;
+        size_t out = 0U;
+        for (size_t i = 0U; i < current_length; ++i)
+            output[out++] = current[i];
+        if (current_length > 1U) output[out++] = '/';
+        for (size_t i = 0U; i < leaf_length; ++i)
+            output[out++] = leaf[i];
+        output[out] = '\0';
+        return true;
+    }
     size_t dot = leaf_length;
     for (size_t i = 1U; i < leaf_length; ++i)
         if (leaf[i] == '.') dot = i;

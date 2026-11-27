@@ -119,10 +119,13 @@ def build_command(args: argparse.Namespace, qmp_socket: Path,
         "-no-shutdown",
     ]
     if args.topology == "hub":
+        # QEMU routes USB devices through hierarchical port paths on the
+        # controller's bus. A hub on root port 1 exposes downstream ports
+        # 1.1, 1.2, etc.; usb-hub does not create a "<id>.0" bus.
         command += [
-            "-device", "usb-hub,id=nexus-usb-hub,bus=xhci.0",
-            "-device", "usb-kbd,id=nexus-usb-keyboard,bus=nexus-usb-hub.0",
-            "-device", "usb-mouse,id=nexus-usb-mouse,bus=nexus-usb-hub.0",
+            "-device", "usb-hub,id=nexus-usb-hub,bus=xhci.0,port=1",
+            "-device", "usb-kbd,id=nexus-usb-keyboard,bus=xhci.0,port=1.1",
+            "-device", "usb-mouse,id=nexus-usb-mouse,bus=xhci.0,port=1.2",
         ]
     else:
         command += [
@@ -265,11 +268,13 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
 
     qmp.command("device_add", {
         "driver": "usb-kbd", "id": "nexus-usb-keyboard-replugged",
-        "bus": "nexus-usb-hub.0" if topology == "hub" else "xhci.0",
+        "bus": "xhci.0",
+        **({"port": "1.1"} if topology == "hub" else {}),
     })
     qmp.command("device_add", {
         "driver": "usb-mouse", "id": "nexus-usb-mouse-replugged",
-        "bus": "nexus-usb-hub.0" if topology == "hub" else "xhci.0",
+        "bus": "xhci.0",
+        **({"port": "1.2"} if topology == "hub" else {}),
     })
     wait_for_predicate(
         serial_log,

@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexus-os.example/specs/repository-v1.schema.json",
+  "title": "Nexus signed repository snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "repository_id",
+    "sequence",
+    "channel",
+    "target",
+    "created_utc",
+    "expires_utc",
+    "minimum_updater",
+    "system_abi",
+    "driver_abi",
+    "packages",
+    "signing"
+  ],
+  "properties": {
+    "format": { "const": "nexus-repository-v1" },
+    "repository_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,63}$" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "channel": { "enum": ["stable", "beta", "development"] },
+    "target": { "enum": ["x86_64-bios", "x86_64-uefi", "x86_64-dual"] },
+    "created_utc": { "type": "string", "format": "date-time" },
+    "expires_utc": { "type": "string", "format": "date-time" },
+    "minimum_updater": { "$ref": "#/$defs/version" },
+    "system_abi": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "driver_abi": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "packages": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/package" }
+    },
+    "key_rotation": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key_id", "public_key_ed25519", "activate_after_sequence"],
+        "properties": {
+          "key_id": { "type": "string", "pattern": "^[a-zA-Z0-9._-]{1,64}$" },
+          "public_key_ed25519": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+          "activate_after_sequence": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "signing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "signature"],
+      "properties": {
+        "algorithm": { "const": "Ed25519" },
+        "key_id": { "type": "string", "pattern": "^[a-zA-Z0-9._-]{1,64}$" },
+        "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+      }
+    }
+  },
+  "$defs": {
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+:[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?$",
+      "maxLength": 96
+    },
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "operator", "version"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9+._-]{0,127}$" },
+        "operator": { "enum": ["=", ">", ">=", "<", "<=", "any"] },
+        "version": { "type": "string", "maxLength": 96 }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "architecture",
+        "component",
+        "system_abi",
+        "driver_abi",
+        "archive",
+        "files",
+        "dependencies",
+        "conflicts"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9+._-]{0,127}$" },
+        "version": { "$ref": "#/$defs/version" },
+        "architecture": { "enum": ["x86_64", "noarch"] },
+        "component": { "enum": ["kernel", "driver", "system", "application"] },
+        "system_abi": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "driver_abi": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "archive": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url", "size", "sha256", "signature"],
+          "properties": {
+            "url": { "type": "string", "format": "uri", "maxLength": 2048 },
+            "size": { "type": "integer", "minimum": 1, "maximum": 4294967296 },
+            "unpacked_size": { "type": "integer", "minimum": 1, "maximum": 17179869184 },
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+          }
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "type", "size", "sha256", "mode"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+              "type": { "enum": ["regular", "directory"] },
+              "size": { "type": "integer", "minimum": 0, "maximum": 17179869184 },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "mode": { "type": "integer", "minimum": 0, "maximum": 511 }
+            }
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "conflicts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9+._-]{0,127}$" }
+        },
+        "provides": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9+._-]{0,127}$" }
+        }
+      }
+    }
+  }
+}

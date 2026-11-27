@@ -29,8 +29,12 @@ enum nexus_process_error {
 
 struct nexus_process_info {
     uint32_t pid;
+    uint32_t owner_uid;
+    uint64_t session_id;
     enum nexus_process_state state;
     uint64_t exit_status;
+    uint64_t start_tick;
+    uint64_t elapsed_ticks;
     char name[NEXUS_PROCESS_NAME_MAX];
 };
 

@@ -51,6 +51,6 @@ int main(void) {
     /* Reinitialization must make old contents unreachable without a memset. */
     nexus_log_buffer_init();
     assert(nexus_log_buffer_read_recent(output, sizeof(output)) == 0U);
-    assert(output[0] == '\\0');
+    assert(output[0] == 0);
     return 0;
 }

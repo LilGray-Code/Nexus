@@ -2,6 +2,7 @@
 #include "vfs.h"
 #include "boot_pack.h"
 #include "process.h"
+#include "security.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -19,6 +20,7 @@ static bool mock_remove_allowed = true;
 static bool mock_native_available[5];
 static size_t mock_native_launches;
 static char mock_native_last_launch[32];
+static uint64_t mock_native_capabilities;
 static struct nexus_boot_pack_entry mock_native_entry;
 
 const struct nexus_boot_pack_entry *nexus_boot_pack_find(
@@ -37,14 +39,15 @@ const struct nexus_boot_pack_entry *nexus_boot_pack_find(
     }
     return NULL;
 }
-bool process_execute_root_file(const char *name,
-                               struct nexus_process_result *result,
-                               enum nexus_process_error *error) {
+bool process_execute_root_file_with_capabilities(
+    const char *name, struct nexus_process_result *result,
+    enum nexus_process_error *error, uint64_t capabilities) {
     if (name == NULL || result == NULL || nexus_boot_pack_find(name) == NULL) {
         if (error != NULL) *error = NEXUS_PROCESS_ERROR_NOT_FOUND;
         return false;
     }
     ++mock_native_launches;
+    mock_native_capabilities = capabilities;
     (void)snprintf(mock_native_last_launch, sizeof(mock_native_last_launch),
                    "%s", name);
     result->pid = 42U;
@@ -127,6 +130,7 @@ static void reset_mock(void) {
     mock_remove_allowed = true;
     mock_native_launches = 0U;
     mock_native_last_launch[0] = '\0';
+    mock_native_capabilities = 0U;
     for (size_t i = 0U; i < 5U; ++i) mock_native_available[i] = false;
     for (size_t i = 0U; i < sizeof(mock_data); ++i) mock_data[i] = 0U;
 }
@@ -224,6 +228,10 @@ static void test_bundled_native_launch_and_read_only_lifecycle(void) {
     assert(exit_status == 0U);
     assert(mock_native_launches == 1U);
     assert(strcmp(mock_native_last_launch, "KINETIC.ELF") == 0);
+    assert((mock_native_capabilities & NEXUS_CAP_DISPLAY) != 0U);
+    assert((mock_native_capabilities & NEXUS_CAP_INPUT) != 0U);
+    assert((mock_native_capabilities & (NEXUS_CAP_FILE_WRITE |
+        NEXUS_CAP_AUDIO | NEXUS_CAP_ADMIN | NEXUS_CAP_DRIVER_MANAGE)) == 0U);
 
     mock_native_available[0] = false;
     assert(!nexus_store_is_installed(kinetic_index));
@@ -242,6 +250,10 @@ static void test_bundled_arcade_game_launch(void) {
     assert(exit_status == 0U);
     assert(mock_native_launches == 1U);
     assert(strcmp(mock_native_last_launch, "ARCADE.ELF") == 0);
+    assert((mock_native_capabilities & NEXUS_CAP_GAMEPAD) != 0U);
+    assert((mock_native_capabilities & NEXUS_CAP_DISPLAY) != 0U);
+    assert((mock_native_capabilities & (NEXUS_CAP_FILE_WRITE |
+        NEXUS_CAP_AUDIO | NEXUS_CAP_ADMIN | NEXUS_CAP_DRIVER_MANAGE)) == 0U);
 }
 
 int main(void) {

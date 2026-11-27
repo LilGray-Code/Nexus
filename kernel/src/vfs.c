@@ -359,15 +359,15 @@ bool vfs_rename_file(const char *name, const char *new_name) {
 static bool vfs_absolute_nxfs_relative(
     const char *absolute_path, char relative[NEXUS_VFS_NAME_MAX]) {
     if (absolute_path == NULL || relative == NULL ||
-        absolute_path[0] != '/' || absolute_path[1] == '\\0')
+        absolute_path[0] != '/' || absolute_path[1] == '\0')
         return false;
     size_t length = 0U;
-    while (absolute_path[length + 1U] != '\\0') {
+    while (absolute_path[length + 1U] != '\0') {
         if (length >= NEXUS_VFS_NAME_MAX - 1U) return false;
         relative[length] = absolute_path[length + 1U];
         ++length;
     }
-    relative[length] = '\\0';
+    relative[length] = '\0';
     return true;
 }
 
@@ -568,22 +568,22 @@ static bool vfs_change_directory_from_root(const char *path) {
     while (directory_depth != 0U) {
         if (!vfs_parent_directory()) return false;
     }
-    if (path[1] == '\\0') return true;
+    if (path[1] == '\0') return true;
 
     size_t offset = 1U;
-    while (path[offset] != '\\0') {
+    while (path[offset] != '\0') {
         char component[NEXUS_VFS_NAME_MAX];
         size_t length = 0U;
-        while (path[offset] != '\\0' && path[offset] != '/') {
+        while (path[offset] != '\0' && path[offset] != '/') {
             if (length >= sizeof(component) - 1U) return false;
             component[length++] = path[offset++];
         }
         if (length == 0U) return false;
-        component[length] = '\\0';
+        component[length] = '\0';
         if (!vfs_enter_directory(component)) return false;
         if (path[offset] == '/') {
             ++offset;
-            if (path[offset] == '\\0') return false;
+            if (path[offset] == '\0') return false;
         }
     }
     return true;

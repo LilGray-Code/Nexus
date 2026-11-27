@@ -124,6 +124,7 @@ struct xhci_hid_device {
 
 struct xhci_controller {
     bool initialized;
+    const struct nexus_pci_device *pci_device;
     uint64_t bar_base;
     uint8_t cap_length;
     uint8_t max_slots;
@@ -1227,6 +1228,7 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         serial_write("xHCI: no supported HID input found\\r\\n");
         return false;
     }
+    xhci->pci_device = pci_device;
     return true;
 }
 
@@ -1323,6 +1325,12 @@ bool xhci_init(void) {
     }
     serial_write("USB: no usable xHCI HID keyboard, mouse, or gamepad\\r\\n");
     return false;
+}
+
+bool xhci_controller_owns_pci_device(
+    const struct nexus_pci_device *device) {
+    return controller.initialized && device != NULL &&
+           controller.pci_device == device;
 }
 
 bool xhci_keyboard_ready(void) {

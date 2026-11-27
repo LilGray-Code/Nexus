@@ -17,5 +17,7 @@ enum nexus_desktop_process_test_result desktop_run_process_selftest(void);
 void desktop_set_installer_mode(bool enabled);
 bool desktop_show(const struct limine_framebuffer *framebuffer);
 void desktop_handle_input(const struct nexus_input_event *event);
+/* Capture the active framebuffer to SCREEN.PPM in the current writable NXFS folder. */
+bool desktop_capture_screenshot(void);
 
 #endif

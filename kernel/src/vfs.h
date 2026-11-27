@@ -76,6 +76,8 @@ bool vfs_parent_directory(void);
 bool vfs_change_directory(const char *absolute_path);
 bool vfs_file_writable(const char *name);
 bool vfs_current_directory_writable(void);
+/* True when the current FAT directory exceeds the bounded metadata cache. */
+bool vfs_directory_truncated(void);
 bool vfs_create_directory(const char *name);
 bool vfs_rename_file(const char *name, const char *new_name);
 bool vfs_copy_file(const char *name, const char *destination_path);

@@ -190,6 +190,9 @@ bool fat32_read_directory(uint32_t first_cluster) {
 size_t fat32_root_entry_count(void) {
     return fat_entry_count;
 }
+bool fat32_directory_truncated(void) {
+    return false;
+}
 const struct nexus_fat32_entry *fat32_root_entry_at(size_t index) {
     return index < fat_entry_count ? &fat_entries[index] : NULL;
 }

@@ -1426,25 +1426,25 @@ static bool xhci_initialize_hub(struct xhci_controller *xhci,
                                 uint8_t speed, uint8_t configuration_value,
                                 bool multi_tt) {
     if (xhci == NULL || device == NULL || configuration_value == 0U) {
-        serial_write("xHCI HUB: invalid initialization arguments\\r\\n");
+        serial_write("xHCI HUB: invalid initialization arguments\r\n");
         return false;
     }
     if (!xhci_control_transfer(xhci, device, 0x00U, 0x09U,
                                configuration_value, 0U, NULL, 0U)) {
-        serial_write("xHCI HUB: SET_CONFIGURATION failed\\r\\n");
+        serial_write("xHCI HUB: SET_CONFIGURATION failed\r\n");
         return false;
     }
 
     struct nexus_usb_setup_packet descriptor_request = {0};
     if (!nexus_usb_hub_get_descriptor_request(speed >= 4U,
                                                &descriptor_request)) {
-        serial_write("xHCI HUB: could not construct GET_DESCRIPTOR request\\r\\n");
+        serial_write("xHCI HUB: could not construct GET_DESCRIPTOR request\r\n");
         return false;
     }
     descriptor_request.length = 2U;
     if (!xhci_hub_control(xhci, device, &descriptor_request,
             (void *)(uintptr_t)device->report_buffer)) {
-        serial_write("xHCI HUB: short GET_DESCRIPTOR request failed\\r\\n");
+        serial_write("xHCI HUB: short GET_DESCRIPTOR request failed\r\n");
         return false;
     }
 
@@ -1453,13 +1453,13 @@ static bool xhci_initialize_hub(struct xhci_controller *xhci,
         descriptor_length > 64U) {
         serial_write("xHCI HUB: invalid descriptor length=");
         serial_write_hex(descriptor_length);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
         return false;
     }
     descriptor_request.length = descriptor_length;
     if (!xhci_hub_control(xhci, device, &descriptor_request,
             (void *)(uintptr_t)device->report_buffer)) {
-        serial_write("xHCI HUB: full GET_DESCRIPTOR request failed\\r\\n");
+        serial_write("xHCI HUB: full GET_DESCRIPTOR request failed\r\n");
         return false;
     }
 
@@ -1477,17 +1477,17 @@ static bool xhci_initialize_hub(struct xhci_controller *xhci,
         serial_write_hex(descriptor[1]);
         serial_write("/");
         serial_write_hex(descriptor[2]);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
         return false;
     }
     serial_write("xHCI HUB: descriptor accepted ports/power-delay-ms=");
     serial_write_hex(device->hub_descriptor.port_count);
     serial_write("/");
     serial_write_hex((uint32_t)device->hub_descriptor.power_on_to_good_2ms * 2U);
-    serial_write("\\r\\n");
+    serial_write("\r\n");
 
     if (!xhci_mark_slot_as_hub(xhci, device)) {
-        serial_write("xHCI HUB: Evaluate Context marking Slot as Hub failed\\r\\n");
+        serial_write("xHCI HUB: Evaluate Context marking Slot as Hub failed\r\n");
         return false;
     }
 
@@ -1500,7 +1500,7 @@ static bool xhci_initialize_hub(struct xhci_controller *xhci,
                     NEXUS_USB_HUB_FEATURE_PORT_POWER)) {
                 serial_write("xHCI HUB: PORT_POWER failed on downstream port ");
                 serial_write_hex(port);
-                serial_write("\\r\\n");
+                serial_write("\r\n");
                 return false;
             }
         }
@@ -1592,7 +1592,7 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
             serial_write_hex(config_buffer[descriptor_offset + 6U]);
             serial_write("/");
             serial_write_hex(config_buffer[descriptor_offset + 7U]);
-            serial_write("\\r\\n");
+            serial_write("\r\n");
             if (config_buffer[descriptor_offset + 5U] == 9U) {
                 has_usb_hub_interface = true;
                 hub_multi_tt = config_buffer[descriptor_offset + 7U] == 2U;
@@ -1605,7 +1605,7 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         serial_write_hex(config_buffer[5]);
         serial_write(" speed=");
         serial_write_hex(speed);
-        serial_write("\\r\\n");
+        serial_write("\r\n");
         const bool initialized = xhci_initialize_hub(xhci, device, speed,
             config_buffer[5], hub_multi_tt);
         (void)memory_free_page(config_buffer_physical);

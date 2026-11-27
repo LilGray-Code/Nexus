@@ -8,6 +8,7 @@ struct managed_service {
     nexus_service_stop_fn stop;
     void *context;
     enum nexus_service_state state;
+    bool startup_enabled;
 };
 static struct managed_service services[NEXUS_SERVICE_MAX_SERVICES];
 static size_t services_used;
@@ -67,6 +68,7 @@ bool nexus_service_manager_register(
     candidate.stop = descriptor->stop;
     candidate.context = descriptor->context;
     candidate.state = NEXUS_SERVICE_REGISTERED;
+    candidate.startup_enabled = true;
     services[services_used++] = candidate;
     return true;
 }
@@ -116,6 +118,14 @@ bool nexus_service_manager_stop(const char *name) {
     service->state = NEXUS_SERVICE_STOPPED;
     return true;
 }
+bool nexus_service_manager_set_startup_enabled(const char *name,
+                                               bool enabled) {
+    const size_t index = find_service(name);
+    if (index == services_used) return false;
+    services[index].startup_enabled = enabled;
+    return true;
+}
+
 size_t nexus_service_manager_count(void) { return services_used; }
 bool nexus_service_manager_get_info(size_t index,
                                     struct nexus_service_info *info) {
@@ -128,6 +138,7 @@ bool nexus_service_manager_get_info(size_t index,
     info->name[i] = '\0';
     info->state = services[index].state;
     info->dependency_count = (uint8_t)services[index].dependency_count;
+    info->startup_enabled = services[index].startup_enabled;
     return true;
 }
 const char *nexus_service_state_name(enum nexus_service_state state) {

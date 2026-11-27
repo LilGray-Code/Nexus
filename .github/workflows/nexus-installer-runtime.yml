@@ -37,6 +37,7 @@ jobs:
             kernel/src/installer_runtime.c kernel/src/boot_payload.c \
             kernel/src/boot_pack.c kernel/src/blockdev.c \
             kernel/src/gpt.c kernel/src/nxfs.c kernel/src/serial.c \
+            kernel/src/log_buffer.c \
             -o /tmp/nexus-installer-storage-test
           /tmp/nexus-installer-storage-test
       - name: Build the default write-locked freestanding kernel

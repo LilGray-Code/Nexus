@@ -11,6 +11,7 @@
 #define NEXUS_USB_ROUTE_MAX_DEPTH 5U
 
 enum nexus_usb_speed {
+    NEXUS_USB_SPEED_UNKNOWN = 0,
     NEXUS_USB_SPEED_LOW = 1,
     NEXUS_USB_SPEED_FULL = 2,
     NEXUS_USB_SPEED_HIGH = 3,

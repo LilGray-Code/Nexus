@@ -2559,7 +2559,8 @@ static void draw_shell(void) {
                 graphics_draw_text(detail_x, content_y + 100U,
                     transport, 1U, 108U, 216U, 229U);
                 const uint64_t blocks_per_mib =
-                    selected_disk->block_size == 0U
+                    selected_disk->block_size == 0U ||
+                    selected_disk->block_size > 1048576U
                         ? 1U : 1048576U / selected_disk->block_size;
                 char capacity_line[64];
                 format_labeled_u64("CAPACITY MiB: ",

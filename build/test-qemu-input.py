@@ -186,18 +186,11 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
 
     # Move and click through the selected USB mouse, then verify both the
     # USB-specific decoded report and the common installer/desktop event loop.
-    qmp.input([
-        {"type": "rel", "data": {"axis": "x", "value": 48}},
-        {"type": "rel", "data": {"axis": "y", "value": 24}},
-    ])
+    qmp.hmp("mouse_move 48 24")
     time.sleep(0.15)
-    qmp.input([{
-        "type": "btn", "data": {"down": True, "button": "left"}
-    }])
+    qmp.hmp("mouse_button 1")
     time.sleep(0.12)
-    qmp.input([{
-        "type": "btn", "data": {"down": False, "button": "left"}
-    }])
+    qmp.hmp("mouse_button 0")
     wait_for_predicate(
         serial_log,
         lambda log: (

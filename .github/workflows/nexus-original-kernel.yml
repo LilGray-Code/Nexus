@@ -147,6 +147,29 @@ jobs:
             -o /tmp/nexus-ac97-format-test
           /tmp/nexus-ac97-format-test
 
+      - name: Test USB 2 hub descriptors, downstream ports and route strings
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hub.c \
+            kernel/tests/usb_hub_test.c -o /tmp/nexus-usb-hub-test
+          /tmp/nexus-usb-hub-test
+
+      - name: Test composite USB keyboard and mouse interface discovery
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hid_interfaces.c \
+            kernel/tests/usb_hid_interfaces_test.c \
+            -o /tmp/nexus-usb-hid-interfaces-test
+          /tmp/nexus-usb-hid-interfaces-test
+
+      - name: Test multiple HID report IDs per interface
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hid_generic.c \
+            kernel/tests/usb_hid_multi_report_test.c \
+            -o /tmp/nexus-usb-hid-multi-report-test
+          /tmp/nexus-usb-hid-multi-report-test
+
       - name: Test generic USB HID gamepad descriptor parsing
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

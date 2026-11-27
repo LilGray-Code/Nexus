@@ -47,10 +47,18 @@ struct nxfs_stream_state {
 };
 static struct nxfs_stream_state nxfs_stream;
 static const uint32_t nxfs_file_limit_tiers[] = {
-    NEXUS_NXFS_MAX_FILE_BYTES, 128U * 1024U * 1024U,
-    64U * 1024U * 1024U, 32U * 1024U * 1024U,
-    16U * 1024U * 1024U, 8U * 1024U * 1024U,
-    NEXUS_NXFS_LEGACY_FILE_BYTES, NEXUS_NXFS_OLD_FILE_BYTES
+    NEXUS_NXFS_MAX_FILE_BYTES,
+    2U * 1024U * 1024U * 1024U,
+    1U * 1024U * 1024U * 1024U,
+    512U * 1024U * 1024U,
+    256U * 1024U * 1024U,
+    128U * 1024U * 1024U,
+    64U * 1024U * 1024U,
+    32U * 1024U * 1024U,
+    16U * 1024U * 1024U,
+    8U * 1024U * 1024U,
+    NEXUS_NXFS_LEGACY_FILE_BYTES,
+    NEXUS_NXFS_OLD_FILE_BYTES
 };
 
 static uint32_t read_le32(const uint8_t *p) {

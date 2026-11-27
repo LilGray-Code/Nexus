@@ -6679,6 +6679,14 @@ static void installer_confirm_target_id(void) {
         serial_write("NEXUS INSTALLER TARGET ID VERIFIED\r\n");
     } else {
         installer_set_status("Target ID did not match");
+        serial_write("NEXUS INSTALLER TARGET ID MISMATCH length=");
+        serial_write_hex((uint64_t)installer_input_length);
+        serial_write(" entered=");
+        serial_write(installer_input);
+        serial_write(" expected=");
+        if (device != NULL) serial_write(device->stable_id);
+        else serial_write("(missing)");
+        serial_write("\r\n");
     }
 }
 

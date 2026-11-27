@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \
-            kernel/src/package.c kernel/src/sha256.c \
+            kernel/src/package.c kernel/src/sha256.c kernel/src/security.c \
             kernel/tests/package_test.c -o /tmp/nexus-package-test
           /tmp/nexus-package-test
           cc -std=gnu11 -O2 -Wall -Wextra -Werror -Ikernel/src \

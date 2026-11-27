@@ -37,6 +37,16 @@ static void test_composite_collection(void) {
     assert(set.interfaces[1].protocol == 2U);
     assert(set.interfaces[1].endpoint_in == 0x82U);
     assert(set.interfaces[1].max_packet == 4U);
+
+    struct nexus_usb_hid_interface companion = {0};
+    assert(nexus_usb_hid_find_companion_interface(
+        &set, 0U, 2U, &companion));
+    assert(companion.number == 2U && companion.protocol == 2U);
+    assert(nexus_usb_hid_find_companion_interface(
+        &set, 2U, 1U, &companion));
+    assert(companion.number == 0U && companion.protocol == 1U);
+    assert(!nexus_usb_hid_find_companion_interface(
+        &set, 0U, 1U, &companion));
 }
 
 static void test_malformed_descriptors(void) {

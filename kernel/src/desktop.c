@@ -1854,6 +1854,8 @@ static void desktop_handle_system_panel_click(uint64_t bottom_bar) {
     } else if (desktop_panel == DESKTOP_PANEL_NOTIFICATIONS) {
         if (py >= y + height - 30U)
             nexus_desktop_notification_clear();
+    } else if (desktop_panel == DESKTOP_PANEL_TASK_MANAGER) {
+        /* Read-only process inventory: there is no safe terminate API yet. */
     } else if (desktop_panel == DESKTOP_PANEL_SEARCH) {
         if (py >= y + 82U && py < y + 82U + 5U * 40U) {
             const size_t row = (size_t)(py - (y + 82U)) / 40U;
@@ -8501,10 +8503,6 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (key_code == 0x19U) {
             (void)desktop_capture_screenshot();
-            draw_shell(); draw_pointer(); return;
-        }
-        if (key_code == 0x01U) {
-            desktop_panel_toggle(DESKTOP_PANEL_TASK_MANAGER);
             draw_shell(); draw_pointer(); return;
         }
     }

@@ -1037,41 +1037,53 @@ jobs:
                        "arguments": {"command-line": f"sendkey {name} 90"}})
               time.sleep(0.16)
 
-          # The ISO starts directly in the dedicated install environment.
-          # intended SATA target second. Open the drive dropdown with Tab,
+          # The installer opens the drive dropdown automatically on entry.
+          # The NVMe decoy is first; move once to the SATA target, then close
+          # the list. Do not send Tab here: that would close the already-open
+          # dropdown and leave the NVMe decoy selected.
           time.sleep(0.4)
-          key("tab")
           key("down")
           key("ret")
+
+          def wait_for_marker(marker, timeout=10):
+              deadline = time.time() + timeout
+              while time.time() < deadline:
+                  log = open(log_path, encoding="utf-8", errors="replace").read()
+                  if marker in log:
+                      return log
+                  time.sleep(0.2)
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit(f"Installer did not reach expected stage: {marker}")
+
+          wait_for_marker("NEXUS INSTALLER DROPDOWN CLOSED")
           import re
           deadline = time.time() + 10
           stable_id = None
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
               matches = re.findall(
-                  r"NEXUS INSTALLER TARGET SELECTED: ([A-Za-z0-9_-]+)", log)
+                  r"NEXUS INSTALLER TARGET SELECTED: ([A-Za-z0-9_-]+)\\r?\\n",
+                  log)
               if matches:
                   stable_id = matches[-1].lower()
                   break
               time.sleep(0.2)
           if stable_id is None:
-              raise SystemExit("Installer did not log the user's selected disk")
-          log = open(log_path, encoding="utf-8", errors="replace").read()
-          if "NEXUS INSTALLER DROPDOWN OPEN" not in log:
-              raise SystemExit("Tab did not open the graphical install drive dropdown")
-          if "NEXUS INSTALLER DROPDOWN CLOSED" not in log:
-              raise SystemExit("Enter did not close the graphical install drive dropdown")
+              raise SystemExit("Installer did not log the selected SATA disk ID")
           if not stable_id.startswith("sata-"):
               raise SystemExit(f"Installer selected the wrong disk: {stable_id}")
+
           key("f3")  # Select the dual UEFI + legacy BIOS partition layout.
           key("ret")
+          wait_for_marker("NEXUS INSTALLER TARGET ID CONFIRMATION READY")
           for char in stable_id:
               key("minus" if char == "-" else char)
           key("ret")
-          time.sleep(0.4)
+          wait_for_marker("NEXUS INSTALLER TARGET ID VERIFIED", timeout=30)
           for name in ["e","r","a","s","e"]:
               key(name)
           key("ret")
+          wait_for_marker("NEXUS INSTALLER ERASE PHRASE ACCEPTED")
 
           deadline = time.time() + 120
           while time.time() < deadline:
@@ -1201,7 +1213,7 @@ jobs:
           def key(name):
               command({"execute": "human-monitor-command",
                        "arguments": {"command-line": f"sendkey {name} 90"}})
-              time.sleep(0.16)
+              time.sleep(0.25)
 
           key("f1")
           key("n")

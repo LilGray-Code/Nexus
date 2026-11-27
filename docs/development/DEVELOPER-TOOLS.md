@@ -14,6 +14,9 @@ Built-in commands currently include:
 | `mem`, `uptime`, `diag` | Physical-memory and runtime summary |
 | `cpu`, `pci`, `hardware` | CPU and PCI hardware inventory |
 | `drivers` | Driver/device bind-state counts |
+| `driverlist`, `drivererrors` | Registered driver versions and recent probe/dependency failures |
+| `driverrescan` | Retry retained failed or unsupported device records |
+| `driverload NAME`, `driverunload NAME` | Load or unload a registered in-tree descriptor, subject to dependency and active-binding checks |
 | `net`, `netdiag` | Configured IPv4/gateway details or interface/link inventory |
 | `dns HOST` | Bounded IPv4 DNS lookup |
 | `http HOST` | Bounded HTTP/1.0 test on TCP port 80; this is not an HTTPS test |
@@ -48,7 +51,7 @@ The diagnostics commands query existing kernel inventories and do not reprogram 
 
 - **CPU:** CPUID vendor, family/model/stepping, core/logical counts, and an explicitly labelled hardware AVX2 capability bit. It does not report a live CPU frequency or temperature.
 - **PCI:** enumerated function count and the number retained in the bounded inventory table. `hardware` combines CPU, PCI, and driver-binding summaries.
-- **Drivers:** registered driver count plus discovered device states (active, failed, unsupported). This is bind/probe status, not a comprehensive device self-test.
+- **Drivers:** `drivers` shows PnP state counts; `driverlist` shows registered descriptors, versions, load state and bind/failure counters; `drivererrors` shows recent failed/blocked candidates. `driverrescan` retries retained records. `driverload NAME` requires a known descriptor and loaded dependencies. `driverunload NAME` refuses while a driver has active bindings or loaded dependents. These commands manage statically linked in-tree descriptors; they do not install an external binary driver package.
 - **Network:** registered interface count, first interface name, medium, and link status. `net` separately reports configured IPv4 and gateway values. `dns HOST` checks IPv4 DNS resolution. The current tools do not yet provide ping, packet capture, Wi-Fi RF survey, throughput testing, or TLS certificate-chain analysis.
 - **Storage:** controller/device counts, first device name, read-only capability and mounted state. It does not issue writes, benchmarks, SMART/NVMe health commands, or filesystem repair.
 

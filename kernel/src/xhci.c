@@ -2287,6 +2287,8 @@ void xhci_poll(void) {
         const uint8_t endpoint =
             (uint8_t)((event.control >> 16) & 0x1FU);
         struct xhci_hid_device *device = NULL;
+        bool secondary = false;
+
         for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS && device == NULL; ++i) {
             if (xhci->keyboards[i].active &&
                 slot == xhci->keyboards[i].slot_id &&
@@ -2305,34 +2307,68 @@ void xhci_poll(void) {
                 endpoint == xhci->gamepads[i].endpoint_id)
                 device = &xhci->gamepads[i];
         }
+
+        if (device == NULL) {
+            for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS && device == NULL; ++i) {
+                if (xhci->keyboards[i].active &&
+                    xhci->keyboards[i].secondary_active &&
+                    slot == xhci->keyboards[i].slot_id &&
+                    endpoint == xhci->keyboards[i].secondary_endpoint_id) {
+                    device = &xhci->keyboards[i];
+                    secondary = true;
+                }
+            }
+        }
+        if (device == NULL) {
+            for (size_t i = 0U; i < XHCI_MAX_MICE && device == NULL; ++i) {
+                if (xhci->mice[i].active &&
+                    xhci->mice[i].secondary_active &&
+                    slot == xhci->mice[i].slot_id &&
+                    endpoint == xhci->mice[i].secondary_endpoint_id) {
+                    device = &xhci->mice[i];
+                    secondary = true;
+                }
+            }
+        }
         if (device == NULL || !device->active) continue;
+
+        const enum xhci_hid_kind kind =
+            secondary ? device->secondary_kind : device->kind;
+        const uint16_t max_packet =
+            secondary ? device->secondary_max_packet : device->max_packet;
+        const uint8_t *report = (const uint8_t *)(uintptr_t)(
+            secondary ? device->secondary_report_buffer
+                      : device->report_buffer);
+        const bool generic_report_protocol = secondary
+            ? device->secondary_generic_report_protocol
+            : device->generic_report_protocol;
+        const struct nexus_usb_hid_generic_multi_layout *generic_layout =
+            secondary ? &device->secondary_generic_multi_layout
+                      : &device->generic_multi_layout;
+        struct nexus_usb_keyboard_state *keyboard_state =
+            secondary ? &device->secondary_keyboard_state
+                      : &device->keyboard_state;
 
         const uint8_t code = xhci_event_code(&event);
         if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
             const uint32_t residual = event.status & 0x00FFFFFFU;
-            if (residual <= device->max_packet) {
-                const size_t received = (size_t)device->max_packet - residual;
-                const uint8_t *report =
-                    (const uint8_t *)(uintptr_t)device->report_buffer;
-                if (device->kind == XHCI_HID_KEYBOARD) {
-                    if (device->generic_report_protocol) {
+            if (residual <= max_packet) {
+                const size_t received = (size_t)max_packet - residual;
+                if (kind == XHCI_HID_KEYBOARD) {
+                    if (generic_report_protocol) {
                         uint8_t boot_report[8];
                         if (usb_hid_generic_decode_keyboard_multi(
-                                &device->generic_multi_layout, report, received,
-                                boot_report)) {
+                                generic_layout, report, received, boot_report))
                             input_usb_keyboard_report_state(
-                                &device->keyboard_state, boot_report);
-                        }
+                                keyboard_state, boot_report);
                     } else if (received >= 8U) {
-                        input_usb_keyboard_report_state(&device->keyboard_state,
-                                                        report);
+                        input_usb_keyboard_report_state(keyboard_state, report);
                     }
-                } else if (device->kind == XHCI_HID_MOUSE) {
-                    if (device->generic_report_protocol) {
+                } else if (kind == XHCI_HID_MOUSE) {
+                    if (generic_report_protocol) {
                         struct nexus_usb_mouse_event decoded;
                         if (usb_hid_generic_decode_mouse_multi(
-                                &device->generic_multi_layout, report, received,
-                                &decoded)) {
+                                generic_layout, report, received, &decoded)) {
                             const uint8_t normalized[4] = {
                                 decoded.buttons,
                                 (uint8_t)(int8_t)decoded.dx,
@@ -2345,32 +2381,45 @@ void xhci_poll(void) {
                     } else if (received >= 3U) {
                         input_usb_mouse_report_sized(report, received);
                     }
-                } else if (device->kind == XHCI_HID_GAMEPAD) {
+                } else if (!secondary && kind == XHCI_HID_GAMEPAD) {
                     struct nexus_usb_gamepad_event gamepad_event;
                     if (usb_hid_gamepad_decode(&device->gamepad_layout,
-                            report, received, device->slot_id, device->vendor_id,
-                            device->product_id, &gamepad_event))
+                            report, received, device->slot_id,
+                            device->vendor_id, device->product_id,
+                            &gamepad_event))
                         input_usb_gamepad_event(&gamepad_event);
                 }
             }
         } else {
-            serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: USB keyboard transfer failed; code="
-                : device->kind == XHCI_HID_MOUSE
-                ? "xHCI: USB mouse transfer failed; code="
-                : "xHCI: USB gamepad transfer failed; code=");
+            serial_write(kind == XHCI_HID_KEYBOARD
+                ? "xHCI: USB keyboard endpoint transfer failed; code="
+                : kind == XHCI_HID_MOUSE
+                ? "xHCI: USB mouse endpoint transfer failed; code="
+                : "xHCI: USB gamepad endpoint transfer failed; code=");
             serial_write_hex(code);
             serial_write("\r\n");
-            xhci_drop_hid_device(xhci, device);
+            if (secondary)
+                xhci_drop_secondary_hid_endpoint(device);
+            else
+                xhci_drop_hid_device(xhci, device);
             continue;
         }
-        if (!xhci_schedule_interrupt_read(xhci, device)) {
-            serial_write(device->kind == XHCI_HID_KEYBOARD
-                ? "xHCI: unable to re-arm USB keyboard endpoint\r\n"
-                : device->kind == XHCI_HID_MOUSE
-                ? "xHCI: unable to re-arm USB mouse endpoint\r\n"
-                : "xHCI: unable to re-arm USB gamepad endpoint\r\n");
-            xhci_drop_hid_device(xhci, device);
+
+        const bool rearmed = secondary
+            ? xhci_schedule_interrupt_endpoint(xhci, device->slot_id,
+                device->secondary_endpoint_id,
+                &device->secondary_interrupt_ring,
+                device->secondary_report_buffer_physical,
+                device->secondary_max_packet)
+            : xhci_schedule_interrupt_read(xhci, device);
+        if (!rearmed) {
+            serial_write(secondary
+                ? "xHCI: unable to re-arm secondary composite HID endpoint\r\n"
+                : "xHCI: unable to re-arm USB HID endpoint\r\n");
+            if (secondary)
+                xhci_drop_secondary_hid_endpoint(device);
+            else
+                xhci_drop_hid_device(xhci, device);
         }
     }
     xhci_poll_usb_hubs(xhci);

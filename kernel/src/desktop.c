@@ -105,6 +105,8 @@ static uint64_t screen_width;
 static uint64_t screen_height;
 static int64_t pointer_x;
 static int64_t pointer_y;
+static int64_t pointer_remainder_x;
+static int64_t pointer_remainder_y;
 static struct nexus_graphics_surface desktop_firmware_surface;
 static struct nexus_graphics_surface desktop_render_surface;
 static bool desktop_virtio_gpu_active;
@@ -1860,12 +1862,23 @@ static void draw_shell(void) {
                            "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL   F5 INSTALL   F7 STORE",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
+        uint64_t installer_card_height = panel_height > 72U
+            ? panel_height - 72U : 1U;
+        if (installer_card_height > 440U) installer_card_height = 440U;
+        graphics_blend_round_rect(text_x - 16U, text_y - 10U,
+            550U, installer_card_height, 14U, 20U, 36U, 57U, 238U);
+        graphics_round_rect(text_x - 16U, text_y - 10U,
+            550U, installer_card_height, 14U, 65U, 91U, 119U);
+        graphics_fill_rect(text_x - 16U, text_y + 4U, 3U,
+            installer_card_height > 28U ? installer_card_height - 28U : 1U,
+            45U, 177U, 202U);
         if (installer_ui_state == INSTALLER_UI_SELECT) {
-            graphics_draw_text(text_x, text_y, "INSTALL NEXUS - CHOOSE A DRIVE",
-                               2U, 239U, 249U, 255U);
+            graphics_draw_text_aa(text_x, text_y,
+                "INSTALL NEXUS - CHOOSE A DRIVE", 98304U,
+                245U, 250U, 255U);
             graphics_draw_text(text_x, text_y + 28U,
-                               "Nothing is written until you confirm the target twice.",
-                               1U, 108U, 216U, 229U);
+                "Preview your target. No disk changes happen on this screen.",
+                1U, 121U, 208U, 228U);
             const size_t device_count = blockdev_count();
             if (device_count == 0U) {
                 graphics_draw_text(text_x, text_y + 88U,
@@ -1989,8 +2002,8 @@ static void draw_shell(void) {
         } else {
             const struct nexus_block_device *device =
                 blockdev_at(installer_selected_device);
-            graphics_draw_text(text_x, text_y, "REVIEW BEFORE INSTALLING",
-                               2U, 239U, 249U, 255U);
+            graphics_draw_text_aa(text_x, text_y, "REVIEW BEFORE INSTALLING",
+                                   98304U, 245U, 250U, 255U);
             if (device != NULL) {
                 graphics_draw_text(text_x, text_y + 38U, device->model,
                                    1U, 170U, 225U, 190U);
@@ -2055,6 +2068,145 @@ static void draw_shell(void) {
                                       "RETURN TO DRIVE SELECTION", false, false);
             }
         }
+        if (panel_width >= 900U && installer_card_height > 280U) {
+            const uint64_t info_x = text_x + 566U;
+            const uint64_t info_width = panel_width > 630U
+                ? panel_width - 630U : 260U;
+            const uint64_t info_y = text_y - 10U;
+            graphics_blend_round_rect(info_x, info_y, info_width,
+                installer_card_height, 14U, 17U, 31U, 49U, 244U);
+            graphics_round_rect(info_x, info_y, info_width,
+                installer_card_height, 14U, 57U, 83U, 112U);
+            graphics_draw_text_aa(info_x + 18U, info_y + 22U,
+                "INSTALLATION OVERVIEW", 81920U, 239U, 248U, 255U);
+            graphics_draw_text(info_x + 18U, info_y + 49U,
+                "NEXUS OS  /  X86-64", 1U, 105U, 205U, 224U);
+            graphics_fill_rect(info_x + 18U, info_y + 72U,
+                info_width - 36U, 1U, 64U, 91U, 119U);
+
+            const struct nexus_block_device *summary_device =
+                blockdev_at(installer_selected_device);
+            if (installer_ui_state == INSTALLER_UI_SELECT) {
+                graphics_draw_text(info_x + 18U, info_y + 91U,
+                    "SELECTED DRIVE", 1U, 139U, 169U, 192U);
+                if (summary_device != NULL) {
+                    graphics_draw_text_aa(info_x + 18U, info_y + 113U,
+                        summary_device->model, 65536U,
+                        237U, 245U, 252U);
+                    graphics_draw_text(info_x + 18U, info_y + 143U,
+                        installer_transport_short_label(summary_device),
+                        1U, 113U, 205U, 224U);
+                    if (summary_device->block_size != 0U) {
+                        const uint64_t blocks_per_gib =
+                            (1024ULL * 1024ULL * 1024ULL) /
+                            summary_device->block_size;
+                        char summary_capacity[21];
+                        format_u64(blocks_per_gib == 0U ? 0U :
+                            summary_device->block_count / blocks_per_gib,
+                            summary_capacity);
+                        graphics_draw_text(info_x + 18U, info_y + 174U,
+                            "CAPACITY", 1U, 139U, 169U, 192U);
+                        graphics_draw_text_aa(info_x + 18U, info_y + 193U,
+                            summary_capacity, 81920U,
+                            239U, 248U, 255U);
+                        graphics_draw_text(info_x + 82U, info_y + 198U,
+                            "GiB", 1U, 145U, 187U, 208U);
+                    }
+                    graphics_draw_text(info_x + 18U, info_y + 226U,
+                        installer_candidate_status(summary_device),
+                        1U, installer_candidate_status(summary_device)[0] == 'R'
+                            ? 105U : 236U,
+                        installer_candidate_status(summary_device)[0] == 'R'
+                            ? 218U : 165U,
+                        installer_candidate_status(summary_device)[0] == 'R'
+                            ? 174U : 116U);
+                } else {
+                    graphics_draw_text(info_x + 18U, info_y + 120U,
+                        "No supported drive detected.", 1U,
+                        236U, 178U, 126U);
+                    graphics_draw_text(info_x + 18U, info_y + 148U,
+                        "Connect an internal SSD or", 1U,
+                        163U, 190U, 209U);
+                    graphics_draw_text(info_x + 18U, info_y + 166U,
+                        "a supported USB storage drive.", 1U,
+                        163U, 190U, 209U);
+                }
+                graphics_fill_rect(info_x + 18U, info_y + 258U,
+                    info_width - 36U, 1U, 64U, 91U, 119U);
+                graphics_draw_text(info_x + 18U, info_y + 278U,
+                    "SAFE INSTALLATION", 1U,
+                    105U, 218U, 174U);
+                graphics_draw_text(info_x + 18U, info_y + 302U,
+                    "The installer USB is protected.", 1U,
+                    174U, 194U, 211U);
+                graphics_draw_text(info_x + 18U, info_y + 322U,
+                    "Nothing is erased before the", 1U,
+                    174U, 194U, 211U);
+                graphics_draw_text(info_x + 18U, info_y + 340U,
+                    "drive ID and ERASE checks.", 1U,
+                    174U, 194U, 211U);
+            } else {
+                graphics_draw_text(info_x + 18U, info_y + 91U,
+                    "DESTRUCTIVE ACTION CHECK", 1U,
+                    236U, 178U, 126U);
+                graphics_draw_text(info_x + 18U, info_y + 122U,
+                    installer_ui_state == INSTALLER_UI_CONFIRM_ERASE
+                        ? "FINAL ERASE CONFIRMATION"
+                        : "VERIFY THE TARGET ID",
+                    1U, 241U, 216U, 194U);
+                if (summary_device != NULL) {
+                    graphics_draw_text(info_x + 18U, info_y + 157U,
+                        summary_device->model, 1U,
+                        237U, 245U, 252U);
+                    graphics_draw_text(info_x + 18U, info_y + 181U,
+                        summary_device->stable_id, 1U,
+                        126U, 212U, 232U);
+                }
+                graphics_fill_rect(info_x + 18U, info_y + 211U,
+                    info_width - 36U, 1U, 102U, 76U, 67U);
+                graphics_draw_text(info_x + 18U, info_y + 232U,
+                    "Only the named target is changed.", 1U,
+                    238U, 203U, 179U);
+                graphics_draw_text(info_x + 18U, info_y + 254U,
+                    "The boot media is never a target.", 1U,
+                    174U, 194U, 211U);
+                graphics_draw_text(info_x + 18U, info_y + 276U,
+                    "Back returns without writing.", 1U,
+                    174U, 194U, 211U);
+            }
+
+            const uint64_t steps_y = info_y + installer_card_height - 76U;
+            graphics_fill_rect(info_x + 18U, steps_y - 12U,
+                info_width - 36U, 1U, 64U, 91U, 119U);
+            graphics_draw_text(info_x + 18U, steps_y - 1U,
+                "INSTALLATION STEPS", 1U, 139U, 169U, 192U);
+            const char *step_labels[3] = {"DRIVE", "VERIFY", "ERASE"};
+            const uint32_t active_step =
+                installer_ui_state == INSTALLER_UI_SELECT ? 0U :
+                installer_ui_state == INSTALLER_UI_CONFIRM_ID ? 1U : 2U;
+            const uint64_t step_gap = 6U;
+            const uint64_t step_width =
+                (info_width - 36U - 2U * step_gap) / 3U;
+            for (uint32_t step = 0U; step < 3U; ++step) {
+                const uint64_t sx = info_x + 18U +
+                    (uint64_t)step * (step_width + step_gap);
+                const bool current = step == active_step;
+                graphics_blend_round_rect(sx, steps_y + 20U,
+                    step_width, 26U, 6U,
+                    current ? 39U : 25U, current ? 96U : 45U,
+                    current ? 117U : 67U, 242U);
+                graphics_round_rect(sx, steps_y + 20U,
+                    step_width, 26U, 6U,
+                    current ? 92U : 59U, current ? 187U : 87U,
+                    current ? 211U : 111U);
+                graphics_draw_text(sx + 8U, steps_y + 30U,
+                    step_labels[step], 1U,
+                    current ? 235U : 163U,
+                    current ? 247U : 184U,
+                    current ? 252U : 202U);
+            }
+        }
+
         if (installer_ui_state == INSTALLER_UI_SELECT &&
             installer_drive_dropdown_open) {
             const size_t count = blockdev_count();
@@ -3583,6 +3735,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
         desktop_app_windows[app] = (struct desktop_app_window_state){0};
     pointer_x = (int64_t)(screen_width / 2U);
     pointer_y = (int64_t)(screen_height / 2U);
+    pointer_remainder_x = 0;
+    pointer_remainder_y = 0;
     keyboard_left_shift = false;
     keyboard_right_shift = false;
     keyboard_left_control = false;
@@ -3616,17 +3770,90 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
 }
 
 static void draw_pointer(void) {
+    /* A compact classic arrow with a crisp dark outline and a white face. */
+    static const uint16_t arrow_rows[24] = {
+        0x0001U, 0x0003U, 0x0007U, 0x001FU,
+        0x003FU, 0x007FU, 0x01FFU, 0x03FFU,
+        0x07FFU, 0x1FFFU, 0x3FFFU, 0x7FFFU,
+        0x01FFU, 0x03FFU, 0x03EFU, 0x07C7U,
+        0x07C3U, 0x0781U, 0x0F80U, 0x0F80U,
+        0x1F00U, 0x0F00U, 0x0200U, 0x0000U
+    };
     const uint64_t x = (uint64_t)pointer_x;
     const uint64_t y = (uint64_t)pointer_y;
-    const uint64_t scale = desktop_settings.cursor_size;
-    const uint8_t outline = desktop_settings.high_contrast
-        ? (desktop_theme_is_light() ? 0U : 255U) : 6U;
-    graphics_fill_rect(x, y, 3U * scale, 18U * scale,
-                       outline, outline, outline);
-    graphics_fill_rect(x + scale, y + scale, 2U * scale, 15U * scale,
-                       245U, 250U, 255U);
-    graphics_fill_rect(x + 2U * scale, y + 6U * scale, 6U * scale,
-                       2U * scale, 245U, 250U, 255U);
+    const uint64_t scale = desktop_settings.cursor_size == 0U
+        ? 1U : desktop_settings.cursor_size;
+    /* Keep the outline dark in both themes so the white face stays distinct. */
+    const uint8_t edge = desktop_settings.high_contrast ? 0U : 5U;
+
+    for (uint32_t row = 0U; row < 23U; ++row) {
+        const uint16_t bits = arrow_rows[row];
+        uint16_t inner = 0U;
+        for (uint32_t column = 1U; column < 15U; ++column) {
+            const uint16_t bit = (uint16_t)(1U << column);
+            if ((bits & bit) == 0U) continue;
+            const uint16_t horizontal = (uint16_t)(bit >> 1U) |
+                                        (uint16_t)(bit << 1U);
+            const bool has_horizontal =
+                (bits & horizontal) == horizontal;
+            const bool has_vertical =
+                (arrow_rows[row - 1U] & bit) != 0U &&
+                (arrow_rows[row + 1U] & bit) != 0U;
+            if (has_horizontal && has_vertical) inner |= bit;
+        }
+
+        /* Drop shadow, then the full silhouette. Render contiguous spans to
+         * avoid hundreds of one-pixel framebuffer operations per mouse move. */
+        for (uint32_t column = 0U; column < 16U;) {
+            if ((bits & (uint16_t)(1U << column)) == 0U) {
+                ++column;
+                continue;
+            }
+            const uint32_t first = column;
+            while (column < 16U &&
+                   (bits & (uint16_t)(1U << column)) != 0U) ++column;
+            graphics_blend_rect(x + ((uint64_t)first + 1U) * scale,
+                y + ((uint64_t)row + 1U) * scale,
+                (uint64_t)(column - first) * scale, scale,
+                0U, 0U, 0U, 112U);
+            graphics_fill_rect(x + (uint64_t)first * scale,
+                y + (uint64_t)row * scale,
+                (uint64_t)(column - first) * scale, scale,
+                edge, edge, edge);
+        }
+
+        uint16_t white = (uint16_t)(inner & (uint16_t)~(
+            (row >= 17U && row <= 21U) ? 0x0780U : 0U));
+        for (uint32_t column = 0U; column < 16U;) {
+            if ((white & (uint16_t)(1U << column)) == 0U) {
+                ++column;
+                continue;
+            }
+            const uint32_t first = column;
+            while (column < 16U &&
+                   (white & (uint16_t)(1U << column)) != 0U) ++column;
+            graphics_fill_rect(x + (uint64_t)first * scale,
+                y + (uint64_t)row * scale,
+                (uint64_t)(column - first) * scale, scale,
+                249U, 251U, 255U);
+        }
+        if (row >= 17U && row <= 21U) {
+            const uint16_t accent = (uint16_t)(inner & 0x0780U);
+            for (uint32_t column = 0U; column < 16U;) {
+                if ((accent & (uint16_t)(1U << column)) == 0U) {
+                    ++column;
+                    continue;
+                }
+                const uint32_t first = column;
+                while (column < 16U &&
+                       (accent & (uint16_t)(1U << column)) != 0U) ++column;
+                graphics_fill_rect(x + (uint64_t)first * scale,
+                    y + (uint64_t)row * scale,
+                    (uint64_t)(column - first) * scale, scale,
+                    45U, 177U, 202U);
+            }
+        }
+    }
 
     struct nexus_graphics_damage damage;
     if (desktop_virtio_gpu_active &&
@@ -3655,6 +3882,8 @@ static void draw_pointer(void) {
         (void)graphics_init(&desktop_firmware_surface);
         serial_write("DESKTOP: VirtIO GPU failed; copied frame to firmware framebuffer fallback\r\n");
     }
+}
+
 }
 
 static void refresh_files_listing(void) {
@@ -6417,16 +6646,32 @@ static void installer_draw_button(uint64_t x, uint64_t y,
                                   uint64_t width, uint64_t height,
                                   const char *label, bool selected,
                                   bool warning) {
-    const uint8_t red = warning ? 139U : (selected ? 34U : 27U);
-    const uint8_t green = warning ? 54U : (selected ? 111U : 46U);
-    const uint8_t blue = warning ? 62U : (selected ? 139U : 68U);
-    graphics_fill_rect(x, y, width, height, red, green, blue);
-    graphics_draw_rect(x, y, width, height,
-                       warning ? 224U : (selected ? 105U : 69U),
-                       warning ? 104U : (selected ? 194U : 102U),
-                       warning ? 110U : (selected ? 220U : 131U));
-    graphics_draw_text(x + 8U, y + (height / 2U) - 3U,
-                       label, 1U, 242U, 248U, 253U);
+    const uint8_t red = warning ? 122U : (selected ? 29U : 25U);
+    const uint8_t green = warning ? 43U : (selected ? 105U : 48U);
+    const uint8_t blue = warning ? 52U : (selected ? 135U : 70U);
+    const uint8_t edge_red = warning ? 220U : (selected ? 91U : 69U);
+    const uint8_t edge_green = warning ? 111U : (selected ? 190U : 102U);
+    const uint8_t edge_blue = warning ? 116U : (selected ? 216U : 131U);
+    graphics_blend_round_rect(x + 1U, y + 2U, width, height,
+        6U, 2U, 7U, 17U, 120U);
+    graphics_blend_round_rect(x, y, width, height,
+        6U, red, green, blue, 246U);
+    graphics_round_rect(x, y, width, height, 6U,
+        edge_red, edge_green, edge_blue);
+    graphics_fill_rect(x + 1U, y + 5U, 2U,
+        height > 10U ? height - 10U : 1U,
+        warning ? 239U : (selected ? 79U : 55U),
+        warning ? 149U : (selected ? 207U : 137U),
+        warning ? 145U : (selected ? 230U : 165U));
+    size_t label_length = 0U;
+    while (label[label_length] != '\0' && label_length < 48U)
+        ++label_length;
+    const uint64_t text_width = (uint64_t)label_length * 6U;
+    const uint64_t text_x = width > text_width
+        ? x + (width - text_width) / 2U : x + 4U;
+    const uint64_t text_y = y + (height > 7U ? (height - 7U) / 2U : 0U);
+    graphics_draw_text_aa(text_x, text_y, label, 65536U,
+                          245U, 250U, 255U);
 }
 
 #ifdef NEXUS_INSTALLER_ENABLE_DESTRUCTIVE_WRITES
@@ -6613,14 +6858,37 @@ void desktop_handle_input(const struct nexus_input_event *event) {
     if (event->type == NEXUS_INPUT_MOUSE) {
         const int64_t sensitivity =
             desktop_settings.mouse_sensitivity_percent;
-        pointer_x += ((int64_t)event->mouse_dx * sensitivity) / 100;
-        pointer_y += ((int64_t)event->mouse_dy * sensitivity) / 100;
-        if (pointer_x < 0) pointer_x = 0;
-        if (pointer_y < 0) pointer_y = 0;
-        if ((uint64_t)pointer_x >= screen_width)
-            pointer_x = (int64_t)(screen_width - 1U);
-        if ((uint64_t)pointer_y >= screen_height)
-            pointer_y = (int64_t)(screen_height - 1U);
+        const int64_t scaled_dx =
+            (int64_t)event->mouse_dx * sensitivity + pointer_remainder_x;
+        const int64_t scaled_dy =
+            (int64_t)event->mouse_dy * sensitivity + pointer_remainder_y;
+        const int64_t move_x = scaled_dx / 100;
+        const int64_t move_y = scaled_dy / 100;
+        pointer_remainder_x = scaled_dx % 100;
+        pointer_remainder_y = scaled_dy % 100;
+
+        const int64_t next_x = pointer_x + move_x;
+        const int64_t next_y = pointer_y + move_y;
+        if (next_x < 0) {
+            pointer_x = 0;
+            pointer_remainder_x = 0;
+        } else if (screen_width == 0U ||
+                   (uint64_t)next_x >= screen_width) {
+            pointer_x = screen_width == 0U ? 0 : (int64_t)(screen_width - 1U);
+            pointer_remainder_x = 0;
+        } else {
+            pointer_x = next_x;
+        }
+        if (next_y < 0) {
+            pointer_y = 0;
+            pointer_remainder_y = 0;
+        } else if (screen_height == 0U ||
+                   (uint64_t)next_y >= screen_height) {
+            pointer_y = screen_height == 0U ? 0 : (int64_t)(screen_height - 1U);
+            pointer_remainder_y = 0;
+        } else {
+            pointer_y = next_y;
+        }
         const uint8_t primary_button =
             desktop_settings.left_handed_mouse ? 2U : 1U;
         const bool left_down =

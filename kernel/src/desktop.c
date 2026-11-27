@@ -2370,13 +2370,15 @@ static void draw_shell(void) {
                     content_y + 83U, 74U, 30U, label,
                     desktop_settings.volume_percent == volumes[i]);
             }
+            const bool audio_output_ready =
+                nexus_audio_default_device(NEXUS_AUDIO_PLAYBACK) != 0U;
             graphics_draw_text(text_x, content_y + 137U,
-                ac97_is_ready()
-                    ? "AC97 AUDIO DEVICE READY - MASTER VOLUME CONTROL ENABLED"
-                    : "NO COMPATIBLE AC97 AUDIO DEVICE - VOLUME SAVED FOR LATER",
-                1U, ac97_is_ready() ? 108U : 231U,
-                ac97_is_ready() ? 216U : 183U,
-                ac97_is_ready() ? 229U : 127U);
+                audio_output_ready
+                    ? "AUDIO MIXER OUTPUT READY"
+                    : "NO PLAYBACK DRIVER - VOLUME SAVED FOR LATER",
+                1U, audio_output_ready ? 108U : 231U,
+                audio_output_ready ? 216U : 183U,
+                audio_output_ready ? 229U : 127U);
             struct nexus_net_info info;
             const char *network_status = "NO NETWORK ADAPTER";
             if (net_get_info(&info) && info.interface_ready)
@@ -6428,8 +6430,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                     size_t input_row = 0U;
                     for (size_t i = 0U; i < nexus_audio_device_count(); ++i) {
                         struct nexus_audio_device device;
-                        if (!nexus_audio_device_get(i, &device) ||
-                            !device.ready) continue;
+                        if (!nexus_audio_device_get(i, &device)) continue;
                         if (device.description.direction == NEXUS_AUDIO_PLAYBACK) {
                             if (px >= sx && px < sx + 238U &&
                                 output_row == row) {

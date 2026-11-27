@@ -5,6 +5,29 @@
 #include <string.h>
 
 int main(void) {
+    assert(nexus_settings_category_count() == NEXUS_SETTINGS_CATEGORY_COUNT);
+    assert(nexus_settings_category_count() == 16U);
+    const struct nexus_settings_category_info *category =
+        nexus_settings_category_at(NEXUS_SETTINGS_NETWORK);
+    assert(category != NULL);
+    assert(strcmp(category->label, "Network & Internet") == 0);
+    assert(nexus_settings_category_matches(
+        NEXUS_SETTINGS_NETWORK, "WIFI"));
+    assert(nexus_settings_category_matches(
+        NEXUS_SETTINGS_SOUND, "headphones"));
+    assert(nexus_settings_category_matches(
+        NEXUS_SETTINGS_DISPLAY, "refresh rate"));
+    assert(nexus_settings_category_matches(
+        NEXUS_SETTINGS_DEVELOPER, "debug"));
+    assert(!nexus_settings_category_matches(
+        NEXUS_SETTINGS_ACCOUNTS_USERS, "gpu"));
+    assert(nexus_settings_category_matches(
+        NEXUS_SETTINGS_STORAGE, ""));
+    assert(!nexus_settings_category_matches(
+        NEXUS_SETTINGS_CATEGORY_INVALID, ""));
+    assert(!nexus_settings_category_matches(
+        NEXUS_SETTINGS_CATEGORY_INVALID, "settings"));
+    assert(nexus_settings_category_at(16U) == NULL);
     struct nexus_settings settings;
     nexus_settings_defaults(&settings);
     assert(nexus_settings_valid(&settings));

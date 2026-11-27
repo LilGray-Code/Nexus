@@ -1,5 +1,80 @@
 #include "settings.h"
 
+static const struct nexus_settings_category_info categories[
+    NEXUS_SETTINGS_CATEGORY_COUNT] = {
+    {NEXUS_SETTINGS_PERSONALIZATION, "Personalization",
+     "theme accent wallpaper background colors desktop look"},
+    {NEXUS_SETTINGS_DISPLAY, "Display",
+     "monitor resolution refresh rate scaling dpi hdr rotation edid"},
+    {NEXUS_SETTINGS_SOUND, "Sound",
+     "audio volume mute speaker headphones microphone recording output"},
+    {NEXUS_SETTINGS_NETWORK, "Network & Internet",
+     "ethernet wifi wireless internet ip dhcp dns connection scan"},
+    {NEXUS_SETTINGS_BLUETOOTH_DEVICES, "Bluetooth & Devices",
+     "bluetooth pairing usb devices hardware peripherals"},
+    {NEXUS_SETTINGS_INPUT_ACCESSORIES, "Input & Accessories",
+     "keyboard mouse pointer scroll sensitivity gamepad controller"},
+    {NEXUS_SETTINGS_ACCESSIBILITY, "Accessibility",
+     "contrast text size pointer visibility accessibility"},
+    {NEXUS_SETTINGS_APPLICATIONS, "Applications",
+     "apps installed running processes permissions defaults startup"},
+    {NEXUS_SETTINGS_STORAGE, "Storage",
+     "disk drives partitions filesystem capacity formatting"},
+    {NEXUS_SETTINGS_PRIVACY_SECURITY, "Privacy & Security",
+     "privacy security sandbox permissions signatures trust"},
+    {NEXUS_SETTINGS_ACCOUNTS_USERS, "Accounts & Users",
+     "accounts users login password profiles sessions"},
+    {NEXUS_SETTINGS_POWER_BATTERY, "Power & Battery",
+     "power battery charging sleep suspend energy"},
+    {NEXUS_SETTINGS_GAMING, "Gaming",
+     "games performance fps frame pacing game library gpu"},
+    {NEXUS_SETTINGS_UPDATES_RECOVERY, "Updates & Recovery",
+     "updates upgrades recovery restore backup rollback"},
+    {NEXUS_SETTINGS_SYSTEM_INFORMATION, "System Information",
+     "system information cpu memory firmware bios acpi uptime hardware"},
+    {NEXUS_SETTINGS_DEVELOPER, "Developer Settings",
+     "developer debug diagnostics services console logging"}
+};
+
+static char ascii_lower(char value) {
+    return value >= 'A' && value <= 'Z'
+        ? (char)(value - 'A' + 'a') : value;
+}
+
+static bool contains_case_insensitive(const char *text, const char *query) {
+    if (text == NULL || query == NULL) return false;
+    for (size_t start = 0U; text[start] != '\0'; ++start) {
+        size_t i = 0U;
+        while (query[i] != '\0' && text[start + i] != '\0' &&
+               ascii_lower(text[start + i]) == ascii_lower(query[i]))
+            ++i;
+        if (query[i] == '\0') return true;
+    }
+    return query[0] == '\0';
+}
+
+size_t nexus_settings_category_count(void) {
+    return NEXUS_SETTINGS_CATEGORY_COUNT;
+}
+
+const struct nexus_settings_category_info *nexus_settings_category_at(
+    size_t index) {
+    return index < NEXUS_SETTINGS_CATEGORY_COUNT ? &categories[index] : NULL;
+}
+
+bool nexus_settings_category_matches(
+    enum nexus_settings_category category, const char *query) {
+    if (query == NULL) return false;
+    for (size_t i = 0U; i < NEXUS_SETTINGS_CATEGORY_COUNT; ++i) {
+        if (categories[i].category == category)
+            return query[0] == '\0' ||
+                   contains_case_insensitive(categories[i].label, query) ||
+                   contains_case_insensitive(categories[i].search_terms, query);
+    }
+    return false;
+}
+
+
 static bool value_in_set(uint8_t value, const uint8_t *set, size_t count) {
     for (size_t i = 0U; i < count; ++i)
         if (set[i] == value) return true;

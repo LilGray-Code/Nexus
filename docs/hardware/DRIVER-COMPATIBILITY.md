@@ -72,10 +72,12 @@ plug-and-play subsystem:
   It does **not** load an arbitrary external binary. Drivers are statically
   linked kernel code with callback descriptors.
 - Remove callbacks are invoked for active bindings when a bus owner reports a
-  device removal. The generic callback path is present, but PCI surprise
-  removal and all xHCI USB hot-unplug events are not yet connected to it.
-  Existing drivers without a quiesce/remove callback must not be dynamically
-  unloaded or assumed hot-unplug safe.
+  device removal. Removal is refused before changing any binding if an active
+  driver has no teardown callback; the PnP record remains active rather than
+  falsely reporting a safe detach. The generic callback path is present, but
+  PCI surprise removal and all xHCI USB hot-unplug events are not yet connected
+  to it. Existing drivers without a quiesce/remove callback cannot be removed
+  through this API or dynamically unloaded.
 - Manager calls currently rely on serialized kernel/PnP control flow. The
   manager has no SMP lock, RCU grace period or concurrent unload barrier.
 - There is no general driver sandbox, signed kernel-module loader, firmware

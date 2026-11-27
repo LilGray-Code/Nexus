@@ -3797,6 +3797,7 @@ static void draw_pointer(void) {
             const bool has_horizontal =
                 (bits & horizontal) == horizontal;
             const bool has_vertical =
+                row > 0U && row + 1U < 24U &&
                 (arrow_rows[row - 1U] & bit) != 0U &&
                 (arrow_rows[row + 1U] & bit) != 0U;
             if (has_horizontal && has_vertical) inner |= bit;

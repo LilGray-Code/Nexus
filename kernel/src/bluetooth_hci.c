@@ -89,3 +89,57 @@ bool nexus_bt_hci_disconnection_complete(
     *reason = event->parameters[3U];
     return true;
 }
+
+bool nexus_bt_hci_build_command(uint16_t opcode,
+    const uint8_t *parameters, uint8_t parameter_length,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    const size_t required = 4U + (size_t)parameter_length;
+    if (packet == NULL || packet_length == NULL ||
+        (parameter_length != 0U && parameters == NULL) ||
+        packet_capacity < required) return false;
+    packet[0] = NEXUS_BT_HCI_PACKET_COMMAND;
+    packet[1] = (uint8_t)(opcode & 0xFFU);
+    packet[2] = (uint8_t)(opcode >> 8);
+    packet[3] = parameter_length;
+    for (size_t i = 0U; i < parameter_length; ++i)
+        packet[4U + i] = parameters[i];
+    *packet_length = required;
+    return true;
+}
+
+bool nexus_bt_hci_parse_command_complete(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_command_result *result) {
+    if (event == NULL || result == NULL || event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE ||
+        event->parameter_length < 4U) return false;
+    const uint16_t opcode = get_le16(event->parameters + 1U);
+    if (opcode == 0U) return false;
+    *result = (struct nexus_bt_hci_command_result){
+        .opcode = opcode,
+        .status = event->parameters[3U],
+        .command_packets_allowed = event->parameters[0],
+        .return_parameters = event->parameters + 4U,
+        .return_parameter_length =
+            (uint8_t)(event->parameter_length - 4U)
+    };
+    return true;
+}
+
+bool nexus_bt_hci_parse_command_status(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_command_result *result) {
+    if (event == NULL || result == NULL || event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_COMMAND_STATUS ||
+        event->parameter_length != 4U) return false;
+    const uint16_t opcode = get_le16(event->parameters + 2U);
+    if (opcode == 0U) return false;
+    *result = (struct nexus_bt_hci_command_result){
+        .opcode = opcode,
+        .status = event->parameters[0],
+        .command_packets_allowed = event->parameters[1],
+        .return_parameters = NULL,
+        .return_parameter_length = 0U
+    };
+    return true;
+}

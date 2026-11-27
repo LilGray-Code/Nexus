@@ -126,6 +126,8 @@ struct xhci_hid_device {
     uint8_t speed;
     struct nexus_usb_hub_descriptor hub_descriptor;
     uint8_t hub_scan_cursor;
+    bool hub_power_delay_pending;
+    uint64_t hub_power_ready_tick;
     bool hub_port_connected[NEXUS_USB_HUB_MAX_PORTS + 1U];
     uint16_t max_packet;
     uint16_t vendor_id;
@@ -1504,11 +1506,16 @@ static bool xhci_initialize_hub(struct xhci_controller *xhci,
                 return false;
             }
         }
-        const uint64_t loops =
-            (uint64_t)device->hub_descriptor.power_on_to_good_2ms *
-            2000000ULL;
-        for (uint64_t i = 0U; i < loops; ++i)
-            __asm__ volatile ("pause");
+        /* Do not stall the boot CPU while the hub powers its ports.
+         * timer_init() runs before xHCI initialization; once the main loop
+         * enables timer IRQs, the hub scanner will wait out this deadline. */
+        const uint64_t power_good_ms =
+            (uint64_t)device->hub_descriptor.power_on_to_good_2ms * 2ULL;
+        const uint64_t delay_ticks = (power_good_ms + 9ULL) / 10ULL;
+        const uint64_t now = timer_ticks();
+        device->hub_power_delay_pending = delay_ticks != 0U;
+        device->hub_power_ready_tick =
+            UINT64_MAX - now < delay_ticks ? UINT64_MAX : now + delay_ticks;
     }
 
     device->speed = speed;
@@ -2117,6 +2124,13 @@ static void xhci_poll_usb_hubs(struct xhci_controller *xhci) {
         struct xhci_hid_device *hub = &xhci->hubs[i];
         if (!hub->active || hub->kind != XHCI_HID_HUB ||
             hub->hub_descriptor.port_count == 0U) continue;
+        if (hub->hub_power_delay_pending) {
+            if (timer_ticks() < hub->hub_power_ready_tick) continue;
+            hub->hub_power_delay_pending = false;
+            serial_write("USB: hub downstream ports are powered and ready slot=");
+            serial_write_hex(hub->slot_id);
+            serial_write("\\r\\n");
+        }
 
         hub->hub_scan_cursor = (uint8_t)(
             (hub->hub_scan_cursor % hub->hub_descriptor.port_count) + 1U);

@@ -1015,31 +1015,13 @@ static bool xhci_configure_secondary_hid_interface(
 
     const enum xhci_hid_kind wanted = primary_kind == XHCI_HID_KEYBOARD
         ? XHCI_HID_MOUSE : XHCI_HID_KEYBOARD;
-    const struct nexus_usb_hid_interface *selected = NULL;
-    for (uint8_t pass = 0U; pass < 2U && selected == NULL; ++pass) {
-        for (uint8_t i = 0U; i < interfaces->interface_count; ++i) {
-            const struct nexus_usb_hid_interface *candidate =
-                &interfaces->interfaces[i];
-            if (candidate->number == primary_interface ||
-                candidate->endpoint_in == 0U ||
-                candidate->report_descriptor_length == 0U) continue;
-            const bool boot_keyboard =
-                candidate->subclass == 1U && candidate->protocol == 1U;
-            const bool boot_mouse =
-                candidate->subclass == 1U && candidate->protocol == 2U;
-            const bool generic = !boot_keyboard && !boot_mouse;
-            const bool matches = wanted == XHCI_HID_KEYBOARD
-                ? boot_keyboard || generic : boot_mouse || generic;
-            if (!matches) continue;
-            if (pass == 0U && !((wanted == XHCI_HID_KEYBOARD &&
-                    boot_keyboard) || (wanted == XHCI_HID_MOUSE &&
-                    boot_mouse))) continue;
-            if (pass == 1U && !generic) continue;
-            selected = candidate;
-            break;
-        }
-    }
-    if (selected == NULL) return true; /* Receiver has no second input class. */
+    struct nexus_usb_hid_interface selected_interface = {0};
+    const uint8_t wanted_boot_protocol =
+        wanted == XHCI_HID_KEYBOARD ? 1U : 2U;
+    if (!nexus_usb_hid_find_companion_interface(interfaces,
+            primary_interface, wanted_boot_protocol, &selected_interface))
+        return true; /* Receiver has no second input class. */
+    const struct nexus_usb_hid_interface *selected = &selected_interface;
 
     struct xhci_hid_device endpoint = *device;
     endpoint.endpoint_id = 0U;

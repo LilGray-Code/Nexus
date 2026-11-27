@@ -1958,6 +1958,11 @@ static bool xhci_hub_reset_and_enumerate_child(
     const bool child_needs_tt =
         status.speed == NEXUS_USB_SPEED_LOW ||
         status.speed == NEXUS_USB_SPEED_FULL;
+    /* An inherited TT is needed only by a low/full-speed child. A high-speed
+     * or SuperSpeed child must not carry an ancestor's translator fields. */
+    child_path.parent_hub_uses_tt = false;
+    child_path.tt_hub_slot = 0U;
+    child_path.tt_port = 0U;
     if (child_needs_tt && hub->speed == 3U) {
         /* This high-speed hub is the nearest TT provider. */
         child_path.parent_hub_uses_tt = true;

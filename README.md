@@ -258,6 +258,7 @@ small Nexus ABI demonstrations, not a general-purpose app catalog or Windows/
 Linux compatibility runtime. User changes still belong on the writable Nexus
 Data volume, not in the immutable boot pack.
 
+- Performance work includes a tested contiguous-copy optimization for the kernel log ring and a before/after microbenchmark. See [`docs/development/PERFORMANCE.md`](docs/development/PERFORMANCE.md) for host results, measurement limits, and subsystem-specific optimization guardrails.
 - Kernel developer diagnostics include a bounded 4 KiB serial-log history, a 128-event boot/scheduler trace ring, and read-only Terminal commands for CPU, PCI, driver, network, storage, and system summaries. The current tools and known limitations are documented in [`docs/development/DEVELOPER-TOOLS.md`](docs/development/DEVELOPER-TOOLS.md); this is not yet a userspace PTY shell or full kernel debugger.
 
 The first-party native application SDK is in `kernel/include/nexus/app.h`,

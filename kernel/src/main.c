@@ -38,6 +38,7 @@
 #include "xhci.h"
 #include "vfs.h"
 #include "service_manager.h"
+#include "driver_manager.h"
 #include "trace.h"
 #include "smp.h"
 
@@ -943,6 +944,12 @@ void kmain(void) {
         serial_write("AUDIO: service unavailable; continuing without audio\r\n");
     if (!nexus_service_manager_start("desktop"))
         serial_write("WARNING: desktop service did not initialize\r\n");
+    const size_t newly_bound_drivers = nexus_driver_manager_rescan();
+    serial_write("PNP: post-start driver recovery bound=");
+    serial_write_hex(newly_bound_drivers);
+    serial_write(" failures=");
+    serial_write_hex(nexus_driver_manager_failure_count());
+    serial_write("\r\n");
     serial_write("NEXUS K2 MULTITASKING SCHEDULER READY\r\n");
     serial_write("NEXUS K2 TIMER INTERRUPT READY\r\n");
     serial_write("NEXUS K1 MEMORY+EXCEPTIONS READY\r\n");

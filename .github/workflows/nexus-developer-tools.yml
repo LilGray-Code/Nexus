@@ -69,7 +69,10 @@ jobs:
             -Ikernel/src kernel/src/log_buffer.c \
             kernel/tests/log_buffer_bench.c \
             -o /tmp/nexus-log-buffer-bench
-          /tmp/nexus-log-buffer-bench
+          for sample in 1 2 3 4 5; do
+            echo "Log ring benchmark sample $sample/5"
+            /tmp/nexus-log-buffer-bench
+          done
 
       - name: Build and inspect the native application SDK
         run: |

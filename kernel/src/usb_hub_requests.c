@@ -1,5 +1,7 @@
 #include "usb_hub_requests.h"
 
+#include <stddef.h>
+
 static bool port_request(uint8_t port, uint16_t feature, uint8_t request,
                          struct nexus_usb_setup_packet *setup) {
     if (port == 0U || setup == NULL) return false;

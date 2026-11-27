@@ -1239,9 +1239,22 @@ jobs:
               print(open(log_path, encoding="utf-8", errors="replace").read())
               raise SystemExit("Persistent file save was not observed")
 
-          # Reopen the saved file, move to the start of its line, insert a
-          # prefix with the desktop editor, and save the edited generation.
+          # Reopen the selected writable file, verify it reached the editor,
+          # then move to the start of its text and save the edited generation.
+          key("home")
           key("e")
+          deadline = time.time() + 10
+          while time.time() < deadline:
+              log = open(log_path, encoding="utf-8", errors="replace").read()
+              if "FILES: editor opened PERSIST bytes=" in log:
+                  break
+              if "FILES: editor refused" in log or "FILES: editor open refused" in log:
+                  print(log)
+                  raise SystemExit("Could not open the newly created PERSIST file")
+              time.sleep(0.2)
+          else:
+              print(open(log_path, encoding="utf-8", errors="replace").read())
+              raise SystemExit("Files view did not open the PERSIST editor")
           key("home")
           for char in "boot":
               key(char)
@@ -1250,7 +1263,9 @@ jobs:
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
-              if "FILES: entry PERSIST size=21" in log:
+              if ("FILES: editor save requested PERSIST bytes=0x0000000000000015" in log
+                      and "FILES: SAVED PERSISTENT NXFS PERSIST" in log
+                      and "FILES: entry PERSIST size=21" in log):
                   break
               if "FILES: SAVE FAILED" in log or "FILES: SAVED VOLATILE RAM" in log:
                   print(log)

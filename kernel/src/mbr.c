@@ -49,6 +49,17 @@ static bool append_partition(uint8_t type, bool bootable, bool logical,
         (first_lba < container_first || first_lba >= container_end ||
          block_count > container_end - first_lba))
         return false;
+    const uint64_t last_lba = first_lba + block_count;
+    for (size_t i = 0U; i < partition_count; ++i) {
+        const struct nexus_mbr_partition *prior = &partitions[i];
+        const bool prior_is_container =
+            !prior->logical && mbr_type_is_extended(prior->type);
+        if (!logical && prior->logical) continue;
+        if (logical && prior_is_container) continue;
+        const uint64_t prior_end = prior->first_lba + prior->block_count;
+        if (first_lba < prior_end && prior->first_lba < last_lba)
+            return false;
+    }
     partitions[partition_count++] = (struct nexus_mbr_partition){
         .type = type,
         .bootable = bootable,
@@ -98,11 +109,16 @@ static bool scan_extended(const struct nexus_block_device *device,
             return false;
 
         uint8_t status0, type0, status1, type1;
+        uint8_t status2, type2, status3, type3;
         uint32_t first0, count0, first1, count1;
+        uint32_t first2, count2, first3, count3;
         if (!read_entry(sector, MBR_EBR_ENTRY_DATA,
                         &status0, &type0, &first0, &count0) ||
             !read_entry(sector, MBR_EBR_ENTRY_LINK,
-                        &status1, &type1, &first1, &count1))
+                        &status1, &type1, &first1, &count1) ||
+            !read_entry(sector, 2U, &status2, &type2, &first2, &count2) ||
+            !read_entry(sector, 3U, &status3, &type3, &first3, &count3) ||
+            type2 != 0U || type3 != 0U)
             return false;
 
         if (type0 != 0U) {

@@ -2,6 +2,7 @@
 
 #include "blockdev.h"
 #include "gpt.h"
+#include "mbr.h"
 #include "fat32.h"
 #include "vfs.h"
 #include "file_list.h"
@@ -74,6 +75,7 @@ enum desktop_settings_page {
     SETTINGS_ACCESSIBILITY,
     SETTINGS_SYSTEM,
     SETTINGS_AUDIO,
+    SETTINGS_STORAGE,
     SETTINGS_DEVICES,
     SETTINGS_PAGE_COUNT
 };
@@ -81,6 +83,7 @@ static enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
 #define DESKTOP_STORE_VISIBLE_ROWS 8U
 static size_t store_selected_index;
 static size_t store_first_index;
+static size_t storage_selected_device_index;
 static bool store_installed[NEXUS_STORE_MAX_APPS];
 static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
@@ -2146,7 +2149,7 @@ static void draw_shell(void) {
                            1, 119, 229, 211);
     } else if (active_view == DESKTOP_SETTINGS) {
         static const char *const tab_labels[SETTINGS_PAGE_COUNT] = {
-            "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "AUDIO", "DEVICES"
+            "LOOK", "DISPLAY", "INPUT", "ACCESS", "SYSTEM", "AUDIO", "STORAGE", "DEVICES"
         };
         const uint64_t tab_y = text_y - 2U;
         for (size_t tab = 0U; tab < SETTINGS_PAGE_COUNT; ++tab) {
@@ -2511,6 +2514,150 @@ static void draw_shell(void) {
             graphics_draw_text(text_x, content_y + 368U,
                 "HDA, USB, HDMI/DP AND BLUETOOTH APPEAR WHEN THEIR DRIVERS INITIALIZE.",
                 1U, 108U, 216U, 229U);
+        } else if (settings_page == SETTINGS_STORAGE) {
+            desktop_settings_draw_heading(text_x, content_y,
+                "STORAGE", "Inspect disks, partitions, transport and I/O health.");
+            graphics_draw_text(text_x, content_y + 58U, "CONNECTED DISKS",
+                               1U, 142U, 174U, 199U);
+            const size_t disk_count = blockdev_count();
+            if (storage_selected_device_index >= disk_count)
+                storage_selected_device_index = disk_count == 0U
+                    ? 0U : disk_count - 1U;
+            size_t visible_disks = disk_count < 4U ? disk_count : 4U;
+            for (size_t i = 0U; i < visible_disks; ++i) {
+                const struct nexus_block_device *disk = blockdev_at(i);
+                if (disk == NULL) continue;
+                desktop_settings_draw_button(text_x,
+                    content_y + 76U + i * 35U, 238U, 30U,
+                    disk->name, i == storage_selected_device_index);
+                graphics_draw_text(text_x + 8U,
+                    content_y + 108U + i * 35U,
+                    disk->model, 1U, 171U, 191U, 211U);
+            }
+            if (disk_count == 0U)
+                graphics_draw_text(text_x, content_y + 86U,
+                    "NO BLOCK DEVICES REGISTERED", 1U,
+                    231U, 183U, 127U);
+            const struct nexus_block_device *selected_disk =
+                disk_count == 0U ? NULL :
+                    blockdev_at(storage_selected_device_index);
+            const uint64_t detail_x = text_x + 270U;
+            graphics_draw_text(detail_x, content_y + 58U, "DISK DETAILS",
+                               1U, 142U, 174U, 199U);
+            if (selected_disk != NULL) {
+                graphics_draw_text(detail_x, content_y + 78U,
+                    selected_disk->model, 1U, 231U, 239U, 247U);
+                const char *transport = "UNKNOWN";
+                switch (selected_disk->transport) {
+                    case NEXUS_BLOCKDEV_TRANSPORT_NVME: transport = "NVMe"; break;
+                    case NEXUS_BLOCKDEV_TRANSPORT_AHCI: transport = "SATA / AHCI"; break;
+                    case NEXUS_BLOCKDEV_TRANSPORT_USB: transport = "USB MASS STORAGE"; break;
+                    case NEXUS_BLOCKDEV_TRANSPORT_OPTICAL: transport = "OPTICAL"; break;
+                    case NEXUS_BLOCKDEV_TRANSPORT_NETWORK: transport = "NETWORK"; break;
+                    default: break;
+                }
+                graphics_draw_text(detail_x, content_y + 100U,
+                    transport, 1U, 108U, 216U, 229U);
+                const uint64_t blocks_per_mib =
+                    selected_disk->block_size == 0U
+                        ? 1U : 1048576U / selected_disk->block_size;
+                char capacity_line[64];
+                format_labeled_u64("CAPACITY MiB: ",
+                    selected_disk->block_count / blocks_per_mib,
+                    capacity_line);
+                graphics_draw_text(detail_x, content_y + 122U,
+                    capacity_line, 1U, 171U, 191U, 211U);
+                char sector_line[64];
+                format_labeled_u64("LOGICAL BLOCK BYTES: ",
+                    selected_disk->block_size, sector_line);
+                graphics_draw_text(detail_x, content_y + 144U,
+                    sector_line, 1U, 171U, 191U, 211U);
+
+                struct nexus_blockdev_stats io_stats;
+                if (blockdev_get_stats(selected_disk, &io_stats)) {
+                    char stats_line[64];
+                    format_labeled_u64("READ OPS: ", io_stats.read_requests,
+                                       stats_line);
+                    graphics_draw_text(detail_x, content_y + 166U,
+                        stats_line, 1U, 171U, 191U, 211U);
+                    format_labeled_u64("WRITE OPS: ", io_stats.write_requests,
+                                       stats_line);
+                    graphics_draw_text(detail_x + 172U, content_y + 166U,
+                        stats_line, 1U, 171U, 191U, 211U);
+                    format_labeled_u64("I/O ERRORS: ",
+                        io_stats.read_errors + io_stats.write_errors +
+                            io_stats.flush_errors, stats_line);
+                    graphics_draw_text(detail_x, content_y + 188U,
+                        stats_line, 1U, 231U, 183U, 127U);
+                }
+
+                const bool valid_gpt = gpt_scan_device(selected_disk);
+                if (valid_gpt) {
+                    graphics_draw_text(detail_x, content_y + 216U,
+                        "GPT: HEADER AND ENTRY CRC VALID", 1U,
+                        108U, 216U, 229U);
+                    size_t count = gpt_partition_count();
+                    if (count > 4U) count = 4U;
+                    for (size_t i = 0U; i < count; ++i) {
+                        const struct nexus_gpt_partition *part =
+                            gpt_partition_at(i);
+                        if (part == NULL) continue;
+                        char start_line[64], size_line[64];
+                        format_labeled_u64("START LBA: ", part->first_lba,
+                                           start_line);
+                        format_labeled_u64("BLOCKS: ",
+                            part->last_lba - part->first_lba + 1U,
+                            size_line);
+                        const uint64_t y = content_y + 239U + i * 24U;
+                        graphics_draw_text(detail_x, y, start_line, 1U,
+                            231U, 239U, 247U);
+                        graphics_draw_text(detail_x + 175U, y, size_line, 1U,
+                            171U, 191U, 211U);
+                    }
+                } else if (mbr_scan_device(selected_disk)) {
+                    graphics_draw_text(detail_x, content_y + 216U,
+                        "MBR / EBR: SIGNATURE VALID", 1U,
+                        108U, 216U, 229U);
+                    size_t count = mbr_partition_count();
+                    if (count > 4U) count = 4U;
+                    for (size_t i = 0U; i < count; ++i) {
+                        const struct nexus_mbr_partition *part =
+                            mbr_partition_at(i);
+                        if (part == NULL) continue;
+                        char start_line[64], size_line[64], type_line[64];
+                        format_labeled_u64("START LBA: ", part->first_lba,
+                                           start_line);
+                        format_labeled_u64("BLOCKS: ", part->block_count,
+                                           size_line);
+                        format_labeled_u64("MBR TYPE: ", part->type, type_line);
+                        const uint64_t y = content_y + 239U + i * 24U;
+                        graphics_draw_text(detail_x, y, start_line, 1U,
+                            231U, 239U, 247U);
+                        graphics_draw_text(detail_x + 175U, y, size_line, 1U,
+                            171U, 191U, 211U);
+                        graphics_draw_text(detail_x, y + 12U, type_line, 1U,
+                            171U, 191U, 211U);
+                    }
+                } else {
+                    graphics_draw_text(detail_x, content_y + 216U,
+                        mbr_has_protective_gpt()
+                            ? "PROTECTIVE MBR - GPT SCAN FAILED"
+                            : "NO VALID GPT OR MBR PARTITION TABLE",
+                        1U, 231U, 183U, 127U);
+                }
+            } else {
+                graphics_draw_text(detail_x, content_y + 82U,
+                    "SELECT A DISK TO INSPECT ITS PARTITIONS.", 1U,
+                    171U, 191U, 211U);
+            }
+            desktop_settings_draw_button(detail_x, content_y + 350U,
+                180U, 30U, "OPEN INSTALLER", false);
+            graphics_draw_text(detail_x + 190U, content_y + 358U,
+                "ERASE / FORMAT REQUIRE CONFIRMATION", 1U,
+                231U, 183U, 127U);
+            graphics_draw_text(text_x, content_y + 366U,
+                "SMART HEALTH IS UNAVAILABLE UNTIL A DEVICE HEALTH DRIVER IS IMPLEMENTED.",
+                1U, 171U, 191U, 211U);
         } else {
             desktop_settings_draw_heading(text_x, content_y,
                 "DEVICES", "Detected hardware, active driver path and capabilities.");
@@ -6494,6 +6641,24 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         }
                         break;
                     }
+                }
+            } else if (settings_page == SETTINGS_STORAGE) {
+                if (py >= content_y + 76U &&
+                    py < content_y + 216U && px >= sx && px < sx + 250U) {
+                    const size_t row =
+                        (size_t)(py - (content_y + 76U)) / 35U;
+                    if (row < blockdev_count() && row < 4U) {
+                        storage_selected_device_index = row;
+                    }
+                } else if (py >= content_y + 350U &&
+                           py < content_y + 382U &&
+                           px >= sx + 270U && px < sx + 450U) {
+                    desktop_open_view(DESKTOP_INSTALLER);
+                    installer_drive_dropdown_open = true;
+                    installer_refresh_plan();
+                    draw_shell();
+                    draw_pointer();
+                    return;
                 }
             } else if (settings_page == SETTINGS_SYSTEM) {
                 if (py >= content_y + 83U && py < content_y + 113U &&

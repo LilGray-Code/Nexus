@@ -126,6 +126,12 @@ struct acpi_power_gas {
 
 static struct nexus_acpi_power_info power_info;
 
+static bool signature_equals(const char *actual, const char *expected,
+                             size_t length);
+static const struct acpi_sdt_header *physical_table(uint64_t physical);
+static bool validate_sdt(const struct acpi_sdt_header *header,
+                         const char *expected_signature);
+
 static uint32_t read_le32(const uint8_t *bytes) {
     return (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
            ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);

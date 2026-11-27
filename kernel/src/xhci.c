@@ -2129,7 +2129,7 @@ static void xhci_poll_usb_hubs(struct xhci_controller *xhci) {
             hub->hub_power_delay_pending = false;
             serial_write("USB: hub downstream ports are powered and ready slot=");
             serial_write_hex(hub->slot_id);
-            serial_write("\\r\\n");
+            serial_write("\r\n");
         }
 
         hub->hub_scan_cursor = (uint8_t)(

@@ -2495,14 +2495,10 @@ void xhci_poll(void) {
                         struct nexus_usb_mouse_event decoded;
                         if (usb_hid_generic_decode_mouse_multi(
                                 generic_layout, report, received, &decoded)) {
-                            const uint8_t normalized[4] = {
-                                decoded.buttons,
-                                (uint8_t)(int8_t)decoded.dx,
-                                (uint8_t)(int8_t)-decoded.dy,
-                                (uint8_t)decoded.wheel
-                            };
-                            input_usb_mouse_report_sized(normalized,
-                                                         sizeof(normalized));
+                            /* Preserve full signed relative motion values.
+                             * Re-encoding as an 8-bit boot report clipped
+                             * high-resolution gaming-mouse deltas. */
+                            input_usb_mouse_event(&decoded);
                         }
                     } else if (received >= 3U) {
                         input_usb_mouse_report_sized(report, received);

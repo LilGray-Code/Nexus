@@ -1776,6 +1776,9 @@ static bool xhci_device_on_port(const struct xhci_controller *xhci,
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i)
         if (xhci->gamepads[i].active &&
             xhci->gamepads[i].port_number == port_number) return true;
+    for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i)
+        if (xhci->hubs[i].active &&
+            xhci->hubs[i].port_number == port_number) return true;
     return false;
 }
 

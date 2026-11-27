@@ -18,7 +18,8 @@ void nexus_settings_defaults(struct nexus_settings *settings) {
         .scroll_speed = 2U,
         .volume_percent = 75U,
         .left_handed_mouse = false,
-        .high_contrast = false
+        .high_contrast = false,
+        .audio_muted = false
     };
 }
 
@@ -29,7 +30,6 @@ bool nexus_settings_valid(const struct nexus_settings *settings) {
         50U, 75U, 100U, 125U, 150U, 175U, 200U
     };
     static const uint8_t scroll_speeds[] = {1U, 2U, 3U, 4U, 5U};
-    static const uint8_t volumes[] = {0U, 25U, 50U, 75U, 100U};
     if (settings == NULL ||
         settings->theme > NEXUS_SETTINGS_THEME_LIGHT ||
         settings->accent >= NEXUS_SETTINGS_ACCENT_COUNT ||
@@ -42,8 +42,7 @@ bool nexus_settings_valid(const struct nexus_settings *settings) {
                       sizeof(mouse_speeds) / sizeof(mouse_speeds[0])) ||
         !value_in_set(settings->scroll_speed, scroll_speeds,
                       sizeof(scroll_speeds) / sizeof(scroll_speeds[0])) ||
-        !value_in_set(settings->volume_percent, volumes,
-                      sizeof(volumes) / sizeof(volumes[0])))
+        settings->volume_percent > 100U)
         return false;
     return true;
 }
@@ -65,7 +64,7 @@ bool nexus_settings_encode(const struct nexus_settings *settings,
     output[11] = settings->volume_percent;
     output[12] = settings->left_handed_mouse ? 1U : 0U;
     output[13] = settings->high_contrast ? 1U : 0U;
-    output[14] = 0U;
+    output[14] = settings->audio_muted ? 1U : 0U;
     uint8_t checksum = 0xA7U;
     for (size_t i = 0U; i < NEXUS_SETTINGS_RECORD_BYTES - 1U; ++i)
         checksum ^= output[i];
@@ -79,7 +78,7 @@ bool nexus_settings_decode(const uint8_t *input, size_t length,
         length != NEXUS_SETTINGS_RECORD_BYTES ||
         input[0] != 'N' || input[1] != 'X' ||
         input[2] != 'S' || input[3] != '2' ||
-        input[12] > 1U || input[13] > 1U || input[14] != 0U)
+        input[12] > 1U || input[13] > 1U || input[14] > 1U)
         return false;
     uint8_t checksum = 0xA7U;
     for (size_t i = 0U; i < NEXUS_SETTINGS_RECORD_BYTES - 1U; ++i)
@@ -96,7 +95,8 @@ bool nexus_settings_decode(const uint8_t *input, size_t length,
         .scroll_speed = input[10],
         .volume_percent = input[11],
         .left_handed_mouse = input[12] != 0U,
-        .high_contrast = input[13] != 0U
+        .high_contrast = input[13] != 0U,
+        .audio_muted = input[14] != 0U
     };
     if (!nexus_settings_valid(&decoded)) return false;
     *settings = decoded;

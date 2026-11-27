@@ -107,7 +107,8 @@ bool nexus_browser_search_build_bing_path(
     const char *query, size_t query_length,
     char *path, size_t path_capacity, size_t *path_length) {
     static const char prefix[] = "/search?q=";
-    static const char suffix[] = "&count=8&setlang=en&cc=us";
+    /* The lightweight RSS endpoint avoids script-dependent result markup. */
+    static const char suffix[] = "&format=rss&setlang=en&cc=us";
     if (path == NULL || path_length == NULL || path_capacity == 0U)
         return false;
     const size_t prefix_length = sizeof(prefix) - 1U;
@@ -627,6 +628,110 @@ bool nexus_browser_search_parse(
                    results[i].url[a] != '\0' &&
                    candidate.url[a] == results[i].url[a]) ++a;
             if (candidate.url[a] == '\0' && results[i].url[a] == '\0') {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate) results[(*result_count)++] = candidate;
+    }
+    return *result_count != 0U;
+}
+
+static bool extract_rss_field(
+    const uint8_t *xml, size_t start, size_t limit, const char *tag,
+    char *output, size_t output_capacity) {
+    if (xml == NULL || tag == NULL || output == NULL ||
+        output_capacity == 0U || start > limit) return false;
+
+    char opening[20];
+    char closing[20];
+    size_t tag_length = 0U;
+    while (tag[tag_length] != '\0' && tag_length < 12U) ++tag_length;
+    if (tag_length == 0U || tag[tag_length] != '\0' ||
+        tag_length + 2U >= sizeof(opening) ||
+        tag_length + 3U >= sizeof(closing)) return false;
+
+    size_t used = 0U;
+    opening[used++] = '<';
+    for (size_t i = 0U; i < tag_length; ++i)
+        opening[used++] = tag[i];
+    opening[used] = '\0';
+
+    used = 0U;
+    closing[used++] = '<';
+    closing[used++] = '/';
+    for (size_t i = 0U; i < tag_length; ++i)
+        closing[used++] = tag[i];
+    closing[used] = '\0';
+
+    const size_t element = find_ci(xml, limit, start, opening);
+    if (element == SIZE_MAX) return false;
+    const size_t after_name = element + tag_length + 1U;
+    if (after_name >= limit ||
+        (!html_space(xml[after_name]) && xml[after_name] != '>' &&
+         xml[after_name] != '/')) return false;
+
+    size_t opening_end = 0U;
+    if (!find_tag_end(xml, limit, after_name, &opening_end)) return false;
+    const size_t close = find_ci(xml, limit, opening_end + 1U, closing);
+    if (close == SIZE_MAX) return false;
+
+    extract_text(xml + opening_end + 1U, close - opening_end - 1U,
+                 output, output_capacity);
+    return output[0] != '\0';
+}
+
+bool nexus_browser_search_parse_bing_rss(
+    const uint8_t *xml, size_t xml_length,
+    struct nexus_browser_search_result *results,
+    size_t result_capacity, size_t *result_count) {
+    if (xml == NULL || xml_length == 0U || results == NULL ||
+        result_capacity == 0U || result_count == NULL) return false;
+    *result_count = 0U;
+    if (result_capacity > NEXUS_BROWSER_SEARCH_MAX_RESULTS)
+        result_capacity = NEXUS_BROWSER_SEARCH_MAX_RESULTS;
+
+    size_t cursor = 0U;
+    while (cursor < xml_length && *result_count < result_capacity) {
+        const size_t item = find_ci(xml, xml_length, cursor, "<item");
+        if (item == SIZE_MAX || item + 5U >= xml_length) break;
+        const uint8_t after_name = xml[item + 5U];
+        if (!html_space(after_name) && after_name != '>' && after_name != '/') {
+            cursor = item + 5U;
+            continue;
+        }
+        size_t item_tag_end = 0U;
+        if (!find_tag_end(xml, xml_length, item + 5U, &item_tag_end)) break;
+        const size_t item_end = find_ci(
+            xml, xml_length, item_tag_end + 1U, "</item");
+        if (item_end == SIZE_MAX) break;
+        cursor = item_end + 6U;
+
+        struct nexus_browser_search_result candidate = {0};
+        char link[NEXUS_BROWSER_SEARCH_URL_MAX];
+        if (!extract_rss_field(xml, item_tag_end + 1U, item_end,
+                               "title", candidate.title,
+                               sizeof(candidate.title)) ||
+            !extract_rss_field(xml, item_tag_end + 1U, item_end,
+                               "link", link, sizeof(link))) continue;
+        size_t link_length = 0U;
+        while (link_length < sizeof(link) && link[link_length] != '\0')
+            ++link_length;
+        if (link_length == sizeof(link) ||
+            !normalize_result_url(link, link_length,
+                                  candidate.url, sizeof(candidate.url)))
+            continue;
+
+        (void)extract_rss_field(xml, item_tag_end + 1U, item_end,
+                                "description", candidate.snippet,
+                                sizeof(candidate.snippet));
+
+        bool duplicate = false;
+        for (size_t i = 0U; i < *result_count; ++i) {
+            size_t j = 0U;
+            while (candidate.url[j] != '\0' && results[i].url[j] != '\0' &&
+                   candidate.url[j] == results[i].url[j]) ++j;
+            if (candidate.url[j] == '\0' && results[i].url[j] == '\0') {
                 duplicate = true;
                 break;
             }

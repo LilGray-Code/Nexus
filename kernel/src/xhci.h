@@ -9,6 +9,7 @@
  * composite multi-interface receivers and non-boot keyboard/mouse report formats
  * still need additional USB host/HID driver support. */
 bool xhci_init(void);
+bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);
 bool xhci_mouse_ready(void);
 bool xhci_gamepads_ready(void);

@@ -45,6 +45,8 @@ bool nexus_smp_cpu_info_at(uint32_t cpu_slot, struct nexus_smp_cpu_info *info);
 bool nexus_smp_parallel_for(uint32_t item_count,
                             nexus_smp_task_fn task,
                             void *context);
+/* Invoke a short, non-blocking callback exactly once on each online CPU. */
+bool nexus_smp_call_each_cpu(nexus_smp_task_fn task, void *context);
 /* Local-APIC vector 240 entry point; called only by the IDT dispatcher. */
 void nexus_smp_ipi_interrupt(void);
 

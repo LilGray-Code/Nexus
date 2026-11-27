@@ -87,9 +87,10 @@ The current automated integration targets include:
   release workflow injects USB keyboard press/release and USB mouse movement/
   click events through QMP in both installer and installed-desktop sessions,
   and verifies the resulting HID reports and shared input-dispatch events.
-  Host tests cover USB 2.0/SuperSpeed/SuperSpeedPlus link IDs, EP0 packet sizes,
-  xHCI extended-capability traversal, BIOS/OS ownership semaphores and legacy
-  SMI masking.
+  Host tests cover generic HID keyboard/mouse reports, report IDs, PS/2
+  status-routed polling fallback, USB 2.0/SuperSpeed/SuperSpeedPlus link IDs,
+  EP0 packet sizes, xHCI extended-capability traversal, BIOS/OS ownership
+  semaphores and legacy SMI masking.
 - **QEMU pc + SeaBIOS:** legacy BIOS boot and installed-target checks.
 - **QEMU virtual devices:** NVMe, SATA/AHCI, USB/xHCI, RTL8139, E1000,
   VirtIO network and VirtIO GPU where enabled by the workflow.

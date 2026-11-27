@@ -119,7 +119,6 @@ static enum desktop_account_form_kind desktop_account_form;
 static unsigned desktop_account_form_field;
 static char desktop_account_form_values[3][DESKTOP_ACCOUNT_FIELD_BYTES];
 static size_t desktop_account_selected_user;
-static size_t desktop_account_selected_startup;
 static size_t desktop_task_selected_process;
 static size_t desktop_task_selected_service;
 static uint64_t desktop_last_monitor_tick;

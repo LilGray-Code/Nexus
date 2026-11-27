@@ -1,0 +1,69 @@
+name: Nexus developer tools and diagnostics
+
+on:
+  push:
+    branches:
+      - nexus-original-kernel-roadmap
+    paths:
+      - "kernel/src/diagnostics.*"
+      - "kernel/src/log_buffer.*"
+      - "kernel/src/trace.*"
+      - "kernel/src/serial.*"
+      - "kernel/src/scheduler.c"
+      - "kernel/src/desktop.c"
+      - "kernel/Makefile"
+      - "kernel/tests/developer_tools_test.c"
+      - "kernel/tests/log_buffer_test.c"
+      - "kernel/tests/trace_test.c"
+      - "sdk/**"
+      - "docs/development/**"
+      - ".github/workflows/nexus-developer-tools.yml"
+  pull_request:
+    branches:
+      - nexus-original-kernel-roadmap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    name: Host-test developer diagnostics and rings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test bounded kernel log capture
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/log_buffer.c \
+            kernel/tests/log_buffer_test.c -o /tmp/nexus-log-buffer-test
+          /tmp/nexus-log-buffer-test
+
+      - name: Test bounded scheduler trace ring
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/trace.c \
+            kernel/tests/trace_test.c -o /tmp/nexus-trace-test
+          /tmp/nexus-trace-test
+
+      - name: Test read-only hardware and subsystem diagnostics
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src -Ikernel/include \
+            kernel/src/diagnostics.c kernel/tests/developer_tools_test.c \
+            -o /tmp/nexus-developer-tools-test
+          /tmp/nexus-developer-tools-test
+
+      - name: Compile kernel developer-tools integrations
+        run: |
+          flags="-std=gnu11 -Os -Wall -Wextra -Werror -ffreestanding -fno-builtin -fno-stack-protector -fno-pic -fno-pie -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-common -m64 -march=x86-64 -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -mgeneral-regs-only -mcmodel=kernel -Ikernel/include -Ikernel/src -Iinstaller"
+          for src in log_buffer trace diagnostics serial scheduler desktop main; do
+            cc $flags -c "kernel/src/$src.c" -o "/tmp/nexus-$src.o"
+          done
+
+      - name: Build and inspect the native application SDK
+        run: |
+          make -C sdk CROSS_COMPILE=
+          make -C sdk CROSS_COMPILE= inspect

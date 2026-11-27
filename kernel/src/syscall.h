@@ -35,5 +35,6 @@
 #define NEXUS_ENAMETOOLONG 36LL
 #define NEXUS_ENOSYS 38LL
 #define NEXUS_EAGAIN 11LL
+#define NEXUS_EPERM   1LL
 
 #endif

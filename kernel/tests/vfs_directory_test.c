@@ -450,6 +450,7 @@ int main(void) {
     assert(vfs_enter_directory("PROJECTS"));
     read_current_file("NOTE.TXT", payload);
     assert(vfs_remove_file("NOTE.TXT"));
+    assert(vfs_remove_file("RENAMED.TXT"));
     assert(vfs_parent_directory());
     assert(vfs_remove_directory("PROJECTS"));
     assert(vfs_parent_directory());

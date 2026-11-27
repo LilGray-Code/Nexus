@@ -195,6 +195,13 @@ int main(void) {
     assert(nxfs_format(&device, &smaller_partition));
     assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_LEGACY_FILE_BYTES);
 
+    struct nexus_gpt_partition medium_partition = partition;
+    medium_partition.last_lba =
+        67U + (uint64_t)NEXUS_NXFS_MAX_FILES * 2U *
+        ((512U * 1024U * 1024U) / TEST_BLOCK_SIZE) + 15U;
+    assert(nxfs_format(&device, &medium_partition));
+    assert(nxfs_get_max_file_bytes() == 512U * 1024U * 1024U);
+
     /* Restore the large partition and verify its maximum format tier. */
     assert(nxfs_format(&device, &partition));
     assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_MAX_FILE_BYTES);

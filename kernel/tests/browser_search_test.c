@@ -191,7 +191,6 @@ static void test_bing_rss_results_and_entities(void) {
 }
 
 int main(void) {
-int main(void) {
     test_query_encoding();
     test_bing_rss_results_and_entities();
     test_bing_results_and_tracker_urls();

@@ -33,14 +33,21 @@ void nexus_log_buffer_init(void) {
     log_unlock();
 }
 
+static void log_copy_bytes(char *destination, const char *source,
+                            size_t length) {
+    if (length == 0U) return;
+    __asm__ volatile ("cld; rep movsb"
+                      : "+D"(destination), "+S"(source), "+c"(length)
+                      :
+                      : "memory", "cc");
+}
+
 static void log_copy_into_ring(size_t destination, const char *source,
                                size_t length) {
     const size_t first = length < NEXUS_LOG_BUFFER_CAPACITY - destination
         ? length : NEXUS_LOG_BUFFER_CAPACITY - destination;
-    for (size_t i = 0U; i < first; ++i)
-        log_bytes[destination + i] = source[i];
-    for (size_t i = first; i < length; ++i)
-        log_bytes[i - first] = source[i];
+    log_copy_bytes(log_bytes + destination, source, first);
+    log_copy_bytes(log_bytes, source + first, length - first);
 }
 
 void nexus_log_buffer_append(const char *text, size_t length) {
@@ -86,10 +93,8 @@ size_t nexus_log_buffer_read_recent(char *output, size_t capacity) {
     const size_t first = count < NEXUS_LOG_BUFFER_CAPACITY - start
         ? count : NEXUS_LOG_BUFFER_CAPACITY - start;
 
-    for (size_t i = 0U; i < first; ++i)
-        output[i] = log_bytes[start + i];
-    for (size_t i = first; i < count; ++i)
-        output[i] = log_bytes[i - first];
+    log_copy_bytes(output, log_bytes + start, first);
+    log_copy_bytes(output + first, log_bytes, count - first);
     output[count] = '\0';
 
     log_unlock();

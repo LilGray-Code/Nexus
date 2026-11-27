@@ -1556,6 +1556,59 @@ static bool xhci_device_on_port(const struct xhci_controller *xhci,
     return false;
 }
 
+static void xhci_detach_hub_children(struct xhci_controller *xhci,
+                                       uint8_t parent_hub_slot,
+                                       uint8_t parent_port) {
+    if (xhci == NULL || parent_hub_slot == 0U || parent_port == 0U)
+        return;
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i) {
+        struct xhci_hid_device *device = &xhci->keyboards[i];
+        if (!device->active ||
+            device->usb_path.parent_hub_slot != parent_hub_slot ||
+            device->usb_path.parent_port != parent_port) continue;
+        const uint8_t release[8] = {0U};
+        input_usb_keyboard_report_state(&device->keyboard_state, release);
+        xhci_release_hid_device(xhci, device);
+    }
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
+        struct xhci_hid_device *device = &xhci->mice[i];
+        if (!device->active ||
+            device->usb_path.parent_hub_slot != parent_hub_slot ||
+            device->usb_path.parent_port != parent_port) continue;
+        const uint8_t release[3] = {0U};
+        input_usb_mouse_report(release);
+        xhci_release_hid_device(xhci, device);
+    }
+    for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {
+        struct xhci_hid_device *device = &xhci->gamepads[i];
+        if (!device->active ||
+            device->usb_path.parent_hub_slot != parent_hub_slot ||
+            device->usb_path.parent_port != parent_port) continue;
+        xhci_notify_gamepad_disconnected(device);
+        xhci_release_hid_device(xhci, device);
+    }
+    for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
+        struct xhci_hid_device *child_hub = &xhci->hubs[i];
+        if (!child_hub->active ||
+            child_hub->usb_path.parent_hub_slot != parent_hub_slot ||
+            child_hub->usb_path.parent_port != parent_port) continue;
+        const uint8_t child_slot = child_hub->slot_id;
+        for (uint8_t port = 1U;
+             port <= child_hub->hub_descriptor.port_count; ++port)
+            xhci_detach_hub_children(xhci, child_slot, port);
+        xhci_release_hid_device(xhci, child_hub);
+    }
+}
+
+static void xhci_detach_hub_subtree(struct xhci_controller *xhci,
+                                    struct xhci_hid_device *hub) {
+    if (xhci == NULL || hub == NULL || !hub->active ||
+        hub->kind != XHCI_HID_HUB) return;
+    const uint8_t hub_slot = hub->slot_id;
+    for (uint8_t port = 1U; port <= hub->hub_descriptor.port_count; ++port)
+        xhci_detach_hub_children(xhci, hub_slot, port);
+}
+
 static void xhci_detach_port(struct xhci_controller *xhci,
                              uint8_t port_number) {
     for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i) {
@@ -1588,6 +1641,14 @@ static void xhci_detach_port(struct xhci_controller *xhci,
             serial_write("\r\n");
             xhci_notify_gamepad_disconnected(&xhci->gamepads[i]);
             xhci_release_hid_device(xhci, &xhci->gamepads[i]);
+        }
+    }
+    for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
+        struct xhci_hid_device *hub = &xhci->hubs[i];
+        if (hub->active && hub->port_number == port_number &&
+            hub->usb_path.depth == 0U) {
+            xhci_detach_hub_subtree(xhci, hub);
+            xhci_release_hid_device(xhci, hub);
         }
     }
 }

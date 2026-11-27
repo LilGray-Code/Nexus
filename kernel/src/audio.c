@@ -301,6 +301,24 @@ bool nexus_audio_get_master_mute(void) {
     return master_muted;
 }
 
+bool nexus_audio_apply_master_gain_s16_stereo(int16_t *samples,
+                                              uint32_t frames) {
+    if (samples == NULL || frames == 0U ||
+        frames > NEXUS_AUDIO_MIX_MAX_FRAMES)
+        return false;
+    const size_t sample_count = (size_t)frames * 2U;
+    if (master_muted || master_volume_percent == 0U) {
+        for (size_t i = 0U; i < sample_count; ++i) samples[i] = 0;
+        return true;
+    }
+    for (size_t i = 0U; i < sample_count; ++i) {
+        const int32_t scaled =
+            (int32_t)samples[i] * (int32_t)master_volume_percent / 100;
+        samples[i] = (int16_t)scaled;
+    }
+    return true;
+}
+
 bool nexus_audio_stream_open(
     uint32_t application_id, enum nexus_audio_direction direction,
     uint32_t device_id, uint32_t sample_rate, uint8_t channels,

@@ -38,6 +38,7 @@
 #include "xhci.h"
 #include "vfs.h"
 #include "service_manager.h"
+#include "trace.h"
 #include "smp.h"
 
 __attribute__((used, section(".limine_requests")))
@@ -341,6 +342,8 @@ static bool register_boot_services(void) {
 void kmain(void) {
     __asm__ volatile ("cli" : : : "memory");
     serial_init();
+    nexus_trace_init();
+    nexus_trace_emit(NEXUS_TRACE_EVENT_BOOT, 0U, 0U, 0U);
     blockdev_init();
     serial_write("\r\nNEXUS OS KERNEL STARTED\r\n");
     serial_write("Architecture: x86_64\r\n");

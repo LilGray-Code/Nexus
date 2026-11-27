@@ -258,6 +258,8 @@ small Nexus ABI demonstrations, not a general-purpose app catalog or Windows/
 Linux compatibility runtime. User changes still belong on the writable Nexus
 Data volume, not in the immutable boot pack.
 
+- Kernel developer diagnostics include a bounded 4 KiB serial-log history, a 128-event boot/scheduler trace ring, and read-only Terminal commands for CPU, PCI, driver, network, storage, and system summaries. The current tools and known limitations are documented in [`docs/development/DEVELOPER-TOOLS.md`](docs/development/DEVELOPER-TOOLS.md); this is not yet a userspace PTY shell or full kernel debugger.
+
 The first-party native application SDK is in `kernel/include/nexus/app.h`,
 with freestanding samples and build targets under `sdk/`. Its additive v1
 syscall ABI exposes keyboard/mouse event polling, separate gamepad polling,

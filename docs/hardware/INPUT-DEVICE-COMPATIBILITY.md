@@ -124,3 +124,16 @@ A feature is not "supported" merely because its descriptor parses or a QEMU test
 - physical hardware evidence exists for the advertised controller/device class.
 
 Until then, retain the known-good wired/PS/2 fallback and describe the feature as experimental or not yet implemented. Never claim universal compatibility with every keyboard, mouse, motherboard, Bluetooth chipset, or proprietary receiver.
+
+
+## Implementation progress
+
+### Phase 1 — xHCI root-port discovery (first increment)
+
+- The xHCI driver now reads the controller-advertised eight-bit root-port count rather than truncating discovery to 32 ports.
+- Root-port scanning uses a 16-bit loop counter, preventing wraparound when the controller advertises 255 ports.
+- Root-port register offsets are computed through a bounds-checked helper; status-change handling uses the same helper.
+- The number of tracked HID devices remains independently bounded at 32 per input class.
+- Host-side tests cover root-port counts, valid/invalid port numbers, register offsets through port 255, connection state, speed extraction, and PORTSC change bits.
+
+**Not yet complete:** external USB hub child-port enumeration is still unsupported by the controller driver. Hub descriptor parsing, hub class requests, child-device route strings, and downstream hot-plug are required before USB hubs can be advertised as supported. Phases 2–7 have not been implemented by this increment.

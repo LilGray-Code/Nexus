@@ -52,8 +52,8 @@ The current on-disk NXFS implementation is a small, fixed-table filesystem inten
 Current structural limits matter:
 - 64 metadata entries total (files and directories).
 - Names are limited to 31 printable ASCII characters.
-- The highest current per-file limit is 256 MiB.
-- The format reserves two fixed-size data banks per metadata slot. A 256 MiB maximum tier requires at least roughly 32 GiB for file-bank space, plus metadata/journal overhead. Larger partitions do not automatically gain additional entries or arbitrarily larger files.
+- The highest current per-file limit is 3 GiB for newly formatted volumes; the supported format tiers step down through 2 GiB, 1 GiB, 512 MiB, 256 MiB and smaller legacy sizes according to partition capacity.
+- The format reserves two fixed-size data banks per metadata slot. A 3 GiB maximum tier reserves two banks for each of 64 slots and therefore needs roughly 384 GiB of file-bank space, plus metadata/journal overhead. Existing 256 MiB and earlier superblocks remain supported; the larger tiers are selected when formatting a volume with sufficient capacity. Larger partitions still do not automatically gain additional metadata entries or arbitrarily large files.
 - The journal currently serializes one metadata-record transaction at a time; it is not a full write-ahead journal for multi-file transactions or concurrent writers.
 
 The current implementation is crash-recoverable at its file-metadata commit boundary, but it should not be described as a general-purpose, high-scale filesystem until allocator/index/extent design and power-loss testing have advanced.

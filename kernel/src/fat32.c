@@ -174,6 +174,8 @@ bool fat32_mount(const struct nexus_block_device *device,
                  const struct nexus_gpt_partition *partition) {
     mounted_device = NULL;
     root_entry_count = 0;
+    root_directory_truncated = false;
+    directory_backup_truncated = false;
     reset_lfn();
     uint32_t mount_stage = 0U;
     if (device == NULL || partition == NULL ||
@@ -317,6 +319,10 @@ bool fat32_read_directory(uint32_t first_cluster) {
 
 size_t fat32_root_entry_count(void) {
     return root_entry_count;
+}
+
+bool fat32_directory_truncated(void) {
+    return root_directory_truncated;
 }
 
 const struct nexus_fat32_entry *fat32_root_entry_at(size_t index) {

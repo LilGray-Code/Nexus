@@ -1092,6 +1092,140 @@ static void xhci_drop_hid_device(struct xhci_controller *xhci,
     xhci_release_hid_device(xhci, device);
 }
 
+static bool xhci_mark_slot_as_hub(struct xhci_controller *xhci,
+                                   struct xhci_hid_device *device) {
+    if (xhci == NULL || device == NULL || device->slot_id == 0U)
+        return false;
+    volatile uint8_t *input_page = (volatile uint8_t *)memory_phys_to_virt(
+        device->input_context_physical);
+    volatile uint8_t *output_page = (volatile uint8_t *)memory_phys_to_virt(
+        device->device_context_physical);
+    if (input_page == NULL || output_page == NULL) return false;
+
+    for (size_t i = 0U; i < XHCI_PAGE_SIZE; ++i) input_page[i] = 0U;
+    volatile uint32_t *input = (volatile uint32_t *)(uintptr_t)input_page;
+    volatile uint32_t *out_slot = (volatile uint32_t *)(uintptr_t)output_page;
+    volatile uint32_t *in_slot = (volatile uint32_t *)(uintptr_t)(
+        (uintptr_t)input_page + xhci->context_size);
+
+    input[1] = 1U; /* Add Slot Context only. */
+    for (size_t i = 0U; i < xhci->context_size / sizeof(uint32_t); ++i)
+        in_slot[i] = out_slot[i];
+    in_slot[0] |= 1U << 26; /* Hub = 1. */
+    if (device->hub_descriptor.multi_tt) in_slot[0] |= 1U << 25;
+    in_slot[1] = (in_slot[1] & 0x00FFFFFFU) |
+        ((uint32_t)device->hub_descriptor.port_count << 24);
+
+    return xhci_command(xhci, device->input_context_physical,
+        XHCI_TRB_TYPE(XHCI_TRB_EVALUATE_CTX) |
+        ((uint32_t)device->slot_id << 24), NULL);
+}
+
+static bool xhci_hub_control(struct xhci_controller *xhci,
+                             struct xhci_hid_device *hub,
+                             const struct nexus_usb_setup_packet *setup,
+                             void *buffer) {
+    if (xhci == NULL || hub == NULL || setup == NULL) return false;
+    return xhci_control_transfer(xhci, hub,
+        setup->request_type, setup->request,
+        setup->value, setup->index, buffer, setup->length);
+}
+
+static bool xhci_hub_set_feature(struct xhci_controller *xhci,
+                                 struct xhci_hid_device *hub,
+                                 uint8_t port, uint16_t feature) {
+    struct nexus_usb_setup_packet setup = {0};
+    return nexus_usb_hub_set_port_feature_request(port, feature, &setup) &&
+           xhci_hub_control(xhci, hub, &setup, NULL);
+}
+
+static bool xhci_hub_get_port_status(
+    struct xhci_controller *xhci, struct xhci_hid_device *hub,
+    uint8_t port, struct nexus_usb_hub_port_status *decoded) {
+    struct nexus_usb_setup_packet setup = {0};
+    if (!nexus_usb_hub_get_port_status_request(port, &setup)) return false;
+    if (!xhci_hub_control(xhci, hub, &setup,
+            (void *)(uintptr_t)hub->report_buffer)) return false;
+    const uint8_t *status = (const uint8_t *)(uintptr_t)hub->report_buffer;
+    return hub->hub_descriptor.superspeed
+        ? nexus_usb3_hub_decode_port_status(status, decoded)
+        : nexus_usb_hub_decode_port_status(status, decoded);
+}
+
+static bool xhci_hub_clear_change(struct xhci_controller *xhci,
+                                  struct xhci_hid_device *hub,
+                                  uint8_t port, uint16_t feature) {
+    struct nexus_usb_setup_packet setup = {0};
+    return nexus_usb_hub_clear_port_feature_request(port, feature, &setup) &&
+           xhci_hub_control(xhci, hub, &setup, NULL);
+}
+
+static bool xhci_initialize_hub(struct xhci_controller *xhci,
+                                struct xhci_hid_device *device,
+                                uint8_t speed, uint8_t configuration_value,
+                                bool multi_tt) {
+    if (xhci == NULL || device == NULL || configuration_value == 0U)
+        return false;
+    if (!xhci_control_transfer(xhci, device, 0x00U, 0x09U,
+                               configuration_value, 0U, NULL, 0U))
+        return false;
+
+    struct nexus_usb_setup_packet descriptor_request = {0};
+    if (!nexus_usb_hub_get_descriptor_request(speed >= 4U,
+                                               &descriptor_request))
+        return false;
+    descriptor_request.length = 2U;
+    if (!xhci_hub_control(xhci, device, &descriptor_request,
+            (void *)(uintptr_t)device->report_buffer)) return false;
+
+    const uint8_t descriptor_length = device->report_buffer[0];
+    if (descriptor_length < (speed >= 4U ? 10U : 9U) ||
+        descriptor_length > 64U) return false;
+    descriptor_request.length = descriptor_length;
+    if (!xhci_hub_control(xhci, device, &descriptor_request,
+            (void *)(uintptr_t)device->report_buffer)) return false;
+
+    const uint8_t *descriptor =
+        (const uint8_t *)(uintptr_t)device->report_buffer;
+    if (speed >= 4U) {
+        if (!nexus_usb3_hub_parse_descriptor(descriptor,
+                descriptor_length, &device->hub_descriptor)) return false;
+    } else if (!nexus_usb_hub_parse_descriptor(descriptor,
+                descriptor_length, multi_tt, &device->hub_descriptor)) {
+        return false;
+    }
+
+    if (!xhci_mark_slot_as_hub(xhci, device)) return false;
+
+    /* Power every downstream port when the hub implements port power
+     * switching. Ganged and individual switching both use PORT_POWER. */
+    if (!device->hub_descriptor.no_power_switching) {
+        for (uint8_t port = 1U;
+             port <= device->hub_descriptor.port_count; ++port) {
+            if (!xhci_hub_set_feature(xhci, device, port,
+                    NEXUS_USB_HUB_FEATURE_PORT_POWER)) return false;
+        }
+        const uint64_t loops =
+            (uint64_t)device->hub_descriptor.power_on_to_good_2ms *
+            2000000ULL;
+        for (uint64_t i = 0U; i < loops; ++i)
+            __asm__ volatile ("pause");
+    }
+
+    device->speed = speed;
+    device->kind = XHCI_HID_HUB;
+    device->active = true;
+    device->hub_scan_cursor = 0U;
+    serial_write(speed >= 4U
+        ? "USB: SuperSpeed hub initialized on xHCI root port "
+        : "USB: USB 2 hub initialized on xHCI root port ");
+    serial_write_hex(device->port_number);
+    serial_write(" ports=");
+    serial_write_hex(device->hub_descriptor.port_count);
+    serial_write("\r\n");
+    return true;
+}
+
 static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
                                     const struct nexus_usb_path *path,
                                     uint8_t speed,

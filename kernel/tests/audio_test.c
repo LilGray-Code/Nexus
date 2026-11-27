@@ -148,6 +148,7 @@ static void test_mono_stereo_mixing_volume_and_mute(void) {
 
     assert(nexus_audio_stream_set_mute(second, false));
     assert(nexus_audio_set_application_volume(20U, 100U) == 1U);
+    assert(nexus_audio_stream_write_s16(second, stereo, 2U) == 2U);
     assert(nexus_audio_mix_s16_stereo_48k(output, 2U, &had_audio));
     assert(had_audio);
     /* Master mute is applied after all streams, not by changing their gain. */
@@ -206,6 +207,9 @@ static void test_ring_capacity_and_underrun_accounting(void) {
     assert(nexus_audio_stream_get_info(0U, &info));
     assert(info.queued_frames == NEXUS_AUDIO_STREAM_RING_FRAMES -
                                  NEXUS_AUDIO_MIX_MAX_FRAMES);
+    assert(nexus_audio_mix_s16_stereo_48k(
+        output, NEXUS_AUDIO_MIX_MAX_FRAMES, &had_audio));
+    assert(had_audio);
     assert(nexus_audio_mix_s16_stereo_48k(
         output, NEXUS_AUDIO_MIX_MAX_FRAMES, &had_audio));
     assert(!had_audio);

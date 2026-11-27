@@ -2517,17 +2517,17 @@ static void draw_shell(void) {
                            1U, 111U, 207U, 231U);
 
         const uint64_t tile_y = text_y + 76U;
-        uint64_t tile_width = (panel_width - 100U) / 5U;
-        if (tile_width > 190U) tile_width = 190U;
-        static const char *const labels[5] = {
-            "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL"
+        uint64_t tile_width = (panel_width - 86U) / 6U;
+        if (tile_width > 160U) tile_width = 160U;
+        static const char *const labels[6] = {
+            "FILES", "WEB", "SETTINGS", "TERMINAL", "INSTALL", "APP CENTER"
         };
-        static const uint8_t accent[5][3] = {
+        static const uint8_t accent[6][3] = {
             {45U, 177U, 202U}, {117U, 136U, 244U},
             {82U, 198U, 155U}, {217U, 164U, 83U},
-            {239U, 177U, 119U}
+            {239U, 177U, 119U}, {117U, 136U, 244U}
         };
-        for (uint32_t i = 0U; i < 5U; ++i) {
+        for (uint32_t i = 0U; i < 6U; ++i) {
             const uint64_t tile_x = panel_x + 28U +
                                     (uint64_t)i * (tile_width + 10U);
             graphics_blend_round_rect(tile_x, tile_y, tile_width, 74U, 10U,
@@ -2554,13 +2554,16 @@ static void draw_shell(void) {
         graphics_draw_text(text_x, text_y + (panel_height < 360U ? 146U : 164U), "AT A GLANCE",
                            1U, 133U, 164U, 190U);
         const uint64_t card_gap = 10U;
-        const uint64_t card_width = (panel_width - 84U) / 3U;
+        const uint64_t card_width = (panel_width - 86U) / 4U;
         const uint64_t card_y = text_y + (panel_height < 360U ? 163U : 181U);
         const uint64_t card_h = panel_height < 360U ? 44U : 54U;
-        const char *card_labels[3] = {"FREE MEMORY", "UPTIME", "STORAGE"};
-        char free_mem[21], uptime[21];
+        const char *card_labels[4] = {
+            "FREE MEMORY", "UPTIME", "STORAGE", "PROCESSES"
+        };
+        char free_mem[21], uptime[21], process_value[64];
         format_u64(memory_free_bytes() / (1024U * 1024U), free_mem);
         format_u64(timer_ticks() / 100U, uptime);
+        format_labeled_u64("COUNT: ", process_count(), process_value);
         char memory_value[40] = "";
         size_t memory_pos = 0U;
         while (free_mem[memory_pos] != '\0' &&
@@ -2588,10 +2591,11 @@ static void draw_shell(void) {
             uptime_value[uptime_pos++] = seconds_suffix[n];
         }
         uptime_value[uptime_pos] = '\0';
-        static const uint8_t card_accent[3][3] = {
-            {45U, 177U, 202U}, {117U, 136U, 244U}, {82U, 198U, 155U}
+        static const uint8_t card_accent[4][3] = {
+            {45U, 177U, 202U}, {117U, 136U, 244U},
+            {82U, 198U, 155U}, {217U, 164U, 83U}
         };
-        for (size_t i = 0U; i < 3U; ++i) {
+        for (size_t i = 0U; i < 4U; ++i) {
             const uint64_t card_x = panel_x + 28U +
                                     (uint64_t)i * (card_width + card_gap);
             graphics_fill_rect(card_x, card_y, card_width, card_h,
@@ -2622,7 +2626,7 @@ static void draw_shell(void) {
                 desktop_theme_is_light() ? 41U : 233U,
                 desktop_theme_is_light() ? 59U : 244U,
                 desktop_theme_is_light() ? 80U : 252U);
-            } else {
+            } else if (i == 2U) {
                 const char *storage_label =
                     vfs_nxfs_mounted() && vfs_nxfs_writable()
                         ? "NXFS READY"
@@ -2632,10 +2636,16 @@ static void draw_shell(void) {
                 desktop_theme_is_light() ? 41U : 233U,
                 desktop_theme_is_light() ? 59U : 244U,
                 desktop_theme_is_light() ? 80U : 252U);
+            } else {
+                graphics_draw_text(card_x + 11U, card_y + 34U,
+                                   process_value, 1U,
+                desktop_theme_is_light() ? 41U : 233U,
+                desktop_theme_is_light() ? 59U : 244U,
+                desktop_theme_is_light() ? 80U : 252U);
             }
         }
         graphics_draw_text(text_x, panel_y + panel_height - 16U,
-                           "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL   F5 INSTALL   F7 STORE",
+                           "F1 FILES   F2 WEB   F3 SETTINGS   F4 TERMINAL   F5 INSTALL   F7 APP CENTER",
                            1U, 151U, 178U, 201U);
     } else if (active_view == DESKTOP_INSTALLER) {
         if (installer_ui_state == INSTALLER_UI_SELECT) {
@@ -8368,10 +8378,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             const uint64_t px = (screen_width - pw) / 2U;
             const uint64_t py = top + (screen_height - top - bottom - ph) / 2U;
             const uint64_t ty = py + 82U + 76U;
-            uint64_t tw = (pw - 100U) / 5U;
-            if (tw > 190U) tw = 190U;
+            uint64_t tw = (pw - 86U) / 6U;
+            if (tw > 160U) tw = 160U;
             if ((uint64_t)pointer_y >= ty && (uint64_t)pointer_y < ty + 74U) {
-                for (size_t app = 0U; app < 5U; ++app) {
+                for (size_t app = 0U; app < 6U; ++app) {
                     const uint64_t tx = px + 28U + (uint64_t)app * (tw + 10U);
                     if ((uint64_t)pointer_x >= tx &&
                         (uint64_t)pointer_x < tx + tw) {
@@ -8483,6 +8493,14 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         }
         if (key_code == 0x2FU) {
             desktop_panel_toggle(DESKTOP_PANEL_CLIPBOARD);
+            draw_shell(); draw_pointer(); return;
+        }
+        if (key_code == 0x01U) {
+            desktop_panel_toggle(DESKTOP_PANEL_TASK_MANAGER);
+            draw_shell(); draw_pointer(); return;
+        }
+        if (key_code == 0x19U) {
+            (void)desktop_capture_screenshot();
             draw_shell(); draw_pointer(); return;
         }
         if (key_code == 0x01U) {

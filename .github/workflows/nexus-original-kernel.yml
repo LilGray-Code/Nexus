@@ -1062,7 +1062,7 @@ jobs:
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
               matches = re.findall(
-                  r"NEXUS INSTALLER TARGET SELECTED: ([A-Za-z0-9_-]+)\\r?\\n",
+                  r"NEXUS INSTALLER TARGET SELECTED: ([A-Za-z0-9_-]+)\r?\n",
                   log)
               if matches:
                   stable_id = matches[-1].lower()

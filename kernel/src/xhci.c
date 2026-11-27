@@ -1191,6 +1191,10 @@ static bool xhci_has_keyboard(const struct xhci_controller *xhci) {
     if (xhci == NULL) return false;
     for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
         if (xhci->keyboards[i].active) return true;
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
+        if (xhci->mice[i].active &&
+            xhci->mice[i].secondary_active &&
+            xhci->mice[i].secondary_kind == XHCI_HID_KEYBOARD) return true;
     return false;
 }
 
@@ -1198,6 +1202,10 @@ static bool xhci_has_mouse(const struct xhci_controller *xhci) {
     if (xhci == NULL) return false;
     for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
         if (xhci->mice[i].active) return true;
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
+        if (xhci->keyboards[i].active &&
+            xhci->keyboards[i].secondary_active &&
+            xhci->keyboards[i].secondary_kind == XHCI_HID_MOUSE) return true;
     return false;
 }
 

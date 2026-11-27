@@ -37,10 +37,14 @@ bounded for the current kernel prototype.
 AHCI and NVMe are registered as real storage-driver descriptors and invoked
 through this manager. The storage stage now passes the entire retained PCI
 inventory through PnP discovery, so unsupported display, network, USB and
-other PCI functions remain visible. The E1000, RTL8139, VirtIO network,
-xHCI, AC'97 and display code paths still have direct initialization paths;
-their existence in the compatibility database must not be mistaken for
-automatic registration with this central manager.
+other PCI functions remain visible. Descriptors for E1000, RTL8139, VirtIO network, xHCI, AC'97 and VirtIO
+GPU are also registered. Their existing service-specific initialization
+routines still perform hardware setup; the manager's probe callbacks verify
+the active PCI controller identity and readiness rather than initializing the
+same DMA engine a second time. Controllers that become ready later in boot
+are retried by a post-service recovery rescan. Intel/AMD/NVIDIA GPU inventory,
+Wi-Fi candidate inventory and unintegrated USB interfaces remain inventory
+or partial-support entries, not active driver bindings.
 
 The manager's `remove` callback contract is available, but current PCI
 surprise-removal notifications and all xHCI USB hot-unplug events are not yet

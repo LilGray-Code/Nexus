@@ -318,7 +318,7 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
 
 
 def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
-    """Move the USB mouse onto the installer drive selector and activate it."""
+    """Drive the actual installer selection UI with USB mouse motion/clicks."""
     log = wait_for_predicate(
         serial_log,
         lambda value: (
@@ -340,29 +340,47 @@ def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
 
     width, height = int(geometry.group(1), 16), int(geometry.group(2), 16)
     current_x, current_y = int(pointer.group(1), 16), int(pointer.group(2), 16)
-    if width < 640 or height < 300:
+    if width < 640 or height < 420:
         raise RuntimeError(
-            f"installer framebuffer too small for mouse UI test: {width}x{height}"
+            f"installer framebuffer too small for full pointer test: {width}x{height}"
         )
 
-    # The selector is drawn at text_x..text_x+520 and text_y+48..+76.
-    # The dedicated installer uses panel origin (8, 8), text origin (40, 56).
-    target_x = min(max(300, 24), width - 24)
-    target_y = min(max(118, 24), height - 24)
-    qmp.hmp(f"mouse_move {target_x - current_x} {target_y - current_y}")
-    time.sleep(0.15)
-    qmp.hmp("mouse_button 1")
-    time.sleep(0.12)
-    qmp.hmp("mouse_button 0")
-    wait_for_predicate(
-        serial_log,
-        lambda value: (
-            "NEXUS INSTALLER MOUSE CLICK x=" in value
-            and "NEXUS INSTALLER MOUSE: DRIVE SELECTOR OPENED" in value
-        ),
-        "USB mouse click activating the installer drive selector",
-    )
-    print("USB mouse moved to and activated the installer drive selector")
+    def click_at(x: int, y: int, marker: str, description: str) -> None:
+        nonlocal current_x, current_y
+        if not (0 <= x < width and 0 <= y < height):
+            raise RuntimeError(f"{description}: target outside framebuffer ({x},{y})")
+        qmp.hmp(f"mouse_move {x - current_x} {y - current_y}")
+        time.sleep(0.15)
+        qmp.hmp("mouse_button 1")
+        time.sleep(0.12)
+        qmp.hmp("mouse_button 0")
+        wait_for_predicate(
+            serial_log,
+            lambda value: marker in value,
+            description,
+        )
+        current_x, current_y = x, y
+
+    # Full-screen installer origin is (8,8); the drive selector is drawn at
+    # (40,104) with size 520x28. Click its center to open the list.
+    click_at(300, 118,
+             "NEXUS INSTALLER MOUSE: DRIVE SELECTOR OPENED",
+             "USB mouse opening the installer drive selector")
+
+    # Select the first enumerated disposable NVMe target. The first row is
+    # centered at y=152, inside the popup opened by the first click.
+    click_at(300, 152,
+             "NEXUS INSTALLER MOUSE: DRIVE SELECTED",
+             "USB mouse selecting the installer target drive")
+
+    # Continue is only the review step. The test stops before typing the disk
+    # identity or the ERASE authorization phrase, so no target sectors are
+    # written by this interaction test.
+    click_at(378, 378,
+             "NEXUS INSTALLER MOUSE: CONFIRMATION SCREEN OPENED",
+             "USB mouse activating installer Continue")
+
+    print("USB mouse opened drive selector, selected target, and opened review")
 
 
 def main() -> None:

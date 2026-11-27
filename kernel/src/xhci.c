@@ -1898,15 +1898,24 @@ static void xhci_hub_clear_port_changes(
     if ((changes & (1U << 3)) != 0U)
         (void)xhci_hub_clear_change(xhci, hub, port,
             NEXUS_USB_HUB_FEATURE_C_PORT_OVER_CURRENT);
-    if ((changes & (1U << 4)) != 0U)
-        (void)xhci_hub_clear_change(xhci, hub, port,
-            hub->hub_descriptor.superspeed
-                ? NEXUS_USB3_HUB_FEATURE_C_PORT_BH_RESET
-                : NEXUS_USB_HUB_FEATURE_C_PORT_RESET);
-    if (hub->hub_descriptor.superspeed &&
-        (changes & (1U << 5)) != 0U)
-        (void)xhci_hub_clear_change(xhci, hub, port,
-            NEXUS_USB3_HUB_FEATURE_C_PORT_BH_RESET);
+    if (hub->hub_descriptor.superspeed) {
+        if ((changes & (1U << 5)) != 0U)
+            (void)xhci_hub_clear_change(xhci, hub, port,
+                NEXUS_USB3_HUB_FEATURE_C_PORT_BH_RESET);
+        if ((changes & (1U << 6)) != 0U)
+            (void)xhci_hub_clear_change(xhci, hub, port,
+                NEXUS_USB3_HUB_FEATURE_C_PORT_LINK_STATE);
+        if ((changes & (1U << 7)) != 0U)
+            (void)xhci_hub_clear_change(xhci, hub, port,
+                NEXUS_USB3_HUB_FEATURE_C_PORT_CONFIG_ERROR);
+    } else {
+        if ((changes & (1U << 2)) != 0U)
+            (void)xhci_hub_clear_change(xhci, hub, port,
+                NEXUS_USB_HUB_FEATURE_C_PORT_SUSPEND);
+        if ((changes & (1U << 4)) != 0U)
+            (void)xhci_hub_clear_change(xhci, hub, port,
+                NEXUS_USB_HUB_FEATURE_C_PORT_RESET);
+    }
 }
 
 static bool xhci_hub_reset_and_enumerate_child(

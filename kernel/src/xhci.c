@@ -15,6 +15,7 @@
 #include "usb_hid_generic.h"
 #include "usb_hid_interfaces.h"
 #include "usb_hub.h"
+#include "usb_hub_requests.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -28,6 +29,7 @@
 #define XHCI_MAX_KEYBOARDS      32U
 #define XHCI_MAX_MICE           32U
 #define XHCI_MAX_GAMEPADS      32U
+#define XHCI_MAX_HUBS          16U
 #define XHCI_MAX_SCRATCHPADS    512U
 #define XHCI_POLL_LIMIT         5000000U
 #define XHCI_BIOS_HANDOFF_TIMEOUT 5000000U
@@ -110,7 +112,8 @@ enum xhci_hid_kind {
     XHCI_HID_NONE = 0,
     XHCI_HID_KEYBOARD = 1,
     XHCI_HID_MOUSE = 2,
-    XHCI_HID_GAMEPAD = 3
+    XHCI_HID_GAMEPAD = 3,
+    XHCI_HID_HUB = 4
 };
 
 struct xhci_hid_device {
@@ -120,6 +123,10 @@ struct xhci_hid_device {
     uint8_t endpoint_id;
     uint8_t port_number;
     struct nexus_usb_path usb_path;
+    uint8_t speed;
+    struct nexus_usb_hub_descriptor hub_descriptor;
+    uint8_t hub_scan_cursor;
+    bool hub_port_connected[NEXUS_USB_HUB_MAX_PORTS + 1U];
     uint16_t max_packet;
     uint16_t vendor_id;
     uint16_t product_id;
@@ -168,6 +175,7 @@ struct xhci_controller {
     struct xhci_hid_device keyboards[XHCI_MAX_KEYBOARDS];
     struct xhci_hid_device mice[XHCI_MAX_MICE];
     struct xhci_hid_device gamepads[XHCI_MAX_GAMEPADS];
+    struct xhci_hid_device hubs[XHCI_MAX_HUBS];
 };
 
 static struct xhci_controller controller;

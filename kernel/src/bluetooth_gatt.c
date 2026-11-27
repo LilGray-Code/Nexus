@@ -100,7 +100,7 @@ bool nexus_bt_gatt_add_hid_characteristics(const uint8_t *pdu,
 bool nexus_bt_gatt_parse_report_reference(const uint8_t *value,
     size_t value_length, uint8_t *report_id, uint8_t *report_type) {
     if (value == NULL || report_id == NULL || report_type == NULL ||
-        value_length != 2U || value[0] == 0U ||
+        value_length != 2U ||
         (value[1] != 1U && value[1] != 2U && value[1] != 3U))
         return false;
     *report_id = value[0];

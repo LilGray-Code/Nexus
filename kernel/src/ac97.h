@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct nexus_pci_device;
+
 #define NEXUS_AC97_SAMPLE_RATE_HZ 48000U
 #define NEXUS_AC97_CHANNELS 2U
 #define NEXUS_AC97_MAX_FRAMES 1024U
@@ -33,6 +35,7 @@ bool nexus_ac97_build_bdl_entry(uint64_t buffer_physical,
 
 bool ac97_init(void);
 bool ac97_is_ready(void);
+bool ac97_owns_pci_device(const struct nexus_pci_device *device);
 /* Set codec master output volume from 0 (mute) to 100 (maximum). */
 bool ac97_set_master_volume(uint8_t percent);
 void ac97_poll(void);

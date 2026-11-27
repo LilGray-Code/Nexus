@@ -2,6 +2,7 @@
 #include "xhci_speed.h"
 #include "xhci_ownership.h"
 #include "xhci_ports.h"
+#include "usb_host_controller.h"
 
 #include "input.h"
 #include "memory.h"
@@ -1471,9 +1472,17 @@ bool xhci_init(void) {
     serial_write("USB: scanning PCI inventory for xHCI host controllers\r\n");
     for (uint32_t i = 0U; i < pci_device_count(); ++i) {
         const struct nexus_pci_device *device = pci_device_at(i);
-        if (device == NULL || device->class_code != 0x0CU ||
-            device->subclass != 0x03U ||
-            device->programming_interface != 0x30U) continue;
+        if (device == NULL) continue;
+        const enum nexus_usb_host_controller_kind host_kind =
+            nexus_usb_host_controller_classify(device->class_code,
+                device->subclass, device->programming_interface);
+        if (host_kind == NEXUS_USB_HOST_UNKNOWN) continue;
+        if (!nexus_usb_host_controller_driver_available(host_kind)) {
+            serial_write("USB: detected legacy ");
+            serial_write(nexus_usb_host_controller_name(host_kind));
+            serial_write(" host controller; controller driver is not yet available\\r\\n");
+            continue;
+        }
         ++candidates;
         serial_write("USB: xHCI controller BDF/vendor/device=");
         serial_write_hex(device->bus);

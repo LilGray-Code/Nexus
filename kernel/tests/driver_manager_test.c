@@ -217,7 +217,27 @@ int main(void) {
     assert(nexus_driver_manager_device_at(0U, &pnp));
     assert(pnp.state == NEXUS_PNP_DEVICE_ACTIVE);
     assert(strcmp(pnp.driver_name, "subsystem-specific") == 0);
-    assert(nexus_driver_manager_remove_device(&removed));
+
+    /*
+     * A different function inserted at the same BDF must not inherit the
+     * previous device's active driver binding.
+     */
+    const size_t prior_binding_count =
+        nexus_driver_manager_binding_count();
+    struct nexus_pci_device replacement = pci;
+    replacement.vendor_id = 0x4321U;
+    replacement.device_id = 0x8765U;
+    replacement.subsystem_vendor_id = 0U;
+    replacement.subsystem_device_id = 0U;
+    replacement.class_code = 0x04U;
+    replacement.subclass = 0U;
+    assert(!nexus_driver_manager_probe_pci_device(&replacement));
+    assert(nexus_driver_manager_binding_at(prior_binding_count - 1U,
+                                            &binding));
+    assert(binding.state == NEXUS_DRIVER_STATE_REMOVED);
+    assert(nexus_driver_manager_device_at(0U, &pnp));
+    assert(pnp.state == NEXUS_PNP_DEVICE_UNSUPPORTED);
+    assert(pnp.vendor_id == 0x4321U && pnp.device_id == 0x8765U);
 
     /* PCI discovery retains every function, including unsupported IDs. */
     pci_test_devices[0] = (struct nexus_pci_device){

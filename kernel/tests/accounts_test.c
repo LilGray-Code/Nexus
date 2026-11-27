@@ -1,5 +1,8 @@
 #include "accounts.h"
 #include "security.h"
+#include "nxfs.h"
+#include "random.h"
+#include "timer.h"
 
 #include <assert.h>
 #include <stdbool.h>

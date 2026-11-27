@@ -29,6 +29,13 @@ struct nexus_netdev_ops {
     bool (*link_up)(void *context);
 };
 
+struct nexus_netdev_activity {
+    uint64_t transmitted_bytes;
+    uint64_t received_bytes;
+    uint64_t transmitted_frames;
+    uint64_t received_frames;
+};
+
 struct nexus_netdev_info {
     char name[NEXUS_NETDEV_NAME_MAX];
     uint8_t mac[6];
@@ -49,5 +56,6 @@ bool netdev_link_up(void);
 bool netdev_get_info(struct nexus_netdev_info *info);
 bool netdev_send_frame(const void *frame, size_t length);
 bool netdev_receive_frame(void *buffer, size_t capacity, size_t *length);
+void netdev_get_activity(struct nexus_netdev_activity *activity);
 
 #endif

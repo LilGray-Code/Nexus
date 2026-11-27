@@ -1,6 +1,7 @@
 #include "xhci.h"
 #include "xhci_speed.h"
 #include "xhci_ownership.h"
+#include "xhci_ports.h"
 
 #include "input.h"
 #include "memory.h"
@@ -18,7 +19,7 @@
 #define XHCI_RING_ENTRIES       256U
 #define XHCI_RING_USABLE        255U
 #define XHCI_MAX_MMIO_PAGES     12U
-#define XHCI_MAX_PORTS          32U
+#define XHCI_MAX_ROOT_PORTS     NEXUS_XHCI_MAX_ROOT_PORTS
 #define XHCI_MAX_KEYBOARDS      32U
 #define XHCI_MAX_MICE           32U
 #define XHCI_MAX_GAMEPADS      32U
@@ -27,12 +28,12 @@
 #define XHCI_BIOS_HANDOFF_TIMEOUT 5000000U
 #define XHCI_COMMAND_TIMEOUT    5000000U
 #define XHCI_TRANSFER_TIMEOUT   5000000U
-_Static_assert(XHCI_MAX_KEYBOARDS == XHCI_MAX_PORTS,
-               "keyboard slots must cover every supported xHCI root port");
-_Static_assert(XHCI_MAX_MICE == XHCI_MAX_PORTS,
-               "mouse slots must cover every supported xHCI root port");
-_Static_assert(XHCI_MAX_GAMEPADS == XHCI_MAX_PORTS,
-               "gamepad slots must cover every supported xHCI root port");
+_Static_assert(XHCI_MAX_KEYBOARDS <= XHCI_MAX_ROOT_PORTS,
+               "keyboard slots cannot exceed xHCI root-port address space");
+_Static_assert(XHCI_MAX_MICE <= XHCI_MAX_ROOT_PORTS,
+               "mouse slots cannot exceed xHCI root-port address space");
+_Static_assert(XHCI_MAX_GAMEPADS <= XHCI_MAX_ROOT_PORTS,
+               "gamepad slots cannot exceed xHCI root-port address space");
 
 #define XHCI_TRB_TYPE(v)        ((uint32_t)(v) << 10)
 #define XHCI_TRB_CYCLE          (1U << 0)
@@ -645,9 +646,12 @@ static bool xhci_start_controller(struct xhci_controller *xhci,
 
 static bool xhci_port_reset(struct xhci_controller *xhci, uint8_t port_number,
                             uint8_t *speed) {
-    const uint64_t port_offset = (uint64_t)xhci->cap_length + 0x400U +
-        ((uint64_t)(port_number - 1U) * 0x10U);
+    uint64_t port_offset = 0U;
     uint32_t port_status;
+    if (xhci == NULL || speed == NULL ||
+        !nexus_xhci_port_register_offset(xhci->cap_length,
+                                         port_number, &port_offset))
+        return false;
     if (!xhci_read32(xhci, port_offset, &port_status) ||
         (port_status & XHCI_PORT_CCS) == 0U) return false;
 
@@ -1333,10 +1337,11 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
 
     if (!xhci_handoff_bios(xhci, hccparams)) return false;
 
-    xhci->max_ports = (uint8_t)((hcsparams1 >> 24) & 0xFFU);
-    if (xhci->max_ports == 0U) return false;
-    if (xhci->max_ports > XHCI_MAX_PORTS)
-        xhci->max_ports = XHCI_MAX_PORTS;
+    xhci->max_ports = nexus_xhci_root_port_count(hcsparams1);
+    if (xhci->max_ports == 0U) {
+        serial_write("xHCI: controller reports zero root ports\\r\\n");
+        return false;
+    }
     xhci->doorbell_offset = db_offset & ~0x03U;
     xhci->runtime_offset = rt_offset & ~0x1FU;
     /* HCCPARAMS1.CSZ is bit 2; bit 0 is AC64. */
@@ -1346,19 +1351,23 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
         return false;
     xhci->initialized = true;
 
-    for (uint8_t port = 1U; port <= xhci->max_ports; ++port) {
-        if (xhci_keyboard_slots_full(xhci) && xhci_mouse_slots_full(xhci) &&
-            xhci_gamepads_full(xhci)) break;
+    /*
+     * The hardware advertises an 8-bit MaxPorts value. Use a 16-bit loop
+     * counter so a controller with 255 ports cannot wrap back to port zero.
+     * Input-device slot limits are independent of port discovery.
+     */
+    for (uint16_t port = 1U; port <= xhci->max_ports; ++port) {
+        const uint8_t port_number = (uint8_t)port;
         uint8_t speed = 0U;
-        if (!xhci_port_reset(xhci, port, &speed)) continue;
+        if (!xhci_port_reset(xhci, port_number, &speed)) continue;
         serial_write("xHCI: connected root port ");
-        serial_write_hex(port);
+        serial_write_hex(port_number);
         serial_write(" speed=");
         serial_write_hex(speed);
         serial_write("\r\n");
 
         struct xhci_hid_device device = {0};
-        if (!xhci_enumerate_hid_port(xhci, port, speed, &device))
+        if (!xhci_enumerate_hid_port(xhci, port_number, speed, &device))
             continue;
         if (!xhci_attach_hid_device(xhci, &device))
             xhci_release_hid_device(xhci, &device);
@@ -1433,9 +1442,10 @@ static void xhci_handle_port_status_change(struct xhci_controller *xhci,
     const uint8_t port_number = (uint8_t)(event->parameter >> 24);
     if (port_number == 0U || port_number > xhci->max_ports) return;
 
-    const uint64_t port_offset = (uint64_t)xhci->cap_length + 0x400U +
-        ((uint64_t)(port_number - 1U) * 0x10U);
+    uint64_t port_offset = 0U;
     uint32_t port_status = 0U;
+    if (!nexus_xhci_port_register_offset(xhci->cap_length,
+                                         port_number, &port_offset)) return;
     if (!xhci_read32(xhci, port_offset, &port_status)) return;
 
     if ((port_status & XHCI_PORT_CCS) == 0U) {

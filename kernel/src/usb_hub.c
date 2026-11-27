@@ -125,3 +125,32 @@ bool nexus_usb_hub_decode_port_status(
     };
     return true;
 }
+
+bool nexus_usb3_hub_decode_port_status(
+    const uint8_t status[4], struct nexus_usb_hub_port_status *decoded) {
+    if (status == NULL || decoded == NULL) return false;
+    const uint16_t value =
+        (uint16_t)(status[0] | ((uint16_t)status[1] << 8));
+    const uint16_t change =
+        (uint16_t)(status[2] | ((uint16_t)status[3] << 8));
+    const uint8_t speed = (uint8_t)((value >> 10) & 0x07U);
+    enum nexus_usb_speed decoded_speed;
+    switch (speed) {
+        case 0U: decoded_speed = NEXUS_USB_SPEED_FULL; break;
+        case 1U: decoded_speed = NEXUS_USB_SPEED_LOW; break;
+        case 2U: decoded_speed = NEXUS_USB_SPEED_HIGH; break;
+        case 3U: decoded_speed = NEXUS_USB_SPEED_SUPER; break;
+        case 4U: decoded_speed = NEXUS_USB_SPEED_SUPER_PLUS; break;
+        default: return false;
+    }
+    *decoded = (struct nexus_usb_hub_port_status){
+        .connected = (value & (1U << 0)) != 0U,
+        .enabled = (value & (1U << 1)) != 0U,
+        .resetting = (value & (1U << 4)) != 0U,
+        .low_speed = decoded_speed == NEXUS_USB_SPEED_LOW,
+        .high_speed = decoded_speed == NEXUS_USB_SPEED_HIGH,
+        .change_bits = change,
+        .speed = decoded_speed
+    };
+    return true;
+}

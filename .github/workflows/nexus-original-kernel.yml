@@ -162,6 +162,37 @@ jobs:
             -o /tmp/nexus-ac97-format-test
           /tmp/nexus-ac97-format-test
 
+      - name: Test SuperSpeed hub class request builders
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_hub_requests.c \
+            kernel/tests/usb_hub_requests_test.c \
+            -o /tmp/nexus-usb-hub-requests-test
+          /tmp/nexus-usb-hub-requests-test
+
+      - name: Test USB Bluetooth HCI endpoint discovery
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/bluetooth_usb.c \
+            kernel/tests/bluetooth_usb_test.c \
+            -o /tmp/nexus-bluetooth-usb-test
+          /tmp/nexus-bluetooth-usb-test
+
+      - name: Test Classic HIDP and BLE HOGP report parsing
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/bluetooth_hid.c \
+            kernel/tests/bluetooth_hid_test.c \
+            -o /tmp/nexus-bluetooth-hid-test
+          /tmp/nexus-bluetooth-hid-test
+
+      - name: Test xHCI resume state-loss recovery decision
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/tests/xhci_power_test.c \
+            -o /tmp/nexus-xhci-power-test
+          /tmp/nexus-xhci-power-test
+
       - name: Test USB 2 hub descriptors, downstream ports and route strings
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

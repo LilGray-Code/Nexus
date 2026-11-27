@@ -115,6 +115,21 @@ jobs:
             -o /tmp/nexus-usb-hid-mouse-test
           /tmp/nexus-usb-hid-mouse-test
 
+      - name: Test Bluetooth HCI framing and connection events
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/bluetooth_hci.c \
+            kernel/tests/bluetooth_hci_test.c -o /tmp/nexus-bluetooth-hci-test
+          /tmp/nexus-bluetooth-hci-test
+
+      - name: Test PCI discovery for xHCI EHCI OHCI and UHCI
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/usb_host_controller.c \
+            kernel/tests/usb_host_controller_test.c \
+            -o /tmp/nexus-usb-host-controller-test
+          /tmp/nexus-usb-host-controller-test
+
       - name: Test xHCI root-port discovery bounds and PORTSC helpers
         run: |
           test -s kernel/src/xhci_ports.h

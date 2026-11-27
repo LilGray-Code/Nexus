@@ -1040,8 +1040,10 @@ jobs:
 
           def key(name):
               command({"execute": "human-monitor-command",
-                       "arguments": {"command-line": f"sendkey {name} 90"}})
-              time.sleep(0.16)
+                       # Hold PS/2 make codes for 250 ms and leave enough time
+              # for the kernel polling fallback to consume each break code.
+              "arguments": {"command-line": f"sendkey {name} 250"}})
+              time.sleep(0.5)
 
           # The installer opens the drive dropdown automatically on entry.
           # The NVMe decoy is first; move once to the SATA target, then close
@@ -1247,7 +1249,12 @@ jobs:
 
           # Reopen the selected writable file, verify it reached the editor,
           # then move to the start of its text and save the edited generation.
-          key("home")
+          # Search for the exact filename instead of assuming it is the
+          # first entry in the VFS directory listing (system files sort first).
+          key("ctrl-f")
+          for char in "persist":
+              key(char)
+          key("ret")
           key("e")
           deadline = time.time() + 10
           while time.time() < deadline:
@@ -1329,7 +1336,7 @@ jobs:
 
           command({"execute": "qmp_capabilities"})
           command({"execute": "human-monitor-command",
-                   "arguments": {"command-line": "sendkey f1 90"}})
+                   "arguments": {"command-line": "sendkey f1 250"}})
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
@@ -1399,8 +1406,10 @@ jobs:
 
           def key(name):
               command({"execute": "human-monitor-command",
-                       "arguments": {"command-line": f"sendkey {name} 90"}})
-              time.sleep(0.16)
+                       # Hold PS/2 make codes for 250 ms and leave enough time
+              # for the kernel polling fallback to consume each break code.
+              "arguments": {"command-line": f"sendkey {name} 250"}})
+              time.sleep(0.5)
 
           key("f1")
           key("n")
@@ -1470,7 +1479,7 @@ jobs:
 
           command({"execute": "qmp_capabilities"})
           command({"execute": "human-monitor-command",
-                   "arguments": {"command-line": "sendkey f1 90"}})
+                   "arguments": {"command-line": "sendkey f1 250"}})
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
@@ -1540,8 +1549,10 @@ jobs:
 
           def key(name):
               command({"execute": "human-monitor-command",
-                       "arguments": {"command-line": f"sendkey {name} 90"}})
-              time.sleep(0.16)
+                       # Hold PS/2 make codes for 250 ms and leave enough time
+              # for the kernel polling fallback to consume each break code.
+              "arguments": {"command-line": f"sendkey {name} 250"}})
+              time.sleep(0.5)
 
           key("f1")
           key("n")
@@ -1613,7 +1624,7 @@ jobs:
 
           command({"execute": "qmp_capabilities"})
           command({"execute": "human-monitor-command",
-                   "arguments": {"command-line": "sendkey f1 90"}})
+                   "arguments": {"command-line": "sendkey f1 250"}})
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()
@@ -1682,8 +1693,10 @@ jobs:
 
           def key(name):
               command({"execute": "human-monitor-command",
-                       "arguments": {"command-line": f"sendkey {name} 90"}})
-              time.sleep(0.16)
+                       # Hold PS/2 make codes for 250 ms and leave enough time
+              # for the kernel polling fallback to consume each break code.
+              "arguments": {"command-line": f"sendkey {name} 250"}})
+              time.sleep(0.5)
 
           key("f1")
           key("n")
@@ -1753,7 +1766,7 @@ jobs:
 
           command({"execute": "qmp_capabilities"})
           command({"execute": "human-monitor-command",
-                   "arguments": {"command-line": "sendkey f1 90"}})
+                   "arguments": {"command-line": "sendkey f1 250"}})
           deadline = time.time() + 15
           while time.time() < deadline:
               log = open(log_path, encoding="utf-8", errors="replace").read()

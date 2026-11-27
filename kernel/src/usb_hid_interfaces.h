@@ -31,4 +31,11 @@ bool nexus_usb_hid_collect_interfaces(
     const uint8_t *configuration, size_t length,
     struct nexus_usb_hid_interface_set *set);
 
+/* Select the opposite boot keyboard/mouse interface from a composite device,
+ * preferring boot protocol and then a generic report-protocol HID interface. */
+bool nexus_usb_hid_find_companion_interface(
+    const struct nexus_usb_hid_interface_set *set,
+    uint8_t primary_interface, uint8_t wanted_boot_protocol,
+    struct nexus_usb_hid_interface *companion);
+
 #endif

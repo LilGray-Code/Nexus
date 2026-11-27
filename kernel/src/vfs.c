@@ -524,6 +524,43 @@ bool vfs_parent_directory(void) {
     return true;
 }
 
+/* Change directories transactionally: if any component is missing or cannot
+ * be entered, return to the original path instead of leaving a partial path. */
+static bool vfs_change_directory_from_root(const char *path) {
+    if (path == NULL || path[0] != '/') return false;
+    while (directory_depth != 0U) {
+        if (!vfs_parent_directory()) return false;
+    }
+    if (path[1] == '\\0') return true;
+
+    size_t offset = 1U;
+    while (path[offset] != '\\0') {
+        char component[NEXUS_VFS_NAME_MAX];
+        size_t length = 0U;
+        while (path[offset] != '\\0' && path[offset] != '/') {
+            if (length >= sizeof(component) - 1U) return false;
+            component[length++] = path[offset++];
+        }
+        if (length == 0U) return false;
+        component[length] = '\\0';
+        if (!vfs_enter_directory(component)) return false;
+        if (path[offset] == '/') {
+            ++offset;
+            if (path[offset] == '\\0') return false;
+        }
+    }
+    return true;
+}
+
+bool vfs_change_directory(const char *absolute_path) {
+    char previous[NEXUS_VFS_PATH_MAX];
+    if (absolute_path == NULL ||
+        !vfs_current_path(previous, sizeof(previous))) return false;
+    if (vfs_change_directory_from_root(absolute_path)) return true;
+    (void)vfs_change_directory_from_root(previous);
+    return false;
+}
+
 bool vfs_mount_root_fat32_mbr(
     const struct nexus_block_device *device,
     const struct nexus_mbr_partition *partition) {

@@ -524,6 +524,20 @@ bool vfs_parent_directory(void) {
     return true;
 }
 
+bool vfs_mount_root_fat32_mbr(
+    const struct nexus_block_device *device,
+    const struct nexus_mbr_partition *partition) {
+    if (device == NULL || partition == NULL ||
+        partition->block_count == 0U ||
+        partition->first_lba >= device->block_count ||
+        partition->block_count > device->block_count - partition->first_lba)
+        return false;
+    struct nexus_gpt_partition translated = {0};
+    translated.first_lba = partition->first_lba;
+    translated.last_lba = partition->first_lba + partition->block_count - 1U;
+    return vfs_mount_root_fat32(device, &translated);
+}
+
 bool vfs_mount_root_nxfs(const struct nexus_block_device *device,
                          const struct nexus_gpt_partition *partition) {
     nxfs_root_mounted = false;

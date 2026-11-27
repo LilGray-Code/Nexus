@@ -187,7 +187,7 @@ int main(void) {
     assert(!nxfs_write_file("TOO.BIG", NULL,
                            (size_t)NEXUS_NXFS_OLD_FILE_BYTES + 1U));
 
-    /* A Data partition too small for 4 MiB slots still formats as legacy. */
+    /* A data partition too small for 4 MiB slots selects the legacy tier. */
     struct nexus_gpt_partition smaller_partition = partition;
     smaller_partition.last_lba =
         67U + (uint64_t)NEXUS_NXFS_MAX_FILES * 2U *
@@ -195,9 +195,21 @@ int main(void) {
     assert(nxfs_format(&device, &smaller_partition));
     assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_LEGACY_FILE_BYTES);
 
-    /* Restore a large test partition and verify the new 4 MiB format. */
+    struct nexus_gpt_partition medium_partition = partition;
+    medium_partition.last_lba =
+        67U + (uint64_t)NEXUS_NXFS_MAX_FILES * 2U *
+        ((512U * 1024U * 1024U) / TEST_BLOCK_SIZE) + 15U;
+    assert(nxfs_format(&device, &medium_partition));
+    assert(nxfs_get_max_file_bytes() == 512U * 1024U * 1024U);
+
+    /* Restore the large partition and verify its maximum format tier. */
     assert(nxfs_format(&device, &partition));
     assert(nxfs_get_max_file_bytes() == NEXUS_NXFS_MAX_FILE_BYTES);
+    assert(NEXUS_NXFS_MAX_FILE_BYTES == 3U * 1024U * 1024U * 1024U);
+    assert(!nxfs_write_file_begin("OVER.MAX",
+        NEXUS_NXFS_MAX_FILE_BYTES + 1U));
+    assert(nxfs_write_file_begin("MAX.SIZE", NEXUS_NXFS_MAX_FILE_BYTES));
+    nxfs_write_file_abort();
     static const uint8_t streamed_payload[] =
         "A streamed file is committed only when every byte is received.";
     assert(nxfs_write_file_begin("STREAM.BIN",

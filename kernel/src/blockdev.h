@@ -31,6 +31,17 @@ typedef bool (*nexus_blockdev_write_fn)(void *context,
                                         const void *buffer);
 typedef bool (*nexus_blockdev_flush_fn)(void *context);
 
+struct nexus_blockdev_stats {
+    uint64_t read_requests;
+    uint64_t read_blocks;
+    uint64_t read_errors;
+    uint64_t write_requests;
+    uint64_t write_blocks;
+    uint64_t write_errors;
+    uint64_t flush_requests;
+    uint64_t flush_errors;
+};
+
 struct nexus_block_device {
     char name[NEXUS_BLOCKDEV_NAME_MAX];
     /* Stable hardware identity and model are shown during destructive setup. */
@@ -56,6 +67,9 @@ bool blockdev_read(const struct nexus_block_device *device,
 bool blockdev_write(const struct nexus_block_device *device,
                     uint64_t lba, uint32_t block_count, const void *buffer);
 bool blockdev_flush(const struct nexus_block_device *device);
+/* Kernel-accounted I/O telemetry for the graphical storage monitor. */
+bool blockdev_get_stats(const struct nexus_block_device *device,
+                        struct nexus_blockdev_stats *stats);
 /* Reports hardware support only; this does not authorize or perform writes. */
 bool blockdev_install_write_supported(const struct nexus_block_device *device);
 /* Boot/storage safety state is kernel-owned. Detection remains incomplete by

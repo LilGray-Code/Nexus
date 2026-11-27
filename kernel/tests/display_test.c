@@ -274,9 +274,9 @@ int main(void) {
     assert(!nexus_display_set_primary_monitor(0U));
     assert(nexus_display_get_info()->primary_monitor_id == 1U);
     fake.fail_primary = false;
-    const size_t mode_1600 = find_mode(info, 1600U, 900U, 0U);
+    const size_t mode_1600_index = find_mode(info, 1600U, 900U, 0U);
     const size_t mode_1280 = find_mode(info, 1280U, 800U, 60U);
-    assert(nexus_display_apply_mode(mode_1600));
+    assert(nexus_display_apply_mode(mode_1600_index));
     info = nexus_display_get_info();
     assert(info->current_width == 1600U);
     assert(info->current_height == 900U);

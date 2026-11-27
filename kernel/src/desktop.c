@@ -1,6 +1,7 @@
 #include "desktop.h"
 
 #include "blockdev.h"
+#include "storage.h"
 #include "gpt.h"
 #include "fat32.h"
 #include "vfs.h"
@@ -100,6 +101,8 @@ static bool store_installed[NEXUS_STORE_MAX_APPS];
 static const char *store_status = "Choose an app, then add its official website shortcut.";
 static uint64_t screen_width;
 static uint64_t screen_height;
+static int64_t pointer_x;
+static int64_t pointer_y;
 static struct nexus_graphics_surface desktop_firmware_surface;
 static struct nexus_graphics_surface desktop_render_surface;
 static bool desktop_virtio_gpu_active;
@@ -397,8 +400,6 @@ static char terminal_scancode_char(uint8_t code);
 static void scan_files_once(void);
 static void refresh_files_listing(void);
 static void files_search_rebuild(void);
-static int64_t pointer_x;
-static int64_t pointer_y;
 static bool files_scanned;
 static bool files_scan_ok;
 static size_t files_partition_count;

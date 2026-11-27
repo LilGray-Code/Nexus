@@ -18,42 +18,42 @@ static const struct nexus_store_application applications[NEXUS_STORE_MAX_APPS] =
         "Browse the Steam catalog and community website.",
         "https://store.steampowered.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "NEEDS WIN32 / PROTON RUNTIME", NULL
+        "NEEDS WIN32 / PROTON RUNTIME", NULL, 0U
     },
     {
         "DISCORD", "Discord", "Discord", "COMMUNICATION",
         "Open the official Discord web application.",
         "https://discord.com/app",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "NEEDS FULL JS BROWSER", NULL
+        "NEEDS FULL JS BROWSER", NULL, 0U
     },
     {
         "SPOTIFY", "Spotify", "Spotify", "MUSIC",
         "Open Spotify's official web player.",
         "https://open.spotify.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "NEEDS DRM AUDIO SUPPORT", NULL
+        "NEEDS DRM AUDIO SUPPORT", NULL, 0U
     },
     {
         "GITHUB", "GitHub", "GitHub", "DEVELOPMENT",
         "Browse repositories, releases and developer documentation.",
         "https://github.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "NATIVE CLIENT NOT AVAILABLE", NULL
+        "NATIVE CLIENT NOT AVAILABLE", NULL, 0U
     },
     {
         "VSCODE", "VS Code for Web", "Microsoft", "DEVELOPMENT",
         "Open the official browser-based code editor.",
         "https://vscode.dev/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "NEEDS JS / WASM SUPPORT", NULL
+        "NEEDS JS / WASM SUPPORT", NULL, 0U
     },
     {
         "ITCH", "itch.io", "itch corp", "GAMES",
         "Discover independent games and creators.",
         "https://itch.io/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "NEEDS GAME RUNTIME", NULL
+        "NEEDS GAME RUNTIME", NULL, 0U
     },
     {
         "KINETIC", "Kinetic Demo", "Nexus Project", "NATIVE DEMO",
@@ -79,7 +79,8 @@ static const struct nexus_store_application applications[NEXUS_STORE_MAX_APPS] =
         NULL, NEXUS_STORE_DELIVERY_NATIVE_CLIENT,
         "BUNDLED NEXUS ELF - AC97 AUDIO OPTIONAL",
         "AUDIO.ELF",
-        NEXUS_CAP_CONSOLE_WRITE | NEXUS_CAP_AUDIO | NEXUS_CAP_CLOCK
+        NEXUS_CAP_CONSOLE_WRITE | NEXUS_CAP_INPUT |
+            NEXUS_CAP_AUDIO | NEXUS_CAP_CLOCK
     },
     {
         "PIE", "Native Runtime Check", "Nexus Project", "NATIVE DEMO",
@@ -103,56 +104,56 @@ static const struct nexus_store_application applications[NEXUS_STORE_MAX_APPS] =
         "Open Word, Excel, PowerPoint and Microsoft 365 online.",
         "https://www.office.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - REQUIRES MODERN JAVASCRIPT; NOT A NATIVE INSTALL", NULL
+        "WEB APP - REQUIRES MODERN JAVASCRIPT; NOT A NATIVE INSTALL", NULL, 0U
     },
     {
         "GMAIL", "Gmail", "Google", "COMMUNICATION",
         "Open Google's email web application.",
         "https://mail.google.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL
+        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL, 0U
     },
     {
         "DRIVE", "Google Drive", "Google", "PRODUCTIVITY",
         "Open cloud file storage and document sharing.",
         "https://drive.google.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - REQUIRES JAVASCRIPT AND GOOGLE SIGN-IN", NULL
+        "WEB APP - REQUIRES JAVASCRIPT AND GOOGLE SIGN-IN", NULL, 0U
     },
     {
         "YOUTUBE", "YouTube", "Google", "VIDEO",
         "Open YouTube videos and creator channels.",
         "https://www.youtube.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - VIDEO PLAYBACK SUPPORT IS LIMITED", NULL
+        "WEB APP - VIDEO PLAYBACK SUPPORT IS LIMITED", NULL, 0U
     },
     {
         "ZOOM", "Zoom", "Zoom Communications", "COMMUNICATION",
         "Open Zoom's web meeting client.",
         "https://app.zoom.us/wc/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - CAMERA, MICROPHONE AND JAVASCRIPT SUPPORT REQUIRED", NULL
+        "WEB APP - CAMERA, MICROPHONE AND JAVASCRIPT SUPPORT REQUIRED", NULL, 0U
     },
     {
         "SLACK", "Slack", "Salesforce", "COMMUNICATION",
         "Open team messaging and collaboration.",
         "https://app.slack.com/client/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL
+        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL, 0U
     },
     {
         "WHATSAPP", "WhatsApp Web", "Meta", "COMMUNICATION",
         "Open WhatsApp Web and link a supported phone.",
         "https://web.whatsapp.com/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - REQUIRES MODERN JAVASCRIPT AND DEVICE LINKING", NULL
+        "WEB APP - REQUIRES MODERN JAVASCRIPT AND DEVICE LINKING", NULL, 0U
     },
     {
         "NOTION", "Notion", "Notion Labs", "PRODUCTIVITY",
         "Open Notion notes, documents and workspace pages.",
         "https://www.notion.so/",
         NEXUS_STORE_DELIVERY_WEB_SHORTCUT,
-        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL
+        "WEB APP - REQUIRES MODERN JAVASCRIPT", NULL, 0U
     }
 };
 

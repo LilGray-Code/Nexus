@@ -43,6 +43,11 @@ bool nexus_browser_search_parse(
 /* Extracts organic results from the server-rendered Bing results document.
  * Bing click-tracking URLs are resolved locally to their base64url target.
  */
+/* Parses Bing's script-free RSS search endpoint. */
+bool nexus_browser_search_parse_bing_rss(
+    const uint8_t *xml, size_t xml_length,
+    struct nexus_browser_search_result *results,
+    size_t result_capacity, size_t *result_count);
 bool nexus_browser_search_parse_bing(
     const uint8_t *html, size_t html_length,
     struct nexus_browser_search_result *results,

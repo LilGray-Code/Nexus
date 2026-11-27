@@ -239,9 +239,24 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
         ),
         "USB mouse motion and left-button events in the desktop event dispatcher",
     )
+
+    # QMP models a wheel notch as a wheel-up button press and release.
+    qmp.input([
+        {"type": "btn", "data": {"button": "wheel-up", "down": True}},
+        {"type": "btn", "data": {"button": "wheel-up", "down": False}},
+    ])
+    wait_for_predicate(
+        serial_log,
+        lambda log: any(
+            line.startswith("INPUT: mouse ")
+            and "wheel=0x0000000000000001" in line
+            for line in log.splitlines()
+        ),
+        "USB mouse wheel-up event in the desktop event dispatcher",
+    )
     print(f"USB HID mouse selected: {selected.get('name')} (index {index})")
     print("USB keyboard A make/break reached Nexus input dispatcher")
-    print("USB mouse motion/click reached Nexus input dispatcher")
+    print("USB mouse motion/click/wheel reached Nexus input dispatcher")
 
     # Exercise USB hot-unplug/replug, not just boot-time enumeration. The
     # kernel must release device state and discover the reinserted peripherals.

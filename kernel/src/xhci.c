@@ -9,6 +9,7 @@
 #include "paging.h"
 #include "pci.h"
 #include "serial.h"
+#include "timer.h"
 #include "usb_hid.h"
 #include "usb_hid_generic.h"
 
@@ -149,6 +150,7 @@ struct xhci_controller {
     uint64_t event_ring_physical;
     uint16_t event_dequeue;
     uint8_t event_cycle;
+    uint64_t last_root_scan_tick;
     uint64_t erst_physical;
     struct xhci_mmio_mapping mappings[XHCI_MAX_MMIO_PAGES];
     size_t mapping_count;
@@ -1435,6 +1437,33 @@ static void xhci_detach_port(struct xhci_controller *xhci,
     }
 }
 
+static void xhci_rescan_root_ports_internal(struct xhci_controller *xhci) {
+    if (xhci == NULL || !xhci->initialized) return;
+    for (uint16_t port = 1U; port <= xhci->max_ports; ++port) {
+        const uint8_t port_number = (uint8_t)port;
+        uint64_t port_offset = 0U;
+        uint32_t port_status = 0U;
+        if (!nexus_xhci_port_register_offset(xhci->cap_length,
+                port_number, &port_offset) ||
+            !xhci_read32(xhci, port_offset, &port_status)) continue;
+        if (!nexus_xhci_port_connected(port_status)) {
+            xhci_detach_port(xhci, port_number);
+            continue;
+        }
+        if (xhci_device_on_port(xhci, port_number)) continue;
+
+        /* Periodic rescan is a recovery path for missed PORT_STATUS_CHANGE
+         * events and for devices whose first enumeration attempt failed. */
+        uint8_t speed = 0U;
+        if (!xhci_port_reset(xhci, port_number, &speed)) continue;
+        struct xhci_hid_device device = {0};
+        if (!xhci_enumerate_hid_port(xhci, port_number, speed, &device))
+            continue;
+        if (!xhci_attach_hid_device(xhci, &device))
+            xhci_release_hid_device(xhci, &device);
+    }
+}
+
 static void xhci_handle_port_status_change(struct xhci_controller *xhci,
                                            const struct xhci_trb *event) {
     if (xhci == NULL || event == NULL) return;
@@ -1505,6 +1534,27 @@ bool xhci_init(void) {
     return false;
 }
 
+void xhci_rescan(void) {
+    xhci_rescan_root_ports_internal(&controller);
+}
+
+bool xhci_resume(void) {
+    struct xhci_controller *xhci = &controller;
+    if (!xhci->initialized) return false;
+    uint32_t command = 0U;
+    uint32_t status = 0U;
+    if (!xhci_read32(xhci, (uint64_t)xhci->cap_length, &command) ||
+        !xhci_read32(xhci, (uint64_t)xhci->cap_length + 4U, &status))
+        return false;
+    if ((command & XHCI_USBCMD_RUN) == 0U ||
+        (status & XHCI_USBSTS_HALTED) != 0U) {
+        serial_write("xHCI: controller did not retain its running state across resume; full controller reinitialization is required\\r\\n");
+        return false;
+    }
+    xhci_rescan_root_ports_internal(xhci);
+    return true;
+}
+
 bool xhci_controller_owns_pci_device(
     const struct nexus_pci_device *device) {
     return controller.initialized && device != NULL &&
@@ -1529,6 +1579,13 @@ bool xhci_gamepads_ready(void) {
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized) return;
+
+    const uint64_t now = timer_ticks();
+    if (now >= xhci->last_root_scan_tick &&
+        now - xhci->last_root_scan_tick >= 20U) {
+        xhci->last_root_scan_tick = now;
+        xhci_rescan_root_ports_internal(xhci);
+    }
 
     struct xhci_trb event;
     while (xhci_event_next(xhci, &event)) {

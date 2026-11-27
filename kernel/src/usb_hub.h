@@ -65,4 +65,8 @@ bool nexus_usb_path_child(const struct nexus_usb_path *parent,
 bool nexus_usb_hub_decode_port_status(
     const uint8_t status[4], struct nexus_usb_hub_port_status *decoded);
 
+/* SuperSpeed PORT_STATUS/PORT_CHANGE are a 32-bit little-endian value. */
+bool nexus_usb3_hub_decode_port_status(
+    const uint8_t status[4], struct nexus_usb_hub_port_status *decoded);
+
 #endif

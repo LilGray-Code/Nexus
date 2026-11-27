@@ -44,7 +44,8 @@ inspect: all
 	readelf -lW $(APP)
 	readelf -h $(PIE_APP)
 	readelf -dW $(PIE_APP)
-	objdump -d $(APP) | head -n 80
+	objdump -d $(APP) > $(OUT)/kinetic-demo.disassembly
+	head -n 80 $(OUT)/kinetic-demo.disassembly
 
 clean:
 	rm -rf $(OUT)

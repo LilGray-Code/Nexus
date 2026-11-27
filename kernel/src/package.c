@@ -462,7 +462,13 @@ bool nexus_package_is_installed(const char *id,
                                 nexus_package_signature_verifier verifier,
                                 void *verifier_context,
                                 struct nexus_package_install_result *result) {
-    if (!valid_id(id) || verifier == NULL || !vfs_nxfs_mounted()) return false;
+    if (!valid_id(id) || verifier == NULL || !vfs_nxfs_mounted()) {
+        if (verifier == NULL) {
+            nexus_security_audit(NEXUS_SECURITY_EVENT_PACKAGE_REJECTED, 0U,
+                NEXUS_SECURITY_REASON_PACKAGE_VERIFICATION, 0U, 0U);
+        }
+        return false;
+    }
     struct nexus_package_manifest manifest;
     char executable[32] = {0}, receipt[32] = {0};
     const char prefix[] = "APPS/";
@@ -477,10 +483,22 @@ bool nexus_package_is_installed(const char *id,
 
     uint8_t header[NEXUS_PACKAGE_HEADER_MAX];
     if (!read_receipt(receipt, header, &manifest, verifier,
-                      verifier_context) ||
-        !strings_equal(manifest.id, id) ||
+                      verifier_context)) {
+        struct nexus_vfs_file unexpected;
+        if (vfs_open_root_readonly_path(receipt, &unexpected)) {
+            vfs_close(&unexpected);
+            nexus_security_audit(NEXUS_SECURITY_EVENT_PACKAGE_REJECTED, 0U,
+                NEXUS_SECURITY_REASON_PACKAGE_VERIFICATION, 0U, 0U);
+        }
+        return false;
+    }
+    if (!strings_equal(manifest.id, id) ||
         !make_paths(&manifest, executable, receipt) ||
-        !installed_payload_matches(executable, &manifest)) return false;
+        !installed_payload_matches(executable, &manifest)) {
+        nexus_security_audit(NEXUS_SECURITY_EVENT_PACKAGE_REJECTED, 0U,
+            NEXUS_SECURITY_REASON_PACKAGE_VERIFICATION, 0U, 0U);
+        return false;
+    }
 
     if (result != NULL) {
         for (size_t i = 0U; i < sizeof(result->id); ++i)
@@ -500,6 +518,10 @@ bool nexus_package_install(const void *package_bytes, size_t package_length,
     last_package_error = NEXUS_PACKAGE_ERROR_NONE;
     if (verifier == NULL || package_bytes == NULL) {
         last_package_error = NEXUS_PACKAGE_ERROR_ARGUMENT;
+        if (verifier == NULL) {
+            nexus_security_audit(NEXUS_SECURITY_EVENT_PACKAGE_REJECTED, 0U,
+                NEXUS_SECURITY_REASON_PACKAGE_VERIFICATION, 0U, 0U);
+        }
         return false;
     }
     if (!vfs_nxfs_writable()) {

@@ -125,9 +125,16 @@ def build_command(args: argparse.Namespace, qmp_socket: Path,
     else:
         command += [
             "-drive", f"file={args.disk},if=none,id=installed,format=raw",
-            "-device", "usb-storage,bus=xhci.0,drive=installed,bootindex=1",
-            "-boot", "order=c",
         ]
+        if args.disk_interface == "nvme":
+            command += [
+                "-device", "nvme,drive=installed,serial=NEXUSINPUT0001,bootindex=1",
+            ]
+        else:
+            command += [
+                "-device", "usb-storage,bus=xhci.0,drive=installed,bootindex=1",
+            ]
+        command += ["-boot", "order=c"]
     return command
 
 
@@ -231,6 +238,8 @@ def main() -> None:
     parser.add_argument("--mode", choices=("installer", "desktop"), required=True)
     parser.add_argument("--iso", type=Path)
     parser.add_argument("--disk", type=Path)
+    parser.add_argument("--disk-interface", choices=("usb-storage", "nvme"),
+                        default="usb-storage")
     parser.add_argument("--firmware-code", type=Path, required=True)
     parser.add_argument("--firmware-vars", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=90)

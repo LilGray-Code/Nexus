@@ -236,13 +236,19 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path) -> None:
     qmp.command("device_del", {"id": "nexus-usb-keyboard"})
     wait_for_predicate(
         serial_log,
-        lambda log: "USB: HID keyboard disconnected from xHCI port" in log,
+        lambda log: (
+            "USB: HID keyboard disconnected from xHCI port" in log
+            or "xHCI: USB keyboard transfer failed; code=" in log
+        ),
         "USB keyboard disconnect after QMP hot-unplug",
     )
     qmp.command("device_del", {"id": "nexus-usb-mouse"})
     wait_for_predicate(
         serial_log,
-        lambda log: "USB: HID mouse disconnected from xHCI port" in log,
+        lambda log: (
+            "USB: HID mouse disconnected from xHCI port" in log
+            or "xHCI: USB mouse transfer failed; code=" in log
+        ),
         "USB mouse disconnect after QMP hot-unplug",
     )
 

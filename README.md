@@ -160,7 +160,7 @@ framebuffer desktop; it is not a Linux, Debian, or FreeBSD distribution.
   persistent NXFS is unavailable or read-only. Host integration tests exercise
   root preferences while nested in NXFS/FAT32 directories and verify remount
   retention.
-- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support, with up to 32 direct-root-port keyboard and mouse slots, hotplug release handling, and QEMU end-to-end USB interaction tests in the installer and installed desktop. Generic USB HID gamepad polling supports up to four controllers. USB hubs, composite multi-interface receivers, non-boot HID keyboard/mouse formats, non-xHCI host controllers, and native Bluetooth pairing are not yet supported.
+- PS/2 input and xHCI USB HID boot-keyboard / boot-mouse support, with up to 32 direct-root-port keyboard and mouse slots, hotplug release handling, and QEMU end-to-end USB interaction tests in the installer and installed desktop. xHCI port-speed handling includes USB low/full/high-speed, SuperSpeed and SuperSpeedPlus link IDs. Generic USB HID gamepad polling supports up to four controllers. USB hubs, composite multi-interface receivers, non-boot HID keyboard/mouse formats, non-xHCI host controllers, and native Bluetooth pairing are not yet supported.
 - A normalized physical-memory allocator that coalesces firmware memory
   ranges, allocates ordinary, DMA-limited, and contiguous pages, tracks
   ownership/accounting, and rejects invalid or duplicate frees. Allocator

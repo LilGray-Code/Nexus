@@ -105,9 +105,11 @@ static bool hid_record_input(
         global->report_size > 32U || global->report_count == 0U ||
         global->report_count > 64U) return false;
 
-    const uint32_t field_bits = global->report_size * global->report_count;
+    const uint64_t field_bits =
+        (uint64_t)global->report_size * global->report_count;
     if (field_bits > HID_MAX_REPORT_BITS ||
-        *input_bit_offset > HID_MAX_REPORT_BITS - field_bits) return false;
+        (uint64_t)*input_bit_offset + field_bits > HID_MAX_REPORT_BITS)
+        return false;
 
     if (in_target_application && (flags & 0x01U) == 0U) {
         const bool variable = (flags & 0x02U) != 0U;
@@ -132,12 +134,16 @@ static bool hid_record_input(
                        global->report_count >= 1U &&
                        global->report_count <= 8U) {
                 uint32_t minimum = local->has_usage_range
-                    ? local->usage_minimum : 0U;
+                    ? local->usage_minimum : (HID_USAGE_PAGE_KEYBOARD << 16);
                 uint32_t maximum = local->has_usage_range
-                    ? local->usage_maximum : 0x65U;
-                if ((minimum & 0xFFFF0000U) != 0U ||
-                    (maximum & 0xFFFF0000U) != 0U ||
-                    minimum > 0xFFU || maximum > 0xFFU ||
+                    ? local->usage_maximum
+                    : ((HID_USAGE_PAGE_KEYBOARD << 16) | 0x65U);
+                if ((minimum >> 16) != HID_USAGE_PAGE_KEYBOARD ||
+                    (maximum >> 16) != HID_USAGE_PAGE_KEYBOARD)
+                    return false;
+                minimum &= 0xFFFFU;
+                maximum &= 0xFFFFU;
+                if (minimum > 0xFFU || maximum > 0xFFU ||
                     minimum > maximum) return false;
                 layout->key_array_bit_offset = (uint16_t)*input_bit_offset;
                 layout->key_array_size = 8U;
@@ -296,9 +302,6 @@ bool usb_hid_generic_parse_descriptor(
                             ? NEXUS_USB_HID_GENERIC_KEYBOARD
                             : NEXUS_USB_HID_GENERIC_MOUSE;
                         in_target_application = true;
-                        if (!hid_layout_set_report_id(layout,
-                                &report_id_initialized, global.report_id))
-                            return false;
                     }
                 }
                 if (collection_depth == UINT8_MAX) return false;
@@ -318,12 +321,12 @@ bool usb_hid_generic_parse_descriptor(
                             &input_bit_offset, true)) return false;
                 } else if (collection_depth != 0U) {
                     /* Unrelated collection data still advances the report. */
-                    const uint32_t bits =
-                        global.report_size * global.report_count;
+                    const uint64_t bits =
+                        (uint64_t)global.report_size * global.report_count;
                     if (bits > HID_MAX_REPORT_BITS ||
-                        input_bit_offset > HID_MAX_REPORT_BITS - bits)
-                        return false;
-                    input_bit_offset += bits;
+                        (uint64_t)input_bit_offset + bits >
+                            HID_MAX_REPORT_BITS) return false;
+                    input_bit_offset += (uint32_t)bits;
                 }
                 hid_local_reset(&local);
             } else if (item_tag == 9U || item_tag == 11U) {

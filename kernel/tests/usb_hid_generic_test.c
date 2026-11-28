@@ -210,6 +210,53 @@ static void test_generic_mouse_high_resolution_horizontal_scroll(void) {
     assert(event.horizontal_wheel == -512);
 }
 
+
+static const uint8_t generic_mouse_32bit_axes_descriptor[] = {
+    0x05,0x01, 0x09,0x02, 0xA1,0x01,
+    0x09,0x01, 0xA1,0x00,
+    0x05,0x09, 0x19,0x01, 0x29,0x01,
+    0x15,0x00, 0x25,0x01, 0x95,0x01, 0x75,0x01, 0x81,0x02,
+    0x95,0x07, 0x75,0x01, 0x81,0x01,
+    0x05,0x01, 0x09,0x30, 0x09,0x31,
+    0x17,0x00,0x00,0x00,0x80,
+    0x27,0xFF,0xFF,0xFF,0x7F,
+    0x75,0x20, 0x95,0x02, 0x81,0x06,
+    0x09,0x38, 0x75,0x20, 0x95,0x01, 0x81,0x06,
+    0xC0,0xC0
+};
+
+static void test_generic_mouse_32bit_axes_and_wheel_saturate_safely(void) {
+    struct nexus_usb_hid_generic_layout layout = {0};
+    assert(usb_hid_generic_parse_descriptor(
+        generic_mouse_32bit_axes_descriptor,
+        sizeof(generic_mouse_32bit_axes_descriptor), &layout));
+    assert(layout.x_size == 32U && layout.y_size == 32U);
+    assert(layout.wheel_size == 32U);
+
+    /* X=+100000, Y=-100000, wheel=+100000. */
+    const uint8_t report[13] = {
+        0x01U,
+        0xA0U,0x86U,0x01U,0x00U,
+        0x60U,0x79U,0xFEU,0xFFU,
+        0xA0U,0x86U,0x01U,0x00U
+    };
+    struct nexus_usb_mouse_event event = {0};
+    assert(usb_hid_generic_decode_mouse(&layout,
+        report, sizeof(report), &event));
+    assert(event.buttons == 1U);
+    assert(event.dx == INT16_MAX);
+    assert(event.dy == INT16_MAX);
+    assert(event.wheel == INT16_MAX);
+
+    /* Negating the most-negative signed 32-bit Y value must remain defined. */
+    const uint8_t negative_y_extreme[13] = {
+        0U, 0U,0U,0U,0U, 0U,0U,0U,0x80U, 0U,0U,0U,0U
+    };
+    assert(usb_hid_generic_decode_mouse(&layout,
+        negative_y_extreme, sizeof(negative_y_extreme), &event));
+    assert(event.dy == INT16_MAX);
+}
+
 static void test_descriptor_rejection_and_bounds(void) {
     struct nexus_usb_hid_generic_layout layout = {0};
     assert(!usb_hid_generic_parse_descriptor(NULL, 0U, &layout));
@@ -236,6 +283,7 @@ int main(void) {
     test_high_resolution_mouse_motion_is_not_clipped();
     test_generic_mouse_32_buttons();
     test_generic_mouse_high_resolution_horizontal_scroll();
+    test_generic_mouse_32bit_axes_and_wheel_saturate_safely();
     test_descriptor_rejection_and_bounds();
     puts("NEXUS GENERIC USB HID KEYBOARD AND MOUSE TESTS PASSED");
     return 0;

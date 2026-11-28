@@ -220,11 +220,12 @@ jobs:
             -o /tmp/nexus-bluetooth-gatt-test
           /tmp/nexus-bluetooth-gatt-test
 
-      - name: Test BLE HOGP ATT discovery, Report Map paging and notification setup
+      - name: Test BLE HOGP discovery and keyboard/mouse input report decoding
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/bluetooth_gatt.c kernel/src/bluetooth_hogp.c \
-            kernel/tests/bluetooth_hogp_test.c \
+            -Ikernel/src kernel/src/bluetooth_gatt.c kernel/src/bluetooth_hid.c \
+            kernel/src/bluetooth_hogp.c kernel/src/usb_hid.c \
+            kernel/src/usb_hid_generic.c kernel/tests/bluetooth_hogp_test.c \
             -o /tmp/nexus-bluetooth-hogp-test
           /tmp/nexus-bluetooth-hogp-test
 

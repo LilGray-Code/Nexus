@@ -4,6 +4,8 @@
 #include "xhci_events.h"
 #include "bluetooth_hci.h"
 #include "bluetooth_usb.h"
+#include "bluetooth_hid.h"
+#include "bluetooth_hogp.h"
 #include "xhci_ownership.h"
 #include "xhci_ports.h"
 #include "xhci_power.h"
@@ -188,8 +190,12 @@ struct xhci_hid_device {
 
 struct xhci_bluetooth_link {
     bool active;
+    bool indication_confirmation_pending;
+    uint32_t mouse_buttons;
     struct nexus_bt_hci_connection link;
     struct nexus_bt_acl_reassembler reassembler;
+    struct nexus_bt_hogp_client hogp;
+    struct nexus_usb_keyboard_state keyboard_state;
 };
 
 struct xhci_bluetooth_pdu {
@@ -1321,6 +1327,13 @@ static bool xhci_bluetooth_add_link(
     *link = (struct xhci_bluetooth_link){0};
     link->active = true;
     link->link = *connection;
+    if (connection->low_energy &&
+        !nexus_bt_hogp_client_start(&link->hogp, 247U)) {
+        *link = (struct xhci_bluetooth_link){0};
+        return false;
+    }
+    if (connection->low_energy)
+        serial_write("USB Bluetooth: starting HOGP ATT discovery on LE link\r\n");
     return true;
 }
 
@@ -1328,7 +1341,16 @@ static void xhci_bluetooth_remove_link(
     struct xhci_bluetooth_device *bluetooth, uint16_t handle) {
     struct xhci_bluetooth_link *link =
         xhci_bluetooth_find_link(bluetooth, handle);
-    if (link != NULL) *link = (struct xhci_bluetooth_link){0};
+    if (link == NULL) return;
+    if (link->keyboard_state.have_previous_report) {
+        const uint8_t released[8] = {0U};
+        input_usb_keyboard_report_state(&link->keyboard_state, released);
+    }
+    if (link->mouse_buttons != 0U) {
+        const struct nexus_usb_mouse_event released = {0};
+        input_usb_mouse_event(&released);
+    }
+    *link = (struct xhci_bluetooth_link){0};
 }
 
 static void xhci_bluetooth_count_drop(
@@ -1337,28 +1359,133 @@ static void xhci_bluetooth_count_drop(
         ++bluetooth->dropped_packets;
 }
 
+static bool xhci_bluetooth_send_att(
+    uint16_t connection_handle, const uint8_t *att, size_t att_length) {
+    if (att == NULL || att_length == 0U ||
+        att_length > NEXUS_BT_ACL_MAX_L2CAP_PDU - 4U) return false;
+    uint8_t packet[NEXUS_BT_ACL_MAX_L2CAP_PDU] = {0U};
+    packet[0] = (uint8_t)att_length;
+    packet[1] = (uint8_t)(att_length >> 8);
+    packet[2] = (uint8_t)NEXUS_BT_L2CAP_CID_ATT;
+    packet[3] = (uint8_t)(NEXUS_BT_L2CAP_CID_ATT >> 8);
+    for (size_t i = 0U; i < att_length; ++i)
+        packet[4U + i] = att[i];
+    return xhci_bluetooth_send_l2cap(
+        connection_handle, packet, att_length + 4U);
+}
+
+static void xhci_bluetooth_process_l2cap(
+    struct xhci_bluetooth_device *bluetooth,
+    struct xhci_bluetooth_link *link,
+    const uint8_t *pdu, size_t pdu_length) {
+    if (bluetooth == NULL || link == NULL || pdu == NULL ||
+        !link->link.low_energy) return;
+    struct nexus_bt_l2cap_view l2cap = {0};
+    if (!nexus_bt_l2cap_parse(pdu, pdu_length, &l2cap) ||
+        l2cap.channel_id != NEXUS_BT_L2CAP_CID_ATT ||
+        l2cap.payload_length == 0U) return;
+
+    const uint8_t opcode = l2cap.payload[0];
+    if (opcode == NEXUS_BT_ATT_HANDLE_VALUE_NOTIFICATION ||
+        opcode == NEXUS_BT_ATT_HANDLE_VALUE_INDICATION) {
+        struct nexus_bt_hogp_input_report decoded = {0};
+        if (nexus_bt_hogp_client_decode_notification(
+                &link->hogp, &l2cap, &decoded)) {
+            if (decoded.kind == NEXUS_BT_HOGP_INPUT_KEYBOARD) {
+                input_usb_keyboard_report_state(
+                    &link->keyboard_state, decoded.keyboard_report);
+            } else if (decoded.kind == NEXUS_BT_HOGP_INPUT_MOUSE) {
+                input_usb_mouse_event(&decoded.mouse_event);
+                link->mouse_buttons = decoded.mouse_event.buttons;
+            }
+        }
+        /* ATT indications require confirmation even when the value handle is
+         * not an HID input report understood by this client. */
+        if (opcode == NEXUS_BT_ATT_HANDLE_VALUE_INDICATION)
+            link->indication_confirmation_pending = true;
+        return;
+    }
+
+    if (link->hogp.awaiting_response) {
+        if (!nexus_bt_hogp_client_handle_response(
+                &link->hogp, l2cap.payload, l2cap.payload_length)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return;
+        }
+        if (nexus_bt_hogp_client_is_ready(&link->hogp))
+            serial_write("USB Bluetooth: HOGP input reports subscribed\r\n");
+    }
+}
+
+static void xhci_bluetooth_progress_hogp(
+    struct xhci_bluetooth_device *bluetooth) {
+    if (bluetooth == NULL || !bluetooth->active ||
+        bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY ||
+        bluetooth->bulk_out_active) return;
+    for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+        struct xhci_bluetooth_link *link = &bluetooth->connections[i];
+        if (!link->active || !link->link.low_energy) continue;
+        if (link->indication_confirmation_pending) {
+            const uint8_t confirmation = 0x1EU;
+            if (xhci_bluetooth_send_att(
+                    link->link.handle, &confirmation, 1U))
+                link->indication_confirmation_pending = false;
+            return;
+        }
+        if (link->hogp.awaiting_response ||
+            link->hogp.state == NEXUS_BT_HOGP_READY ||
+            link->hogp.state == NEXUS_BT_HOGP_FAILED ||
+            link->hogp.state == NEXUS_BT_HOGP_IDLE) continue;
+
+        const enum nexus_bt_hogp_state pending_state = link->hogp.state;
+        uint8_t att[ NEXUS_BT_HOGP_MAX_MTU ];
+        size_t att_length = 0U;
+        if (!nexus_bt_hogp_client_next_request(
+                &link->hogp, att, sizeof(att), &att_length)) {
+            if (link->hogp.state == NEXUS_BT_HOGP_FAILED)
+                xhci_bluetooth_count_drop(bluetooth);
+            continue;
+        }
+        if (!xhci_bluetooth_send_att(
+                link->link.handle, att, att_length)) {
+            /* The adapter's single bulk-OUT ring may still be in flight.
+             * Restore the pending state and retry after its completion. */
+            link->hogp.state = pending_state;
+            link->hogp.awaiting_response = false;
+            link->hogp.request_opcode = 0U;
+        }
+        return;
+    }
+}
+
 static void xhci_bluetooth_queue_l2cap(
     struct xhci_bluetooth_device *bluetooth,
     struct xhci_bluetooth_link *link) {
     if (bluetooth == NULL || link == NULL) return;
-    const uint8_t next = (uint8_t)(
-        (bluetooth->queue_tail + 1U) % XHCI_BT_PDU_QUEUE_DEPTH);
-    if (next == bluetooth->queue_head) {
-        xhci_bluetooth_count_drop(bluetooth);
-        nexus_bt_acl_reassembler_reset(&link->reassembler);
-        return;
-    }
-    struct xhci_bluetooth_pdu *item =
-        &bluetooth->receive_queue[bluetooth->queue_tail];
+    uint8_t complete[NEXUS_BT_ACL_MAX_L2CAP_PDU];
     size_t length = 0U;
     if (!nexus_bt_acl_reassembler_read(&link->reassembler,
-            item->bytes, sizeof(item->bytes), &length) ||
+            complete, sizeof(complete), &length) ||
         length > UINT16_MAX) {
         xhci_bluetooth_count_drop(bluetooth);
         return;
     }
+
+    /* Consume the ATT traffic internally for HOGP while also preserving the
+     * raw complete L2CAP PDU for other Bluetooth upper-layer consumers. */
+    xhci_bluetooth_process_l2cap(bluetooth, link, complete, length);
+
+    const uint8_t next = (uint8_t)(
+        (bluetooth->queue_tail + 1U) % XHCI_BT_PDU_QUEUE_DEPTH);
+    if (next == bluetooth->queue_head) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    struct xhci_bluetooth_pdu *item =
+        &bluetooth->receive_queue[bluetooth->queue_tail];
     item->connection_handle = link->link.handle;
     item->length = (uint16_t)length;
+    for (size_t i = 0U; i < length; ++i) item->bytes[i] = complete[i];
     bluetooth->queue_tail = next;
 }
 
@@ -4010,6 +4137,7 @@ void xhci_poll(void) {
             (void)xhci_bluetooth_send_pending_command(xhci, bluetooth);
         } else if (bluetooth->hci_host.state == NEXUS_BT_HCI_HOST_READY) {
             xhci_bluetooth_discovery_progress(xhci, bluetooth);
+            xhci_bluetooth_progress_hogp(bluetooth);
         }
     }
     xhci_poll_usb_hubs(xhci);

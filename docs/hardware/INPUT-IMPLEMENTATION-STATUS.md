@@ -217,3 +217,13 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - The state machine matches each response to the outstanding ATT opcode, handles the expected Attribute Not Found pagination terminators and Invalid Offset end-of-blob response, clamps the negotiated MTU, and bounds the Report Map to 512 bytes and report characteristics to the existing eight-entry service limit.
 - Added host tests for the complete discovery/CCCD subscription sequence, Report Map blob paging, response ordering and malformed/unmatched ATT replies.
 - This is still a protocol client primitive. The xHCI runtime has not yet started it on connected LE links or mapped resulting HOGP report notifications into the desktop input queue.
+
+
+### HOGP-to-desktop input integration — November 28, 2026
+
+- Each successful LE connection now starts its own HOGP ATT client. xHCI serializes MTU exchange, HID service/characteristic discovery, Report Map reads, per-report descriptor lookup, Report Reference reads and CCCD subscription over that connection's ATT fixed L2CAP channel.
+- ATT Handle Value Notifications and Indications are matched to enabled input Report characteristics. Indications queue the required ATT Handle Value Confirmation.
+- The HOGP client parses the downloaded HID Report Map with the existing generic HID descriptor parser and decodes report-ID-associated input payloads. Supported keyboard reports are passed through per-connection keyboard state; mouse reports preserve decoded buttons, motion and wheel values.
+- Decoded Bluetooth keyboard/mouse activity is sent to the same input_usb_keyboard_report_state and input_usb_mouse_event producers used by wired HID, so it reaches the shared desktop input queue. On link disconnect, held keyboard keys and mouse buttons are released.
+- Host tests now verify the ATT subscription sequence and sample keyboard/mouse notification decoding against Report Maps. These are protocol/parser tests; no physical LE keyboard/mouse pairing or over-the-air test has been performed.
+- Known limitations remain: SMP security/pairing/bond persistence is not implemented, and the current generic parser accepts only one HID class (keyboard or mouse) per Report Map with a bounded maximum of eight report IDs. Vendor-specific/consumer-control usages and unsupported report maps are not exposed as working devices.

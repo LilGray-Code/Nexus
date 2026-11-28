@@ -149,10 +149,88 @@ static void test_invalid_and_unmatched_att_responses_fail_closed(void) {
     assert(client.state == NEXUS_BT_HOGP_FAILED);
 }
 
+static void test_keyboard_notification_decoding(void) {
+    static const uint8_t descriptor[] = {
+        0x05U,0x01U,0x09U,0x06U,0xA1U,0x01U,
+        0x85U,0x01U,
+        0x05U,0x07U,0x19U,0xE0U,0x29U,0xE7U,
+        0x15U,0x00U,0x25U,0x01U,0x75U,0x01U,0x95U,0x08U,0x81U,0x02U,
+        0x75U,0x08U,0x95U,0x01U,0x81U,0x01U,
+        0x19U,0x00U,0x29U,0x65U,0x15U,0x00U,0x25U,0x65U,
+        0x75U,0x08U,0x95U,0x06U,0x81U,0x00U,0xC0U
+    };
+    struct nexus_bt_hogp_client client = {
+        .state = NEXUS_BT_HOGP_READY,
+        .report_map_complete = true,
+        .report_map_length = sizeof(descriptor),
+        .service = {.report_count = 1U}
+    };
+    memcpy(client.report_map,descriptor,sizeof(descriptor));
+    client.service.reports[0] = (struct nexus_bt_gatt_hid_report_characteristic){
+        .value_handle = 0x20U,
+        .cccd_handle = 0x21U,
+        .report_id = 1U,
+        .report_type = 1U
+    };
+    const uint8_t att[] = {0x1BU,0x20U,0x00U,0x02U,0U,0x04U,0U,0U,0U,0U,0U};
+    const struct nexus_bt_l2cap_view l2cap = {
+        .channel_id = NEXUS_BT_L2CAP_CID_ATT,
+        .payload = att,
+        .payload_length = sizeof(att)
+    };
+    struct nexus_bt_hogp_input_report input = {0};
+    assert(nexus_bt_hogp_client_decode_notification(
+        &client,&l2cap,&input));
+    assert(input.kind == NEXUS_BT_HOGP_INPUT_KEYBOARD);
+    assert(input.keyboard_report[0] == 0x02U);
+    assert(input.keyboard_report[2] == 0x04U);
+}
+
+static void test_mouse_notification_decoding(void) {
+    static const uint8_t descriptor[] = {
+        0x05U,0x01U,0x09U,0x02U,0xA1U,0x01U,
+        0x09U,0x01U,0xA1U,0x00U,
+        0x05U,0x09U,0x19U,0x01U,0x29U,0x03U,
+        0x15U,0x00U,0x25U,0x01U,0x95U,0x03U,0x75U,0x01U,0x81U,0x02U,
+        0x95U,0x01U,0x75U,0x05U,0x81U,0x01U,
+        0x05U,0x01U,0x09U,0x30U,0x09U,0x31U,
+        0x15U,0x81U,0x25U,0x7FU,0x75U,0x08U,0x95U,0x02U,0x81U,0x06U,
+        0x09U,0x38U,0x75U,0x08U,0x95U,0x01U,0x81U,0x06U,0xC0U,0xC0U
+    };
+    struct nexus_bt_hogp_client client = {
+        .state = NEXUS_BT_HOGP_READY,
+        .report_map_complete = true,
+        .report_map_length = sizeof(descriptor),
+        .service = {.report_count = 1U}
+    };
+    memcpy(client.report_map,descriptor,sizeof(descriptor));
+    client.service.reports[0] = (struct nexus_bt_gatt_hid_report_characteristic){
+        .value_handle = 0x30U,
+        .cccd_handle = 0x31U,
+        .report_id = 0U,
+        .report_type = 1U
+    };
+    const uint8_t att[] = {0x1BU,0x30U,0x00U,0x05U,0xFEU,0x03U,0xFFU};
+    const struct nexus_bt_l2cap_view l2cap = {
+        .channel_id = NEXUS_BT_L2CAP_CID_ATT,
+        .payload = att,
+        .payload_length = sizeof(att)
+    };
+    struct nexus_bt_hogp_input_report input = {0};
+    assert(nexus_bt_hogp_client_decode_notification(
+        &client,&l2cap,&input));
+    assert(input.kind == NEXUS_BT_HOGP_INPUT_MOUSE);
+    assert(input.mouse_event.buttons == 0x05U);
+    assert(input.mouse_event.dx == -2);
+    assert(input.mouse_event.dy == -3);
+}
+
 int main(void) {
     test_complete_hogp_discovery_and_notification_setup();
     test_blob_read_paging();
     test_invalid_and_unmatched_att_responses_fail_closed();
-    puts("NEXUS BLE HOGP CLIENT STATE MACHINE TESTS PASSED");
+    test_keyboard_notification_decoding();
+    test_mouse_notification_decoding();
+    puts("NEXUS BLE HOGP CLIENT AND KEYBOARD/MOUSE REPORT TESTS PASSED");
     return 0;
 }

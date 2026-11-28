@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include <string.h>
+
 #define ATT_OP_ERROR_RESPONSE 0x01U
 #define ATT_OP_EXCHANGE_MTU_REQUEST 0x02U
 #define ATT_OP_EXCHANGE_MTU_RESPONSE 0x03U
@@ -18,11 +20,6 @@
 
 static uint16_t get_le16(const uint8_t *pdu) {
     return (uint16_t)(pdu[0] | ((uint16_t)pdu[1] << 8));
-}
-
-static void put_le16(uint8_t *pdu, uint16_t value) {
-    pdu[0] = (uint8_t)value;
-    pdu[1] = (uint8_t)(value >> 8);
 }
 
 static void fail_client(struct nexus_bt_hogp_client *client) {
@@ -74,6 +71,7 @@ static bool build_simple_request(
 }
 
 static void begin_report_descriptors(struct nexus_bt_hogp_client *client) {
+    client->report_map_complete = true;
     client->report_index = 0U;
     client->state = NEXUS_BT_HOGP_REPORT_DESCRIPTORS_PENDING;
 }
@@ -427,7 +425,8 @@ bool nexus_bt_hogp_client_get_report_map(
     const struct nexus_bt_hogp_client *client,
     const uint8_t **report_map, size_t *report_map_length) {
     if (client == NULL || report_map == NULL || report_map_length == NULL ||
-        client->report_map_length == 0U) return false;
+        client->report_map_length == 0U ||
+        !client->report_map_complete) return false;
     *report_map = client->report_map;
     *report_map_length = client->report_map_length;
     return true;
@@ -437,7 +436,8 @@ bool nexus_bt_hogp_client_find_input_report(
     const struct nexus_bt_hogp_client *client,
     uint16_t value_handle, uint8_t *report_id) {
     if (client == NULL || report_id == NULL ||
-        client->state != NEXUS_BT_HOGP_READY || value_handle == 0U)
+        client->report_map_length == 0U ||
+        !client->report_map_complete || value_handle == 0U)
         return false;
     for (uint8_t i = 0U; i < client->service.report_count; ++i) {
         const struct nexus_bt_gatt_hid_report_characteristic *report =
@@ -447,6 +447,53 @@ bool nexus_bt_hogp_client_find_input_report(
             *report_id = report->report_id;
             return true;
         }
+    }
+    return false;
+}
+
+
+bool nexus_bt_hogp_client_decode_notification(
+    struct nexus_bt_hogp_client *client,
+    const struct nexus_bt_l2cap_view *l2cap,
+    struct nexus_bt_hogp_input_report *input) {
+    if (client == NULL || l2cap == NULL || input == NULL ||
+        !client->report_map_complete || client->report_map_length == 0U)
+        return false;
+
+    struct nexus_bt_hid_report_view report = {0};
+    if (!nexus_bt_hogp_parse_notification(l2cap, &report)) return false;
+    uint8_t report_id = 0U;
+    if (!nexus_bt_hogp_client_find_input_report(
+            client, report.attribute_handle, &report_id)) return false;
+
+    if (!client->input_layout_valid) {
+        if (!usb_hid_generic_parse_descriptor_multi(
+                client->report_map, client->report_map_length,
+                &client->input_layout)) return false;
+        client->input_layout_valid = true;
+    }
+
+    uint8_t formatted[256U];
+    size_t formatted_length = report.report_length;
+    size_t prefix = report_id != 0U ? 1U : 0U;
+    if (formatted_length + prefix > sizeof(formatted)) return false;
+    if (prefix != 0U) formatted[0] = report_id;
+    for (size_t i = 0U; i < report.report_length; ++i)
+        formatted[prefix + i] = report.report[i];
+    formatted_length += prefix;
+
+    *input = (struct nexus_bt_hogp_input_report){0};
+    if (usb_hid_generic_decode_keyboard_multi(
+            &client->input_layout, formatted, formatted_length,
+            input->keyboard_report)) {
+        input->kind = NEXUS_BT_HOGP_INPUT_KEYBOARD;
+        return true;
+    }
+    if (usb_hid_generic_decode_mouse_multi(
+            &client->input_layout, formatted, formatted_length,
+            &input->mouse_event)) {
+        input->kind = NEXUS_BT_HOGP_INPUT_MOUSE;
+        return true;
     }
     return false;
 }

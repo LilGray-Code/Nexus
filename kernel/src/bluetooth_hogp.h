@@ -2,6 +2,8 @@
 #define NEXUS_BLUETOOTH_HOGP_H
 
 #include "bluetooth_gatt.h"
+#include "bluetooth_hid.h"
+#include "usb_hid_generic.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -35,6 +37,9 @@ enum nexus_bt_hogp_state {
 struct nexus_bt_hogp_client {
     enum nexus_bt_hogp_state state;
     bool awaiting_response;
+    bool report_map_complete;
+    bool input_layout_valid;
+    struct nexus_usb_hid_generic_multi_layout input_layout;
     uint8_t request_opcode;
     uint16_t client_mtu;
     uint16_t server_mtu;
@@ -70,5 +75,24 @@ bool nexus_bt_hogp_client_get_report_map(
 bool nexus_bt_hogp_client_find_input_report(
     const struct nexus_bt_hogp_client *client,
     uint16_t value_handle, uint8_t *report_id);
+
+enum nexus_bt_hogp_input_kind {
+    NEXUS_BT_HOGP_INPUT_NONE = 0U,
+    NEXUS_BT_HOGP_INPUT_KEYBOARD,
+    NEXUS_BT_HOGP_INPUT_MOUSE
+};
+
+struct nexus_bt_hogp_input_report {
+    enum nexus_bt_hogp_input_kind kind;
+    uint8_t keyboard_report[8];
+    struct nexus_usb_mouse_event mouse_event;
+};
+
+/* Decode an ATT Handle Value Notification/Indication using the downloaded
+ * HID Report Map and the Report Reference associated with its handle. */
+bool nexus_bt_hogp_client_decode_notification(
+    struct nexus_bt_hogp_client *client,
+    const struct nexus_bt_l2cap_view *l2cap,
+    struct nexus_bt_hogp_input_report *input);
 
 #endif

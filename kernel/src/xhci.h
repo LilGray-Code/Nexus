@@ -10,13 +10,14 @@ struct nexus_bt_hci_advertisement;
 struct nexus_pci_device;
 
 /* Initialize xHCI and enumerate attached HID devices, supported downstream
- * hubs and recognized USB Bluetooth HCI adapters. Bluetooth USB adapters get
- * independent interrupt event-IN and bulk ACL-IN/OUT endpoints. The HCI host
- * initializes the controller and exposes raw L2CAP send/read operations.
+ * hubs and recognized USB Bluetooth HCI adapters. The USB HCI transport
+ * performs passive LE discovery and connection initiation. Connected LE
+ * peers are queried for HOGP services, input Report Map/characteristics and
+ * CCCD subscriptions; supported HID keyboard/mouse notifications feed the
+ * common input queue.
  *
- * This does not imply Bluetooth discovery, pairing/bonding or HOGP/HID report
- * delivery. EHCI/OHCI/UHCI also remain unavailable input controllers; see
- * INPUT-IMPLEMENTATION-STATUS.md for remaining limitations. */
+ * Authenticated pairing/bonding and some advanced HOGP/report layouts remain
+ * unsupported. EHCI/OHCI/UHCI are not yet operational input controllers. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);

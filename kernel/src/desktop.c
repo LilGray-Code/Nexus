@@ -41,6 +41,8 @@
 #include "installer_runtime.h"
 #include "diagnostics.h"
 #include "driver_manager.h"
+#include "bluetooth_hci.h"
+#include "xhci.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -84,6 +86,145 @@ enum desktop_settings_page {
     SETTINGS_PAGE_COUNT
 };
 #define SETTINGS_VISIBLE_TABS 5U
+static void desktop_settings_draw_button(uint64_t x, uint64_t y,
+    uint64_t width, uint64_t height, const char *label, bool selected);
+static void hardware_append_text(char *output, size_t capacity,
+                                 size_t *length, const char *text);
+static void format_u64(uint64_t value, char output[21]);
+#define DESKTOP_BT_VISIBLE_DEVICES 5U
+struct desktop_bluetooth_row {
+    struct nexus_bt_hci_advertisement advertisement;
+    char name[32];
+};
+static struct desktop_bluetooth_row desktop_bt_devices[
+    DESKTOP_BT_VISIBLE_DEVICES];
+static uint8_t desktop_bt_device_count;
+static const char *desktop_bt_status_message =
+    "Bluetooth scan results appear here when a USB HCI adapter is available.";
+
+static void desktop_bluetooth_refresh_cache(void) {
+    struct nexus_bt_hci_advertisement advertisement;
+    while (xhci_bluetooth_read_advertisement(&advertisement)) {
+        if (advertisement.data_length > NEXUS_BT_HCI_MAX_ADV_DATA)
+            continue;
+        int found = -1;
+        for (uint8_t i = 0U; i < desktop_bt_device_count; ++i) {
+            const struct nexus_bt_hci_advertisement *old =
+                &desktop_bt_devices[i].advertisement;
+            bool same = old->address_type == advertisement.address_type;
+            for (size_t j = 0U; j < 6U && same; ++j)
+                same = old->address[j] == advertisement.address[j];
+            if (same) { found = (int)i; break; }
+        }
+        uint8_t index = 0U;
+        if (found >= 0) {
+            index = (uint8_t)found;
+        } else if (desktop_bt_device_count < DESKTOP_BT_VISIBLE_DEVICES) {
+            index = desktop_bt_device_count++;
+        } else {
+            for (uint8_t i = 1U; i < DESKTOP_BT_VISIBLE_DEVICES; ++i)
+                desktop_bt_devices[i - 1U] = desktop_bt_devices[i];
+            index = DESKTOP_BT_VISIBLE_DEVICES - 1U;
+        }
+        desktop_bt_devices[index].advertisement = advertisement;
+        if (!nexus_bt_hci_advertisement_copy_name(&advertisement,
+                desktop_bt_devices[index].name,
+                sizeof(desktop_bt_devices[index].name)))
+            desktop_bt_devices[index].name[0] = '\0';
+    }
+}
+
+static void desktop_bluetooth_format_address(
+    const uint8_t address[6], char output[18]) {
+    static const char digits[] = "0123456789ABCDEF";
+    size_t offset = 0U;
+    for (size_t i = 0U; i < 6U; ++i) {
+        output[offset++] = digits[address[i] >> 4];
+        output[offset++] = digits[address[i] & 0x0FU];
+        if (i != 5U) output[offset++] = ':';
+    }
+    output[offset] = '\0';
+}
+
+static void desktop_bluetooth_append_number(
+    char *output, size_t capacity, size_t *length, uint64_t value) {
+    char number[21];
+    format_u64(value, number);
+    hardware_append_text(output, capacity, length, number);
+}
+
+static void desktop_bluetooth_draw(uint64_t x, uint64_t y) {
+    struct nexus_bt_runtime_status status = {0};
+    (void)xhci_bluetooth_get_status(&status);
+    desktop_bluetooth_refresh_cache();
+
+    graphics_draw_text(x, y, "BLUETOOTH LE", 1U, 142U, 174U, 199U);
+    char summary[96] = "ADAPTERS ";
+    size_t used = 9U;
+    desktop_bluetooth_append_number(summary, sizeof(summary), &used,
+                                    status.ready_adapters);
+    hardware_append_text(summary, sizeof(summary), &used, " READY / ");
+    desktop_bluetooth_append_number(summary, sizeof(summary), &used,
+                                    status.scanning_adapters);
+    hardware_append_text(summary, sizeof(summary), &used, " SCANNING / ");
+    desktop_bluetooth_append_number(summary, sizeof(summary), &used,
+                                    status.connected_links);
+    hardware_append_text(summary, sizeof(summary), &used, " LINKS / ");
+    desktop_bluetooth_append_number(summary, sizeof(summary), &used,
+                                    status.hogp_ready_links);
+    hardware_append_text(summary, sizeof(summary), &used, " HID READY");
+    graphics_draw_text(x, y + 22U, summary, 1U, 108U, 216U, 229U);
+    desktop_settings_draw_button(x + 360U, y - 4U, 128U, 27U,
+        status.ready_adapters != 0U ? "SCAN BLE" : "NO ADAPTER",
+        status.ready_adapters != 0U);
+
+    for (uint8_t i = 0U; i < desktop_bt_device_count; ++i) {
+        const uint64_t row_y = y + 54U + (uint64_t)i * 31U;
+        char address[18];
+        desktop_bluetooth_format_address(
+            desktop_bt_devices[i].advertisement.address, address);
+        graphics_draw_text(x, row_y, address, 1U, 239U, 247U, 255U);
+        graphics_draw_text(x + 126U, row_y,
+            desktop_bt_devices[i].name[0] != '\0'
+                ? desktop_bt_devices[i].name : "Unknown BLE device",
+            1U, 171U, 191U, 211U);
+        char rssi[32] = "RSSI ";
+        size_t offset = 5U;
+        const int16_t strength =
+            desktop_bt_devices[i].advertisement.rssi;
+        if (strength < 0) {
+            rssi[offset++] = '-';
+            const uint16_t magnitude = (uint16_t)(-strength);
+            char digits[21];
+            format_u64(magnitude, digits);
+            for (size_t j = 0U; digits[j] != '\0' && offset + 1U < sizeof(rssi); ++j)
+                rssi[offset++] = digits[j];
+        } else {
+            char digits[21];
+            format_u64((uint16_t)strength, digits);
+            for (size_t j = 0U; digits[j] != '\0' && offset + 1U < sizeof(rssi); ++j)
+                rssi[offset++] = digits[j];
+        }
+        rssi[offset] = '\0';
+        graphics_draw_text(x + 288U, row_y, rssi,
+                           1U, 171U, 191U, 211U);
+        desktop_settings_draw_button(x + 360U, row_y - 4U,
+            128U, 26U, "CONNECT", true);
+    }
+    if (desktop_bt_device_count == 0U) {
+        graphics_draw_text(x, y + 56U, "NO LE ADVERTISEMENTS RECEIVED",
+                           1U, 231U, 183U, 127U);
+    }
+    graphics_draw_text(x, y + 54U + (uint64_t)desktop_bt_device_count * 31U,
+        "SECURITY: JUST WORKS ONLY; NO MITM / PASSKEY / SAVED BONDS",
+        1U, 231U, 183U, 127U);
+    graphics_draw_text(x, y + 78U + (uint64_t)desktop_bt_device_count * 31U,
+        "CLASSIC HIDP INPUT IS NOT AVAILABLE YET",
+        1U, 171U, 191U, 211U);
+    graphics_draw_text(x, y + 102U + (uint64_t)desktop_bt_device_count * 31U,
+        desktop_bt_status_message, 1U, 108U, 216U, 229U);
+}
+
 static enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
 static size_t settings_tab_first_page;
 
@@ -1543,6 +1684,7 @@ static void desktop_draw_start_menu(uint64_t bottom_bar) {
 }
 
 static void draw_shell(void) {
+    desktop_bluetooth_refresh_cache();
     const uint64_t width = screen_width;
     const uint64_t height = screen_height;
     const uint64_t top_bar = clamp_min(height / 16U, 34U);
@@ -3108,8 +3250,9 @@ static void draw_shell(void) {
                 136U, 32U, wifi_available() ? "SCAN WI-FI" : "NO RADIO DRIVER",
                 wifi_available());
             graphics_draw_text(text_x, content_y + 239U,
-                "WIRELESS CONNECTIVITY REQUIRES A SUPPORTED RADIO DRIVER.",
+                "WI-FI OPERATIONS REQUIRE A SUPPORTED RADIO DRIVER.",
                 1U, 171U, 191U, 211U);
+            desktop_bluetooth_draw(text_x, content_y + 278U);
         } else if (settings_page == SETTINGS_STORAGE) {
             char line[96], number[24];
             desktop_settings_draw_heading(text_x, content_y,
@@ -7455,8 +7598,33 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             } else if (settings_page == SETTINGS_NETWORK) {
                 if (wifi_available() &&
                     py >= content_y + 190U && py < content_y + 222U &&
-                    px >= sx && px < sx + 136U)
+                    px >= sx && px < sx + 136U) {
                     (void)wifi_scan();
+                } else if (py >= content_y + 274U &&
+                           py < content_y + 303U &&
+                           px >= sx + 360U && px < sx + 488U) {
+                    if (xhci_bluetooth_start_scan())
+                        desktop_bt_status_message = "Bluetooth LE scan is active.";
+                    else
+                        desktop_bt_status_message = "No ready USB Bluetooth HCI adapter.";
+                } else if (px >= sx + 360U && px < sx + 488U &&
+                           py >= content_y + 328U &&
+                           py < content_y + 328U +
+                               (uint64_t)desktop_bt_device_count * 31U) {
+                    const uint64_t row =
+                        (py - (content_y + 328U)) / 31U;
+                    if (row < desktop_bt_device_count) {
+                        const struct nexus_bt_hci_advertisement *peer =
+                            &desktop_bt_devices[row].advertisement;
+                        if (xhci_bluetooth_connect_le(
+                                peer->address_type, peer->address))
+                            desktop_bt_status_message =
+                                "Connection requested; security is negotiated by the peer.";
+                        else
+                            desktop_bt_status_message =
+                                "Could not start connection; adapter may be busy.";
+                    }
+                }
             }
             if (changed) desktop_preferences_save();
             else desktop_settings_apply();

@@ -296,3 +296,13 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - The QH is inserted after the reclamation head, and the driver polls the STATUS and DATA qTD tokens. It reports actual DATA bytes from the DATA qTD residual count (not the zero-length STATUS qTD).
 - The temporary QH is unlinked through the EHCI Async Advance Doorbell and is freed only after the matching IAA status is observed. If IAA does not arrive, the DMA page is quarantined and further control transfers are refused.
 - This primitive is high-speed only and is not yet called by device enumeration. Root-port reset/speed handoff, SET_ADDRESS/configuration discovery, full/low-speed transaction translators, periodic interrupt schedule, hub child enumeration and HID report delivery remain outstanding. No EHCI mouse/keyboard has yet been exercised in QEMU or on physical hardware.
+
+
+### Bluetooth OS discovery controls — November 28, 2026
+
+- Exposed a bounded xHCI adapter status snapshot with adapter readiness, active scan count, connected LE links, encrypted links, HOGP-ready links and aggregate dropped-packet telemetry.
+- Added an OS scan-resume control that requests passive scanning only when a USB HCI adapter is initialized and is not in the middle of a connection attempt.
+- Added bounded parsing of complete/short local-name AD structures, with printable output, truncation handling and malformed-field rejection.
+- The desktop Network Settings view now displays Bluetooth adapter/scan/link/HOGP state, a rolling list of discovered LE devices with advertised name/address/RSSI, and a Connect action for each visible device.
+- The UI also discloses that this build only offers NoInputNoOutput Just Works security, has no MITM/passkey/OOB flow or saved bonds, and does not yet support classic HIDP input.
+- This is a discovery/device-selection surface, not a persistent device manager, saved-bond list or pairing-approval workflow.

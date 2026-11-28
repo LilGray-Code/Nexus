@@ -233,6 +233,47 @@ bool nexus_bt_hci_parse_le_advertising_reports(
     return true;
 }
 
+bool nexus_bt_hci_advertisement_copy_name(
+    const struct nexus_bt_hci_advertisement *advertisement,
+    char *name, size_t name_capacity) {
+    if (name == NULL || name_capacity == 0U) return false;
+    name[0] = '\0';
+    if (advertisement == NULL ||
+        advertisement->data_length > NEXUS_BT_HCI_MAX_ADV_DATA) return false;
+
+    size_t offset = 0U;
+    const uint8_t *short_name = NULL;
+    size_t short_name_length = 0U;
+    while (offset < advertisement->data_length) {
+        const uint8_t field_length = advertisement->data[offset++];
+        if (field_length == 0U) break;
+        if ((size_t)field_length > advertisement->data_length - offset)
+            return false;
+        const uint8_t type = advertisement->data[offset];
+        const uint8_t *value = advertisement->data + offset + 1U;
+        const size_t value_length = (size_t)field_length - 1U;
+        if (type == 0x09U) {
+            short_name = value;
+            short_name_length = value_length;
+            break;
+        }
+        if (type == 0x08U && short_name == NULL) {
+            short_name = value;
+            short_name_length = value_length;
+        }
+        offset += field_length;
+    }
+    if (short_name == NULL || short_name_length == 0U) return false;
+    size_t copied = short_name_length;
+    if (copied >= name_capacity) copied = name_capacity - 1U;
+    for (size_t i = 0U; i < copied; ++i) {
+        const uint8_t ch = short_name[i];
+        name[i] = ch >= 0x20U && ch <= 0x7EU ? (char)ch : '?';
+    }
+    name[copied] = '\0';
+    return copied != 0U;
+}
+
 bool nexus_bt_hci_build_le_scan_parameters(
     uint8_t scan_type, uint16_t scan_interval, uint16_t scan_window,
     uint8_t own_address_type, uint8_t filter_policy,

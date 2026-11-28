@@ -118,6 +118,11 @@ bool nexus_bt_hci_parse_le_advertising_reports(
     const struct nexus_bt_hci_event_view *event,
     struct nexus_bt_hci_advertisement *reports,
     size_t report_capacity, size_t *report_count);
+/* Decode the complete/short local-name AD structure from a legacy report.
+ * Output is printable ASCII and always NUL-terminated when capacity > 0. */
+bool nexus_bt_hci_advertisement_copy_name(
+    const struct nexus_bt_hci_advertisement *advertisement,
+    char *name, size_t name_capacity);
 
 bool nexus_bt_hci_build_le_scan_parameters(
     uint8_t scan_type, uint16_t scan_interval, uint16_t scan_window,

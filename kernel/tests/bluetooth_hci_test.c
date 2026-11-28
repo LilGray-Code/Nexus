@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <string.h>
 
 static void test_event_framing(void) {
     const uint8_t packet[] = {0x04U,0x0EU,0x02U,0x01U,0x10U};
@@ -491,6 +492,48 @@ static void test_host_generic_command_credit_path(void) {
     assert(host.last_command_status == 0U);
 }
 
+static void test_advertisement_local_name_parser(void) {
+    const struct nexus_bt_hci_advertisement advertisement = {
+        .data_length = 16U,
+        .data = {
+            6U,0x08U,'M','o','u','s','e',
+            8U,0x09U,'N','e','x','u','s','M','1'
+        }
+    };
+    char name[16] = {0};
+    assert(nexus_bt_hci_advertisement_copy_name(
+        &advertisement,name,sizeof(name)));
+    assert(strcmp(name,"NexusM1") == 0);
+
+    char truncated[5] = {0};
+    assert(nexus_bt_hci_advertisement_copy_name(
+        &advertisement,truncated,sizeof(truncated)));
+    assert(strcmp(truncated,"Nexu") == 0);
+
+    const struct nexus_bt_hci_advertisement short_only = {
+        .data_length = 6U,
+        .data = {5U,0x08U,'K','e','y','s'}
+    };
+    assert(nexus_bt_hci_advertisement_copy_name(
+        &short_only,name,sizeof(name)));
+    assert(strcmp(name,"Keys") == 0);
+
+    const struct nexus_bt_hci_advertisement malformed = {
+        .data_length = 3U,
+        .data = {8U,0x09U,'X'}
+    };
+    assert(!nexus_bt_hci_advertisement_copy_name(
+        &malformed,name,sizeof(name)));
+    assert(name[0] == '\0');
+
+    const struct nexus_bt_hci_advertisement unnamed = {
+        .data_length = 3U,
+        .data = {2U,0x01U,0x06U}
+    };
+    assert(!nexus_bt_hci_advertisement_copy_name(
+        &unnamed,name,sizeof(name)));
+}
+
 int main(void) {
     test_event_framing();
     test_host_initialization_state_machine();
@@ -504,6 +547,7 @@ int main(void) {
     test_hci_secure_connections_command_builders();
     test_hci_secure_connections_complete_events();
     test_le_advertising_report_parser();
+    test_advertisement_local_name_parser();
     test_host_generic_command_credit_path();
     test_host_generic_command_status_path();
     puts("NEXUS BLUETOOTH HCI DISCOVERY, CONNECTION AND COMMAND CREDIT TESTS PASSED");

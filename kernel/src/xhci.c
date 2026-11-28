@@ -4316,6 +4316,71 @@ bool xhci_gamepads_ready(void) {
     return false;
 }
 
+bool xhci_bluetooth_get_status(struct nexus_bt_runtime_status *status) {
+    if (status == NULL) return false;
+    *status = (struct nexus_bt_runtime_status){0};
+    if (!controller.initialized) return false;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        const struct xhci_bluetooth_device *bluetooth =
+            &controller.bluetooths[i];
+        if (!bluetooth->active) continue;
+        if (status->adapter_count != UINT8_MAX) ++status->adapter_count;
+        if (bluetooth->hci_host.state == NEXUS_BT_HCI_HOST_READY) {
+            if (status->ready_adapters != UINT8_MAX)
+                ++status->ready_adapters;
+            if (bluetooth->scan_state == XHCI_BT_SCAN_ACTIVE &&
+                status->scanning_adapters != UINT8_MAX)
+                ++status->scanning_adapters;
+        }
+        if (UINT32_MAX - status->dropped_packets <
+            bluetooth->dropped_packets)
+            status->dropped_packets = UINT32_MAX;
+        else
+            status->dropped_packets += bluetooth->dropped_packets;
+        for (size_t j = 0U; j < XHCI_BT_MAX_CONNECTIONS; ++j) {
+            const struct xhci_bluetooth_link *link =
+                &bluetooth->connections[j];
+            if (!link->active) continue;
+            if (status->connected_links != UINT8_MAX)
+                ++status->connected_links;
+            const bool encrypted =
+                (link->security_mode == XHCI_BT_SECURITY_SECURE_CONNECTIONS &&
+                 link->smp_sc.state == NEXUS_BT_SMP_SC_ENCRYPTED) ||
+                (link->security_mode == XHCI_BT_SECURITY_LEGACY &&
+                 link->smp.state == NEXUS_BT_SMP_ENCRYPTED);
+            if (encrypted && status->encrypted_links != UINT8_MAX)
+                ++status->encrypted_links;
+            if (nexus_bt_hogp_client_is_ready(&link->hogp) &&
+                status->hogp_ready_links != UINT8_MAX)
+                ++status->hogp_ready_links;
+        }
+    }
+    return true;
+}
+
+bool xhci_bluetooth_start_scan(void) {
+    if (!controller.initialized) return false;
+    bool found = false;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &controller.bluetooths[i];
+        if (!bluetooth->active ||
+            bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY) continue;
+        found = true;
+        if (bluetooth->scan_state == XHCI_BT_SCAN_ACTIVE ||
+            bluetooth->scan_state == XHCI_BT_SCAN_ENABLE_PENDING ||
+            bluetooth->scan_state == XHCI_BT_SCAN_ENABLE_IN_FLIGHT)
+            continue;
+        if (bluetooth->scan_state == XHCI_BT_SCAN_CONNECT_PENDING ||
+            bluetooth->scan_state == XHCI_BT_SCAN_CONNECT_IN_FLIGHT ||
+            bluetooth->scan_state == XHCI_BT_SCAN_CONNECTING ||
+            bluetooth->scan_state == XHCI_BT_SCAN_DISABLE_PENDING ||
+            bluetooth->scan_state == XHCI_BT_SCAN_DISABLE_IN_FLIGHT)
+            continue;
+        bluetooth->scan_state = XHCI_BT_SCAN_ENABLE_PENDING;
+    }
+    return found;
+}
+
 bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
                                uint8_t *pdu, size_t pdu_capacity,
                                size_t *pdu_length) {

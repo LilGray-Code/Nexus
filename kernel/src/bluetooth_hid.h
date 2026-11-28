@@ -59,6 +59,7 @@ struct nexus_bt_hid_report_view {
 /* Per-peer HID decoder state, configured from the remote HID Report Map. */
 struct nexus_bt_hid_input_device {
     bool configured;
+    bool security_ready;
     struct nexus_usb_hid_generic_multi_layout layout;
     struct nexus_usb_keyboard_state keyboard_states[
         NEXUS_USB_HID_GENERIC_MAX_REPORTS];
@@ -95,6 +96,9 @@ bool nexus_bt_hogp_parse_read_response(
 bool nexus_bt_hid_input_configure(
     struct nexus_bt_hid_input_device *device,
     const uint8_t *report_map, size_t report_map_length);
+bool nexus_bt_hid_input_set_security_ready(
+    struct nexus_bt_hid_input_device *device, bool link_encrypted,
+    bool pairing_complete);
 bool nexus_bt_hid_input_dispatch_hogp_report(
     struct nexus_bt_hid_input_device *device, uint8_t report_id,
     uint8_t report_type, const uint8_t *report, size_t report_length);

@@ -179,3 +179,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added MTU response validation and negotiated MTU clamping to the ATT protocol range.
 - Host tests verify request opcodes, UUID byte order, handle ranges, notification enable value, and malformed MTU rejection.
 - These are client-side ATT PDUs only. They still need to be driven by an active encrypted GATT connection, and the resulting discovery responses must be assembled into the HID Report Map/Report Reference state before notifications are enabled.
+
+
+### ATT response parsing
+
+- Added bounded parsers for ATT Read/Read Blob responses, Error Responses and Write Responses.
+- Read response views expose the PDU-owned value bytes without copying; Error Response parsing preserves the failed request opcode, offending handle and ATT error code for the HID discovery state machine.
+- Host tests cover valid reads, read-blob data, ATT errors, write acknowledgements and short/invalid packets.

@@ -57,6 +57,24 @@ struct nexus_usb_hub_port_status {
     enum nexus_usb_speed speed;
 };
 
+struct nexus_usb_hub_interrupt_endpoint {
+    uint8_t address;
+    uint16_t max_packet;
+    uint8_t interval;
+};
+
+/* Parse the hub interrupt-IN endpoint from the active configuration. The
+ * minimum packet size must cover bit zero plus one change bit per port. */
+bool nexus_usb_hub_find_interrupt_endpoint(
+    const uint8_t *configuration, size_t length, size_t minimum_packet_bytes,
+    struct nexus_usb_hub_interrupt_endpoint *endpoint);
+
+/* Decode the USB hub interrupt bitmap: bit zero is hub status, bit N is port N.
+ * changed_ports uses bit N-1 for downstream port N (up to 15 ports). */
+bool nexus_usb_hub_decode_change_bitmap(
+    const uint8_t *bitmap, size_t bitmap_length, uint8_t port_count,
+    uint16_t *changed_ports, bool *hub_status_changed);
+
 bool nexus_usb_hub_parse_descriptor(
     const uint8_t *descriptor, size_t length, bool multi_tt,
     struct nexus_usb_hub_descriptor *hub);

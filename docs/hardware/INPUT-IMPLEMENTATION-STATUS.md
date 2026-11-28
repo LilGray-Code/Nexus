@@ -93,3 +93,12 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Adjacent mouse reports coalesce vertical and horizontal wheel deltas with signed 16-bit saturation, preserving button-state edge ordering.
 - Regression coverage exercises one numbered mouse report with 16 button bits, 16-bit X/Y motion, a 16-bit vertical wheel, and a 16-bit horizontal AC Pan field; the desktop input queue test checks that the widened fields survive delivery.
 - Remaining limitations: no Resolution Multiplier Feature-report negotiation, HID++/vendor-specific DPI and button protocols, arbitrary report-collection layouts, or physical mouse validation is claimed.
+
+
+### November 28, 2026 — UART HCI transport and expanded USB discovery
+
+- Added a polling 16550-compatible HCI H4 UART transport with caller-selected I/O base, UART input clock and baud rate; it configures 8-N-1, FIFO mode and optional CTS-gated transmit.
+- UART H4 receive is incremental: fragmented Event and ACL packets remain buffered across polls, declared lengths are bounded, malformed frames are dropped, and a completed packet is retained when the caller supplies a too-small destination.
+- The UART transport is now compiled into the kernel and has a host register-model test covering initialization, command/ACL transmit, fragmented event receive, ACL receive, buffer retry and malformed-frame recovery. This is a real generic UART transport module, but it is not yet auto-discovered or wired to the Bluetooth service; USB Bluetooth HCI endpoint scheduling remains unimplemented.
+- USB HID configuration discovery now retains up to 16 interrupt-IN HID interfaces (previously eight) and has a ten-interface composite-descriptor regression test. The xHCI runtime still configures only the primary and one companion interface; this parser change does not claim multi-interface runtime completion.
+- Added hub interrupt-IN endpoint discovery from the hub interface's active configuration and a validated decoder for the hub/port change bitmap. Unit tests cover both. xHCI still polls GET_STATUS and has not yet scheduled the discovered hub interrupt endpoint, so interrupt-driven runtime notifications remain open.

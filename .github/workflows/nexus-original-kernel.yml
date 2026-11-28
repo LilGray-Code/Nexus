@@ -122,6 +122,15 @@ jobs:
             kernel/tests/bluetooth_hci_test.c -o /tmp/nexus-bluetooth-hci-test
           /tmp/nexus-bluetooth-hci-test
 
+      - name: Test Bluetooth 16550 UART H4 transport
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_BT_UART_HOST_TEST -Ikernel/src \
+            kernel/src/bluetooth_hci.c kernel/src/bluetooth_uart.c \
+            kernel/tests/bluetooth_uart_test.c \
+            -o /tmp/nexus-bluetooth-uart-test
+          /tmp/nexus-bluetooth-uart-test
+
       - name: Test PCI discovery for xHCI EHCI OHCI and UHCI
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

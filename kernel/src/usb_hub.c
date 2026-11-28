@@ -68,6 +68,81 @@ bool nexus_usb3_hub_parse_descriptor(
     return true;
 }
 
+
+bool nexus_usb_hub_find_interrupt_endpoint(
+    const uint8_t *configuration, size_t length, size_t minimum_packet_bytes,
+    struct nexus_usb_hub_interrupt_endpoint *endpoint) {
+    if (configuration == NULL || endpoint == NULL || length < 9U ||
+        configuration[0] < 9U || configuration[1] != 2U ||
+        minimum_packet_bytes == 0U || minimum_packet_bytes > 1024U)
+        return false;
+    const uint16_t total = (uint16_t)(configuration[2] |
+        ((uint16_t)configuration[3] << 8));
+    if (total < 9U || total > length || configuration[0] > total)
+        return false;
+
+    bool hub_interface = false;
+    struct nexus_usb_hub_interrupt_endpoint candidate = {0};
+    size_t offset = configuration[0];
+    while (offset < total) {
+        if (total - offset < 2U) return false;
+        const uint8_t descriptor_length = configuration[offset];
+        const uint8_t descriptor_type = configuration[offset + 1U];
+        if (descriptor_length < 2U ||
+            descriptor_length > total - offset) return false;
+
+        if (descriptor_type == 4U) {
+            if (descriptor_length < 9U) return false;
+            hub_interface = configuration[offset + 5U] == 9U &&
+                            configuration[offset + 3U] == 0U;
+            candidate = (struct nexus_usb_hub_interrupt_endpoint){0};
+        } else if (descriptor_type == 5U && hub_interface) {
+            if (descriptor_length < 7U) return false;
+            const uint8_t address = configuration[offset + 2U];
+            const uint8_t attributes = configuration[offset + 3U] & 0x03U;
+            const uint16_t raw_packet = (uint16_t)(
+                configuration[offset + 4U] |
+                ((uint16_t)configuration[offset + 5U] << 8));
+            const uint16_t packet = raw_packet & 0x07FFU;
+            const uint8_t interval = configuration[offset + 6U];
+            if ((address & 0x80U) != 0U && (address & 0x0FU) != 0U &&
+                attributes == 3U && packet >= minimum_packet_bytes &&
+                packet <= 1024U && interval != 0U) {
+                candidate.address = address;
+                candidate.max_packet = packet;
+                candidate.interval = interval;
+            }
+        }
+        if (candidate.address != 0U) {
+            *endpoint = candidate;
+            return true;
+        }
+        offset += descriptor_length;
+    }
+    return false;
+}
+
+bool nexus_usb_hub_decode_change_bitmap(
+    const uint8_t *bitmap, size_t bitmap_length, uint8_t port_count,
+    uint16_t *changed_ports, bool *hub_status_changed) {
+    if (bitmap == NULL || changed_ports == NULL ||
+        hub_status_changed == NULL || port_count == 0U ||
+        port_count > NEXUS_USB_HUB_MAX_PORTS) return false;
+    const size_t required = ((size_t)port_count + 1U + 7U) / 8U;
+    if (bitmap_length < required) return false;
+
+    uint16_t ports = 0U;
+    for (uint8_t port = 1U; port <= port_count; ++port) {
+        const size_t byte_index = port / 8U;
+        const uint8_t bit_index = (uint8_t)(port % 8U);
+        if ((bitmap[byte_index] & (uint8_t)(1U << bit_index)) != 0U)
+            ports |= (uint16_t)(1U << (port - 1U));
+    }
+    *changed_ports = ports;
+    *hub_status_changed = (bitmap[0] & 0x01U) != 0U;
+    return true;
+}
+
 bool nexus_usb_path_root(uint8_t root_port, struct nexus_usb_path *path) {
     if (root_port == 0U || path == NULL) return false;
     *path = (struct nexus_usb_path){

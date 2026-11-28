@@ -127,12 +127,46 @@ static void test_superspeed_hub_port_status(void) {
     assert(!nexus_usb3_hub_decode_port_status(invalid_speed, &port));
 }
 
+static void test_hub_interrupt_endpoint_and_change_bitmap(void) {
+    const uint8_t configuration[] = {
+        9U,2U,25U,0U,1U,1U,0U,0x80U,50U,
+        9U,4U,0U,0U,1U,9U,0U,0U,0U,
+        7U,5U,0x81U,3U,4U,0U,12U
+    };
+    struct nexus_usb_hub_interrupt_endpoint endpoint = {0};
+    assert(nexus_usb_hub_find_interrupt_endpoint(
+        configuration, sizeof(configuration), 2U, &endpoint));
+    assert(endpoint.address == 0x81U);
+    assert(endpoint.max_packet == 4U);
+    assert(endpoint.interval == 12U);
+    assert(!nexus_usb_hub_find_interrupt_endpoint(
+        configuration, sizeof(configuration), 5U, &endpoint));
+
+    const uint8_t bitmap[] = {0x87U,0x01U};
+    uint16_t ports = 0U;
+    bool hub_changed = false;
+    assert(nexus_usb_hub_decode_change_bitmap(
+        bitmap, sizeof(bitmap), 10U, &ports, &hub_changed));
+    assert(hub_changed);
+    assert(ports == (uint16_t)((1U << 0U) | (1U << 1U) |
+                                (1U << 6U) | (1U << 7U)));
+
+    const uint8_t no_hub_change[] = {0x02U,0x01U};
+    assert(nexus_usb_hub_decode_change_bitmap(
+        no_hub_change, sizeof(no_hub_change), 10U, &ports, &hub_changed));
+    assert(!hub_changed);
+    assert(ports == (uint16_t)((1U << 0U) | (1U << 7U)));
+    assert(!nexus_usb_hub_decode_change_bitmap(
+        bitmap, 1U, 10U, &ports, &hub_changed));
+}
+
 int main(void) {
     test_hub_descriptor();
     test_usb_route_strings();
     test_hub_port_status();
     test_superspeed_hub_descriptor();
     test_superspeed_hub_port_status();
+    test_hub_interrupt_endpoint_and_change_bitmap();
     puts("NEXUS USB HUB DESCRIPTOR, PORT STATUS, AND ROUTE TESTS PASSED");
     return 0;
 }

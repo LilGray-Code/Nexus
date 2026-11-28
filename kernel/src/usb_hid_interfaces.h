@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define NEXUS_USB_HID_MAX_INTERFACES 8U
+#define NEXUS_USB_HID_MAX_INTERFACES 16U
 
 struct nexus_usb_hid_interface {
     uint8_t number;

@@ -181,7 +181,7 @@ jobs:
       - name: Test USB Bluetooth HCI endpoint discovery
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/bluetooth_usb.c \
+            -Ikernel/src kernel/src/bluetooth_usb.c kernel/src/bluetooth_hci.c \
             kernel/tests/bluetooth_usb_test.c \
             -o /tmp/nexus-bluetooth-usb-test
           /tmp/nexus-bluetooth-usb-test

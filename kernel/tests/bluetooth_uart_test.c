@@ -155,7 +155,8 @@ static void test_malformed_acl_is_dropped_and_parser_resynchronizes(void) {
     struct nexus_bt_uart uart = {0};
     assert(nexus_bt_uart_init(&uart, TEST_BASE, 1843200U, 115200U, false));
 
-    const uint8_t malformed[] = {0x02U,0x01U,0x20U,0x01U,0x04U};
+    /* ACL handle zero is invalid; the zero-length frame is self-contained. */
+    const uint8_t malformed[] = {0x02U,0x00U,0x00U,0x00U,0x00U};
     const uint8_t event[] = {0x04U,0x05U,0x00U};
     feed_rx(malformed, sizeof(malformed));
     feed_rx(event, sizeof(event));

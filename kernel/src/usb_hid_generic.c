@@ -455,7 +455,7 @@ bool usb_hid_generic_decode_mouse(
         return false;
 
     *event = (struct nexus_usb_mouse_event){0};
-    for (uint8_t i = 0U; i < layout->button_count && i < 32U; ++i {
+    for (uint8_t i = 0U; i < layout->button_count && i < 32U; ++i) {
         uint32_t down = 0U;
         if (!hid_read_bits(payload, layout->input_bytes,
                 layout->button_bit_offset[i], 1U, &down)) return false;

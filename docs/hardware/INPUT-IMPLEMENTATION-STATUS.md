@@ -157,3 +157,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added an I/O abstraction bound to the discovered Bluetooth USB interface. HCI Commands use the Bluetooth class control request, HCI Events are reconstructed from interrupt-IN payloads, and ACL packets use bulk-IN/OUT with strict length checks.
 - Bulk-IN ACL fragments feed the bounded L2CAP reassembler before being passed to the protocol layer. Host tests exercise command control setup, event framing, bulk OUT, and multi-fragment ACL receive.
 - This code is not yet attached to xHCI endpoint transfer rings: the callbacks must be backed by live USB control, interrupt-IN and bulk-IN/OUT scheduling before USB Bluetooth adapters work on hardware.
+
+
+### Multi-report HID expansion
+
+- Raised the generic keyboard/mouse multi-report descriptor capacity from 8 to 32 Report IDs.
+- Added a descriptor-construction regression test with nine distinct mouse Report IDs and decoded the ninth report, ensuring the previous boundary no longer rejects it.
+- Interfaces with more than 32 report IDs remain rejected by design to keep descriptor and per-device storage bounded.

@@ -134,3 +134,12 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 
 - The xHCI runtime currently activates a primary HID interface and at most one companion keyboard-or-mouse interface under the same USB slot. This covers the common two-interface wireless keyboard/mouse receiver layout, not arbitrary composite devices with three or more independently active HID interfaces.
 - USB Bluetooth controller devices are not yet bound to xHCI interrupt/bulk transfer rings; endpoint descriptor parsing alone is not operational transport support.
+
+
+### BLE discovery and connection command preparation
+
+- Added serialized HCI host commands for LE Set Scan Parameters and LE Set Scan Enable, with checked interval/window values and an explicit start/stop state machine.
+- Added a bounds-checked parser for legacy LE Advertising Report events, including multiple reports per event, address types, advertising data spans and signed RSSI.
+- Added a validated LE Create Connection command builder for explicit peer address and connection interval/latency/supervision values.
+- Host tests cover active scan enable/disable, single and multi-advertisement parsing, truncated report rejection, and connection parameter validation.
+- These APIs still require a live HCI transport to submit commands and deliver events. Pairing/security, bond management, HID notification subscription scheduling and USB controller integration remain outstanding.

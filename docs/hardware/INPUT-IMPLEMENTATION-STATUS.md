@@ -128,3 +128,9 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Per-channel state validates transaction identifiers and local/remote dynamic CIDs, records accepted/pending/rejected outcomes, and emits a matched Disconnection Request before releasing state.
 - Host tests cover a successful channel lifecycle and malformed/mismatched response rejection.
 - The helper is not yet wired to a Bluetooth controller transport, command scheduler, or a live ACL connection; it does not by itself enable Classic Bluetooth mouse pairing or input.
+
+
+### Composite receiver boundary
+
+- The xHCI runtime currently activates a primary HID interface and at most one companion keyboard-or-mouse interface under the same USB slot. This covers the common two-interface wireless keyboard/mouse receiver layout, not arbitrary composite devices with three or more independently active HID interfaces.
+- USB Bluetooth controller devices are not yet bound to xHCI interrupt/bulk transfer rings; endpoint descriptor parsing alone is not operational transport support.

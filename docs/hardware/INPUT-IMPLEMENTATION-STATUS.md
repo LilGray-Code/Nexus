@@ -227,3 +227,12 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Decoded Bluetooth keyboard/mouse activity is sent to the same input_usb_keyboard_report_state and input_usb_mouse_event producers used by wired HID, so it reaches the shared desktop input queue. On link disconnect, held keyboard keys and mouse buttons are released.
 - Host tests now verify the ATT subscription sequence and sample keyboard/mouse notification decoding against Report Maps. These are protocol/parser tests; no physical LE keyboard/mouse pairing or over-the-air test has been performed.
 - Known limitations remain: SMP security/pairing/bond persistence is not implemented, and the current generic parser accepts only one HID class (keyboard or mouse) per Report Map with a bounded maximum of eight report IDs. Vendor-specific/consumer-control usages and unsupported report maps are not exposed as working devices.
+
+
+### BLE legacy Security Manager pairing foundation — November 28, 2026
+
+- Exposed a reusable AES-128 block-encryption primitive and verified it with the FIPS-197 AES-128 known-answer vector.
+- Added BLE legacy Security Manager c1 and s1 functions and tested them against the Bluetooth Core 6.3 examples.
+- Added a bounded initiator state machine for non-bonding legacy Just Works pairing: Pairing Request/Response, Pairing Confirm/Random exchange, constant-time peer-confirm verification, STK derivation, and an explicit transition requiring HCI link encryption.
+- Pairing features deliberately request no MITM, no OOB, no bonding/key distribution, and require a 16-byte key. The state machine rejects peers that require MITM, request OOB/bonding distribution, or negotiate a smaller encryption key.
+- This pairing mode provides no authentication and no protection against eavesdropping or MITM during the pairing exchange. It is a compatibility fallback, not secure authenticated pairing. LE Secure Connections (P-256, f4/f5/f6/g2), passkey/numeric comparison, bonding/key persistence, RPA resolution and physical radio validation remain unimplemented. The xHCI path is not yet wired to this SMP module.

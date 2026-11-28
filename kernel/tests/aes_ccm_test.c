@@ -22,6 +22,26 @@ static void expect_hex(const uint8_t *actual, size_t length,
     }
 }
 
+static void test_aes128_block_fips197_vector(void) {
+    static const uint8_t key[16] = {
+        0x00U,0x01U,0x02U,0x03U,0x04U,0x05U,0x06U,0x07U,
+        0x08U,0x09U,0x0AU,0x0BU,0x0CU,0x0DU,0x0EU,0x0FU
+    };
+    static const uint8_t plaintext[16] = {
+        0x00U,0x11U,0x22U,0x33U,0x44U,0x55U,0x66U,0x77U,
+        0x88U,0x99U,0xAAU,0xBBU,0xCCU,0xDDU,0xEEU,0xFFU
+    };
+    static const uint8_t expected[16] = {
+        0x69U,0xC4U,0xE0U,0xD8U,0x6AU,0x7BU,0x04U,0x30U,
+        0xD8U,0xCDU,0xB7U,0x80U,0x70U,0xB4U,0xC5U,0x5AU
+    };
+    uint8_t encrypted[16] = {0U};
+    assert(nexus_aes128_encrypt_block(key, plaintext, encrypted));
+    for (size_t i = 0U; i < sizeof(expected); ++i)
+        assert(encrypted[i] == expected[i]);
+    assert(!nexus_aes128_encrypt_block(NULL, plaintext, encrypted));
+}
+
 static void test_ccm_independent_vector_and_round_trip(void) {
     uint8_t key[NEXUS_AES128_KEY_BYTES];
     uint8_t nonce[NEXUS_AES_CCM_NONCE_BYTES];
@@ -211,6 +231,7 @@ static void test_rfc3394_key_unwrap_rejects_bad_iv_and_lengths(void) {
 }
 
 int main(void) {
+    test_aes128_block_fips197_vector();
     test_ccm_independent_vector_and_round_trip();
     test_empty_payload_vector();
     test_in_place_and_authentication_failure();

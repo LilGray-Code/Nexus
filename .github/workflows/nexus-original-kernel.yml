@@ -122,6 +122,14 @@ jobs:
             kernel/tests/bluetooth_hci_test.c -o /tmp/nexus-bluetooth-hci-test
           /tmp/nexus-bluetooth-hci-test
 
+      - name: Test BLE legacy SMP c1/s1 vectors and Just Works transcript
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/aes_ccm.c kernel/src/random.c \
+            kernel/src/bluetooth_smp.c kernel/tests/bluetooth_smp_test.c \
+            -o /tmp/nexus-bluetooth-smp-test
+          /tmp/nexus-bluetooth-smp-test
+
       - name: Test Bluetooth 16550 UART H4 transport
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

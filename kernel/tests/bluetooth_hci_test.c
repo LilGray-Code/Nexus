@@ -189,6 +189,37 @@ static void test_host_initialization_state_machine(void) {
         &host, packet, sizeof(packet), &packet_length));
 }
 
+static void test_le_start_encryption_command_and_event(void) {
+    const uint8_t random[8] = {0U};
+    const uint8_t ltk[16] = {
+        0U,1U,2U,3U,4U,5U,6U,7U,8U,9U,10U,11U,12U,13U,14U,15U
+    };
+    uint8_t packet[40] = {0U};
+    size_t length = 0U;
+    assert(nexus_bt_hci_build_le_start_encryption(
+        0x0123U,random,0U,ltk,packet,sizeof(packet),&length));
+    assert(length == 32U);
+    assert(packet[0] == NEXUS_BT_HCI_PACKET_COMMAND);
+    assert(packet[1] == 0x19U && packet[2] == 0x20U && packet[3] == 28U);
+    assert(packet[4] == 0x23U && packet[5] == 0x01U);
+    assert(packet[16] == 0U && packet[17] == 1U && packet[31] == 15U);
+    assert(!nexus_bt_hci_build_le_start_encryption(
+        0U,random,0U,ltk,packet,sizeof(packet),&length));
+
+    const uint8_t params[] = {0U,0x23U,0x01U,1U};
+    const struct nexus_bt_hci_event_view event = {
+        .event_code = NEXUS_BT_HCI_EVENT_ENCRYPTION_CHANGE,
+        .parameters = params,
+        .parameter_length = sizeof(params)
+    };
+    uint16_t handle = 0U;
+    uint8_t status = 0xFFU;
+    bool enabled = false;
+    assert(nexus_bt_hci_parse_encryption_change(
+        &event,&handle,&status,&enabled));
+    assert(handle == 0x0123U && status == 0U && enabled);
+}
+
 static void test_le_scan_command_builders(void) {
     uint8_t packet[32] = {0U};
     size_t packet_length = 0U;

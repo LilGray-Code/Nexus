@@ -236,6 +236,23 @@ static void aes_encrypt_block(const uint8_t round_keys[AES_ROUND_KEY_BYTES],
     secure_zero(state, sizeof(state));
 }
 
+bool nexus_aes128_encrypt_block(
+    const uint8_t key[NEXUS_AES128_KEY_BYTES],
+    const uint8_t plaintext[16], uint8_t ciphertext[16]) {
+    if (key == NULL || plaintext == NULL || ciphertext == NULL) return false;
+    uint8_t round_keys[AES_ROUND_KEY_BYTES];
+    uint8_t input[16];
+    uint8_t output[16];
+    copy_bytes(input, plaintext, sizeof(input));
+    aes_expand_key(key, round_keys);
+    aes_encrypt_block(round_keys, input, output);
+    copy_bytes(ciphertext, output, sizeof(output));
+    secure_zero(round_keys, sizeof(round_keys));
+    secure_zero(input, sizeof(input));
+    secure_zero(output, sizeof(output));
+    return true;
+}
+
 static void aes_decrypt_block(const uint8_t round_keys[AES_ROUND_KEY_BYTES],
                               const uint8_t input[AES_BLOCK_BYTES],
                               uint8_t output[AES_BLOCK_BYTES]) {

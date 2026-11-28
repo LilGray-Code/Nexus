@@ -6,6 +6,11 @@
 #include <stdint.h>
 
 #define NEXUS_AES128_KEY_BYTES 16U
+
+/* Raw FIPS-197 AES-128 block encryption primitive for security protocols. */
+bool nexus_aes128_encrypt_block(
+    const uint8_t key[NEXUS_AES128_KEY_BYTES],
+    const uint8_t plaintext[16], uint8_t ciphertext[16]);
 #define NEXUS_AES_CCM_NONCE_BYTES 13U
 #define NEXUS_AES_CCM_TAG_BYTES 8U
 #define NEXUS_AES_CCM_MAX_AAD_BYTES 1024U

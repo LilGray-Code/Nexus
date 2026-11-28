@@ -239,6 +239,41 @@ bool nexus_bt_hci_build_le_scan_enable(
         packet_length);
 }
 
+bool nexus_bt_hci_build_le_start_encryption(
+    uint16_t connection_handle, const uint8_t random[8], uint16_t ediv,
+    const uint8_t ltk[16], uint8_t *packet, size_t packet_capacity,
+    size_t *packet_length) {
+    if (connection_handle == 0U || connection_handle > 0x0FFFU ||
+        random == NULL || ltk == NULL) return false;
+    uint8_t parameters[28] = {0U};
+    parameters[0] = (uint8_t)connection_handle;
+    parameters[1] = (uint8_t)(connection_handle >> 8);
+    for (size_t i = 0U; i < 8U; ++i) parameters[2U+i] = random[i];
+    parameters[10] = (uint8_t)ediv;
+    parameters[11] = (uint8_t)(ediv >> 8);
+    for (size_t i = 0U; i < 16U; ++i) parameters[12U+i] = ltk[i];
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LE_START_ENCRYPTION,
+        parameters, sizeof(parameters), packet, packet_capacity,
+        packet_length);
+}
+
+bool nexus_bt_hci_parse_encryption_change(
+    const struct nexus_bt_hci_event_view *event,
+    uint16_t *connection_handle, uint8_t *status, bool *enabled) {
+    if (event == NULL || connection_handle == NULL || status == NULL ||
+        enabled == NULL || event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_ENCRYPTION_CHANGE ||
+        event->parameter_length != 4U) return false;
+    const uint16_t handle = get_le16(event->parameters + 1U);
+    if (handle == 0U || handle > 0x0FFFU ||
+        event->parameters[3U] > 1U) return false;
+    *connection_handle = handle;
+    *status = event->parameters[0U];
+    *enabled = event->parameters[3U] != 0U;
+    return true;
+}
+
 bool nexus_bt_hci_build_le_create_connection(
     uint16_t scan_interval, uint16_t scan_window,
     uint8_t initiator_filter_policy, uint8_t peer_address_type,

@@ -126,6 +126,9 @@ struct xhci_hid_device {
     uint8_t speed;
     struct nexus_usb_hub_descriptor hub_descriptor;
     uint8_t hub_scan_cursor;
+    bool hub_initial_scan_complete;
+    bool hub_interrupt_active;
+    bool hub_port_scanned[NEXUS_USB_HUB_MAX_PORTS + 1U];
     bool hub_power_delay_pending;
     uint64_t hub_power_ready_tick;
     bool hub_port_connected[NEXUS_USB_HUB_MAX_PORTS + 1U];
@@ -1615,6 +1618,37 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         serial_write("\r\n");
         const bool initialized = xhci_initialize_hub(xhci, device, speed,
             config_buffer[5], hub_multi_tt);
+        if (initialized) {
+            const size_t bitmap_bytes =
+                ((size_t)device->hub_descriptor.port_count + 1U + 7U) / 8U;
+            struct nexus_usb_hub_interrupt_endpoint hub_endpoint = {0};
+            if (nexus_usb_hub_find_interrupt_endpoint(
+                    (const uint8_t *)(uintptr_t)config_buffer,
+                    total_length, bitmap_bytes, &hub_endpoint)) {
+                const bool configured = xhci_configure_interrupt_endpoint(
+                    xhci, device, hub_endpoint.address,
+                    hub_endpoint.max_packet, hub_endpoint.interval, speed);
+                if (configured &&
+                    xhci_schedule_interrupt_read(xhci, device)) {
+                    device->hub_interrupt_active = true;
+                    serial_write("xHCI HUB: interrupt-IN change notifications active endpoint=");
+                    serial_write_hex(hub_endpoint.address);
+                    serial_write(" packet=");
+                    serial_write_hex(hub_endpoint.max_packet);
+                    serial_write("\r\n");
+                } else {
+                    if (device->interrupt_ring.physical != 0U)
+                        (void)memory_free_page(
+                            device->interrupt_ring.physical);
+                    device->interrupt_ring = (struct xhci_ring){0};
+                    device->endpoint_id = 0U;
+                    device->max_packet = 0U;
+                    serial_write("xHCI HUB: interrupt-IN setup failed; using GET_STATUS polling fallback\r\n");
+                }
+            } else {
+                serial_write("xHCI HUB: no usable interrupt-IN endpoint; using GET_STATUS polling fallback\r\n");
+            }
+        }
         (void)memory_free_page(config_buffer_physical);
         if (!initialized) goto failed;
         return true;
@@ -2115,9 +2149,61 @@ static bool xhci_hub_reset_and_enumerate_child(
     return true;
 }
 
-/* Poll one downstream port per hub per scheduler pass. Hub class GET_STATUS
- * is used as a fallback notification path until the hub interrupt-IN endpoint
- * is connected to the generic xHCI endpoint scheduler. */
+static void xhci_process_hub_port_status(
+    struct xhci_controller *xhci, struct xhci_hid_device *hub,
+    uint8_t port, const struct nexus_usb_hub_port_status *status) {
+    if (xhci == NULL || hub == NULL || status == NULL ||
+        port == 0U || port > hub->hub_descriptor.port_count) return;
+
+    const bool was_connected = hub->hub_port_connected[port];
+    const bool connection_change = (status->change_bits & 1U) != 0U;
+    if (was_connected != status->connected ||
+        (connection_change && status->connected)) {
+        if (was_connected || connection_change)
+            xhci_detach_hub_children(xhci, hub->slot_id, port);
+        hub->hub_port_connected[port] = false;
+        if (status->connected) {
+            hub->hub_port_connected[port] =
+                xhci_hub_reset_and_enumerate_child(xhci, hub, port);
+        } else {
+            serial_write("USB: downstream hub port disconnected slot=");
+            serial_write_hex(hub->slot_id);
+            serial_write(" port=");
+            serial_write_hex(port);
+            serial_write("\r\n");
+        }
+    }
+    xhci_hub_clear_port_changes(xhci, hub, port, status->change_bits);
+}
+
+static bool xhci_process_hub_interrupt_report(
+    struct xhci_controller *xhci, struct xhci_hid_device *hub,
+    const uint8_t *bitmap, size_t bitmap_length) {
+    if (xhci == NULL || hub == NULL || bitmap == NULL) return false;
+    uint16_t changed_ports = 0U;
+    bool hub_status_changed = false;
+    if (!nexus_usb_hub_decode_change_bitmap(bitmap, bitmap_length,
+            hub->hub_descriptor.port_count, &changed_ports,
+            &hub_status_changed)) return false;
+    if (hub_status_changed) {
+        serial_write("xHCI HUB: hub-level status change reported slot=");
+        serial_write_hex(hub->slot_id);
+        serial_write("\r\n");
+    }
+    for (uint8_t port = 1U;
+         port <= hub->hub_descriptor.port_count; ++port) {
+        if ((changed_ports & (uint16_t)(1U << (port - 1U))) == 0U)
+            continue;
+        struct nexus_usb_hub_port_status status = {0};
+        if (!xhci_hub_get_port_status(xhci, hub, port, &status)) continue;
+        xhci_process_hub_port_status(xhci, hub, port, &status);
+    }
+    return true;
+}
+
+/* Hubs without an interrupt-IN endpoint retain a GET_STATUS polling fallback.
+ * Interrupt-capable hubs receive one complete successful initial sweep for
+ * already-connected children, then use the endpoint bitmap for changes. */
 static void xhci_poll_usb_hubs(struct xhci_controller *xhci) {
     if (xhci == NULL || !xhci->initialized) return;
     for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
@@ -2131,32 +2217,26 @@ static void xhci_poll_usb_hubs(struct xhci_controller *xhci) {
             serial_write_hex(hub->slot_id);
             serial_write("\r\n");
         }
+        if (hub->hub_interrupt_active && hub->hub_initial_scan_complete)
+            continue;
 
         hub->hub_scan_cursor = (uint8_t)(
             (hub->hub_scan_cursor % hub->hub_descriptor.port_count) + 1U);
         const uint8_t port = hub->hub_scan_cursor;
         struct nexus_usb_hub_port_status status = {0};
-        if (!xhci_hub_get_port_status(xhci, hub, port, &status)) continue;
-
-        const bool was_connected = hub->hub_port_connected[port];
-        const bool connection_change = (status.change_bits & 1U) != 0U;
-        if (was_connected != status.connected ||
-            (connection_change && status.connected)) {
-            if (was_connected || connection_change)
-                xhci_detach_hub_children(xhci, hub->slot_id, port);
-            hub->hub_port_connected[port] = false;
-            if (status.connected) {
-                hub->hub_port_connected[port] =
-                    xhci_hub_reset_and_enumerate_child(xhci, hub, port);
-            } else {
-                serial_write("USB: downstream hub port disconnected slot=");
-                serial_write_hex(hub->slot_id);
-                serial_write(" port=");
-                serial_write_hex(port);
-                serial_write("\r\n");
+        if (xhci_hub_get_port_status(xhci, hub, port, &status)) {
+            xhci_process_hub_port_status(xhci, hub, port, &status);
+            hub->hub_port_scanned[port] = true;
+            bool all_ports_scanned = true;
+            for (uint8_t candidate = 1U;
+                 candidate <= hub->hub_descriptor.port_count; ++candidate) {
+                if (!hub->hub_port_scanned[candidate]) {
+                    all_ports_scanned = false;
+                    break;
+                }
             }
+            hub->hub_initial_scan_complete = all_ports_scanned;
         }
-        xhci_hub_clear_port_changes(xhci, hub, port, status.change_bits);
     }
 }
 
@@ -2532,6 +2612,64 @@ void xhci_poll(void) {
         const uint8_t slot = (uint8_t)(event.control >> 24);
         const uint8_t endpoint =
             (uint8_t)((event.control >> 16) & 0x1FU);
+
+        /* Hub interrupt-IN packets are change bitmaps, not HID reports. */
+        struct xhci_hid_device *hub_device = NULL;
+        for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
+            if (xhci->hubs[i].active &&
+                xhci->hubs[i].kind == XHCI_HID_HUB &&
+                xhci->hubs[i].hub_interrupt_active &&
+                xhci->hubs[i].slot_id == slot &&
+                xhci->hubs[i].endpoint_id == endpoint) {
+                hub_device = &xhci->hubs[i];
+                break;
+            }
+        }
+        if (hub_device != NULL) {
+            const uint8_t code = xhci_event_code(&event);
+            if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
+                const uint32_t residual = event.status & 0x00FFFFFFU;
+                if (residual <= hub_device->max_packet) {
+                    const size_t received =
+                        (size_t)hub_device->max_packet - residual;
+                    if (received != 0U &&
+                        !xhci_process_hub_interrupt_report(xhci, hub_device,
+                            (const uint8_t *)(uintptr_t)
+                                hub_device->report_buffer, received)) {
+                        serial_write("xHCI HUB: malformed interrupt change bitmap slot=");
+                        serial_write_hex(hub_device->slot_id);
+                        serial_write("\r\n");
+                    }
+                }
+            } else {
+                serial_write("xHCI HUB: interrupt endpoint transfer failed; falling back to GET_STATUS polling slot=");
+                serial_write_hex(hub_device->slot_id);
+                serial_write(" code=");
+                serial_write_hex(code);
+                serial_write("\r\n");
+                hub_device->hub_interrupt_active = false;
+                hub_device->hub_initial_scan_complete = false;
+                hub_device->hub_scan_cursor = 0U;
+                for (uint8_t port = 1U;
+                     port <= hub_device->hub_descriptor.port_count; ++port)
+                    hub_device->hub_port_scanned[port] = false;
+            }
+
+            if (hub_device->hub_interrupt_active &&
+                !xhci_schedule_interrupt_read(xhci, hub_device)) {
+                serial_write("xHCI HUB: could not re-arm interrupt endpoint; falling back to GET_STATUS polling slot=");
+                serial_write_hex(hub_device->slot_id);
+                serial_write("\r\n");
+                hub_device->hub_interrupt_active = false;
+                hub_device->hub_initial_scan_complete = false;
+                hub_device->hub_scan_cursor = 0U;
+                for (uint8_t port = 1U;
+                     port <= hub_device->hub_descriptor.port_count; ++port)
+                    hub_device->hub_port_scanned[port] = false;
+            }
+            continue;
+        }
+
         struct xhci_hid_device *device = NULL;
         bool secondary = false;
 

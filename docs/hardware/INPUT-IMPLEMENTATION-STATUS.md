@@ -110,3 +110,12 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Completed L2CAP PDUs remain available when the first consumer buffer is too small, allowing a safe retry without losing the packet.
 - Host tests cover fragmented completion, orphan continuations, connection-handle mismatch, overflow, reserved packet-boundary values, and output-buffer retry.
 - This is receive-path protocol infrastructure; Bluetooth scanning, connection initiation, pairing/bonding, ACL scheduling over USB, and end-to-end HID report delivery remain open.
+
+
+### xHCI hub interrupt-IN runtime integration
+
+- xHCI now discovers the hub-class interrupt-IN endpoint from the active configuration after reading the hub descriptor, verifies that its packet can hold the full port-change bitmap, configures its endpoint context and schedules an interrupt read.
+- Transfer events for hub slots are dispatched separately from HID events. A valid change bitmap causes GET_STATUS requests only for the ports whose change bits are set, followed by the appropriate port-change acknowledgements and child detach/re-enumeration.
+- Interrupt-capable hubs receive an initial GET_STATUS sweep so devices already attached at boot are found. After each downstream port has been successfully sampled, routine polling stops and change notifications drive later updates.
+- Hubs without a usable interrupt endpoint, or whose interrupt transfer/re-arm fails, return to the existing GET_STATUS polling path. DMA ring allocation is released on setup/scheduling failure.
+- QEMU and physical SuperSpeed multi-hub topology coverage is still needed; endpoint scheduling and notification handling need the fresh CI and hardware matrix before being described as complete.

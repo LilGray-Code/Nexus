@@ -42,6 +42,8 @@
 #define XHCI_BT_ADV_QUEUE_DEPTH 16U
 #define XHCI_BT_ACL_TRANSFER_BYTES (NEXUS_BT_ACL_MAX_L2CAP_PDU + 4U)
 #define XHCI_BT_EVENT_TRANSFER_BYTES 260U
+#define XHCI_BT_SMP_PAIRING_TIMEOUT_TICKS 1500U
+#define XHCI_BT_SMP_ENCRYPTION_TIMEOUT_TICKS 500U
 #define XHCI_MAX_EXTRA_HID_INTERFACES (NEXUS_USB_HID_MAX_INTERFACES - 2U)
 #define XHCI_MAX_SCRATCHPADS    512U
 #define XHCI_POLL_LIMIT         5000000U
@@ -196,6 +198,7 @@ struct xhci_bluetooth_link {
     bool smp_tx_pending;
     bool start_encryption_pending;
     bool encryption_command_sent;
+    uint64_t security_deadline_tick;
     uint8_t smp_tx_pdu[17];
     uint8_t smp_tx_length;
     uint32_t mouse_buttons;
@@ -1370,6 +1373,7 @@ static void xhci_bluetooth_fail_pairing(
     link->smp_tx_pending = true;
     link->start_encryption_pending = false;
     link->encryption_command_sent = false;
+    link->security_deadline_tick = 0U;
     link->hogp.state = NEXUS_BT_HOGP_FAILED;
     link->hogp.awaiting_response = false;
     xhci_bluetooth_release_link_input(link);
@@ -1436,6 +1440,8 @@ static bool xhci_bluetooth_begin_legacy_pairing(
     memcpy(link->smp_tx_pdu, request, request_length);
     link->smp_tx_length = (uint8_t)request_length;
     link->smp_tx_pending = true;
+    link->security_deadline_tick =
+        timer_ticks() + XHCI_BT_SMP_PAIRING_TIMEOUT_TICKS;
     link->hogp.awaiting_response = false;
     serial_write("USB Bluetooth: starting non-bonding legacy Just Works pairing; unauthenticated\r\n");
     return true;
@@ -1519,16 +1525,16 @@ static void xhci_bluetooth_process_l2cap(
                 response, sizeof(response), &response_length,
                 &start_encryption)) {
             xhci_bluetooth_count_drop(bluetooth);
-            link->hogp.state = NEXUS_BT_HOGP_FAILED;
-            link->hogp.awaiting_response = false;
+            xhci_bluetooth_fail_pairing(
+                link, NEXUS_BT_SMP_REASON_INVALID_PARAMETERS);
             return;
         }
         if (response_length != 0U &&
             !xhci_bluetooth_queue_smp_response(
                 link, response, response_length)) {
             xhci_bluetooth_count_drop(bluetooth);
-            link->smp.state = NEXUS_BT_SMP_FAILED;
-            link->hogp.state = NEXUS_BT_HOGP_FAILED;
+            xhci_bluetooth_fail_pairing(
+                link, NEXUS_BT_SMP_REASON_BUSY);
             return;
         }
         if (start_encryption) link->start_encryption_pending = true;
@@ -1616,6 +1622,8 @@ static bool xhci_bluetooth_start_le_encryption(
     if (built) {
         link->start_encryption_pending = false;
         link->encryption_command_sent = true;
+        link->security_deadline_tick =
+            timer_ticks() + XHCI_BT_SMP_ENCRYPTION_TIMEOUT_TICKS;
         serial_write("USB Bluetooth: LE Start Encryption submitted; waiting for controller event\r\n");
     }
     return built;
@@ -1630,6 +1638,15 @@ static void xhci_bluetooth_progress_hogp(
     for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
         struct xhci_bluetooth_link *link = &bluetooth->connections[i];
         if (!link->active || !link->link.low_energy) continue;
+        if (link->smp.state != NEXUS_BT_SMP_IDLE &&
+            link->smp.state != NEXUS_BT_SMP_ENCRYPTED &&
+            link->smp.state != NEXUS_BT_SMP_FAILED &&
+            link->security_deadline_tick != 0U &&
+            timer_ticks() >= link->security_deadline_tick) {
+            serial_write("USB Bluetooth: SMP pairing/encryption timed out; refusing HID input\r\n");
+            xhci_bluetooth_fail_pairing(
+                link, NEXUS_BT_SMP_REASON_UNSPECIFIED);
+        }
         if (link->smp_tx_pending) {
             if (xhci_bluetooth_send_smp(link->link.handle,
                     link->smp_tx_pdu, link->smp_tx_length)) {
@@ -1940,6 +1957,7 @@ static void xhci_bluetooth_process_event(
             nexus_bt_smp_mark_encrypted(&link->smp, true) &&
             nexus_bt_hogp_client_start(&link->hogp, 247U)) {
             link->encryption_command_sent = false;
+            link->security_deadline_tick = 0U;
             serial_write("USB Bluetooth: link encrypted; starting HOGP discovery\r\n");
         } else {
             (void)nexus_bt_smp_mark_encrypted(&link->smp, false);

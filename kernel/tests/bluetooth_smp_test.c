@@ -134,10 +134,73 @@ static void test_reject_mitm_and_wrong_confirms(void) {
     assert(out[1] == NEXUS_BT_SMP_REASON_CONFIRM_VALUE_FAILED);
 }
 
+static void test_reject_reserved_auth_and_unknown_commands(void) {
+    const uint8_t local[6] = {1U,2U,3U,4U,5U,6U};
+    const uint8_t peer[6] = {7U,8U,9U,10U,11U,12U};
+    const uint8_t random[16] = {0U};
+    uint8_t out[32] = {0U};
+    size_t length = 0U;
+    bool encrypt = false;
+    struct nexus_bt_smp_session session = {0};
+
+    assert(nexus_bt_smp_start_with_random(&session,0U,local,0U,peer,
+        random,out,sizeof(out),&length));
+    const uint8_t reserved_auth[7] = {
+        NEXUS_BT_SMP_PAIRING_RESPONSE,3U,0U,0x80U,16U,0U,0U
+    };
+    assert(nexus_bt_smp_handle_pdu(&session,reserved_auth,
+        sizeof(reserved_auth),out,sizeof(out),&length,&encrypt));
+    assert(length == 2U && out[0] == NEXUS_BT_SMP_PAIRING_FAILED);
+    assert(out[1] == NEXUS_BT_SMP_REASON_INVALID_PARAMETERS);
+
+    assert(nexus_bt_smp_start_with_random(&session,0U,local,0U,peer,
+        random,out,sizeof(out),&length));
+    const uint8_t bonding_request[7] = {
+        NEXUS_BT_SMP_PAIRING_RESPONSE,3U,0U,0x01U,16U,0U,0U
+    };
+    assert(nexus_bt_smp_handle_pdu(&session,bonding_request,
+        sizeof(bonding_request),out,sizeof(out),&length,&encrypt));
+    assert(length == 2U && out[0] == NEXUS_BT_SMP_PAIRING_FAILED);
+    assert(out[1] == NEXUS_BT_SMP_REASON_PAIRING_NOT_SUPPORTED);
+
+    assert(nexus_bt_smp_start_with_random(&session,0U,local,0U,peer,
+        random,out,sizeof(out),&length));
+    const uint8_t unknown_command[] = {0x0FU};
+    assert(nexus_bt_smp_handle_pdu(&session,unknown_command,
+        sizeof(unknown_command),out,sizeof(out),&length,&encrypt));
+    assert(length == 2U && out[0] == NEXUS_BT_SMP_PAIRING_FAILED);
+    assert(out[1] == NEXUS_BT_SMP_REASON_COMMAND_NOT_SUPPORTED);
+}
+
+static void test_failed_encryption_wipes_temporary_secrets(void) {
+    struct nexus_bt_smp_session session = {
+        .state = NEXUS_BT_SMP_ENCRYPTION_PENDING
+    };
+    memset(session.tk,0x11U,sizeof(session.tk));
+    memset(session.stk,0x22U,sizeof(session.stk));
+    memset(session.local_random,0x33U,sizeof(session.local_random));
+    memset(session.remote_random,0x44U,sizeof(session.remote_random));
+    memset(session.local_confirm,0x55U,sizeof(session.local_confirm));
+    memset(session.remote_confirm,0x66U,sizeof(session.remote_confirm));
+    assert(nexus_bt_smp_mark_encrypted(&session,false));
+    assert(session.state == NEXUS_BT_SMP_FAILED);
+    assert(session.failure_reason == NEXUS_BT_SMP_REASON_UNSPECIFIED);
+    const uint8_t *arrays[] = {
+        session.tk,session.stk,session.local_random,
+        session.remote_random,session.local_confirm,session.remote_confirm
+    };
+    const size_t sizes[] = {16U,16U,16U,16U,16U,16U};
+    for (size_t i = 0U; i < sizeof(sizes)/sizeof(sizes[0]); ++i)
+        for (size_t j = 0U; j < sizes[i]; ++j)
+            assert(arrays[i][j] == 0U);
+}
+
 int main(void) {
     test_core_legacy_crypto_vectors();
     test_legacy_just_works_pairing_transcript();
     test_reject_mitm_and_wrong_confirms();
+    test_reject_reserved_auth_and_unknown_commands();
+    test_failed_encryption_wipes_temporary_secrets();
     puts("NEXUS BLE SMP LEGACY PAIRING TESTS PASSED");
     return 0;
 }

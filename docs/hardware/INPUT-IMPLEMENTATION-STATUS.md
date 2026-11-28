@@ -245,3 +245,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - The initiator validates the peer's Pairing Confirm using c1, derives the STK with s1, submits HCI LE Start Encryption (zero RAND/EDIV, session STK), and waits for a successful HCI Encryption Change event. Only then is HOGP discovery restarted and input reports enabled.
 - If random generation, pairing, HCI command submission or link encryption fails, HOGP input is disabled and held keyboard/mouse state is released. No STK is retained after encryption confirmation, and no bond is persisted; reconnections repeat pairing if the peer requires security.
 - This is strictly an unauthenticated compatibility fallback. It does not provide MITM protection, LE Secure Connections, passkey/Numeric Comparison/OOB pairing, persistent LTK/IRK bonding, or resolvable private address handling. Securely authenticated BLE HID is still unsupported. This runtime path has host protocol/crypto tests but no physical over-the-air validation.
+
+
+### SMP deadline and fail-closed handling — November 28, 2026
+
+- Added a 15-second deadline for legacy SMP feature/confirm/random exchange and a separate 5-second deadline while waiting for the HCI link-encryption procedure to complete.
+- On timeout, malformed or unsupported SMP traffic, rejected HCI encryption commands, or unsuccessful Encryption Change events, the HOGP session is disabled and any held keyboard/mouse state from that link is released. Pairing failure is reported where the transport remains available.
+- Added host tests for reserved AuthReq bits, unsupported/bonding requests, unknown SMP commands and clearing all temporary TK/STK/random/confirm material after a failed encryption result.

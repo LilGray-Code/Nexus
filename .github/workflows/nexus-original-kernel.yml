@@ -138,6 +138,15 @@ jobs:
             -o /tmp/nexus-bluetooth-sc-test
           /tmp/nexus-bluetooth-sc-test
 
+      - name: Test BLE Secure Connections SMP exchange and DHKey checks
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/aes_ccm.c kernel/src/bluetooth_sc.c \
+            kernel/src/bluetooth_smp_sc.c \
+            kernel/tests/bluetooth_smp_sc_test.c \
+            -o /tmp/nexus-bluetooth-smp-sc-test
+          /tmp/nexus-bluetooth-smp-sc-test
+
       - name: Test Bluetooth 16550 UART H4 transport
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

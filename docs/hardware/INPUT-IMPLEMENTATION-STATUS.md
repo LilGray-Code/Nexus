@@ -267,3 +267,12 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added strict parsers for the LE Read Local P-256 Public Key Complete event (0x3E/0x08) and LE Generate DHKey Complete event (0x3E/0x09). The DHKey parser rejects all-0xFF output, which the HCI specification defines as the invalid-remote-public-key result.
 - Added Core 6.3 f4, f5, and f6 on the RFC 4493 AES-CMAC primitive. The implementation includes the 128-bit CMAC salt, btle key ID, 256-bit key-length field, central/peripheral nonce ordering and seven-octet address values.
 - Added HCI command/event tests and Core 6.3 sample-vector tests for f4/f5/f6. This is currently crypto and HCI plumbing only: SMP Secure Connections transcript, P-256 key exchange, DHKey check, HCI event-mask setup on live adapters and encrypted HOGP integration are not yet wired. No controller has been physically tested for these HCI commands.
+
+
+### BLE Secure Connections SMP transcript state machine — November 28, 2026
+
+- Added a bounded Secure Connections initiator transcript for NoInputNoOutput Just Works without bonding: Pairing Request/Response, Central-first Public Key PDU, peer-key handoff for controller DHKey generation, f4 confirm/random validation, f5 MacKey/LTK derivation, and bilateral f6 DHKey Check validation.
+- The state machine emits explicit actions when it needs HCI local P-256 key generation, HCI DHKey generation, or HCI Start Encryption. It only returns an LTK after the peer DHKey Check validates; it zeroes DHKey/MacKey/LTK/nonces/public-key material after confirmed encryption or a failed exchange.
+- A peer that explicitly responds without the SC AuthReq bit is identified for the legacy pairing path, as required when the peer does not support Secure Connections. MITM, OOB, bonding/key distribution and invalid key-size requirements are rejected.
+- Host tests cover a complete deterministic SC transcript, local public-key transmission, the generated-DHKey handoff, both confirm/check values, LTK gating, legacy peer fallback and MITM/invalid-key refusal.
+- This protocol state machine is not yet connected to the xHCI link runtime or its global single-operation controller lock. HCI event-mask/key-generation command activation and encrypted HOGP integration remain the next steps.

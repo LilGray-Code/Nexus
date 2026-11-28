@@ -34,15 +34,19 @@ struct nexus_usb_hid_generic_layout {
     uint16_t x_bit_offset;
     uint16_t y_bit_offset;
     uint16_t wheel_bit_offset;
+    uint16_t horizontal_wheel_bit_offset;
     uint8_t x_size;
     uint8_t y_size;
     uint8_t wheel_size;
+    uint8_t horizontal_wheel_size;
     int32_t x_logical_minimum;
     int32_t y_logical_minimum;
     int32_t wheel_logical_minimum;
+    int32_t horizontal_wheel_logical_minimum;
     bool x_relative;
     bool y_relative;
     bool wheel_relative;
+    bool horizontal_wheel_relative;
 };
 
 #define NEXUS_USB_HID_GENERIC_MAX_REPORTS 8U

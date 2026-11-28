@@ -2,24 +2,33 @@
 #define NEXUS_XHCI_H
 
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 struct nexus_pci_device;
 
-/* Initialize xHCI and enumerate directly attached and supported downstream
- * HID keyboards, mice and gamepads. The controller scans its advertised root
- * ports, configures USB 2/SuperSpeed hubs, and monitors hub interrupt-IN
- * change notifications with a GET_STATUS polling fallback. Composite input
- * devices can expose up to 16 discovered HID interfaces; standard keyboard/
- * mouse endpoints receive independent rings and report state.
+/* Initialize xHCI and enumerate attached HID devices, supported downstream
+ * hubs and recognized USB Bluetooth HCI adapters. Bluetooth USB adapters get
+ * independent interrupt event-IN and bulk ACL-IN/OUT endpoints. The HCI host
+ * initializes the controller and exposes raw L2CAP send/read operations.
  *
- * This API does not imply support for legacy EHCI/OHCI/UHCI controllers or
- * Bluetooth HID pairing/report delivery. See INPUT-IMPLEMENTATION-STATUS.md
- * for the remaining controller, protocol and physical-hardware limitations. */
+ * This does not imply Bluetooth discovery, pairing/bonding or HOGP/HID report
+ * delivery. EHCI/OHCI/UHCI also remain unavailable input controllers; see
+ * INPUT-IMPLEMENTATION-STATUS.md for remaining limitations. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);
 bool xhci_mouse_ready(void);
 bool xhci_gamepads_ready(void);
+
+/* Bluetooth HCI USB transport exposes complete L2CAP PDUs to an upper
+ * protocol layer. These calls do not imply scanning, pairing, bonding or
+ * HOGP/HID report subscription support. */
+bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
+                               uint8_t *pdu, size_t pdu_capacity,
+                               size_t *pdu_length);
+bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
+                               const uint8_t *pdu, size_t pdu_length);
 
 /* Drain completed USB HID keyboard and mouse interrupt transfers. */
 void xhci_poll(void);

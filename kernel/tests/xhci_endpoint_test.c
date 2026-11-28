@@ -57,8 +57,10 @@ static void test_rejects_invalid_endpoint_and_context_values(void) {
     assert(!nexus_xhci_build_endpoint_context(
         0x02U, NEXUS_XHCI_ENDPOINT_BULK, 1U, 0U, 64U,
         0x00100000U, 64U, 1U, &context));
+    /* xHCI Interval is an encoded exponent; zero is valid (one
+     * service interval), including for high-speed interrupt endpoints. */
     assert(!nexus_xhci_build_endpoint_context(
-        0x82U, NEXUS_XHCI_ENDPOINT_INTERRUPT, 0U, 0U, 64U,
+        0x82U, NEXUS_XHCI_ENDPOINT_INTERRUPT, 16U, 0U, 64U,
         0x00100000U, 64U, 1U, &context));
     assert(!nexus_xhci_build_endpoint_context(
         0x82U, NEXUS_XHCI_ENDPOINT_BULK, 0U, 16U, 64U,

@@ -98,11 +98,71 @@ static void test_can_skip_non_bluetooth_interfaces(void) {
     assert(interface.interface_number == 0U);
 }
 
+static void test_usb_hci_event_framing(void) {
+    const uint8_t event_bytes[] = {
+        0x0EU,0x04U,0x01U,0x03U,0x0CU,0x00U
+    };
+    struct nexus_bt_hci_event_view event = {0};
+    assert(nexus_bluetooth_usb_parse_hci_event(
+        event_bytes, sizeof(event_bytes), &event));
+    assert(event.event_code == 0x0EU);
+    assert(event.parameter_length == 4U);
+    assert(event.parameters[1] == 0x03U);
+    assert(!nexus_bluetooth_usb_parse_hci_event(
+        event_bytes, sizeof(event_bytes) - 1U, &event));
+    const uint8_t truncated[] = {0x0EU,0x04U,0x01U};
+    assert(!nexus_bluetooth_usb_parse_hci_event(
+        truncated, sizeof(truncated), &event));
+}
+
+static void test_usb_acl_parse_and_build(void) {
+    const uint8_t l2cap_pdu[] = {
+        0x02U,0x00U,0x04U,0x00U,0xAAU,0xBBU
+    };
+    const uint8_t usb_acl[] = {
+        0x34U,0x02U,0x06U,0x00U,0x02U,0x00U,
+        0x04U,0x00U,0xAAU,0xBBU
+    };
+    struct nexus_bt_hci_acl_view acl = {0};
+    assert(nexus_bluetooth_usb_parse_hci_acl(
+        usb_acl, sizeof(usb_acl), &acl));
+    assert(acl.connection_handle == 0x0234U);
+    assert(acl.packet_boundary == 0U);
+    assert(acl.payload_length == sizeof(l2cap_pdu));
+    assert(acl.payload[4] == 0xAAU);
+    assert(!nexus_bluetooth_usb_parse_hci_acl(
+        usb_acl, sizeof(usb_acl) - 1U, &acl));
+
+    uint8_t output[32] = {0U};
+    size_t output_length = 0U;
+    assert(nexus_bluetooth_usb_build_acl_packet(
+        0x0234U, 0U, l2cap_pdu, sizeof(l2cap_pdu),
+        output, sizeof(output), &output_length));
+    assert(output_length == sizeof(usb_acl));
+    assert(memcmp(output, usb_acl, sizeof(usb_acl)) == 0);
+
+    assert(nexus_bluetooth_usb_build_acl_packet(
+        0x0234U, 1U, l2cap_pdu, sizeof(l2cap_pdu),
+        output, sizeof(output), &output_length));
+    assert(output[0] == 0x34U && output[1] == 0x12U);
+    assert(!nexus_bluetooth_usb_build_acl_packet(
+        0U, 0U, l2cap_pdu, sizeof(l2cap_pdu),
+        output, sizeof(output), &output_length));
+    assert(!nexus_bluetooth_usb_build_acl_packet(
+        0x0234U, 0U, l2cap_pdu, sizeof(l2cap_pdu) - 1U,
+        output, sizeof(output), &output_length));
+    assert(!nexus_bluetooth_usb_build_acl_packet(
+        0x0234U, 0U, l2cap_pdu, sizeof(l2cap_pdu),
+        output, 4U, &output_length));
+}
+
 int main(void) {
     test_valid_default_hci_interface();
     test_rejects_invalid_endpoints();
     test_can_skip_non_bluetooth_interfaces();
     test_rejects_malformed_trailing_descriptors();
-    puts("NEXUS USB BLUETOOTH HCI ENDPOINT VALIDATION TESTS PASSED");
+    test_usb_hci_event_framing();
+    test_usb_acl_parse_and_build();
+    puts("NEXUS USB BLUETOOTH HCI ENDPOINT AND TRANSPORT TESTS PASSED");
     return 0;
 }

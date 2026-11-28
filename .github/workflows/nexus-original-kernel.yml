@@ -220,11 +220,11 @@ jobs:
             -o /tmp/nexus-bluetooth-gatt-test
           /tmp/nexus-bluetooth-gatt-test
 
-      - name: Test USB Bluetooth HCI endpoint discovery
+      - name: Test USB Bluetooth HCI endpoint and packet transport
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-            -Ikernel/src kernel/src/bluetooth_usb.c \
-            kernel/tests/bluetooth_usb_test.c \
+            -Ikernel/src kernel/src/bluetooth_hci.c \
+            kernel/src/bluetooth_usb.c kernel/tests/bluetooth_usb_test.c \
             -o /tmp/nexus-bluetooth-usb-test
           /tmp/nexus-bluetooth-usb-test
 

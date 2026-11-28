@@ -2,6 +2,8 @@
 #include "xhci_speed.h"
 #include "xhci_endpoint.h"
 #include "xhci_events.h"
+#include "bluetooth_hci.h"
+#include "bluetooth_usb.h"
 #include "xhci_ownership.h"
 #include "xhci_ports.h"
 #include "xhci_power.h"
@@ -32,6 +34,9 @@
 #define XHCI_MAX_MICE           32U
 #define XHCI_MAX_GAMEPADS      32U
 #define XHCI_MAX_HUBS          16U
+#define XHCI_MAX_BLUETOOTH     4U
+#define XHCI_BT_ACL_TRANSFER_BYTES (NEXUS_BT_ACL_MAX_L2CAP_PDU + 4U)
+#define XHCI_BT_EVENT_TRANSFER_BYTES 260U
 #define XHCI_MAX_EXTRA_HID_INTERFACES (NEXUS_USB_HID_MAX_INTERFACES - 2U)
 #define XHCI_MAX_SCRATCHPADS    512U
 #define XHCI_POLL_LIMIT         5000000U
@@ -116,7 +121,8 @@ enum xhci_hid_kind {
     XHCI_HID_KEYBOARD = 1,
     XHCI_HID_MOUSE = 2,
     XHCI_HID_GAMEPAD = 3,
-    XHCI_HID_HUB = 4
+    XHCI_HID_HUB = 4,
+    XHCI_HID_BLUETOOTH = 5
 };
 
 struct xhci_hid_extra_endpoint {
@@ -176,6 +182,52 @@ struct xhci_hid_device {
     struct xhci_ring interrupt_ring;
 };
 
+#define XHCI_BT_MAX_CONNECTIONS 4U
+#define XHCI_BT_PDU_QUEUE_DEPTH 4U
+
+struct xhci_bluetooth_link {
+    bool active;
+    struct nexus_bt_hci_connection link;
+    struct nexus_bt_acl_reassembler reassembler;
+};
+
+struct xhci_bluetooth_pdu {
+    uint16_t connection_handle;
+    uint16_t length;
+    uint8_t bytes[NEXUS_BT_ACL_MAX_L2CAP_PDU];
+};
+
+struct xhci_bluetooth_device {
+    bool active;
+    struct xhci_hid_device usb_device;
+    uint8_t interface_number;
+    uint8_t event_endpoint_id;
+    uint8_t bulk_in_endpoint_id;
+    uint8_t bulk_out_endpoint_id;
+    uint16_t event_max_packet;
+    uint16_t bulk_in_max_packet;
+    uint16_t bulk_out_max_packet;
+    struct xhci_ring event_ring;
+    struct xhci_ring bulk_in_ring;
+    struct xhci_ring bulk_out_ring;
+    uint64_t event_buffer_physical;
+    volatile uint8_t *event_buffer;
+    uint64_t bulk_in_buffer_physical;
+    volatile uint8_t *bulk_in_buffer;
+    uint64_t bulk_out_buffer_physical;
+    volatile uint8_t *bulk_out_buffer;
+    struct nexus_bt_hci_host hci_host;
+    bool command_pending;
+    bool event_transfer_active;
+    bool bulk_in_transfer_active;
+    bool bulk_out_active;
+    struct xhci_bluetooth_link connections[XHCI_BT_MAX_CONNECTIONS];
+    struct xhci_bluetooth_pdu receive_queue[XHCI_BT_PDU_QUEUE_DEPTH];
+    uint8_t queue_head;
+    uint8_t queue_tail;
+    uint32_t dropped_packets;
+};
+
 struct xhci_controller {
     bool initialized;
     const struct nexus_pci_device *pci_device;
@@ -211,6 +263,7 @@ struct xhci_controller {
     struct xhci_hid_device mice[XHCI_MAX_MICE];
     struct xhci_hid_device gamepads[XHCI_MAX_GAMEPADS];
     struct xhci_hid_device hubs[XHCI_MAX_HUBS];
+    struct xhci_bluetooth_device bluetooths[XHCI_MAX_BLUETOOTH];
 };
 
 static struct xhci_controller controller;
@@ -557,8 +610,14 @@ static bool xhci_control_transfer(struct xhci_controller *xhci,
                            data_control) == NULL) return false;
     }
 
-    for (uint16_t i = 0U; i < length; ++i)
-        device->report_buffer[i] = 0U;
+    if ((request_type & 0x80U) != 0U) {
+        for (uint16_t i = 0U; i < length; ++i)
+            device->report_buffer[i] = 0U;
+    } else {
+        const uint8_t *source = (const uint8_t *)buffer;
+        for (uint16_t i = 0U; i < length; ++i)
+            device->report_buffer[i] = source[i];
+    }
 
     const bool status_in = length == 0U ||
                            (request_type & 0x80U) == 0U;
@@ -582,7 +641,8 @@ static bool xhci_control_transfer(struct xhci_controller *xhci,
         const size_t transferred = (size_t)length - residual;
         if (transferred == 0U) return false;
         (void)transferred;
-        if (buffer != (void *)(uintptr_t)device->report_buffer) {
+        if ((request_type & 0x80U) != 0U &&
+            buffer != (void *)(uintptr_t)device->report_buffer) {
             volatile uint8_t *source = device->report_buffer;
             uint8_t *destination = (uint8_t *)buffer;
             for (size_t i = 0U; i < transferred; ++i)
@@ -1147,6 +1207,358 @@ static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,
         device->report_buffer_physical, device->max_packet);
 }
 
+static void xhci_free_hid_device_dma(struct xhci_controller *xhci,
+                                       struct xhci_hid_device *device);
+
+static void xhci_bluetooth_free_transfer_resources(
+    struct xhci_bluetooth_device *bluetooth) {
+    if (bluetooth == NULL) return;
+    if (bluetooth->event_ring.physical != 0U)
+        (void)memory_free_page(bluetooth->event_ring.physical);
+    if (bluetooth->bulk_in_ring.physical != 0U)
+        (void)memory_free_page(bluetooth->bulk_in_ring.physical);
+    if (bluetooth->bulk_out_ring.physical != 0U)
+        (void)memory_free_page(bluetooth->bulk_out_ring.physical);
+    if (bluetooth->event_buffer_physical != 0U)
+        (void)memory_free_page(bluetooth->event_buffer_physical);
+    if (bluetooth->bulk_in_buffer_physical != 0U)
+        (void)memory_free_page(bluetooth->bulk_in_buffer_physical);
+    if (bluetooth->bulk_out_buffer_physical != 0U)
+        (void)memory_free_page(bluetooth->bulk_out_buffer_physical);
+    bluetooth->event_ring = (struct xhci_ring){0};
+    bluetooth->bulk_in_ring = (struct xhci_ring){0};
+    bluetooth->bulk_out_ring = (struct xhci_ring){0};
+    bluetooth->event_buffer_physical = 0U;
+    bluetooth->event_buffer = NULL;
+    bluetooth->bulk_in_buffer_physical = 0U;
+    bluetooth->bulk_in_buffer = NULL;
+    bluetooth->bulk_out_buffer_physical = 0U;
+    bluetooth->bulk_out_buffer = NULL;
+}
+
+static void xhci_bluetooth_release(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth, bool disable_slot) {
+    if (xhci == NULL || bluetooth == NULL || !bluetooth->active) return;
+    if (disable_slot && bluetooth->usb_device.slot_id != 0U &&
+        !xhci_disable_slot(xhci, bluetooth->usb_device.slot_id)) {
+        serial_write("USB Bluetooth: slot disable failed; retaining DMA resources safely\r\n");
+        return;
+    }
+    xhci_bluetooth_free_transfer_resources(bluetooth);
+    xhci_free_hid_device_dma(xhci, &bluetooth->usb_device);
+    *bluetooth = (struct xhci_bluetooth_device){0};
+}
+
+static struct xhci_bluetooth_device *xhci_bluetooth_for_slot(
+    struct xhci_controller *xhci, uint8_t slot_id) {
+    if (xhci == NULL || slot_id == 0U) return NULL;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &xhci->bluetooths[i];
+        if (bluetooth->active &&
+            bluetooth->usb_device.slot_id == slot_id) return bluetooth;
+    }
+    return NULL;
+}
+
+static struct xhci_bluetooth_device *xhci_bluetooth_free_slot(
+    struct xhci_controller *xhci) {
+    if (xhci == NULL) return NULL;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i)
+        if (!xhci->bluetooths[i].active) return &xhci->bluetooths[i];
+    return NULL;
+}
+
+static struct xhci_bluetooth_link *xhci_bluetooth_find_link(
+    struct xhci_bluetooth_device *bluetooth, uint16_t handle) {
+    if (bluetooth == NULL || handle == 0U) return NULL;
+    for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+        struct xhci_bluetooth_link *link = &bluetooth->connections[i];
+        if (link->active && link->link.handle == handle) return link;
+    }
+    return NULL;
+}
+
+static bool xhci_bluetooth_add_link(
+    struct xhci_bluetooth_device *bluetooth,
+    const struct nexus_bt_hci_connection *connection) {
+    if (bluetooth == NULL || connection == NULL ||
+        !connection->connected || connection->handle == 0U ||
+        connection->handle > 0x0FFFU) return false;
+    struct xhci_bluetooth_link *link =
+        xhci_bluetooth_find_link(bluetooth, connection->handle);
+    if (link == NULL) {
+        for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+            if (!bluetooth->connections[i].active) {
+                link = &bluetooth->connections[i];
+                break;
+            }
+        }
+    }
+    if (link == NULL) return false;
+    *link = (struct xhci_bluetooth_link){0};
+    link->active = true;
+    link->link = *connection;
+    return true;
+}
+
+static void xhci_bluetooth_remove_link(
+    struct xhci_bluetooth_device *bluetooth, uint16_t handle) {
+    struct xhci_bluetooth_link *link =
+        xhci_bluetooth_find_link(bluetooth, handle);
+    if (link != NULL) *link = (struct xhci_bluetooth_link){0};
+}
+
+static void xhci_bluetooth_count_drop(
+    struct xhci_bluetooth_device *bluetooth) {
+    if (bluetooth != NULL && bluetooth->dropped_packets != UINT32_MAX)
+        ++bluetooth->dropped_packets;
+}
+
+static void xhci_bluetooth_queue_l2cap(
+    struct xhci_bluetooth_device *bluetooth,
+    struct xhci_bluetooth_link *link) {
+    if (bluetooth == NULL || link == NULL) return;
+    const uint8_t next = (uint8_t)(
+        (bluetooth->queue_tail + 1U) % XHCI_BT_PDU_QUEUE_DEPTH);
+    if (next == bluetooth->queue_head) {
+        xhci_bluetooth_count_drop(bluetooth);
+        nexus_bt_acl_reassembler_reset(&link->reassembler);
+        return;
+    }
+    struct xhci_bluetooth_pdu *item =
+        &bluetooth->receive_queue[bluetooth->queue_tail];
+    size_t length = 0U;
+    if (!nexus_bt_acl_reassembler_read(&link->reassembler,
+            item->bytes, sizeof(item->bytes), &length) ||
+        length > UINT16_MAX) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    item->connection_handle = link->link.handle;
+    item->length = (uint16_t)length;
+    bluetooth->queue_tail = next;
+}
+
+static void xhci_bluetooth_process_event(
+    struct xhci_bluetooth_device *bluetooth,
+    const uint8_t *event_bytes, size_t event_length) {
+    if (bluetooth == NULL || event_bytes == NULL ||
+        event_length > XHCI_BT_EVENT_TRANSFER_BYTES) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    struct nexus_bt_hci_event_view event = {0};
+    if (!nexus_bluetooth_usb_parse_hci_event(
+            event_bytes, event_length, &event)) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+
+    if (bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY &&
+        bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_FAILED) {
+        if (event.event_code == NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE ||
+            event.event_code == NEXUS_BT_HCI_EVENT_COMMAND_STATUS) {
+            if (nexus_bt_hci_host_handle_event(
+                    &bluetooth->hci_host, &event))
+                bluetooth->command_pending = true;
+            else
+                xhci_bluetooth_count_drop(bluetooth);
+        }
+        return;
+    }
+
+    struct nexus_bt_hci_connection connection = {0};
+    if (nexus_bt_hci_connection_complete(&event, &connection)) {
+        if (!xhci_bluetooth_add_link(bluetooth, &connection))
+            xhci_bluetooth_count_drop(bluetooth);
+        else {
+            serial_write("USB Bluetooth: HCI link connected handle=");
+            serial_write_hex(connection.handle);
+            serial_write(connection.low_energy ? " LE\r\n" : " BR/EDR\r\n");
+        }
+        return;
+    }
+    uint16_t handle = 0U;
+    uint8_t reason = 0U;
+    if (nexus_bt_hci_disconnection_complete(&event, &handle, &reason)) {
+        (void)reason;
+        xhci_bluetooth_remove_link(bluetooth, handle);
+        serial_write("USB Bluetooth: HCI link disconnected handle=");
+        serial_write_hex(handle);
+        serial_write("\r\n");
+    }
+}
+
+static void xhci_bluetooth_process_acl(
+    struct xhci_bluetooth_device *bluetooth,
+    const uint8_t *acl_bytes, size_t acl_length) {
+    if (bluetooth == NULL || acl_bytes == NULL ||
+        acl_length > XHCI_BT_ACL_TRANSFER_BYTES) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    struct nexus_bt_hci_acl_view acl = {0};
+    if (!nexus_bluetooth_usb_parse_hci_acl(acl_bytes, acl_length, &acl)) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    struct xhci_bluetooth_link *link =
+        xhci_bluetooth_find_link(bluetooth, acl.connection_handle);
+    if (link == NULL) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    const enum nexus_bt_acl_reassembly_result result =
+        nexus_bt_acl_reassembler_feed(&link->reassembler, &acl);
+    if (result == NEXUS_BT_ACL_REJECTED) {
+        xhci_bluetooth_count_drop(bluetooth);
+    } else if (result == NEXUS_BT_ACL_COMPLETE) {
+        xhci_bluetooth_queue_l2cap(bluetooth, link);
+    }
+}
+
+static bool xhci_bluetooth_schedule_event(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth) {
+    return xhci_schedule_endpoint_transfer(xhci,
+        bluetooth->usb_device.slot_id, bluetooth->event_endpoint_id,
+        &bluetooth->event_ring, bluetooth->event_buffer_physical,
+        XHCI_BT_EVENT_TRANSFER_BYTES, true);
+}
+
+static bool xhci_bluetooth_schedule_acl_in(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth) {
+    return xhci_schedule_endpoint_transfer(xhci,
+        bluetooth->usb_device.slot_id, bluetooth->bulk_in_endpoint_id,
+        &bluetooth->bulk_in_ring, bluetooth->bulk_in_buffer_physical,
+        XHCI_BT_ACL_TRANSFER_BYTES, true);
+}
+
+static bool xhci_bluetooth_send_pending_command(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth) {
+    if (xhci == NULL || bluetooth == NULL || !bluetooth->active ||
+        !bluetooth->command_pending) return true;
+    uint8_t packet[260U];
+    size_t packet_length = 0U;
+    if (!nexus_bt_hci_host_next_command(&bluetooth->hci_host,
+            packet, sizeof(packet), &packet_length)) {
+        bluetooth->command_pending = false;
+        return bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_FAILED;
+    }
+    if (packet_length < 4U || packet[0] != NEXUS_BT_HCI_PACKET_COMMAND ||
+        !xhci_control_transfer(xhci, &bluetooth->usb_device,
+            0x20U, 0x00U, 0U, bluetooth->interface_number,
+            packet + 1U, (uint16_t)(packet_length - 1U))) {
+        bluetooth->hci_host.state = NEXUS_BT_HCI_HOST_FAILED;
+        bluetooth->hci_host.outstanding_opcode = 0U;
+        bluetooth->command_pending = false;
+        serial_write("USB Bluetooth: HCI command transport failed\r\n");
+        return false;
+    }
+    bluetooth->command_pending = false;
+    return true;
+}
+
+static bool xhci_initialize_bluetooth(
+    struct xhci_controller *xhci, struct xhci_hid_device *device,
+    const struct nexus_bluetooth_usb_interface *interface,
+    uint8_t configuration_value, uint8_t speed) {
+    if (xhci == NULL || device == NULL || interface == NULL ||
+        !device->active || configuration_value == 0U) return false;
+    struct xhci_bluetooth_device *bluetooth =
+        xhci_bluetooth_free_slot(xhci);
+    if (bluetooth == NULL) return false;
+
+    struct xhci_bluetooth_device candidate = {0};
+    candidate.interface_number = interface->interface_number;
+    candidate.event_max_packet = interface->interrupt_in_max_packet;
+    candidate.bulk_in_max_packet = interface->bulk_in_max_packet;
+    candidate.bulk_out_max_packet = interface->bulk_out_max_packet;
+
+    if (!xhci_control_transfer(xhci, device, 0x00U, 0x09U,
+            configuration_value, 0U, NULL, 0U)) goto failed;
+    if (!xhci_ring_init(&candidate.event_ring) ||
+        !xhci_ring_init(&candidate.bulk_in_ring) ||
+        !xhci_ring_init(&candidate.bulk_out_ring) ||
+        !xhci_alloc_page(&candidate.event_buffer_physical,
+                         &candidate.event_buffer) ||
+        !xhci_alloc_page(&candidate.bulk_in_buffer_physical,
+                         &candidate.bulk_in_buffer) ||
+        !xhci_alloc_page(&candidate.bulk_out_buffer_physical,
+                         &candidate.bulk_out_buffer)) goto failed;
+
+    if (!xhci_configure_endpoint(xhci, device, interface->interrupt_in,
+            NEXUS_XHCI_ENDPOINT_INTERRUPT, interface->interrupt_interval,
+            interface->interrupt_in_max_packet, speed,
+            &candidate.event_ring)) goto failed;
+    candidate.event_endpoint_id = device->endpoint_id;
+
+    if (!xhci_configure_endpoint(xhci, device, interface->bulk_in,
+            NEXUS_XHCI_ENDPOINT_BULK, 0U, interface->bulk_in_max_packet,
+            speed, &candidate.bulk_in_ring)) goto failed;
+    candidate.bulk_in_endpoint_id = device->endpoint_id;
+
+    if (!xhci_configure_endpoint(xhci, device, interface->bulk_out,
+            NEXUS_XHCI_ENDPOINT_BULK, 0U, interface->bulk_out_max_packet,
+            speed, &candidate.bulk_out_ring)) goto failed;
+    candidate.bulk_out_endpoint_id = device->endpoint_id;
+
+    candidate.usb_device = *device;
+    candidate.usb_device.kind = XHCI_HID_BLUETOOTH;
+    candidate.usb_device.active = true;
+    candidate.active = true;
+    nexus_bt_hci_host_init(&candidate.hci_host);
+    candidate.command_pending = true;
+
+    if (!xhci_bluetooth_schedule_event(xhci, &candidate) ||
+        !xhci_bluetooth_schedule_acl_in(xhci, &candidate)) goto failed;
+    candidate.event_transfer_active = true;
+    candidate.bulk_in_transfer_active = true;
+
+    *bluetooth = candidate;
+    device->kind = XHCI_HID_BLUETOOTH;
+    device->active = true;
+    serial_write("NEXUS USB BLUETOOTH HCI READY slot=");
+    serial_write_hex(device->slot_id);
+    serial_write(" interface=");
+    serial_write_hex(interface->interface_number);
+    serial_write(" event/bulk-endpoints=");
+    serial_write_hex(interface->interrupt_in);
+    serial_write("/");
+    serial_write_hex(interface->bulk_in);
+    serial_write("/");
+    serial_write_hex(interface->bulk_out);
+    serial_write("\r\n");
+    if (!xhci_bluetooth_send_pending_command(xhci, bluetooth))
+        serial_write("USB Bluetooth: initial HCI Reset command could not be submitted\r\n");
+    return true;
+
+failed:
+    /* A failed Configure Endpoint or scheduled transfer may have exposed
+     * rings to hardware. Free them only after a confirmed Disable Slot. */
+    if (candidate.event_ring.physical != 0U ||
+        candidate.bulk_in_ring.physical != 0U ||
+        candidate.bulk_out_ring.physical != 0U) {
+        if (!xhci_disable_slot(xhci, device->slot_id)) {
+            serial_write("USB Bluetooth: failed setup and slot disable; retaining all allocated transfer DMA\r\n");
+            candidate.usb_device = *device;
+            candidate.active = true;
+            candidate.hci_host.state = NEXUS_BT_HCI_HOST_FAILED;
+            *bluetooth = candidate;
+            device->kind = XHCI_HID_BLUETOOTH;
+            return true;
+        }
+        if (xhci->dcbaa != NULL) xhci->dcbaa[device->slot_id] = 0U;
+        device->slot_id = 0U;
+    }
+    xhci_bluetooth_free_transfer_resources(&candidate);
+    return false;
+}
+
+
 static bool xhci_configure_secondary_hid_interface(
     struct xhci_controller *xhci, struct xhci_hid_device *device,
     const struct nexus_usb_hid_interface_set *interfaces,
@@ -1460,8 +1872,10 @@ static void xhci_release_hid_device(struct xhci_controller *xhci,
             input_usb_mouse_event(&release);
         }
     }
-    if (device->slot_id != 0U)
-        (void)xhci_disable_slot(xhci, device->slot_id);
+    if (device->slot_id != 0U && !xhci_disable_slot(xhci, device->slot_id)) {
+        serial_write("xHCI: slot disable failed; retaining device DMA resources\r\n");
+        return;
+    }
     xhci_free_hid_device_dma(xhci, device);
 }
 
@@ -1561,6 +1975,8 @@ static bool xhci_attach_hid_device(struct xhci_controller *xhci,
                 return true;
             }
         }
+    } else if (device->kind == XHCI_HID_BLUETOOTH) {
+        return xhci_bluetooth_for_slot(xhci, device->slot_id) != NULL;
     } else if (device->kind == XHCI_HID_HUB) {
         for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
             if (!xhci->hubs[i].active) {
@@ -1869,6 +2285,11 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         }
         descriptor_offset += descriptor_length;
     }
+    struct nexus_bluetooth_usb_interface bluetooth_interface = {0};
+    const bool has_bluetooth_interface =
+        nexus_bluetooth_usb_find_interface(
+            (const uint8_t *)(uintptr_t)config_buffer,
+            total_length, &bluetooth_interface);
     if (has_usb_hub_interface) {
         serial_write("xHCI: USB hub interface found; configuration=");
         serial_write_hex(config_buffer[5]);
@@ -1910,6 +2331,19 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
         }
         (void)memory_free_page(config_buffer_physical);
         if (!initialized) goto failed;
+        return true;
+    }
+
+    if (has_bluetooth_interface) {
+        const uint8_t configuration_value = config_buffer[5];
+        (void)memory_free_page(config_buffer_physical);
+        device->speed = speed;
+        device->port_number = path->root_port;
+        if (!xhci_initialize_bluetooth(xhci, device,
+                &bluetooth_interface, configuration_value, speed))
+            goto failed;
+        device->kind = XHCI_HID_BLUETOOTH;
+        device->active = true;
         return true;
     }
 
@@ -2188,8 +2622,11 @@ static bool xhci_try_controller(const struct nexus_pci_device *pci_device) {
     bool any_hub = false;
     for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i)
         any_hub = any_hub || xhci->hubs[i].active;
+    bool any_bluetooth = false;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i)
+        any_bluetooth = any_bluetooth || xhci->bluetooths[i].active;
     if (!xhci_has_keyboard(xhci) && !xhci_has_mouse(xhci) &&
-        !any_gamepad && !any_hub) {
+        !any_gamepad && !any_hub && !any_bluetooth) {
         serial_write("xHCI: no supported HID input or downstream hub found\r\n");
         return false;
     }
@@ -2213,6 +2650,10 @@ static bool xhci_device_on_port(const struct xhci_controller *xhci,
     for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i)
         if (xhci->hubs[i].active &&
             xhci->hubs[i].port_number == port_number) return true;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i)
+        if (xhci->bluetooths[i].active &&
+            xhci->bluetooths[i].usb_device.port_number == port_number)
+            return true;
     return false;
 }
 
@@ -2256,6 +2697,13 @@ static void xhci_detach_hub_children(struct xhci_controller *xhci,
             device->usb_path.parent_port != parent_port) continue;
         xhci_notify_gamepad_disconnected(device);
         xhci_release_hid_device(xhci, device);
+    }
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &xhci->bluetooths[i];
+        if (bluetooth->active &&
+            bluetooth->usb_device.usb_path.parent_hub_slot == parent_hub_slot &&
+            bluetooth->usb_device.usb_path.parent_port == parent_port)
+            xhci_bluetooth_release(xhci, bluetooth, true);
     }
     for (size_t i = 0U; i < XHCI_MAX_HUBS; ++i) {
         struct xhci_hid_device *child_hub = &xhci->hubs[i];
@@ -2320,6 +2768,13 @@ static void xhci_detach_port(struct xhci_controller *xhci,
             xhci_detach_hub_subtree(xhci, hub);
             xhci_release_hid_device(xhci, hub);
         }
+    }
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &xhci->bluetooths[i];
+        if (bluetooth->active &&
+            bluetooth->usb_device.port_number == port_number &&
+            bluetooth->usb_device.usb_path.depth == 0U)
+            xhci_bluetooth_release(xhci, bluetooth, true);
     }
 }
 
@@ -2717,6 +3172,14 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
         struct xhci_hid_device *hub = &xhci->hubs[i];
         if (hub->active) xhci_free_hid_device_dma(xhci, hub);
     }
+    /* Controller is halted here, so all Bluetooth endpoint DMA can be freed. */
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &xhci->bluetooths[i];
+        if (!bluetooth->active) continue;
+        xhci_bluetooth_free_transfer_resources(bluetooth);
+        xhci_free_hid_device_dma(xhci, &bluetooth->usb_device);
+        *bluetooth = (struct xhci_bluetooth_device){0};
+    }
 }
 
 static void xhci_release_controller_dma(struct xhci_controller *xhci) {
@@ -2882,6 +3345,66 @@ bool xhci_gamepads_ready(void) {
     return false;
 }
 
+bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
+                               uint8_t *pdu, size_t pdu_capacity,
+                               size_t *pdu_length) {
+    if (!controller.initialized || connection_handle == NULL ||
+        pdu == NULL || pdu_length == NULL) return false;
+    *pdu_length = 0U;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &controller.bluetooths[i];
+        if (!bluetooth->active ||
+            bluetooth->queue_head == bluetooth->queue_tail) continue;
+        const struct xhci_bluetooth_pdu *item =
+            &bluetooth->receive_queue[bluetooth->queue_head];
+        *pdu_length = item->length;
+        if (pdu_capacity < item->length) return false;
+        *connection_handle = item->connection_handle;
+        for (uint16_t j = 0U; j < item->length; ++j)
+            pdu[j] = item->bytes[j];
+        bluetooth->queue_head = (uint8_t)(
+            (bluetooth->queue_head + 1U) % XHCI_BT_PDU_QUEUE_DEPTH);
+        return true;
+    }
+    return false;
+}
+
+bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
+                               const uint8_t *pdu, size_t pdu_length) {
+    if (!controller.initialized || connection_handle == 0U ||
+        connection_handle > 0x0FFFU || pdu == NULL ||
+        pdu_length < 4U || pdu_length > NEXUS_BT_ACL_MAX_L2CAP_PDU ||
+        (uint16_t)(pdu[0] | ((uint16_t)pdu[1] << 8)) != pdu_length - 4U)
+        return false;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &controller.bluetooths[i];
+        if (!bluetooth->active ||
+            bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY ||
+            bluetooth->bulk_out_active ||
+            xhci_bluetooth_find_link(bluetooth, connection_handle) == NULL)
+            continue;
+
+        /* Build the raw USB bulk payload (ACL header + complete L2CAP PDU)
+         * without the H4 packet-type byte, then copy it into DMA-visible RAM. */
+        uint8_t packet[NEXUS_BT_ACL_MAX_L2CAP_PDU + 4U];
+        size_t acl_length = 0U;
+        if (!nexus_bluetooth_usb_build_acl_packet(connection_handle, 0U,
+                pdu, pdu_length, packet, sizeof(packet), &acl_length))
+            return false;
+        for (size_t j = 0U; j < acl_length; ++j)
+            bluetooth->bulk_out_buffer[j] = packet[j];
+        if (!xhci_schedule_bulk_endpoint(&controller,
+                bluetooth->usb_device.slot_id,
+                bluetooth->bulk_out_endpoint_id,
+                &bluetooth->bulk_out_ring,
+                bluetooth->bulk_out_buffer_physical,
+                (uint16_t)acl_length, false)) return false;
+        bluetooth->bulk_out_active = true;
+        return true;
+    }
+    return false;
+}
+
 void xhci_poll(void) {
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized) return;
@@ -2933,6 +3456,75 @@ void xhci_poll(void) {
                 break;
             }
         }
+        struct xhci_bluetooth_device *bluetooth =
+            xhci_bluetooth_for_slot(xhci, slot);
+        if (bluetooth != NULL &&
+            (endpoint == bluetooth->event_endpoint_id ||
+             endpoint == bluetooth->bulk_in_endpoint_id ||
+             endpoint == bluetooth->bulk_out_endpoint_id)) {
+            const uint8_t code = xhci_event_code(&event);
+            const uint32_t residual = event.status & 0x00FFFFFFU;
+            if (endpoint == bluetooth->event_endpoint_id) {
+                bluetooth->event_transfer_active = false;
+                if ((code == XHCI_CC_SUCCESS ||
+                     code == XHCI_CC_SHORT_PACKET) &&
+                    residual <= XHCI_BT_EVENT_TRANSFER_BYTES) {
+                    const size_t received =
+                        XHCI_BT_EVENT_TRANSFER_BYTES - residual;
+                    if (received != 0U)
+                        xhci_bluetooth_process_event(bluetooth,
+                            (const uint8_t *)(uintptr_t)
+                                bluetooth->event_buffer, received);
+                } else {
+                    xhci_bluetooth_count_drop(bluetooth);
+                    serial_write("USB Bluetooth: HCI event endpoint transfer failed code=");
+                    serial_write_hex(code);
+                    serial_write("\r\n");
+                }
+                if (bluetooth->active &&
+                    xhci_bluetooth_schedule_event(xhci, bluetooth)) {
+                    bluetooth->event_transfer_active = true;
+                } else {
+                    bluetooth->hci_host.state = NEXUS_BT_HCI_HOST_FAILED;
+                    serial_write("USB Bluetooth: HCI event endpoint could not be re-armed\r\n");
+                }
+            } else if (endpoint == bluetooth->bulk_in_endpoint_id) {
+                bluetooth->bulk_in_transfer_active = false;
+                if ((code == XHCI_CC_SUCCESS ||
+                     code == XHCI_CC_SHORT_PACKET) &&
+                    residual <= XHCI_BT_ACL_TRANSFER_BYTES) {
+                    const size_t received =
+                        XHCI_BT_ACL_TRANSFER_BYTES - residual;
+                    if (received != 0U)
+                        xhci_bluetooth_process_acl(bluetooth,
+                            (const uint8_t *)(uintptr_t)
+                                bluetooth->bulk_in_buffer, received);
+                } else {
+                    xhci_bluetooth_count_drop(bluetooth);
+                    serial_write("USB Bluetooth: ACL bulk-IN transfer failed code=");
+                    serial_write_hex(code);
+                    serial_write("\r\n");
+                }
+                if (bluetooth->active &&
+                    xhci_bluetooth_schedule_acl_in(xhci, bluetooth)) {
+                    bluetooth->bulk_in_transfer_active = true;
+                } else {
+                    bluetooth->hci_host.state = NEXUS_BT_HCI_HOST_FAILED;
+                    serial_write("USB Bluetooth: ACL bulk-IN endpoint could not be re-armed\r\n");
+                }
+            } else {
+                bluetooth->bulk_out_active = false;
+                if (code != XHCI_CC_SUCCESS &&
+                    code != XHCI_CC_SHORT_PACKET) {
+                    xhci_bluetooth_count_drop(bluetooth);
+                    serial_write("USB Bluetooth: ACL bulk-OUT transfer failed code=");
+                    serial_write_hex(code);
+                    serial_write("\r\n");
+                }
+            }
+            continue;
+        }
+
         if (hub_device != NULL) {
             const uint8_t code = xhci_event_code(&event);
             if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
@@ -3156,6 +3748,14 @@ void xhci_poll(void) {
             else
                 xhci_drop_hid_device(xhci, device);
         }
+    }
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &xhci->bluetooths[i];
+        if (!bluetooth->active) continue;
+        if (bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY &&
+            bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_FAILED &&
+            bluetooth->command_pending)
+            (void)xhci_bluetooth_send_pending_command(xhci, bluetooth);
     }
     xhci_poll_usb_hubs(xhci);
 }

@@ -146,3 +146,64 @@ bool nexus_bluetooth_usb_find_interface(
     *interface = selected;
     return true;
 }
+
+
+bool nexus_bluetooth_usb_parse_hci_event(
+    const uint8_t *usb_event, size_t length,
+    struct nexus_bt_hci_event_view *event) {
+    if (usb_event == NULL || event == NULL || length < 2U ||
+        length > 257U || usb_event[1] != length - 2U) return false;
+    *event = (struct nexus_bt_hci_event_view){
+        .event_code = usb_event[0],
+        .parameters = usb_event + 2U,
+        .parameter_length = usb_event[1]
+    };
+    return true;
+}
+
+bool nexus_bluetooth_usb_parse_hci_acl(
+    const uint8_t *usb_acl, size_t length,
+    struct nexus_bt_hci_acl_view *acl) {
+    if (usb_acl == NULL || acl == NULL || length < 4U ||
+        length > NEXUS_BT_ACL_MAX_L2CAP_PDU + 4U) return false;
+    const uint16_t handle_flags = (uint16_t)(
+        usb_acl[0] | ((uint16_t)usb_acl[1] << 8));
+    const uint16_t data_length = (uint16_t)(
+        usb_acl[2] | ((uint16_t)usb_acl[3] << 8));
+    const uint16_t handle = (uint16_t)(handle_flags & 0x0FFFU);
+    if (handle == 0U || (size_t)data_length != length - 4U)
+        return false;
+    *acl = (struct nexus_bt_hci_acl_view){
+        .connection_handle = handle,
+        .packet_boundary = (uint8_t)((handle_flags >> 12) & 0x03U),
+        .broadcast = (uint8_t)((handle_flags >> 14) & 0x03U),
+        .payload = usb_acl + 4U,
+        .payload_length = data_length
+    };
+    return true;
+}
+
+bool nexus_bluetooth_usb_build_acl_packet(
+    uint16_t connection_handle, uint8_t packet_boundary,
+    const uint8_t *l2cap_pdu, size_t pdu_length,
+    uint8_t *usb_acl, size_t capacity, size_t *usb_acl_length) {
+    if (connection_handle == 0U || connection_handle > 0x0FFFU ||
+        packet_boundary > 2U || l2cap_pdu == NULL ||
+        pdu_length < 4U || pdu_length > NEXUS_BT_ACL_MAX_L2CAP_PDU ||
+        usb_acl == NULL || usb_acl_length == NULL ||
+        capacity < pdu_length + 4U ||
+        (uint16_t)(l2cap_pdu[0] |
+            ((uint16_t)l2cap_pdu[1] << 8)) != pdu_length - 4U)
+        return false;
+
+    const uint16_t handle_flags = (uint16_t)(
+        connection_handle | ((uint16_t)packet_boundary << 12));
+    usb_acl[0] = (uint8_t)handle_flags;
+    usb_acl[1] = (uint8_t)(handle_flags >> 8);
+    usb_acl[2] = (uint8_t)pdu_length;
+    usb_acl[3] = (uint8_t)(pdu_length >> 8);
+    for (size_t i = 0U; i < pdu_length; ++i)
+        usb_acl[4U + i] = l2cap_pdu[i];
+    *usb_acl_length = pdu_length + 4U;
+    return true;
+}

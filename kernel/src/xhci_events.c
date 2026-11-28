@@ -1,5 +1,7 @@
 #include "xhci_events.h"
 
+#include <stddef.h>
+
 bool nexus_xhci_event_queue_push(
     struct nexus_xhci_event_queue *queue,
     const struct nexus_xhci_event *event) {

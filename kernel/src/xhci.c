@@ -1,5 +1,6 @@
 #include "xhci.h"
 #include "xhci_speed.h"
+#include "xhci_endpoint.h"
 #include "xhci_ownership.h"
 #include "xhci_ports.h"
 #include "xhci_power.h"
@@ -982,73 +983,98 @@ static uint8_t xhci_interval(uint8_t speed, uint8_t interval) {
     return encoded > 15U ? 15U : (uint8_t)encoded;
 }
 
-static bool xhci_configure_interrupt_endpoint(struct xhci_controller *xhci,
-                                              struct xhci_hid_device *device,
-                                              uint8_t endpoint_address,
-                                              uint16_t max_packet,
-                                              uint8_t interval, uint8_t speed) {
-    if (!xhci_ring_init(&device->interrupt_ring)) return false;
-    device->endpoint_id = (uint8_t)(((endpoint_address & 0x0FU) * 2U) + 1U);
-    device->max_packet = max_packet;
+static bool xhci_configure_endpoint(
+    struct xhci_controller *xhci, struct xhci_hid_device *device,
+    uint8_t endpoint_address,
+    enum nexus_xhci_endpoint_transfer transfer,
+    uint8_t interval, uint16_t max_packet, uint8_t speed,
+    struct xhci_ring *ring) {
+    if (xhci == NULL || device == NULL || ring == NULL ||
+        ring->trbs == NULL || device->slot_id == 0U ||
+        device->input_context_physical == 0U ||
+        device->device_context_physical == 0U) return false;
 
     volatile uint8_t *input_page =
         (volatile uint8_t *)memory_phys_to_virt(device->input_context_physical);
     volatile uint8_t *output_page =
         (volatile uint8_t *)memory_phys_to_virt(device->device_context_physical);
     if (input_page == NULL || output_page == NULL) return false;
-    for (size_t i = 0U; i < XHCI_PAGE_SIZE; ++i) input_page[i] = 0U;
 
+    const volatile uint32_t *out_slot =
+        (const volatile uint32_t *)(uintptr_t)output_page;
+    const uint8_t existing_context_entries =
+        (uint8_t)((out_slot[0] >> 27) & 0x1FU);
+    struct nexus_xhci_endpoint_context endpoint = {0};
+    const uint8_t encoded_interval =
+        transfer == NEXUS_XHCI_ENDPOINT_INTERRUPT
+            ? xhci_interval(speed, interval) : 0U;
+    if (!nexus_xhci_build_endpoint_context(endpoint_address, transfer,
+            encoded_interval, 0U, max_packet, ring->physical,
+            max_packet, existing_context_entries, &endpoint)) return false;
+
+    for (size_t i = 0U; i < XHCI_PAGE_SIZE; ++i) input_page[i] = 0U;
     volatile uint32_t *input = (volatile uint32_t *)(uintptr_t)input_page;
-    volatile uint32_t *out_slot = (volatile uint32_t *)(uintptr_t)output_page;
     volatile uint32_t *out_ep0 = (volatile uint32_t *)(uintptr_t)(
         (uintptr_t)output_page + xhci->context_size);
     volatile uint32_t *in_slot = (volatile uint32_t *)(uintptr_t)(
         (uintptr_t)input_page + xhci->context_size);
     volatile uint32_t *in_ep0 = (volatile uint32_t *)(uintptr_t)(
         (uintptr_t)input_page + 2U * xhci->context_size);
-    const uint8_t dci = device->endpoint_id;
     volatile uint32_t *in_ep = (volatile uint32_t *)(uintptr_t)(
-        (uintptr_t)input_page + (size_t)(dci + 1U) * xhci->context_size);
+        (uintptr_t)input_page +
+        (size_t)(endpoint.endpoint_id + 1U) * xhci->context_size);
 
-    /*
-     * The slot context and the new interrupt endpoint are added here.
-     * EP0 is already present in the addressed device context, so do not
-     * set Add Context Flag 1 a second time.
-     */
-    input[1] = 1U | (1U << dci);
+    /* EP0 remains present in the output context; add only the selected endpoint. */
+    input[1] = 1U | (1U << endpoint.endpoint_id);
     for (size_t i = 0U; i < xhci->context_size / sizeof(uint32_t); ++i) {
         in_slot[i] = out_slot[i];
         in_ep0[i] = out_ep0[i];
     }
-    const uint8_t existing_context_entries =
-        (uint8_t)((out_slot[0] >> 27) & 0x1FU);
-    const uint8_t context_entries = existing_context_entries > dci
-        ? existing_context_entries : dci;
     in_slot[0] = (in_slot[0] & 0x07FFFFFFU) |
-                 ((uint32_t)context_entries << 27);
+                 ((uint32_t)endpoint.context_entries << 27);
+    in_ep[0] = endpoint.dword0;
+    in_ep[1] = endpoint.dword1;
+    in_ep[2] = endpoint.dword2;
+    in_ep[3] = endpoint.dword3;
+    in_ep[4] = endpoint.dword4;
 
-    const uint8_t encoded_interval = xhci_interval(speed, interval);
-    in_ep[0] = (uint32_t)encoded_interval << 16;
-    in_ep[1] = (3U << 1) | (7U << 3) | ((uint32_t)max_packet << 16);
-    in_ep[2] = (uint32_t)(device->interrupt_ring.physical | 1U);
-    in_ep[3] = (uint32_t)(device->interrupt_ring.physical >> 32);
-    in_ep[4] = max_packet;
-
-    return xhci_command(xhci, device->input_context_physical,
-                        XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
-                        ((uint32_t)device->slot_id << 24), NULL);
+    if (!xhci_command(xhci, device->input_context_physical,
+            XHCI_TRB_TYPE(XHCI_TRB_CONFIGURE_EP) |
+            ((uint32_t)device->slot_id << 24), NULL)) return false;
+    device->endpoint_id = endpoint.endpoint_id;
+    device->max_packet = max_packet;
+    return true;
 }
 
-static bool xhci_schedule_interrupt_endpoint(
+static bool xhci_configure_interrupt_endpoint(struct xhci_controller *xhci,
+                                              struct xhci_hid_device *device,
+                                              uint8_t endpoint_address,
+                                              uint16_t max_packet,
+                                              uint8_t interval, uint8_t speed) {
+    if (!xhci_ring_init(&device->interrupt_ring)) return false;
+    if (!xhci_configure_endpoint(xhci, device, endpoint_address,
+            NEXUS_XHCI_ENDPOINT_INTERRUPT, interval, max_packet, speed,
+            &device->interrupt_ring)) {
+        if (device->interrupt_ring.physical != 0U)
+            (void)memory_free_page(device->interrupt_ring.physical);
+        device->interrupt_ring = (struct xhci_ring){0};
+        return false;
+    }
+    return true;
+}
+
+static bool xhci_schedule_endpoint_transfer(
     struct xhci_controller *xhci, uint8_t slot_id, uint8_t endpoint_id,
-    struct xhci_ring *ring, uint64_t report_buffer_physical,
-    uint16_t max_packet) {
+    struct xhci_ring *ring, uint64_t buffer_physical,
+    uint32_t transfer_length, bool report_short_packet) {
     if (xhci == NULL || slot_id == 0U || endpoint_id == 0U ||
-        ring == NULL || ring->trbs == NULL ||
-        report_buffer_physical == 0U || max_packet == 0U) return false;
+        endpoint_id > 31U || ring == NULL || ring->trbs == NULL ||
+        buffer_physical == 0U || transfer_length == 0U ||
+        transfer_length > 0x1FFFFU) return false;
+    uint32_t control = XHCI_TRB_TYPE(1U) | XHCI_TRB_IOC;
+    if (report_short_packet) control |= XHCI_TRB_ISP;
     volatile struct xhci_trb *trb = xhci_ring_push(
-        ring, report_buffer_physical, max_packet,
-        XHCI_TRB_TYPE(1U) | XHCI_TRB_IOC | XHCI_TRB_ISP);
+        ring, buffer_physical, transfer_length, control);
     if (trb == NULL) return false;
     volatile uint32_t *doorbell = xhci_map_register(
         xhci, (uint64_t)xhci->doorbell_offset +
@@ -1057,6 +1083,22 @@ static bool xhci_schedule_interrupt_endpoint(
     *doorbell = endpoint_id;
     __asm__ volatile ("sfence" : : : "memory");
     return true;
+}
+
+static bool xhci_schedule_interrupt_endpoint(
+    struct xhci_controller *xhci, uint8_t slot_id, uint8_t endpoint_id,
+    struct xhci_ring *ring, uint64_t report_buffer_physical,
+    uint16_t max_packet) {
+    return xhci_schedule_endpoint_transfer(xhci, slot_id, endpoint_id,
+        ring, report_buffer_physical, max_packet, true);
+}
+
+static bool xhci_schedule_bulk_endpoint(
+    struct xhci_controller *xhci, uint8_t slot_id, uint8_t endpoint_id,
+    struct xhci_ring *ring, uint64_t buffer_physical,
+    uint16_t transfer_length, bool direction_in) {
+    return xhci_schedule_endpoint_transfer(xhci, slot_id, endpoint_id,
+        ring, buffer_physical, transfer_length, direction_in);
 }
 
 static bool xhci_schedule_interrupt_read(struct xhci_controller *xhci,

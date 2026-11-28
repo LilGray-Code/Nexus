@@ -156,6 +156,14 @@ jobs:
             -o /tmp/nexus-ehci-test
           /tmp/nexus-ehci-test
 
+      - name: Test xHCI bulk and interrupt endpoint context construction
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/xhci_endpoint.c \
+            kernel/tests/xhci_endpoint_test.c \
+            -o /tmp/nexus-xhci-endpoint-test
+          /tmp/nexus-xhci-endpoint-test
+
       - name: Test xHCI root-port discovery bounds and PORTSC helpers
         run: |
           test -s kernel/src/xhci_ports.h

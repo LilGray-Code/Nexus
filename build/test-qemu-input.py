@@ -350,9 +350,19 @@ def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
         nonlocal current_x, current_y
         if not (0 <= x < width and 0 <= y < height):
             raise RuntimeError(f"{description}: target outside framebuffer ({x},{y})")
-        # QEMU HMP mouse_move sends relative deltas. USB HID reports Y as
-        # upward-positive, while Nexus screen coordinates are downward-positive.
-        qmp.hmp(f"mouse_move {x - current_x} {current_y - y}")
+        # QEMU HMP mouse_move sends relative deltas, but the emulated USB
+        # boot mouse report is only signed 8-bit per poll. A large one-shot
+        # move is therefore clipped and never reaches the requested control.
+        # Split travel into bounded reports and allow the guest to poll each.
+        remaining_x = x - current_x
+        remaining_y = current_y - y  # HID Y is upward-positive.
+        while remaining_x != 0 or remaining_y != 0:
+            step_x = max(-100, min(100, remaining_x))
+            step_y = max(-100, min(100, remaining_y))
+            qmp.hmp(f"mouse_move {step_x} {step_y}")
+            remaining_x -= step_x
+            remaining_y -= step_y
+            time.sleep(0.04)
         time.sleep(0.15)
         # Use QMP's explicit button transitions. This bypasses the legacy HMP
         # mouse_button state cache while still routing through the active USB

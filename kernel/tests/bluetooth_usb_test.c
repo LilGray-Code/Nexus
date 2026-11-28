@@ -65,6 +65,19 @@ static void test_rejects_invalid_endpoints(void) {
         config, sizeof(config), &interface));
 }
 
+static void test_rejects_malformed_trailing_descriptors(void) {
+    uint8_t config[sizeof(bluetooth_config) + 2U];
+    memcpy(config, bluetooth_config, sizeof(bluetooth_config));
+    config[2] = (uint8_t)sizeof(config);
+    config[3] = 0U;
+    config[sizeof(bluetooth_config)] = 1U; /* Descriptor length is invalid. */
+    config[sizeof(bluetooth_config) + 1U] = 0x30U;
+
+    struct nexus_bluetooth_usb_interface interface = {0};
+    assert(!nexus_bluetooth_usb_find_interface(
+        config, sizeof(config), &interface));
+}
+
 static void test_can_skip_non_bluetooth_interfaces(void) {
     uint8_t config[9U + sizeof(bluetooth_config)] = {0U};
     memcpy(config, bluetooth_config, 9U);
@@ -89,6 +102,7 @@ int main(void) {
     test_valid_default_hci_interface();
     test_rejects_invalid_endpoints();
     test_can_skip_non_bluetooth_interfaces();
+    test_rejects_malformed_trailing_descriptors();
     puts("NEXUS USB BLUETOOTH HCI ENDPOINT VALIDATION TESTS PASSED");
     return 0;
 }

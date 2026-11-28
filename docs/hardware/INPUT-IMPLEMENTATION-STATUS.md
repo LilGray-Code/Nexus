@@ -170,5 +170,5 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 
 - The Bluetooth HCI USB interface parser now validates the interface's declared endpoint count against the descriptors actually present and only accepts the default alternate setting for the supported HCI transport.
 - Endpoint zero and reserved endpoint-address/attribute bits are rejected. The interrupt-IN event pipe must have a nonzero interval, a supported packet size and no unsupported high-bandwidth multiplier. Bulk pipes must have valid USB 2 packet sizes and no high-bandwidth multiplier.
-- Duplicate endpoint addresses, missing event/bulk-in/bulk-out pipes, malformed descriptor lengths, and truncated configurations fail closed. Tests cover these negative cases and verify that unrelated interfaces can precede the Bluetooth class interface.
+- Duplicate endpoint addresses, missing event/bulk-in/bulk-out pipes, malformed descriptor lengths (including malformed trailing descriptors after a valid interface), and truncated configurations fail closed. Tests cover these negative cases and verify that unrelated interfaces can precede the Bluetooth class interface.
 - This still discovers endpoint addresses only. xHCI has not yet configured a Bluetooth slot, scheduled the interrupt event pipe or bidirectional bulk ACL pipes, or connected their packets to the HCI host service.

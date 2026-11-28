@@ -38,6 +38,8 @@ bool nexus_bluetooth_usb_find_interface(
         return false;
 
     struct endpoint_candidate candidate = {0};
+    struct nexus_bluetooth_usb_interface selected = {0};
+    bool found = false;
     size_t offset = configuration[0];
     while (offset < total) {
         if (total - offset < 2U) return false;
@@ -48,9 +50,9 @@ bool nexus_bluetooth_usb_find_interface(
 
         if (descriptor_type == 4U) {
             if (descriptor_length < 9U) return false;
-            if (endpoint_candidate_complete(&candidate)) {
-                *interface = candidate.interface;
-                return true;
+            if (!found && endpoint_candidate_complete(&candidate)) {
+                selected = candidate.interface;
+                found = true;
             }
             candidate = (struct endpoint_candidate){0};
             const bool bluetooth_class =
@@ -136,9 +138,11 @@ bool nexus_bluetooth_usb_find_interface(
         offset += descriptor_length;
     }
 
-    if (endpoint_candidate_complete(&candidate)) {
-        *interface = candidate.interface;
-        return true;
+    if (!found && endpoint_candidate_complete(&candidate)) {
+        selected = candidate.interface;
+        found = true;
     }
-    return false;
+    if (!found) return false;
+    *interface = selected;
+    return true;
 }

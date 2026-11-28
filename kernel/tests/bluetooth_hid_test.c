@@ -43,6 +43,12 @@ static void test_bluetooth_hogp_mouse_dispatch_and_release(void) {
     struct nexus_bt_hid_input_device device = {0};
     assert(nexus_bt_hid_input_configure(&device,
         bluetooth_generic_mouse_map, sizeof(bluetooth_generic_mouse_map)));
+    assert(!nexus_bt_hid_input_set_security_ready(&device, false, true));
+    const uint8_t early_report[4] = {0x01U,0U,0U,0U};
+    assert(!nexus_bt_hid_input_dispatch_hogp_report(
+        &device, 0U, NEXUS_BT_HOGP_REPORT_TYPE_INPUT,
+        early_report, sizeof(early_report)));
+    assert(nexus_bt_hid_input_set_security_ready(&device, true, true));
     const uint8_t report[4] = {0x05U,0xFEU,0x03U,0xFFU};
     const uint32_t before = bluetooth_mouse_submit_count;
     assert(nexus_bt_hid_input_dispatch_hogp_report(
@@ -125,6 +131,7 @@ static void test_bluetooth_keyboard_disconnect_releases_keys(void) {
     assert(nexus_bt_hid_input_configure(&device,
         bluetooth_generic_keyboard_map,
         sizeof(bluetooth_generic_keyboard_map)));
+    assert(nexus_bt_hid_input_set_security_ready(&device, true, true));
     const uint8_t report[8] = {0U,0U,0x04U,0U,0U,0U,0U,0U};
     const uint32_t before = bluetooth_keyboard_submit_count;
     assert(nexus_bt_hid_input_dispatch_hogp_report(

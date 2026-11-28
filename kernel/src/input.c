@@ -200,15 +200,23 @@ static void queue_event(const struct nexus_input_event *event) {
             int32_t dy = (int32_t)previous->mouse_dy + event->mouse_dy;
             int32_t wheel = (int32_t)previous->mouse_wheel +
                             event->mouse_wheel;
+            int32_t horizontal_wheel =
+                (int32_t)previous->mouse_horizontal_wheel +
+                event->mouse_horizontal_wheel;
             if (dx < INT16_MIN) dx = INT16_MIN;
             if (dx > INT16_MAX) dx = INT16_MAX;
             if (dy < INT16_MIN) dy = INT16_MIN;
             if (dy > INT16_MAX) dy = INT16_MAX;
-            if (wheel < INT8_MIN) wheel = INT8_MIN;
-            if (wheel > INT8_MAX) wheel = INT8_MAX;
+            if (wheel < INT16_MIN) wheel = INT16_MIN;
+            if (wheel > INT16_MAX) wheel = INT16_MAX;
+            if (horizontal_wheel < INT16_MIN)
+                horizontal_wheel = INT16_MIN;
+            if (horizontal_wheel > INT16_MAX)
+                horizontal_wheel = INT16_MAX;
             previous->mouse_dx = (int16_t)dx;
             previous->mouse_dy = (int16_t)dy;
-            previous->mouse_wheel = (int8_t)wheel;
+            previous->mouse_wheel = (int16_t)wheel;
+            previous->mouse_horizontal_wheel = (int16_t)horizontal_wheel;
             return;
         }
     }
@@ -482,7 +490,8 @@ void input_usb_mouse_event(const struct nexus_usb_mouse_event *decoded) {
         .mouse_buttons = decoded->buttons,
         .mouse_dx = decoded->dx,
         .mouse_dy = decoded->dy,
-        .mouse_wheel = decoded->wheel
+        .mouse_wheel = decoded->wheel,
+        .mouse_horizontal_wheel = decoded->horizontal_wheel
     };
     queue_event(&event);
     input_interrupt_restore(interrupt_flags);
@@ -495,7 +504,9 @@ void input_usb_mouse_event(const struct nexus_usb_mouse_event *decoded) {
         serial_write(" dy=");
         serial_write_hex((uint16_t)decoded->dy);
         serial_write(" wheel=");
-        serial_write_hex((uint8_t)decoded->wheel);
+        serial_write_hex((uint16_t)decoded->wheel);
+        serial_write(" horizontal-wheel=");
+        serial_write_hex((uint16_t)decoded->horizontal_wheel);
         serial_write("\r\n");
     }
 }

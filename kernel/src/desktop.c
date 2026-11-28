@@ -7742,6 +7742,27 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 desktop_handle_input(&wheel_key);
             return;
         }
+        if (event->mouse_horizontal_wheel != 0) {
+            uint32_t steps = (uint32_t)(
+                event->mouse_horizontal_wheel > 0
+                    ? event->mouse_horizontal_wheel
+                    : -(int32_t)event->mouse_horizontal_wheel);
+            steps *= desktop_settings.scroll_speed;
+            if (steps > 20U) steps = 20U;
+            const struct nexus_input_event horizontal_wheel_key = {
+                .type = NEXUS_INPUT_KEYBOARD,
+                .scancode = event->mouse_horizontal_wheel > 0
+                    ? 0x4DU : 0x4BU,
+                .mouse_buttons = 0U,
+                .mouse_dx = 0,
+                .mouse_dy = 0,
+                .mouse_wheel = 0,
+                .mouse_horizontal_wheel = 0
+            };
+            for (uint32_t i = 0U; i < steps; ++i)
+                desktop_handle_input(&horizontal_wheel_key);
+            return;
+        }
         draw_shell();
         draw_pointer();
         return;

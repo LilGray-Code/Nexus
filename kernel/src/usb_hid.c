@@ -129,10 +129,11 @@ bool usb_hid_mouse_decode_report(const uint8_t *report,
                                  size_t report_length,
                                  struct nexus_usb_mouse_event *event) {
     if (report == NULL || event == NULL || report_length < 3U) return false;
-    event->buttons = (uint8_t)(report[0] & 0x07U);
+    event->buttons = (uint16_t)(report[0] & 0x07U);
     event->dx = (int16_t)(int8_t)report[1];
     event->dy = (int16_t)-(int16_t)(int8_t)report[2];
-    event->wheel = report_length >= 4U ? (int8_t)report[3] : 0;
+    event->wheel = report_length >= 4U ? (int16_t)(int8_t)report[3] : 0;
+    event->horizontal_wheel = 0;
     return true;
 }
 

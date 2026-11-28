@@ -42,19 +42,21 @@ static void test_usb_mouse_wheel_reaches_input_queue(void) {
 
 static void test_decoded_high_resolution_mouse_event_reaches_input_queue(void) {
     const struct nexus_usb_mouse_event decoded = {
-        .buttons = 0x09U,
+        .buttons = 0x8109U,
         .dx = 300,
         .dy = -300,
-        .wheel = 2
+        .wheel = 512,
+        .horizontal_wheel = -256
     };
     struct nexus_input_event event = {0};
     input_usb_mouse_event(&decoded);
     assert(input_pop_event(&event));
     assert(event.type == NEXUS_INPUT_MOUSE);
-    assert(event.mouse_buttons == 0x09U);
+    assert(event.mouse_buttons == 0x8109U);
     assert(event.mouse_dx == 300);
     assert(event.mouse_dy == -300);
-    assert(event.mouse_wheel == 2);
+    assert(event.mouse_wheel == 512);
+    assert(event.mouse_horizontal_wheel == -256);
 }
 
 static void test_usb_keyboard_report_preserves_right_control(void) {

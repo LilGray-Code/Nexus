@@ -83,3 +83,13 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - xHCI attempts HID Set_Protocol(Report) and parses the mouse's report descriptor for boot-class mice before choosing the legacy three-byte Boot format. This retains scroll-wheel and extra button fields on supported devices.
 - If Report protocol selection or parsing fails, xHCI requests Boot protocol and retains the basic movement/button path. Composite boot mice use the same preference; generic non-boot HID interfaces are parsed without sending the boot-only Set_Protocol request.
 - This does not guarantee every proprietary mouse extension or vendor-specific DPI control; those require device-specific descriptors and testing.
+
+
+### November 27, 2026 — extended mouse report path
+
+- The common USB mouse event and desktop input queue now retain 16-bit vertical wheel values instead of narrowing parsed HID deltas to signed 8-bit values.
+- Standard Consumer Control AC Pan (usage 0x0238) is decoded as an independent horizontal-wheel delta and delivered to the desktop, where it maps to left/right scrolling/navigation at the configured scroll speed.
+- Generic HID button collections now retain up to 16 button usages (previously eight) in the common input event. This is a bounded extension, not a claim that arbitrary proprietary gaming-mouse controls work.
+- Adjacent mouse reports coalesce vertical and horizontal wheel deltas with signed 16-bit saturation, preserving button-state edge ordering.
+- Regression coverage exercises one numbered mouse report with 16 button bits, 16-bit X/Y motion, a 16-bit vertical wheel, and a 16-bit horizontal AC Pan field; the desktop input queue test checks that the widened fields survive delivery.
+- Remaining limitations: no Resolution Multiplier Feature-report negotiation, HID++/vendor-specific DPI and button protocols, arbitrary report-collection layouts, or physical mouse validation is claimed.

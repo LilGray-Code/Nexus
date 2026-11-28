@@ -524,6 +524,176 @@ bool nexus_bt_hci_parse_encryption_change(
     return true;
 }
 
+
+bool nexus_bt_hci_parse_classic_address_event(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t expected_event_code, uint8_t address[6]) {
+    const uint8_t expected_length =
+        expected_event_code == NEXUS_BT_HCI_EVENT_USER_CONFIRMATION_REQUEST
+            ? 10U : 6U;
+    if (event == NULL || address == NULL || event->parameters == NULL ||
+        expected_event_code == 0U ||
+        event->event_code != expected_event_code ||
+        event->parameter_length != expected_length) return false;
+    for (size_t i = 0U; i < 6U; ++i) address[i] = event->parameters[i];
+    return true;
+}
+
+bool nexus_bt_hci_parse_io_capability_response(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t address[6], uint8_t *io_capability,
+    uint8_t *oob_data_present, uint8_t *authentication_requirements) {
+    if (event == NULL || address == NULL || io_capability == NULL ||
+        oob_data_present == NULL || authentication_requirements == NULL ||
+        event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE ||
+        event->parameter_length != 9U ||
+        event->parameters[6U] > 4U || event->parameters[7U] > 1U ||
+        event->parameters[8U] > 0x07U) return false;
+    for (size_t i = 0U; i < 6U; ++i) address[i] = event->parameters[i];
+    *io_capability = event->parameters[6U];
+    *oob_data_present = event->parameters[7U];
+    *authentication_requirements = event->parameters[8U];
+    return true;
+}
+
+bool nexus_bt_hci_parse_link_key_notification(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t address[6], uint8_t link_key[16], uint8_t *key_type) {
+    if (event == NULL || address == NULL || link_key == NULL ||
+        key_type == NULL || event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_LINK_KEY_NOTIFICATION ||
+        event->parameter_length != 23U ||
+        event->parameters[22U] > 8U) return false;
+    for (size_t i = 0U; i < 6U; ++i) address[i] = event->parameters[i];
+    for (size_t i = 0U; i < 16U; ++i)
+        link_key[i] = event->parameters[6U + i];
+    *key_type = event->parameters[22U];
+    return true;
+}
+
+bool nexus_bt_hci_parse_authentication_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint16_t *connection_handle, uint8_t *status) {
+    if (event == NULL || connection_handle == NULL || status == NULL ||
+        event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_AUTHENTICATION_COMPLETE ||
+        event->parameter_length != 3U) return false;
+    const uint16_t handle = get_le16(event->parameters + 1U);
+    if (handle == 0U || handle > 0x0FFFU) return false;
+    *connection_handle = handle;
+    *status = event->parameters[0U];
+    return true;
+}
+
+bool nexus_bt_hci_parse_simple_pairing_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t address[6], uint8_t *status) {
+    if (event == NULL || address == NULL || status == NULL ||
+        event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_SIMPLE_PAIRING_COMPLETE ||
+        event->parameter_length != 7U) return false;
+    *status = event->parameters[0U];
+    for (size_t i = 0U; i < 6U; ++i) address[i] = event->parameters[i + 1U];
+    return true;
+}
+
+bool nexus_bt_hci_build_authentication_requested(
+    uint16_t connection_handle, uint8_t *packet,
+    size_t capacity, size_t *packet_length) {
+    if (connection_handle == 0U || connection_handle > 0x0FFFU)
+        return false;
+    const uint8_t params[2] = {
+        (uint8_t)connection_handle, (uint8_t)(connection_handle >> 8)
+    };
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_AUTHENTICATION_REQUESTED,
+        params, sizeof(params), packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_set_connection_encryption(
+    uint16_t connection_handle, bool enable, uint8_t *packet,
+    size_t capacity, size_t *packet_length) {
+    if (connection_handle == 0U || connection_handle > 0x0FFFU)
+        return false;
+    const uint8_t params[3] = {
+        (uint8_t)connection_handle, (uint8_t)(connection_handle >> 8),
+        enable ? 1U : 0U
+    };
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_SET_CONNECTION_ENCRYPTION,
+        params, sizeof(params), packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_link_key_request_reply(
+    const uint8_t address[6], const uint8_t link_key[16],
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    if (address == NULL || link_key == NULL) return false;
+    uint8_t params[22U];
+    for (size_t i = 0U; i < 6U; ++i) params[i] = address[i];
+    for (size_t i = 0U; i < 16U; ++i) params[6U + i] = link_key[i];
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_REPLY,
+        params, sizeof(params), packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_link_key_request_negative_reply(
+    const uint8_t address[6], uint8_t *packet,
+    size_t capacity, size_t *packet_length) {
+    if (address == NULL) return false;
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_NEGATIVE_REPLY,
+        address, 6U, packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_io_capability_request_reply(
+    const uint8_t address[6], uint8_t io_capability,
+    uint8_t oob_data_present, uint8_t authentication_requirements,
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    if (address == NULL || io_capability > 4U ||
+        oob_data_present > 1U || authentication_requirements > 0x0FU)
+        return false;
+    uint8_t params[9U];
+    for (size_t i = 0U; i < 6U; ++i) params[i] = address[i];
+    params[6] = io_capability;
+    params[7] = oob_data_present;
+    params[8] = authentication_requirements;
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_REPLY,
+        params, sizeof(params), packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_io_capability_request_negative_reply(
+    const uint8_t address[6], uint8_t reason,
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    if (address == NULL || reason == 0U) return false;
+    uint8_t params[7U];
+    for (size_t i = 0U; i < 6U; ++i) params[i] = address[i];
+    params[6] = reason;
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY,
+        params, sizeof(params), packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_user_confirmation_reply(
+    const uint8_t address[6], bool accept,
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    if (address == NULL) return false;
+    return nexus_bt_hci_build_command(
+        accept ? NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_REPLY
+               : NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY,
+        address, 6U, packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_user_passkey_negative_reply(
+    const uint8_t address[6], uint8_t *packet,
+    size_t capacity, size_t *packet_length) {
+    if (address == NULL) return false;
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_USER_PASSKEY_REQUEST_NEGATIVE_REPLY,
+        address, 6U, packet, capacity, packet_length);
+}
+
 bool nexus_bt_hci_build_le_create_connection(
     uint16_t scan_interval, uint16_t scan_window,
     uint8_t initiator_filter_policy, uint8_t peer_address_type,

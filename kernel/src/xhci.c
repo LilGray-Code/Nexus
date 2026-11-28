@@ -46,11 +46,16 @@
 #define XHCI_BT_ADV_QUEUE_DEPTH 16U
 #define XHCI_BT_ACL_TRANSFER_BYTES (NEXUS_BT_ACL_MAX_L2CAP_PDU + 4U)
 #define XHCI_BT_EVENT_TRANSFER_BYTES 260U
+#define XHCI_BT_CLASSIC_KEY_SLOTS 8U
+#define XHCI_BT_CLASSIC_PAIRING_TIMEOUT_TICKS 1500U
+#define XHCI_BT_CLASSIC_PAIRING_REASON_NOT_ALLOWED 0x18U
 #define XHCI_BT_SMP_PAIRING_TIMEOUT_TICKS 1500U
 #define XHCI_BT_SMP_ENCRYPTION_TIMEOUT_TICKS 500U
 #define XHCI_BT_HCI_EVENT_MASK ((1ULL << 0) | (1ULL << 1) | \
-    (1ULL << 2) | (1ULL << 4) | (1ULL << 7) | (1ULL << 13) | \
-    (1ULL << 14) | (1ULL << 33) | (1ULL << 61))
+    (1ULL << 2) | (1ULL << 4) | (1ULL << 5) | (1ULL << 7) | \
+    (1ULL << 13) | (1ULL << 14) | (1ULL << 22) | (1ULL << 23) | \
+    (1ULL << 33) | (1ULL << 48) | (1ULL << 49) | (1ULL << 50) | \
+    (1ULL << 51) | (1ULL << 53) | (1ULL << 61))
 #define XHCI_BT_LE_EVENT_MASK ((1ULL << 0) | (1ULL << 1) | \
     (1ULL << 7) | (1ULL << 8) | (1ULL << 9))
 #define XHCI_MAX_EXTRA_HID_INTERFACES (NEXUS_USB_HID_MAX_INTERFACES - 2U)
@@ -224,6 +229,22 @@ struct xhci_bluetooth_link {
     uint32_t mouse_buttons;
     bool classic_encrypted;
     bool classic_hid_active;
+    bool classic_auth_request_pending;
+    bool classic_auth_request_sent;
+    bool classic_authenticated;
+    bool classic_encryption_command_sent;
+    bool classic_key_ready;
+    bool classic_waiting_ssp;
+    bool classic_io_capability_sent;
+    bool classic_peer_io_capability_seen;
+    bool classic_peer_mitm_required;
+    bool classic_peer_bonding_required;
+    bool classic_peer_oob_present;
+    bool classic_user_confirmed;
+    bool classic_simple_pairing_complete;
+    bool classic_pairing_failed;
+    bool classic_security_command_in_flight;
+    uint64_t classic_security_deadline_tick;
     struct nexus_bt_classic_hid_session classic_hid;
     struct nexus_bt_smp_session smp;
     struct nexus_bt_smp_sc_session smp_sc;
@@ -232,6 +253,17 @@ struct xhci_bluetooth_link {
     struct nexus_bt_hogp_client hogp;
     struct nexus_usb_keyboard_state keyboard_state;
 };
+
+struct xhci_bluetooth_classic_key {
+    bool active;
+    uint8_t address[6];
+    uint8_t key[16];
+    uint8_t key_type;
+};
+
+struct xhci_bluetooth_device;
+static void xhci_bluetooth_clear_classic_keys(
+    struct xhci_bluetooth_device *bluetooth);
 
 struct xhci_bluetooth_pdu {
     uint16_t connection_handle;
@@ -292,6 +324,8 @@ struct xhci_bluetooth_device {
     struct nexus_bt_hci_classic_device classic_devices[
         NEXUS_BT_HCI_MAX_CLASSIC_RESULTS];
     uint8_t classic_device_count;
+    struct xhci_bluetooth_classic_key classic_keys[
+        XHCI_BT_CLASSIC_KEY_SLOTS];
     enum xhci_bluetooth_scan_state scan_state;
     uint8_t peer_address_type;
     uint8_t peer_address[6];
@@ -1290,6 +1324,7 @@ static void xhci_free_hid_device_dma(struct xhci_controller *xhci,
 static void xhci_bluetooth_free_transfer_resources(
     struct xhci_bluetooth_device *bluetooth) {
     if (bluetooth == NULL) return;
+    xhci_bluetooth_clear_classic_keys(bluetooth);
     if (bluetooth->event_ring.physical != 0U)
         (void)memory_free_page(bluetooth->event_ring.physical);
     if (bluetooth->bulk_in_ring.physical != 0U)
@@ -1392,7 +1427,10 @@ static bool xhci_bluetooth_add_link(
         link->classic_hid_active = true;
         serial_write("USB Bluetooth: encrypted BR/EDR link; starting HIDP channels\r\n");
     } else {
-        serial_write("USB Bluetooth: BR/EDR connected without encryption; HIDP input remains disabled (Classic pairing/bonds unavailable)\r\n");
+        link->classic_auth_request_pending = true;
+        link->classic_security_deadline_tick =
+            timer_ticks() + XHCI_BT_CLASSIC_PAIRING_TIMEOUT_TICKS;
+        serial_write("USB Bluetooth: BR/EDR connected; starting Just Works SSP (no MITM, no bonding, RAM-only key)\r\n");
     }
     return true;
 }
@@ -2055,6 +2093,198 @@ static bool xhci_bluetooth_send_command(
     return true;
 }
 
+
+static struct xhci_bluetooth_link *xhci_bluetooth_find_classic_link_address(
+    struct xhci_bluetooth_device *bluetooth, const uint8_t address[6]) {
+    if (bluetooth == NULL || address == NULL) return NULL;
+    for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+        struct xhci_bluetooth_link *link = &bluetooth->connections[i];
+        if (link->active && !link->link.low_energy &&
+            memcmp(link->link.peer_address, address, 6U) == 0)
+            return link;
+    }
+    return NULL;
+}
+
+static struct xhci_bluetooth_classic_key *xhci_bluetooth_find_classic_key(
+    struct xhci_bluetooth_device *bluetooth, const uint8_t address[6]) {
+    if (bluetooth == NULL || address == NULL) return NULL;
+    for (size_t i = 0U; i < XHCI_BT_CLASSIC_KEY_SLOTS; ++i) {
+        struct xhci_bluetooth_classic_key *key = &bluetooth->classic_keys[i];
+        if (key->active && memcmp(key->address, address, 6U) == 0)
+            return key;
+    }
+    return NULL;
+}
+
+static bool xhci_bluetooth_store_classic_key(
+    struct xhci_bluetooth_device *bluetooth,
+    const uint8_t address[6], const uint8_t key_bytes[16],
+    uint8_t key_type) {
+    if (bluetooth == NULL || address == NULL || key_bytes == NULL ||
+        key_type != 4U) return false; /* Unauthenticated Combination Key only. */
+    struct xhci_bluetooth_classic_key *slot =
+        xhci_bluetooth_find_classic_key(bluetooth, address);
+    if (slot == NULL) {
+        for (size_t i = 0U; i < XHCI_BT_CLASSIC_KEY_SLOTS; ++i) {
+            if (!bluetooth->classic_keys[i].active) {
+                slot = &bluetooth->classic_keys[i];
+                break;
+            }
+        }
+    }
+    if (slot == NULL) return false;
+    *slot = (struct xhci_bluetooth_classic_key){0};
+    slot->active = true;
+    for (size_t i = 0U; i < 6U; ++i) slot->address[i] = address[i];
+    for (size_t i = 0U; i < 16U; ++i) slot->key[i] = key_bytes[i];
+    slot->key_type = key_type;
+    return true;
+}
+
+static void xhci_bluetooth_remove_classic_key(
+    struct xhci_bluetooth_classic_key *key) {
+    if (key == NULL) return;
+    volatile uint8_t *wipe = (volatile uint8_t *)key;
+    for (size_t i = 0U; i < sizeof(*key); ++i) wipe[i] = 0U;
+}
+
+static void xhci_bluetooth_clear_classic_keys(
+    struct xhci_bluetooth_device *bluetooth) {
+    if (bluetooth == NULL) return;
+    for (size_t i = 0U; i < XHCI_BT_CLASSIC_KEY_SLOTS; ++i)
+        xhci_bluetooth_remove_classic_key(&bluetooth->classic_keys[i]);
+}
+
+static void xhci_bluetooth_fail_classic_security(
+    struct xhci_bluetooth_device *bluetooth,
+    struct xhci_bluetooth_link *link) {
+    if (bluetooth == NULL || link == NULL) return;
+    link->classic_pairing_failed = true;
+    link->classic_auth_request_pending = false;
+    link->classic_auth_request_sent = false;
+    link->classic_security_command_in_flight = false;
+    link->classic_authenticated = false;
+    link->classic_waiting_ssp = false;
+    link->classic_io_capability_sent = false;
+    link->classic_peer_io_capability_seen = false;
+    link->classic_peer_mitm_required = false;
+    link->classic_peer_bonding_required = false;
+    link->classic_peer_oob_present = false;
+    link->classic_user_confirmed = false;
+    link->classic_simple_pairing_complete = false;
+    link->classic_encryption_command_sent = false;
+    link->classic_security_deadline_tick = 0U;
+    link->classic_encrypted = false;
+    link->link.encrypted = false;
+    link->classic_hid_active = false;
+    xhci_bluetooth_release_link_input(link);
+    nexus_bt_classic_hid_init(&link->classic_hid);
+    struct xhci_bluetooth_classic_key *key =
+        xhci_bluetooth_find_classic_key(
+            bluetooth, link->link.peer_address);
+    if (key != NULL) xhci_bluetooth_remove_classic_key(key);
+    link->classic_key_ready = false;
+    serial_write("USB Bluetooth: Classic SSP rejected/failed; HIDP input remains disabled\r\n");
+}
+
+static bool xhci_bluetooth_send_classic_built_command(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth,
+    const uint8_t *packet, size_t packet_length) {
+    if (xhci == NULL || bluetooth == NULL || packet == NULL ||
+        packet_length < 4U || packet[0] != NEXUS_BT_HCI_PACKET_COMMAND ||
+        packet_length != 4U + packet[3]) return false;
+    const uint16_t opcode = (uint16_t)(
+        packet[1] | ((uint16_t)packet[2] << 8));
+    return xhci_bluetooth_send_command(xhci, bluetooth, opcode,
+        packet + 4U, packet[3]);
+}
+
+static bool xhci_bluetooth_send_classic_command_for_link(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth,
+    struct xhci_bluetooth_link *link,
+    const uint8_t *packet, size_t packet_length) {
+    if (!xhci_bluetooth_send_classic_built_command(
+            xhci, bluetooth, packet, packet_length)) return false;
+    if (link != NULL) link->classic_security_command_in_flight = true;
+    return true;
+}
+
+static bool xhci_bluetooth_progress_classic_security(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth) {
+    if (xhci == NULL || bluetooth == NULL || !bluetooth->active)
+        return false;
+    /* Pairing timeout must also fire if the controller stops returning
+     * Command Status/Complete for an in-flight SSP command. */
+    for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+        struct xhci_bluetooth_link *link = &bluetooth->connections[i];
+        if (link->active && !link->link.low_energy &&
+            !link->classic_encrypted && !link->classic_pairing_failed &&
+            link->classic_security_deadline_tick != 0U &&
+            timer_ticks() > link->classic_security_deadline_tick) {
+            xhci_bluetooth_fail_classic_security(bluetooth, link);
+            bluetooth->hci_host.state = NEXUS_BT_HCI_HOST_FAILED;
+            bluetooth->hci_host.outstanding_opcode = 0U;
+            serial_write("USB Bluetooth: Classic SSP timeout; adapter HCI transport stopped safely\r\n");
+            return true;
+        }
+    }
+    if (bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY ||
+        bluetooth->hci_host.outstanding_opcode != 0U ||
+        bluetooth->bulk_out_active) return false;
+    for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+        struct xhci_bluetooth_link *link = &bluetooth->connections[i];
+        if (!link->active || link->link.low_energy ||
+            link->classic_encrypted || link->classic_pairing_failed)
+            continue;
+        if (link->classic_security_deadline_tick != 0U &&
+            timer_ticks() > link->classic_security_deadline_tick) {
+            xhci_bluetooth_fail_classic_security(bluetooth, link);
+            return true;
+        }
+
+        uint8_t packet[40U] = {0U};
+        size_t length = 0U;
+        bool built = false;
+        uint16_t opcode = 0U;
+        if (link->classic_auth_request_pending) {
+            built = nexus_bt_hci_build_authentication_requested(
+                link->link.handle, packet, sizeof(packet), &length);
+            opcode = NEXUS_BT_HCI_OPCODE_AUTHENTICATION_REQUESTED;
+        } else if (link->classic_authenticated && link->classic_key_ready &&
+                   (!link->classic_waiting_ssp ||
+                    link->classic_simple_pairing_complete) &&
+                   !link->classic_encryption_command_sent) {
+            built = nexus_bt_hci_build_set_connection_encryption(
+                link->link.handle, true, packet, sizeof(packet), &length);
+            opcode = NEXUS_BT_HCI_OPCODE_SET_CONNECTION_ENCRYPTION;
+        } else {
+            continue;
+        }
+        if (!built || length < 4U ||
+            packet[0] != NEXUS_BT_HCI_PACKET_COMMAND ||
+            !xhci_bluetooth_send_command(xhci, bluetooth, opcode,
+                packet + 4U, packet[3])) {
+            xhci_bluetooth_fail_classic_security(bluetooth, link);
+            return true;
+        }
+        link->classic_security_command_in_flight = true;
+        if (opcode == NEXUS_BT_HCI_OPCODE_AUTHENTICATION_REQUESTED) {
+            link->classic_auth_request_pending = false;
+            link->classic_auth_request_sent = true;
+            serial_write("USB Bluetooth: Classic authentication requested; SSP Just Works only, no MITM/bonding\r\n");
+        } else {
+            link->classic_encryption_command_sent = true;
+            serial_write("USB Bluetooth: Classic authentication complete; requesting link encryption\r\n");
+        }
+        return true;
+    }
+    return false;
+}
+
 static void xhci_bluetooth_queue_advertisement(
     struct xhci_bluetooth_device *bluetooth,
     const struct nexus_bt_hci_advertisement *advertisement) {
@@ -2195,6 +2425,23 @@ static void xhci_bluetooth_discovery_progress(
         xhci_bluetooth_count_drop(bluetooth);
         return;
     }
+    if (opcode == NEXUS_BT_HCI_OPCODE_AUTHENTICATION_REQUESTED ||
+        opcode == NEXUS_BT_HCI_OPCODE_SET_CONNECTION_ENCRYPTION ||
+        opcode == NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_REPLY ||
+        opcode == NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_NEGATIVE_REPLY ||
+        opcode == NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_REPLY ||
+        opcode == NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY ||
+        opcode == NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_REPLY ||
+        opcode == NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY ||
+        opcode == NEXUS_BT_HCI_OPCODE_USER_PASSKEY_REQUEST_NEGATIVE_REPLY) {
+        for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+            struct xhci_bluetooth_link *link = &bluetooth->connections[i];
+            if (link->active && !link->link.low_energy &&
+                link->classic_security_command_in_flight)
+                link->classic_security_command_in_flight = false;
+        }
+        return;
+    }
     switch (opcode) {
         case NEXUS_BT_HCI_OPCODE_SET_EVENT_MASK:
             bluetooth->scan_state = XHCI_BT_SCAN_EVENT_MASK_IN_FLIGHT;
@@ -2229,6 +2476,29 @@ static void xhci_bluetooth_process_command_result(
     bluetooth->hci_host.last_completed_opcode = 0U;
     bluetooth->hci_host.last_command_status = 0xFFU;
     if (status != 0U) {
+        if (opcode == NEXUS_BT_HCI_OPCODE_AUTHENTICATION_REQUESTED ||
+            opcode == NEXUS_BT_HCI_OPCODE_SET_CONNECTION_ENCRYPTION ||
+            opcode == NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_REPLY ||
+            opcode == NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_NEGATIVE_REPLY ||
+            opcode == NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_REPLY ||
+            opcode == NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY ||
+            opcode == NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_REPLY ||
+            opcode == NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY ||
+            opcode == NEXUS_BT_HCI_OPCODE_USER_PASSKEY_REQUEST_NEGATIVE_REPLY) {
+            for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+                struct xhci_bluetooth_link *link =
+                    &bluetooth->connections[i];
+                if (link->active && !link->link.low_energy &&
+                    link->classic_security_command_in_flight) {
+                    link->classic_security_command_in_flight = false;
+                    xhci_bluetooth_fail_classic_security(bluetooth, link);
+                }
+            }
+            serial_write("USB Bluetooth: Classic SSP HCI command failed status=");
+            serial_write_hex(status);
+            serial_write("\r\n");
+            return;
+        }
         if (opcode == NEXUS_BT_HCI_OPCODE_LE_READ_LOCAL_P256_PUBLIC_KEY ||
             opcode == NEXUS_BT_HCI_OPCODE_LE_GENERATE_DHKEY) {
             for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
@@ -2344,10 +2614,250 @@ static void xhci_bluetooth_process_command_result(
     }
 }
 
+static bool xhci_bluetooth_process_classic_event(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth,
+    const struct nexus_bt_hci_event_view *event) {
+    if (xhci == NULL || bluetooth == NULL || event == NULL ||
+        event->parameters == NULL) return false;
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_LINK_KEY_REQUEST) {
+        uint8_t address[6] = {0U}, command[40U] = {0U};
+        size_t length = 0U;
+        if (!nexus_bt_hci_parse_classic_address_event(event,
+                NEXUS_BT_HCI_EVENT_LINK_KEY_REQUEST, address)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_classic_link_address(bluetooth, address);
+        struct xhci_bluetooth_classic_key *key =
+            xhci_bluetooth_find_classic_key(bluetooth, address);
+        bool built = false;
+        if (key != NULL && key->key_type == 4U && link != NULL &&
+            !link->classic_pairing_failed) {
+            built = nexus_bt_hci_build_link_key_request_reply(
+                address, key->key, command, sizeof(command), &length);
+            if (built) {
+                link->classic_key_ready = true;
+                link->classic_waiting_ssp = false;
+                link->classic_simple_pairing_complete = true;
+            }
+        } else {
+            built = nexus_bt_hci_build_link_key_request_negative_reply(
+                address, command, sizeof(command), &length);
+            if (link != NULL) {
+                link->classic_waiting_ssp = true;
+                link->classic_key_ready = false;
+                link->classic_simple_pairing_complete = false;
+            }
+        }
+        if (!built || !xhci_bluetooth_send_classic_command_for_link(
+                xhci, bluetooth, link, command, length)) {
+            if (link != NULL)
+                xhci_bluetooth_fail_classic_security(bluetooth, link);
+            else
+                xhci_bluetooth_count_drop(bluetooth);
+        }
+        return true;
+    }
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_IO_CAPABILITY_REQUEST) {
+        uint8_t address[6] = {0U}, command[24U] = {0U};
+        size_t length = 0U;
+        if (!nexus_bt_hci_parse_classic_address_event(event,
+                NEXUS_BT_HCI_EVENT_IO_CAPABILITY_REQUEST, address)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_classic_link_address(bluetooth, address);
+        bool built = link != NULL && !link->classic_pairing_failed &&
+            nexus_bt_hci_build_io_capability_request_reply(
+                address, 3U, 0U, 0U, command, sizeof(command), &length);
+        if (!built) {
+            built = nexus_bt_hci_build_io_capability_request_negative_reply(
+                address, XHCI_BT_CLASSIC_PAIRING_REASON_NOT_ALLOWED,
+                command, sizeof(command), &length);
+        } else {
+            link->classic_io_capability_sent = true;
+        }
+        if (!built || !xhci_bluetooth_send_classic_command_for_link(
+                xhci, bluetooth, link, command, length)) {
+            if (link != NULL)
+                xhci_bluetooth_fail_classic_security(bluetooth, link);
+            else
+                xhci_bluetooth_count_drop(bluetooth);
+        }
+        return true;
+    }
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE) {
+        uint8_t address[6] = {0U}, io = 0U, oob = 0U, auth = 0U;
+        if (!nexus_bt_hci_parse_io_capability_response(
+                event, address, &io, &oob, &auth)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_classic_link_address(bluetooth, address);
+        if (link == NULL) return true;
+        (void)io;
+        link->classic_peer_io_capability_seen = true;
+        link->classic_peer_oob_present = oob != 0U;
+        link->classic_peer_mitm_required = (auth & 0x01U) != 0U;
+        link->classic_peer_bonding_required = (auth & 0x06U) != 0U;
+        if (link->classic_peer_mitm_required ||
+            link->classic_peer_bonding_required ||
+            link->classic_peer_oob_present) {
+            serial_write("USB Bluetooth: Classic peer requires MITM/bonding/OOB; refusing Just Works policy\r\n");
+        }
+        return true;
+    }
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_USER_CONFIRMATION_REQUEST) {
+        uint8_t address[6] = {0U}, command[24U] = {0U};
+        size_t length = 0U;
+        if (!nexus_bt_hci_parse_classic_address_event(event,
+                NEXUS_BT_HCI_EVENT_USER_CONFIRMATION_REQUEST, address)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_classic_link_address(bluetooth, address);
+        const bool accept = link != NULL &&
+            link->classic_io_capability_sent &&
+            link->classic_peer_io_capability_seen &&
+            !link->classic_peer_mitm_required &&
+            !link->classic_peer_bonding_required &&
+            !link->classic_peer_oob_present &&
+            !link->classic_pairing_failed;
+        if (!nexus_bt_hci_build_user_confirmation_reply(
+                address, accept, command, sizeof(command), &length) ||
+            !xhci_bluetooth_send_classic_command_for_link(
+                xhci, bluetooth, link, command, length)) {
+            if (link != NULL)
+                xhci_bluetooth_fail_classic_security(bluetooth, link);
+            else
+                xhci_bluetooth_count_drop(bluetooth);
+        } else if (accept) {
+            link->classic_user_confirmed = true;
+        } else if (link != NULL) {
+            xhci_bluetooth_fail_classic_security(bluetooth, link);
+        }
+        return true;
+    }
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_USER_PASSKEY_REQUEST) {
+        uint8_t address[6] = {0U}, command[24U] = {0U};
+        size_t length = 0U;
+        if (!nexus_bt_hci_parse_classic_address_event(event,
+                NEXUS_BT_HCI_EVENT_USER_PASSKEY_REQUEST, address)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_classic_link_address(bluetooth, address);
+        if (nexus_bt_hci_build_user_passkey_negative_reply(
+                address, command, sizeof(command), &length))
+            (void)xhci_bluetooth_send_classic_command_for_link(
+                xhci, bluetooth, link, command, length);
+        if (link != NULL)
+            xhci_bluetooth_fail_classic_security(bluetooth, link);
+        return true;
+    }
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_LINK_KEY_NOTIFICATION) {
+        uint8_t address[6] = {0U}, key[16] = {0U}, key_type = 0xFFU;
+        if (!nexus_bt_hci_parse_link_key_notification(
+                event, address, key, &key_type)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_classic_link_address(bluetooth, address);
+        const bool acceptable = link != NULL &&
+            link->classic_io_capability_sent &&
+            link->classic_peer_io_capability_seen &&
+            !link->classic_peer_mitm_required &&
+            !link->classic_peer_bonding_required &&
+            !link->classic_peer_oob_present &&
+            key_type == 4U;
+        const bool stored = acceptable &&
+            xhci_bluetooth_store_classic_key(
+                bluetooth, address, key, key_type);
+        volatile uint8_t *wipe_event_key =
+            (volatile uint8_t *)(uintptr_t)(event->parameters + 6U);
+        for (size_t i = 0U; i < 16U; ++i) wipe_event_key[i] = 0U;
+        volatile uint8_t *wipe_local_key = key;
+        for (size_t i = 0U; i < sizeof(key); ++i)
+            wipe_local_key[i] = 0U;
+        if (!stored) {
+            if (link != NULL)
+                xhci_bluetooth_fail_classic_security(bluetooth, link);
+            else
+                xhci_bluetooth_count_drop(bluetooth);
+        } else {
+            link->classic_key_ready = true;
+            link->classic_waiting_ssp = true;
+            serial_write("USB Bluetooth: received non-MITM Classic key; kept in volatile RAM only\r\n");
+        }
+        return true;
+    }
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_SIMPLE_PAIRING_COMPLETE) {
+        uint8_t address[6] = {0U}, status = 0xFFU;
+        if (!nexus_bt_hci_parse_simple_pairing_complete(
+                event, address, &status)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_classic_link_address(bluetooth, address);
+        if (link != NULL) {
+            if (status == 0U && link->classic_io_capability_sent &&
+                link->classic_peer_io_capability_seen &&
+                !link->classic_peer_mitm_required &&
+                !link->classic_peer_bonding_required &&
+                !link->classic_peer_oob_present) {
+                link->classic_simple_pairing_complete = true;
+            } else {
+                xhci_bluetooth_fail_classic_security(bluetooth, link);
+            }
+        }
+        return true;
+    }
+
+    if (event->event_code == NEXUS_BT_HCI_EVENT_AUTHENTICATION_COMPLETE) {
+        uint16_t handle = 0U;
+        uint8_t status = 0xFFU;
+        if (!nexus_bt_hci_parse_authentication_complete(
+                event, &handle, &status)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return true;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_link(bluetooth, handle);
+        if (link != NULL && !link->link.low_energy) {
+            if (status == 0U) {
+                /* Authentication Complete may arrive before Link Key
+                 * Notification or Simple Pairing Complete. Record it and let
+                 * the state machine wait for the remaining events. */
+                link->classic_authenticated = true;
+            } else {
+                xhci_bluetooth_fail_classic_security(bluetooth, link);
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
 static void xhci_bluetooth_process_event(
+    struct xhci_controller *xhci,
     struct xhci_bluetooth_device *bluetooth,
     const uint8_t *event_bytes, size_t event_length) {
-    if (bluetooth == NULL || event_bytes == NULL ||
+    if (xhci == NULL || bluetooth == NULL || event_bytes == NULL ||
         event_length > XHCI_BT_EVENT_TRANSFER_BYTES) {
         xhci_bluetooth_count_drop(bluetooth);
         return;
@@ -2388,6 +2898,9 @@ static void xhci_bluetooth_process_event(
             xhci_bluetooth_count_drop(bluetooth);
         return;
     }
+
+    if (xhci_bluetooth_process_classic_event(xhci, bluetooth, &event))
+        return;
 
     if (event.event_code == NEXUS_BT_HCI_EVENT_LE_META &&
         event.parameter_length >= 1U &&
@@ -2492,7 +3005,13 @@ static void xhci_bluetooth_process_event(
             xhci_bluetooth_find_link(bluetooth, connection_handle);
         if (link == NULL) return;
         if (!link->link.low_energy) {
-            link->classic_encrypted = status == 0U && enabled;
+            const bool previously_encrypted = link->classic_encrypted;
+            const bool security_ready = previously_encrypted ||
+                (link->classic_authenticated && link->classic_key_ready &&
+                 (!link->classic_waiting_ssp ||
+                  link->classic_simple_pairing_complete));
+            link->classic_encrypted = status == 0U && enabled &&
+                security_ready && !link->classic_pairing_failed;
             link->link.encrypted = link->classic_encrypted;
             if (link->classic_encrypted && !link->classic_hid_active) {
                 nexus_bt_classic_hid_init(&link->classic_hid);
@@ -4945,7 +5464,7 @@ void xhci_poll(void) {
                     const size_t received =
                         XHCI_BT_EVENT_TRANSFER_BYTES - residual;
                     if (received != 0U)
-                        xhci_bluetooth_process_event(bluetooth,
+                        xhci_bluetooth_process_event(xhci, bluetooth,
                             (const uint8_t *)(uintptr_t)
                                 bluetooth->event_buffer, received);
                 } else {
@@ -5242,6 +5761,7 @@ void xhci_poll(void) {
             bluetooth->command_pending) {
             (void)xhci_bluetooth_send_pending_command(xhci, bluetooth);
         } else if (bluetooth->hci_host.state == NEXUS_BT_HCI_HOST_READY) {
+            (void)xhci_bluetooth_progress_classic_security(xhci, bluetooth);
             xhci_bluetooth_discovery_progress(xhci, bluetooth);
             xhci_bluetooth_progress_classic_hid(bluetooth);
             xhci_bluetooth_progress_hogp(xhci, bluetooth);

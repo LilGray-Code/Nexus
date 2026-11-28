@@ -20,6 +20,23 @@
 #define NEXUS_BT_HCI_OPCODE_INQUIRY 0x0401U
 #define NEXUS_BT_HCI_OPCODE_INQUIRY_CANCEL 0x0402U
 #define NEXUS_BT_HCI_OPCODE_CREATE_CONNECTION 0x0405U
+#define NEXUS_BT_HCI_EVENT_AUTHENTICATION_COMPLETE 0x06U
+#define NEXUS_BT_HCI_EVENT_LINK_KEY_REQUEST 0x17U
+#define NEXUS_BT_HCI_EVENT_LINK_KEY_NOTIFICATION 0x18U
+#define NEXUS_BT_HCI_EVENT_IO_CAPABILITY_REQUEST 0x31U
+#define NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE 0x32U
+#define NEXUS_BT_HCI_EVENT_USER_CONFIRMATION_REQUEST 0x33U
+#define NEXUS_BT_HCI_EVENT_USER_PASSKEY_REQUEST 0x34U
+#define NEXUS_BT_HCI_EVENT_SIMPLE_PAIRING_COMPLETE 0x36U
+#define NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_REPLY 0x040BU
+#define NEXUS_BT_HCI_OPCODE_LINK_KEY_REQUEST_NEGATIVE_REPLY 0x040CU
+#define NEXUS_BT_HCI_OPCODE_AUTHENTICATION_REQUESTED 0x0411U
+#define NEXUS_BT_HCI_OPCODE_SET_CONNECTION_ENCRYPTION 0x0413U
+#define NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_REPLY 0x042BU
+#define NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_REPLY 0x042CU
+#define NEXUS_BT_HCI_OPCODE_USER_CONFIRMATION_REQUEST_NEGATIVE_REPLY 0x042DU
+#define NEXUS_BT_HCI_OPCODE_USER_PASSKEY_REQUEST_NEGATIVE_REPLY 0x042FU
+#define NEXUS_BT_HCI_OPCODE_IO_CAPABILITY_REQUEST_NEGATIVE_REPLY 0x0434U
 #define NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS 0x200BU
 #define NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE 0x200CU
 #define NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION 0x200DU
@@ -187,6 +204,51 @@ bool nexus_bt_hci_parse_le_generate_dhkey_complete(
 bool nexus_bt_hci_parse_encryption_change(
     const struct nexus_bt_hci_event_view *event,
     uint16_t *connection_handle, uint8_t *status, bool *enabled);
+
+/* BR/EDR SSP support is intentionally NoInputNoOutput, No MITM and
+ * non-bonding. Link keys are session-ephemeral and must not be persisted. */
+bool nexus_bt_hci_parse_classic_address_event(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t expected_event_code, uint8_t address[6]);
+bool nexus_bt_hci_parse_io_capability_response(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t address[6], uint8_t *io_capability,
+    uint8_t *oob_data_present, uint8_t *authentication_requirements);
+bool nexus_bt_hci_parse_link_key_notification(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t address[6], uint8_t link_key[16], uint8_t *key_type);
+bool nexus_bt_hci_parse_authentication_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint16_t *connection_handle, uint8_t *status);
+bool nexus_bt_hci_parse_simple_pairing_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t address[6], uint8_t *status);
+
+bool nexus_bt_hci_build_authentication_requested(
+    uint16_t connection_handle, uint8_t *packet,
+    size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_build_set_connection_encryption(
+    uint16_t connection_handle, bool enable, uint8_t *packet,
+    size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_build_link_key_request_reply(
+    const uint8_t address[6], const uint8_t link_key[16],
+    uint8_t *packet, size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_build_link_key_request_negative_reply(
+    const uint8_t address[6], uint8_t *packet,
+    size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_build_io_capability_request_reply(
+    const uint8_t address[6], uint8_t io_capability,
+    uint8_t oob_data_present, uint8_t authentication_requirements,
+    uint8_t *packet, size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_build_io_capability_request_negative_reply(
+    const uint8_t address[6], uint8_t reason,
+    uint8_t *packet, size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_build_user_confirmation_reply(
+    const uint8_t address[6], bool accept,
+    uint8_t *packet, size_t capacity, size_t *packet_length);
+bool nexus_bt_hci_build_user_passkey_negative_reply(
+    const uint8_t address[6], uint8_t *packet,
+    size_t capacity, size_t *packet_length);
 
 bool nexus_bt_hci_build_le_create_connection(
     uint16_t scan_interval, uint16_t scan_window,

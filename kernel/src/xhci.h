@@ -34,12 +34,12 @@ struct nexus_pci_device;
  * It attempts Secure Connections with the controller P-256/DHKey engine and
  * f4/f5/f6 transcript verification; a peer that explicitly declines SC can
  * continue only that same exchange using non-bonding legacy Just Works.
- * NoInputNoOutput means there is no MITM protection, passkey/OOB/numeric
- * confirmation UI, or persistent bond store. The Settings view exposes
- * adapter status, LE advertisements and Classic BR/EDR inquiry results.
- * Classic HIDP is connected only for links the controller reports encrypted;
- * Classic SSP pairing, MITM UI and persistent link-key storage are not
- * provided. EHCI/OHCI/UHCI are not fully operational input controllers. */
+ * BLE NoInputNoOutput is encrypted but not MITM authenticated and is not
+ * persistently bonded. Classic BR/EDR supports NoInputNoOutput SSP Just Works
+ * only: peer MITM, bonding and OOB requirements are refused, and the
+ * unauthenticated-combination link key is retained only in volatile adapter
+ * RAM and wiped at teardown/failure. There is no passkey/OOB/numeric UI or
+ * persistent link-key store. EHCI/OHCI/UHCI are not complete input drivers. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);
@@ -48,9 +48,9 @@ bool xhci_gamepads_ready(void);
 
 /* Bluetooth HCI USB transport exposes complete L2CAP PDUs to an upper
  * protocol layer. Internal ATT/HOGP, BLE SC/legacy pairing, and Classic HIDP
- * over controller-reported encrypted BR/EDR links share this transport.
- * Pairing uses NoInputNoOutput Just Works for BLE only; Classic SSP, MITM
- * confirmation and persistent link-key storage are not implemented. */
+ * over encrypted BR/EDR links share this transport. BLE and Classic use
+ * NoInputNoOutput Just Works only, with no MITM UI or persistent bond store;
+ * Classic unauthenticated link keys are held in volatile adapter RAM. */
 bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
                                uint8_t *pdu, size_t pdu_capacity,
                                size_t *pdu_length);
@@ -68,9 +68,11 @@ bool xhci_bluetooth_connect_le(
 bool xhci_bluetooth_start_scan(void);
 bool xhci_bluetooth_get_status(struct nexus_bt_runtime_status *status);
 
-/* Classic BR/EDR discovery is independent of passive LE scan. Classic HIDP
- * channels are started only for links reported encrypted by the controller;
- * this runtime does not implement SSP passkey/MITM UI or persistent keys. */
+/* Classic BR/EDR discovery is independent of passive LE scan. New links
+ * attempt non-bonding NoInputNoOutput SSP Just Works. Peer MITM, bonding,
+ * OOB and passkey requirements are rejected. HIDP starts only after
+ * Authentication Complete and Encryption Change; the unauthenticated
+ * link key stays in volatile RAM and is wiped when the adapter is released. */
 bool xhci_bluetooth_start_classic_inquiry(void);
 size_t xhci_bluetooth_classic_device_count(void);
 bool xhci_bluetooth_get_classic_device(

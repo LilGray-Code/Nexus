@@ -304,7 +304,7 @@ static void desktop_bluetooth_draw(uint64_t x, uint64_t y) {
         1U, 231U, 183U, 127U);
     graphics_draw_text(x, classic_y + 78U +
         (uint64_t)desktop_bt_classic_device_count * 29U,
-        "SSP PAIRING / MITM UI / SAVED LINK KEYS NOT IMPLEMENTED.",
+        "CLASSIC JUST WORKS ONLY; NO MITM / NO SAVED LINK KEYS.",
         1U, 231U, 183U, 127U);
 }
 

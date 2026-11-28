@@ -28,6 +28,145 @@ static void test_acl_framing(void) {
     assert(!nexus_bt_hci_parse_acl(packet, sizeof(packet)-1U, &acl));
 }
 
+
+static void test_classic_ssp_event_parsers_and_command_builders(void) {
+    uint8_t packet[64] = {0U};
+    size_t length = 0U;
+    const uint8_t address[6] = {1U,2U,3U,4U,5U,6U};
+    const uint8_t key[16] = {
+        0U,1U,2U,3U,4U,5U,6U,7U,8U,9U,10U,11U,12U,13U,14U,15U
+    };
+
+    assert(nexus_bt_hci_build_authentication_requested(
+        0x0234U,packet,sizeof(packet),&length));
+    assert(length == 6U && packet[1] == 0x11U &&
+           packet[2] == 0x04U && packet[4] == 0x34U &&
+           packet[5] == 0x02U);
+    assert(!nexus_bt_hci_build_authentication_requested(
+        0U,packet,sizeof(packet),&length));
+
+    assert(nexus_bt_hci_build_set_connection_encryption(
+        0x0234U,true,packet,sizeof(packet),&length));
+    assert(length == 7U && packet[1] == 0x13U &&
+           packet[2] == 0x04U && packet[6] == 1U);
+
+    assert(nexus_bt_hci_build_link_key_request_reply(
+        address,key,packet,sizeof(packet),&length));
+    assert(length == 26U && packet[1] == 0x0BU &&
+           packet[2] == 0x04U && packet[3] == 22U);
+    assert(memcmp(packet+4U,address,6U) == 0);
+    assert(memcmp(packet+10U,key,16U) == 0);
+    assert(nexus_bt_hci_build_link_key_request_negative_reply(
+        address,packet,sizeof(packet),&length));
+    assert(length == 10U && packet[1] == 0x0CU);
+
+    assert(nexus_bt_hci_build_io_capability_request_reply(
+        address,3U,0U,0U,packet,sizeof(packet),&length));
+    assert(length == 13U && packet[1] == 0x2BU &&
+           packet[2] == 0x04U && packet[10] == 3U &&
+           packet[11] == 0U && packet[12] == 0U);
+    assert(!nexus_bt_hci_build_io_capability_request_reply(
+        address,3U,0U,0x10U,packet,sizeof(packet),&length));
+    assert(nexus_bt_hci_build_io_capability_request_negative_reply(
+        address,0x18U,packet,sizeof(packet),&length));
+    assert(length == 11U && packet[1] == 0x34U);
+    assert(nexus_bt_hci_build_user_confirmation_reply(
+        address,true,packet,sizeof(packet),&length));
+    assert(length == 10U && packet[1] == 0x2CU);
+    assert(nexus_bt_hci_build_user_confirmation_reply(
+        address,false,packet,sizeof(packet),&length));
+    assert(packet[1] == 0x2DU);
+    assert(nexus_bt_hci_build_user_passkey_negative_reply(
+        address,packet,sizeof(packet),&length));
+    assert(packet[1] == 0x2FU && packet[2] == 0x04U);
+
+    const uint8_t confirmation_params[] = {
+        1U,2U,3U,4U,5U,6U,0x40U,0xE2U,0x01U,0U
+    };
+    const struct nexus_bt_hci_event_view confirmation_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_USER_CONFIRMATION_REQUEST,
+        .parameters = confirmation_params,
+        .parameter_length = sizeof(confirmation_params)
+    };
+    assert(nexus_bt_hci_parse_classic_address_event(
+        &confirmation_event,NEXUS_BT_HCI_EVENT_USER_CONFIRMATION_REQUEST,
+        parsed_address));
+    assert(memcmp(parsed_address,address,6U) == 0);
+    assert(!nexus_bt_hci_parse_classic_address_event(
+        &io_event,NEXUS_BT_HCI_EVENT_LINK_KEY_REQUEST,parsed_address));
+
+    const uint8_t io_params[] = {1U,2U,3U,4U,5U,6U,3U,0U,0U};
+    const struct nexus_bt_hci_event_view io_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE,
+        .parameters = io_params,
+        .parameter_length = sizeof(io_params)
+    };
+    uint8_t parsed_address[6] = {0U};
+    uint8_t io = 0U, oob = 0U, auth = 0U;
+    assert(nexus_bt_hci_parse_io_capability_response(
+        &io_event,parsed_address,&io,&oob,&auth));
+    assert(memcmp(parsed_address,address,6U) == 0);
+    assert(io == 3U && oob == 0U && auth == 0U);
+    uint8_t peer_auth[9] = {1U,2U,3U,4U,5U,6U,3U,0U,0x01U};
+    const struct nexus_bt_hci_event_view mitm_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE,
+        .parameters = peer_auth,
+        .parameter_length = sizeof(peer_auth)
+    };
+    assert(nexus_bt_hci_parse_io_capability_response(
+        &mitm_event,parsed_address,&io,&oob,&auth));
+    assert((auth & 0x01U) != 0U);
+    peer_auth[8U] = 0x02U;
+    const struct nexus_bt_hci_event_view bonding_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE,
+        .parameters = peer_auth,
+        .parameter_length = sizeof(peer_auth)
+    };
+    assert(nexus_bt_hci_parse_io_capability_response(
+        &bonding_event,parsed_address,&io,&oob,&auth));
+    assert((auth & 0x06U) != 0U);
+    peer_auth[8U] = 0x08U;
+    assert(!nexus_bt_hci_parse_io_capability_response(
+        &bonding_event,parsed_address,&io,&oob,&auth));
+
+    const uint8_t key_params[23] = {
+        1U,2U,3U,4U,5U,6U,
+        0U,1U,2U,3U,4U,5U,6U,7U,8U,9U,10U,11U,12U,13U,14U,15U,
+        4U
+    };
+    const struct nexus_bt_hci_event_view key_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_LINK_KEY_NOTIFICATION,
+        .parameters = key_params,
+        .parameter_length = sizeof(key_params)
+    };
+    uint8_t parsed_key[16] = {0U}, key_type = 0U;
+    assert(nexus_bt_hci_parse_link_key_notification(
+        &key_event,parsed_address,parsed_key,&key_type));
+    assert(memcmp(parsed_key,key,16U) == 0 && key_type == 4U);
+
+    const uint8_t auth_params[] = {0U,0x34U,0x02U};
+    const struct nexus_bt_hci_event_view auth_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_AUTHENTICATION_COMPLETE,
+        .parameters = auth_params,
+        .parameter_length = sizeof(auth_params)
+    };
+    uint16_t handle = 0U;
+    uint8_t status = 0xFFU;
+    assert(nexus_bt_hci_parse_authentication_complete(
+        &auth_event,&handle,&status));
+    assert(handle == 0x0234U && status == 0U);
+
+    const uint8_t pairing_params[] = {0U,1U,2U,3U,4U,5U,6U};
+    const struct nexus_bt_hci_event_view pairing_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_SIMPLE_PAIRING_COMPLETE,
+        .parameters = pairing_params,
+        .parameter_length = sizeof(pairing_params)
+    };
+    assert(nexus_bt_hci_parse_simple_pairing_complete(
+        &pairing_event,parsed_address,&status));
+    assert(status == 0U && memcmp(parsed_address,address,6U) == 0);
+}
+
 static void test_classic_connection_and_disconnect(void) {
     const uint8_t connected_parameters[] = {
         0U,0x34U,0x02U, 1U,2U,3U,4U,5U,6U, 1U,0U

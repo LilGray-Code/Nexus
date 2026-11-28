@@ -208,16 +208,26 @@ static bool hid_record_input(
                     uint32_t usage = 0U;
                     if (!hid_local_get_usage(local, i,
                             global->usage_page, &usage)) continue;
-                    if ((usage >> 16) != HID_USAGE_PAGE_CONSUMER ||
-                        (usage & 0xFFFFU) != HID_USAGE_AC_PAN) continue;
-                    layout->horizontal_wheel_bit_offset = (uint16_t)(
-                        *input_bit_offset + i * global->report_size);
-                    layout->horizontal_wheel_size =
-                        (uint8_t)global->report_size;
-                    layout->horizontal_wheel_logical_minimum =
-                        global->logical_minimum;
-                    layout->horizontal_wheel_relative =
-                        (flags & 0x04U) != 0U;
+                    if ((usage >> 16) != HID_USAGE_PAGE_CONSUMER) continue;
+                    const uint32_t id = usage & 0xFFFFU;
+                    if (id == HID_USAGE_AC_PAN) {
+                        layout->horizontal_wheel_bit_offset = (uint16_t)(
+                            *input_bit_offset + i * global->report_size);
+                        layout->horizontal_wheel_size =
+                            (uint8_t)global->report_size;
+                        layout->horizontal_wheel_logical_minimum =
+                            global->logical_minimum;
+                        layout->horizontal_wheel_relative =
+                            (flags & 0x04U) != 0U;
+                    } else if (global->report_size == 1U &&
+                               (id == 0x0224U || id == 0x0225U)) {
+                        /* Consumer AC Back / Forward map to mouse buttons 4/5. */
+                        const uint8_t button = id == 0x0224U ? 3U : 4U;
+                        layout->button_bit_offset[button] =
+                            (uint16_t)(*input_bit_offset + i);
+                        if (layout->button_count <= button)
+                            layout->button_count = (uint8_t)(button + 1U);
+                    }
                 }
             }
         }

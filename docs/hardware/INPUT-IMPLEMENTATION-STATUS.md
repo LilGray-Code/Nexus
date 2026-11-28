@@ -164,3 +164,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Raised the generic keyboard/mouse multi-report descriptor capacity from 8 to 32 Report IDs.
 - Added a descriptor-construction regression test with nine distinct mouse Report IDs and decoded the ninth report, ensuring the previous boundary no longer rejects it.
 - Interfaces with more than 32 report IDs remain rejected by design to keep descriptor and per-device storage bounded.
+
+
+### Bluetooth HID security gating
+
+- The HID report bridge now rejects Classic HIDP and BLE HOGP input until its per-peer state is explicitly marked ready by a higher-level pairing layer that confirms both link encryption and pairing completion.
+- Disconnect clears the per-peer state, so a reconnect cannot inherit a previous session's input authorization.
+- Host tests confirm that HID reports are dropped before security readiness and delivered only after the readiness gate is opened. This is an enforcement boundary, not an implementation of SMP/SSP pairing; the real pairing and encryption procedures still need to be completed and connected to this API.

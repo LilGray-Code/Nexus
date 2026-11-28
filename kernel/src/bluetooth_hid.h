@@ -13,6 +13,11 @@
 #define NEXUS_BT_ATT_HANDLE_VALUE_NOTIFICATION 0x1BU
 #define NEXUS_BT_ATT_HANDLE_VALUE_INDICATION 0x1DU
 #define NEXUS_BT_ATT_READ_RESPONSE 0x0BU
+#define NEXUS_BT_L2CAP_CID_SIGNALING 0x0001U
+#define NEXUS_BT_L2CAP_SIGNAL_CONNECTION_REQUEST 0x02U
+#define NEXUS_BT_L2CAP_SIGNAL_CONNECTION_RESPONSE 0x03U
+#define NEXUS_BT_L2CAP_SIGNAL_DISCONNECTION_REQUEST 0x06U
+#define NEXUS_BT_L2CAP_SIGNAL_DISCONNECTION_RESPONSE 0x07U
 #define NEXUS_BT_HOGP_REPORT_TYPE_INPUT 0x01U
 #define NEXUS_BT_HID_MAX_REPORT_BYTES 64U
 
@@ -22,6 +27,27 @@ struct nexus_bt_l2cap_view {
     uint16_t channel_id;
     const uint8_t *payload;
     uint16_t payload_length;
+};
+
+struct nexus_bt_l2cap_signaling_command {
+    uint8_t code;
+    uint8_t identifier;
+    const uint8_t *data;
+    uint16_t data_length;
+    uint16_t command_length;
+};
+
+struct nexus_bt_l2cap_hid_channel {
+    uint16_t psm;
+    uint16_t local_cid;
+    uint16_t remote_cid;
+    uint8_t identifier;
+    uint8_t disconnect_identifier;
+    uint8_t result;
+    uint8_t status;
+    bool pending;
+    bool connected;
+    bool disconnect_pending;
 };
 
 struct nexus_bt_hid_report_view {
@@ -42,6 +68,22 @@ bool nexus_bt_l2cap_parse(const uint8_t *packet, size_t packet_length,
                           struct nexus_bt_l2cap_view *l2cap);
 bool nexus_bt_hidp_parse_input(const uint8_t *packet, size_t packet_length,
                                struct nexus_bt_hid_report_view *report);
+bool nexus_bt_l2cap_parse_signaling_command(
+    const struct nexus_bt_l2cap_view *l2cap,
+    struct nexus_bt_l2cap_signaling_command *command);
+bool nexus_bt_l2cap_hid_channel_begin(
+    struct nexus_bt_l2cap_hid_channel *channel, uint16_t psm,
+    uint16_t local_cid, uint8_t identifier,
+    uint8_t *l2cap_packet, size_t capacity, size_t *packet_length);
+bool nexus_bt_l2cap_hid_channel_handle_connection_response(
+    struct nexus_bt_l2cap_hid_channel *channel,
+    const struct nexus_bt_l2cap_signaling_command *command);
+bool nexus_bt_l2cap_hid_channel_build_disconnect(
+    struct nexus_bt_l2cap_hid_channel *channel, uint8_t identifier,
+    uint8_t *l2cap_packet, size_t capacity, size_t *packet_length);
+bool nexus_bt_l2cap_hid_channel_handle_disconnect_response(
+    struct nexus_bt_l2cap_hid_channel *channel,
+    const struct nexus_bt_l2cap_signaling_command *command);
 bool nexus_bt_hogp_parse_notification(
     const struct nexus_bt_l2cap_view *l2cap,
     struct nexus_bt_hid_report_view *report);

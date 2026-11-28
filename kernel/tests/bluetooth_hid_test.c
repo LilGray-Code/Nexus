@@ -71,6 +71,7 @@ static void test_hogp_notification_matches_discovered_report_handle(void) {
     struct nexus_bt_hid_input_device device = {0};
     assert(nexus_bt_hid_input_configure(&device,
         bluetooth_generic_mouse_map, sizeof(bluetooth_generic_mouse_map)));
+    assert(nexus_bt_hid_input_set_security_ready(&device, true, true));
     struct nexus_bt_gatt_hid_service service = {0};
     service.report_count = 1U;
     service.reports[0].value_handle = 0x0020U;
@@ -96,6 +97,7 @@ static void test_hogp_notification_matches_discovered_report_handle(void) {
     service.reports[0].value_handle = 0x0040U;
     assert(nexus_bt_hid_input_configure(&device,
         bluetooth_generic_mouse_map, sizeof(bluetooth_generic_mouse_map)));
+    assert(nexus_bt_hid_input_set_security_ready(&device, true, true));
     assert(!nexus_bt_hid_input_dispatch_hogp_notification(
         &device, &service, &l2cap));
 }
@@ -104,6 +106,7 @@ static void test_bluetooth_hidp_mouse_dispatch(void) {
     struct nexus_bt_hid_input_device device = {0};
     assert(nexus_bt_hid_input_configure(&device,
         bluetooth_generic_mouse_map, sizeof(bluetooth_generic_mouse_map)));
+    assert(nexus_bt_hid_input_set_security_ready(&device, true, true));
     const uint8_t packet[] = {0xA1U,0x02U,0xFEU,0x03U,0xFFU};
     const uint32_t before = bluetooth_mouse_submit_count;
     assert(nexus_bt_hid_input_dispatch_hidp_packet(

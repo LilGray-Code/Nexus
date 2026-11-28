@@ -113,7 +113,6 @@ bool nexus_bt_acl_reassembler_read(
 }
 
 bool nexus_bt_hci_connection_complete(
-    const struct nexus_bt_hci_event_view *event,bool nexus_bt_hci_connection_complete(
     const struct nexus_bt_hci_event_view *event,
     struct nexus_bt_hci_connection *connection) {
     if (event == NULL || connection == NULL || event->parameters == NULL)

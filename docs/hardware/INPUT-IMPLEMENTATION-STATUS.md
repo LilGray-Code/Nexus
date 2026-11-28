@@ -143,3 +143,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added a validated LE Create Connection command builder for explicit peer address and connection interval/latency/supervision values.
 - Host tests cover active scan enable/disable, single and multi-advertisement parsing, truncated report rejection, and connection parameter validation.
 - These APIs still require a live HCI transport to submit commands and deliver events. Pairing/security, bond management, HID notification subscription scheduling and USB controller integration remain outstanding.
+
+
+### Consumer-page mouse navigation buttons
+
+- Generic mouse HID decoding now maps Consumer-page AC Back and AC Forward one-bit usages to logical mouse buttons 4 and 5, in addition to the Button-page form.
+- This allows compatible mice to use the existing browser back/forward actions regardless of which common HID page reports the side buttons.
+- Added a descriptor-driven test; proprietary vendor-specific usages and application-defined actions remain device-specific.

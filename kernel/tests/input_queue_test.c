@@ -7,12 +7,25 @@
 void serial_write(const char *text) { (void)text; }
 void serial_write_hex(uint64_t value) { (void)value; }
 
-static void submit_mouse(uint8_t buttons, int16_t dx, int16_t dy, int8_t wheel) {
+static void submit_mouse(uint16_t buttons, int16_t dx, int16_t dy, int16_t wheel) {
     const struct nexus_usb_mouse_event event = {
         .buttons = buttons,
         .dx = dx,
         .dy = dy,
-        .wheel = wheel
+        .wheel = wheel,
+        .horizontal_wheel = 0
+    };
+    input_usb_mouse_event(&event);
+}
+
+static void submit_mouse_extended(uint16_t buttons, int16_t dx, int16_t dy,
+                                  int16_t wheel, int16_t horizontal_wheel) {
+    const struct nexus_usb_mouse_event event = {
+        .buttons = buttons,
+        .dx = dx,
+        .dy = dy,
+        .wheel = wheel,
+        .horizontal_wheel = horizontal_wheel
     };
     input_usb_mouse_event(&event);
 }
@@ -52,12 +65,13 @@ static void test_button_edges_are_never_coalesced(void) {
 }
 
 static void test_motion_saturates_without_integer_wrap(void) {
-    submit_mouse(0U, 32760, -32760, 120);
-    submit_mouse(0U, 100, -100, 20);
+    submit_mouse_extended(0U, 32760, -32760, 30000, 20000);
+    submit_mouse_extended(0U, 100, -100, 10000, 20000);
     const struct nexus_input_event event = pop_required();
     assert(event.mouse_dx == INT16_MAX);
     assert(event.mouse_dy == INT16_MIN);
-    assert(event.mouse_wheel == INT8_MAX);
+    assert(event.mouse_wheel == INT16_MAX);
+    assert(event.mouse_horizontal_wheel == INT16_MAX);
     assert(!input_pop_event(&(struct nexus_input_event){0}));
 }
 

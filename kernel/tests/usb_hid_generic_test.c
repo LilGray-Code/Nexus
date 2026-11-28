@@ -283,6 +283,34 @@ static void test_generic_mouse_64th_button_is_preserved(void) {
     assert(event.dx == 1 && event.dy == -2);
 }
 
+
+static const uint8_t generic_mouse_consumer_side_buttons_descriptor[] = {
+    0x05,0x01, 0x09,0x02, 0xA1,0x01,
+    0x09,0x01, 0xA1,0x00,
+    0x05,0x09, 0x19,0x01, 0x29,0x03,
+    0x15,0x00, 0x25,0x01, 0x95,0x03, 0x75,0x01, 0x81,0x02,
+    0x95,0x01, 0x75,0x05, 0x81,0x01,
+    0x05,0x01, 0x09,0x30, 0x09,0x31,
+    0x15,0x81, 0x25,0x7F, 0x75,0x08, 0x95,0x02, 0x81,0x06,
+    0x05,0x0C, 0x0A,0x24,0x02, 0x0A,0x25,0x02,
+    0x15,0x00, 0x25,0x01, 0x75,0x01, 0x95,0x02, 0x81,0x02,
+    0xC0,0xC0
+};
+
+static void test_generic_mouse_consumer_back_forward_side_buttons(void) {
+    struct nexus_usb_hid_generic_layout layout = {0};
+    assert(usb_hid_generic_parse_descriptor(
+        generic_mouse_consumer_side_buttons_descriptor,
+        sizeof(generic_mouse_consumer_side_buttons_descriptor), &layout));
+    assert(layout.button_count == 5U);
+    /* Buttons 4 and 5 arrive as Consumer AC Back / AC Forward one-bit fields. */
+    const uint8_t report[4] = {0x05U,0x00U,0x00U,0x03U};
+    struct nexus_usb_mouse_event event = {0};
+    assert(usb_hid_generic_decode_mouse(&layout,
+        report, sizeof(report), &event));
+    assert(event.buttons == 0x1DU);
+}
+
 static void test_descriptor_rejection_and_bounds(void) {
     struct nexus_usb_hid_generic_layout layout = {0};
     assert(!usb_hid_generic_parse_descriptor(NULL, 0U, &layout));
@@ -311,6 +339,7 @@ int main(void) {
     test_generic_mouse_high_resolution_horizontal_scroll();
     test_generic_mouse_32bit_axes_and_wheel_saturate_safely();
     test_generic_mouse_64th_button_is_preserved();
+    test_generic_mouse_consumer_back_forward_side_buttons();
     test_descriptor_rejection_and_bounds();
     puts("NEXUS GENERIC USB HID KEYBOARD AND MOUSE TESTS PASSED");
     return 0;

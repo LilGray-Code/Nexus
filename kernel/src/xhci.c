@@ -1308,8 +1308,8 @@ static void xhci_drop_secondary_hid_endpoint(
         input_usb_keyboard_report_state(
             &device->secondary_keyboard_state, release);
     } else if (device->secondary_kind == XHCI_HID_MOUSE) {
-        const uint8_t release[3] = {0U};
-        input_usb_mouse_report(release);
+        const struct nexus_usb_mouse_event release = {0};
+        input_usb_mouse_event(&release);
     }
     if (device->secondary_interrupt_ring.physical != 0U)
         (void)memory_free_page(device->secondary_interrupt_ring.physical);
@@ -1529,8 +1529,8 @@ static void xhci_drop_hid_device(struct xhci_controller *xhci,
         const uint8_t release[8] = {0U};
         input_usb_keyboard_report_state(&device->keyboard_state, release);
     } else if (device->kind == XHCI_HID_MOUSE) {
-        const uint8_t release[3] = {0U};
-        input_usb_mouse_report(release);
+        const struct nexus_usb_mouse_event release = {0};
+        input_usb_mouse_event(&release);
     } else if (device->kind == XHCI_HID_GAMEPAD) {
         xhci_notify_gamepad_disconnected(device);
     }
@@ -2160,8 +2160,8 @@ static void xhci_detach_hub_children(struct xhci_controller *xhci,
         if (!device->active ||
             device->usb_path.parent_hub_slot != parent_hub_slot ||
             device->usb_path.parent_port != parent_port) continue;
-        const uint8_t release[3] = {0U};
-        input_usb_mouse_report(release);
+        const struct nexus_usb_mouse_event release = {0};
+        input_usb_mouse_event(&release);
         serial_write("USB: HID mouse disconnected from hub slot=");
         serial_write_hex(parent_hub_slot);
         serial_write(" port=");
@@ -2215,8 +2215,8 @@ static void xhci_detach_port(struct xhci_controller *xhci,
     for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
         struct xhci_hid_device *device = &xhci->mice[i];
         if (device->active && device->port_number == port_number) {
-            const uint8_t release[3] = {0U};
-            input_usb_mouse_report(release);
+            const struct nexus_usb_mouse_event release = {0};
+            input_usb_mouse_event(&release);
             xhci_release_hid_device(xhci, device);
             serial_write("USB: HID mouse disconnected from xHCI port ");
             serial_write_hex(port_number);
@@ -2602,8 +2602,8 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
     for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
         struct xhci_hid_device *device = &xhci->mice[i];
         if (!device->active) continue;
-        const uint8_t release[3] = {0U};
-        input_usb_mouse_report(release);
+        const struct nexus_usb_mouse_event release = {0};
+        input_usb_mouse_event(&release);
         if (device->secondary_active &&
             device->secondary_kind == XHCI_HID_KEYBOARD) {
             const uint8_t keyboard_release[8] = {0U};
@@ -2612,7 +2612,7 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
         }
         if (device->secondary_active &&
             device->secondary_kind == XHCI_HID_MOUSE)
-            input_usb_mouse_report(release);
+            input_usb_mouse_event(&release);
         for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j) {
             struct xhci_hid_extra_endpoint *extra = &device->extra_hid[j];
             if (!extra->active) continue;

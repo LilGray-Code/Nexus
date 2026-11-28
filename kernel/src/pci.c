@@ -73,6 +73,40 @@ static uint32_t pci_config_read(uint16_t segment, uint8_t bus,
     return inl(PCI_CONFIG_DATA);
 }
 
+static bool pci_config_write32(uint16_t segment, uint8_t bus,
+                               uint8_t slot, uint8_t function,
+                               uint16_t offset, uint32_t value) {
+    if (slot >= 32U || function >= 8U || offset > 0x0FFCU ||
+        (offset & 3U) != 0U) return false;
+
+    const struct nexus_acpi_mcfg_region *region =
+        acpi_find_mcfg_region(segment, bus);
+    if (region != NULL) {
+        const uint64_t physical =
+            region->base_address +
+            (((uint64_t)bus - region->start_bus) << 20) +
+            ((uint64_t)slot << 15) + ((uint64_t)function << 12) +
+            (uint64_t)offset;
+        volatile uint32_t *page = NULL;
+        if (!paging_map_mmio_page_temporary(physical, &page)) return false;
+        volatile uint32_t *register_value = (volatile uint32_t *)(
+            (uintptr_t)page + (physical & 0xFFFU));
+        *register_value = value;
+        __asm__ volatile ("sfence" : : : "memory");
+        return true;
+    }
+
+    if (segment != 0U || offset > 0x00FCU) return false;
+    const uint32_t address = 0x80000000U |
+        ((uint32_t)bus << 16) |
+        ((uint32_t)slot << 11) |
+        ((uint32_t)function << 8) |
+        (uint32_t)offset;
+    outl(PCI_CONFIG_ADDRESS, address);
+    outl(PCI_CONFIG_DATA, value);
+    return true;
+}
+
 static bool pci_config_write16(uint16_t segment, uint8_t bus,
                                uint8_t slot, uint8_t function,
                                uint16_t offset, uint16_t value) {
@@ -230,6 +264,13 @@ bool pci_read_config16(const struct nexus_pci_device *device,
         return false;
     *value = (uint16_t)low | ((uint16_t)high << 8);
     return true;
+}
+
+bool pci_write_config32(const struct nexus_pci_device *device,
+                        uint16_t offset, uint32_t value) {
+    if (device == NULL) return false;
+    return pci_config_write32(device->segment_group, device->bus,
+        device->slot, device->function, offset, value);
 }
 
 bool pci_read_config32(const struct nexus_pci_device *device,

@@ -27,7 +27,8 @@ This is an implementation ledger, not a hardware compatibility claim. A parser u
 - Multi-report-ID support is for bounded generic keyboard/mouse reports. Generic relative X/Y movement, vertical wheel and Consumer AC Pan horizontal scroll preserve signed 16-bit values end to end. Generic mouse button collections retain a 32-bit bitmap for up to 32 standard button usages. Unsupported report layouts must fail closed and must not be misclassified as boot-protocol devices.
 - HCI framing and link-event decoding do not establish Bluetooth HID support. A controller is not "connected" to the input stack until a complete authenticated HIDP/HOGP path delivers reports.
 - EHCI work now includes a host-tested, DMA32-bounded qTD and QH descriptor construction layer, capability/legacy-register validation and root-port status decoding. This is schedule/transfer infrastructure only: there is no EHCI MMIO controller lifecycle, PCI BIOS-ownership handoff, async/periodic schedule activation, control/bulk/interrupt submission, enumeration, or EHCI input path. Keep EHCI marked unavailable until those pieces are implemented and exercised.
-- UHCI and OHCI remain PCI recognition only. None of UHCI/OHCI/EHCI is currently advertised as an operational input driver.
+- EHCI now has a controller-core bring-up path (PCI legacy ownership, halt/reset, a DMA32 asynchronous reclamation head, RUN/ASE verification and polled root-port connection detection). Control/bulk/interrupt transfer submission, enumeration, companion-controller routing and HID event delivery remain unfinished, so EHCI is not yet advertised as an operational input driver.
+- UHCI and OHCI remain PCI recognition only.
 - The resume watchdog refuses to free DMA buffers if controller halt cannot be confirmed. After confirmed halt it rebuilds controller resources; actual ACPI wake wiring and hardware power-loss tests remain.
 
 ## Test commands used by CI

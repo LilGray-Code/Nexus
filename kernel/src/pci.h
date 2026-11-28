@@ -71,5 +71,8 @@ bool pci_read_config16(const struct nexus_pci_device *device, uint16_t offset,
                        uint16_t *value);
 bool pci_read_config32(const struct nexus_pci_device *device, uint16_t offset,
                        uint32_t *value);
+/* Write one aligned PCI configuration dword (used for capability handoff). */
+bool pci_write_config32(const struct nexus_pci_device *device, uint16_t offset,
+                        uint32_t value);
 
 #endif

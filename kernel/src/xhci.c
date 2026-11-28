@@ -13,6 +13,7 @@
 #include "xhci_ports.h"
 #include "xhci_power.h"
 #include "usb_host_controller.h"
+#include "ehci_controller.h"
 
 #include "input.h"
 #include "memory.h"
@@ -4049,8 +4050,11 @@ bool xhci_init(void) {
         serial_write("\r\n");
         if (xhci_try_controller(device)) return true;
     }
-    if (candidates == 0U) {
-        serial_write("USB: no operational USB host-controller driver found; use another supported input path\r\n");
+    const bool ehci_running = ehci_controller_init_all();
+    if (candidates == 0U && !ehci_running) {
+        serial_write("USB: no operational USB host-controller core found; use another supported input path\r\n");
+    } else if (ehci_running) {
+        serial_write("USB: EHCI controller core is active; root-port monitoring is available, HID enumeration is still pending\r\n");
     } else {
         serial_write("USB: xHCI controllers found but no supported directly attached HID device was initialized\r\n");
     }
@@ -4410,6 +4414,7 @@ bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
 }
 
 void xhci_poll(void) {
+    ehci_controller_poll();
     struct xhci_controller *xhci = &controller;
     if (!xhci->initialized) return;
 

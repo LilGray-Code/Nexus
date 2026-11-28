@@ -145,6 +145,21 @@ static void test_control_transfer_qtd_chain(void) {
     assert(((qtds[3].token >> 16) & 0x7FFFU) == 0U);
 }
 
+static void test_async_schedule_head_builder(void) {
+    struct nexus_ehci_qh qh = {0};
+    assert(nexus_ehci_build_async_head_qh(&qh, 0x00600000U));
+    assert(qh.horizontal_link ==
+           (0x00600000U | NEXUS_EHCI_LINK_QH));
+    assert((qh.endpoint_characteristics & (1U << 15)) != 0U);
+    assert(((qh.endpoint_characteristics >> 12) & 3U) ==
+           NEXUS_EHCI_SPEED_HIGH);
+    assert(((qh.endpoint_characteristics >> 16) & 0x7FFU) == 64U);
+    assert(qh.overlay_next_qtd == NEXUS_EHCI_QTD_TERMINATE);
+    assert(qh.overlay_alternate_next_qtd == NEXUS_EHCI_QTD_TERMINATE);
+    assert(!nexus_ehci_build_async_head_qh(&qh, 0x00600001U));
+    assert(!nexus_ehci_build_async_head_qh(&qh, 0U));
+}
+
 static void test_qh_builder(void) {
     struct nexus_ehci_qh qh = {0};
     assert(nexus_ehci_build_qh(&qh, 0x00300000U, 0x00300040U,
@@ -175,6 +190,7 @@ int main(void) {
     test_port_status_decode();
     test_qtd_builder();
     test_qh_builder();
+    test_async_schedule_head_builder();
     test_control_transfer_qtd_chain();
     puts("NEXUS EHCI CAPABILITY AND TRANSFER-DESCRIPTOR TESTS PASSED");
     return 0;

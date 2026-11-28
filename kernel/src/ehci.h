@@ -106,6 +106,11 @@ bool nexus_ehci_build_qh(
     bool data_toggle_control, uint8_t nak_reload,
     uint32_t first_qtd_physical);
 
+/* Build the self-linked asynchronous schedule head. It carries no transfer;
+ * the reclamation head bit lets the EHCI controller walk an empty async list. */
+bool nexus_ehci_build_async_head_qh(
+    struct nexus_ehci_qh *qh, uint32_t qh_physical);
+
 /* Count descriptors required by a control request. The result includes SETUP
  * and STATUS qTDs, and accounts for the first data-page byte offset. */
 size_t nexus_ehci_control_qtd_count(

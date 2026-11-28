@@ -206,6 +206,27 @@ bool nexus_ehci_build_qh(
     return true;
 }
 
+bool nexus_ehci_build_async_head_qh(
+    struct nexus_ehci_qh *qh, uint32_t qh_physical) {
+    if (qh == NULL || qh_physical == 0U ||
+        (qh_physical & 0x1FU) != 0U ||
+        qh_physical > UINT32_MAX - 0x3FU) return false;
+    *qh = (struct nexus_ehci_qh){
+        .horizontal_link = qh_physical | NEXUS_EHCI_LINK_QH,
+        .endpoint_characteristics = (1U << 15) |
+            ((uint32_t)NEXUS_EHCI_SPEED_HIGH << 12) |
+            (64U << 16),
+        .endpoint_capabilities = 0U,
+        .current_qtd = 0U,
+        .overlay_next_qtd = NEXUS_EHCI_QTD_TERMINATE,
+        .overlay_alternate_next_qtd = NEXUS_EHCI_QTD_TERMINATE,
+        .overlay_token = 0U,
+        .overlay_buffer = {0U,0U,0U,0U,0U},
+        .reserved = {0U,0U,0U}
+    };
+    return true;
+}
+
 size_t nexus_ehci_control_qtd_count(
     uint16_t data_length, uint16_t first_data_page_offset) {
     if (first_data_page_offset >= NEXUS_EHCI_PAGE_SIZE) return 0U;

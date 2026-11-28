@@ -26,6 +26,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #define XHCI_DMA_LIMIT          0x100000000ULL
 #define XHCI_PAGE_SIZE          4096U

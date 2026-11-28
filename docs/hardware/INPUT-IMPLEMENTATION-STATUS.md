@@ -102,3 +102,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - The UART transport is now compiled into the kernel and has a host register-model test covering initialization, command/ACL transmit, fragmented event receive, ACL receive, buffer retry and malformed-frame recovery. This is a real generic UART transport module, but it is not yet auto-discovered or wired to the Bluetooth service; USB Bluetooth HCI endpoint scheduling remains unimplemented.
 - USB HID configuration discovery now retains up to 16 interrupt-IN HID interfaces (previously eight) and has a ten-interface composite-descriptor regression test. The xHCI runtime still configures only the primary and one companion interface; this parser change does not claim multi-interface runtime completion.
 - Added hub interrupt-IN endpoint discovery from the hub interface's active configuration and a validated decoder for the hub/port change bitmap. Unit tests cover both. xHCI still polls GET_STATUS and has not yet scheduled the discovered hub interrupt endpoint, so interrupt-driven runtime notifications remain open.
+
+
+### Bluetooth ACL/L2CAP receive reassembly
+
+- Added a per-connection, bounded HCI ACL reassembler for L2CAP PDUs fragmented across multiple ACL transfers. It validates start/continuation packet-boundary sequences, handle consistency, broadcast mode, declared L2CAP length, and a 1 KiB maximum PDU size.
+- Completed L2CAP PDUs remain available when the first consumer buffer is too small, allowing a safe retry without losing the packet.
+- Host tests cover fragmented completion, orphan continuations, connection-handle mismatch, overflow, reserved packet-boundary values, and output-buffer retry.
+- This is receive-path protocol infrastructure; Bluetooth scanning, connection initiation, pairing/bonding, ACL scheduling over USB, and end-to-end HID report delivery remain open.

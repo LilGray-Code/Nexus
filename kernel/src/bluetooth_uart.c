@@ -157,6 +157,10 @@ bool nexus_bt_uart_poll_receive(struct nexus_bt_uart *uart,
             if ((uart_inb(uart_port(uart, UART_REG_LSR)) &
                  UART_LSR_DATA_READY) == 0U) break;
             const uint8_t value = uart_inb(uart_port(uart, UART_REG_DATA));
+            if (uart->rx_discard_remaining != 0U) {
+                --uart->rx_discard_remaining;
+                continue;
+            }
 
             if (uart->rx_length == 0U) {
                 if (value != NEXUS_BT_HCI_PACKET_EVENT &&
@@ -187,6 +191,10 @@ bool nexus_bt_uart_poll_receive(struct nexus_bt_uart *uart,
                     ((uint16_t)uart->rx_packet[4] << 8));
                 if (payload_length > NEXUS_BT_UART_MAX_ACL_PAYLOAD) {
                     uart_drop_rx(uart);
+                    /* Discard the declared remainder as one frame. Searching
+                     * its payload for an apparent H4 type byte could invent a
+                     * false event/ACL packet and desynchronize the stream. */
+                    uart->rx_discard_remaining = payload_length;
                     continue;
                 }
                 uart->rx_expected = (uint16_t)(5U + payload_length);

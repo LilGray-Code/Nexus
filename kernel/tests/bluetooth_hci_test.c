@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 static void test_event_framing(void) {
     const uint8_t packet[] = {0x04U,0x0EU,0x02U,0x01U,0x10U};

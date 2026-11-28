@@ -18,6 +18,7 @@ struct nexus_bt_uart {
     uint16_t rx_length;
     uint16_t rx_expected;
     uint32_t rx_dropped_packets;
+    uint16_t rx_discard_remaining;
     uint8_t rx_packet[NEXUS_BT_UART_MAX_PACKET];
 };
 

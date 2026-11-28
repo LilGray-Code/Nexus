@@ -168,12 +168,42 @@ static void test_malformed_acl_is_dropped_and_parser_resynchronizes(void) {
     assert(uart.rx_dropped_packets == 1U);
 }
 
+static void test_oversized_acl_payload_is_discarded_before_resync(void) {
+    reset_mock();
+    struct nexus_bt_uart uart = {0};
+    assert(nexus_bt_uart_init(&uart, TEST_BASE, 1843200U, 115200U, false));
+
+    uint8_t malformed[5U + 1025U];
+    malformed[0] = 0x02U;
+    malformed[1] = 0x01U;
+    malformed[2] = 0x20U;
+    malformed[3] = 0x01U;
+    malformed[4] = 0x04U;
+    /* An H4-looking byte sequence inside the oversized ACL payload must be
+     * discarded as payload, not misinterpreted as a second HCI frame. */
+    malformed[5] = 0x04U;
+    malformed[6] = 0x05U;
+    malformed[7] = 0x00U;
+    const uint8_t valid_event[] = {0x04U,0x05U,0x00U};
+    feed_rx(malformed, sizeof(malformed));
+    feed_rx(valid_event, sizeof(valid_event));
+
+    uint8_t packet[NEXUS_BT_UART_MAX_PACKET];
+    size_t length = 0U;
+    assert(nexus_bt_uart_poll_receive(&uart, packet, sizeof(packet),
+        &length, sizeof(malformed) + sizeof(valid_event)));
+    assert(length == sizeof(valid_event));
+    assert(packet[0] == 0x04U && packet[1] == 0x05U);
+    assert(uart.rx_dropped_packets == 1U);
+}
+
 int main(void) {
     test_uart_initialization();
     test_h4_command_and_acl_transmit();
     test_fragmented_event_receive();
     test_acl_receive_and_small_buffer_retry();
     test_malformed_acl_is_dropped_and_parser_resynchronizes();
+    test_oversized_acl_payload_is_discarded_before_resync();
     puts("NEXUS BLUETOOTH 16550 UART H4 TRANSPORT TESTS PASSED");
     return 0;
 }

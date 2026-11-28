@@ -41,6 +41,36 @@ struct nexus_bt_hci_connection {
     uint8_t peer_address[6];
 };
 
+#define NEXUS_BT_ACL_MAX_L2CAP_PDU 1024U
+
+enum nexus_bt_acl_reassembly_result {
+    NEXUS_BT_ACL_REJECTED = 0,
+    NEXUS_BT_ACL_PENDING = 1,
+    NEXUS_BT_ACL_COMPLETE = 2
+};
+
+/* One bounded in-progress L2CAP PDU. The caller should keep one instance per
+ * active HCI connection handle and feed ACL packets in controller order. */
+struct nexus_bt_acl_reassembler {
+    bool active;
+    bool complete;
+    uint16_t connection_handle;
+    uint16_t expected_length;
+    uint16_t received_length;
+    uint8_t pdu[NEXUS_BT_ACL_MAX_L2CAP_PDU];
+};
+
+void nexus_bt_acl_reassembler_reset(
+    struct nexus_bt_acl_reassembler *reassembler);
+enum nexus_bt_acl_reassembly_result nexus_bt_acl_reassembler_feed(
+    struct nexus_bt_acl_reassembler *reassembler,
+    const struct nexus_bt_hci_acl_view *acl);
+/* A too-small destination reports the required length and preserves the
+ * completed PDU so the consumer can retry with a sufficiently large buffer. */
+bool nexus_bt_acl_reassembler_read(
+    struct nexus_bt_acl_reassembler *reassembler,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length);
+
 /* Strict HCI framing validation: the transport packet must contain exactly
  * the declared event/ACL payload, with no truncated or overlong packet. */
 bool nexus_bt_hci_parse_event(const uint8_t *packet, size_t packet_length,

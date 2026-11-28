@@ -38,7 +38,82 @@ bool nexus_bt_hci_parse_acl(const uint8_t *packet, size_t packet_length,
     return true;
 }
 
+void nexus_bt_acl_reassembler_reset(
+    struct nexus_bt_acl_reassembler *reassembler) {
+    if (reassembler == NULL) return;
+    *reassembler = (struct nexus_bt_acl_reassembler){0};
+}
+
+enum nexus_bt_acl_reassembly_result nexus_bt_acl_reassembler_feed(
+    struct nexus_bt_acl_reassembler *reassembler,
+    const struct nexus_bt_hci_acl_view *acl) {
+    if (reassembler == NULL || acl == NULL ||
+        acl->connection_handle == 0U ||
+        acl->connection_handle > 0x0FFFU || acl->broadcast != 0U ||
+        acl->payload == NULL) {
+        nexus_bt_acl_reassembler_reset(reassembler);
+        return NEXUS_BT_ACL_REJECTED;
+    }
+
+    const bool start = acl->packet_boundary == 0U ||
+                       acl->packet_boundary == 2U;
+    if (start) {
+        nexus_bt_acl_reassembler_reset(reassembler);
+        if (acl->payload_length < 4U) return NEXUS_BT_ACL_REJECTED;
+        const uint16_t l2cap_payload_length = get_le16(acl->payload);
+        const uint32_t expected = (uint32_t)l2cap_payload_length + 4U;
+        if (expected > NEXUS_BT_ACL_MAX_L2CAP_PDU ||
+            acl->payload_length > expected) return NEXUS_BT_ACL_REJECTED;
+
+        reassembler->connection_handle = acl->connection_handle;
+        reassembler->expected_length = (uint16_t)expected;
+        reassembler->received_length = acl->payload_length;
+        for (uint16_t i = 0U; i < acl->payload_length; ++i)
+            reassembler->pdu[i] = acl->payload[i];
+        reassembler->active = true;
+    } else if (acl->packet_boundary == 1U) {
+        if (!reassembler->active || reassembler->complete ||
+            acl->connection_handle != reassembler->connection_handle ||
+            acl->payload_length == 0U ||
+            (uint32_t)reassembler->received_length +
+                acl->payload_length > reassembler->expected_length) {
+            nexus_bt_acl_reassembler_reset(reassembler);
+            return NEXUS_BT_ACL_REJECTED;
+        }
+        for (uint16_t i = 0U; i < acl->payload_length; ++i)
+            reassembler->pdu[reassembler->received_length + i] =
+                acl->payload[i];
+        reassembler->received_length = (uint16_t)(
+            reassembler->received_length + acl->payload_length);
+    } else {
+        nexus_bt_acl_reassembler_reset(reassembler);
+        return NEXUS_BT_ACL_REJECTED;
+    }
+
+    if (reassembler->received_length == reassembler->expected_length) {
+        reassembler->complete = true;
+        reassembler->active = false;
+        return NEXUS_BT_ACL_COMPLETE;
+    }
+    return NEXUS_BT_ACL_PENDING;
+}
+
+bool nexus_bt_acl_reassembler_read(
+    struct nexus_bt_acl_reassembler *reassembler,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length) {
+    if (reassembler == NULL || pdu == NULL || pdu_length == NULL ||
+        !reassembler->complete || reassembler->expected_length == 0U)
+        return false;
+    *pdu_length = reassembler->expected_length;
+    if (capacity < reassembler->expected_length) return false;
+    for (uint16_t i = 0U; i < reassembler->expected_length; ++i)
+        pdu[i] = reassembler->pdu[i];
+    nexus_bt_acl_reassembler_reset(reassembler);
+    return true;
+}
+
 bool nexus_bt_hci_connection_complete(
+    const struct nexus_bt_hci_event_view *event,bool nexus_bt_hci_connection_complete(
     const struct nexus_bt_hci_event_view *event,
     struct nexus_bt_hci_connection *connection) {
     if (event == NULL || connection == NULL || event->parameters == NULL)

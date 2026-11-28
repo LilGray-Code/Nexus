@@ -340,6 +340,10 @@ static void test_generic_mouse_multi_report_id_capacity(void) {
         HID_EMIT(0x75U); HID_EMIT(0x08U);
         HID_EMIT(0x95U); HID_EMIT(0x02U);
         HID_EMIT(0x81U); HID_EMIT(0x06U);
+        HID_EMIT(0x09U); HID_EMIT(0x38U);
+        HID_EMIT(0x75U); HID_EMIT(0x08U);
+        HID_EMIT(0x95U); HID_EMIT(0x01U);
+        HID_EMIT(0x81U); HID_EMIT(0x06U);
         HID_EMIT(0xC0U);
     }
     HID_EMIT(0xC0U);
@@ -358,6 +362,7 @@ static void test_generic_mouse_multi_report_id_capacity(void) {
     assert(event.buttons == 0x05U);
     assert(event.dx == -2);
     assert(event.dy == -3);
+    assert(event.wheel == 0);
 }
 
 static void test_descriptor_rejection_and_bounds(void) {

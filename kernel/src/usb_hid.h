@@ -6,10 +6,11 @@
 #include <stdint.h>
 
 struct nexus_usb_mouse_event {
-    uint8_t buttons;
+    uint64_t buttons;
     int16_t dx;
     int16_t dy;
-    int8_t wheel;
+    int16_t wheel;
+    int16_t horizontal_wheel;
 };
 
 struct nexus_usb_keyboard_state {

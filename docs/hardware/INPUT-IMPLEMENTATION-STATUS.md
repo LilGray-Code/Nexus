@@ -83,3 +83,106 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - xHCI attempts HID Set_Protocol(Report) and parses the mouse's report descriptor for boot-class mice before choosing the legacy three-byte Boot format. This retains scroll-wheel and extra button fields on supported devices.
 - If Report protocol selection or parsing fails, xHCI requests Boot protocol and retains the basic movement/button path. Composite boot mice use the same preference; generic non-boot HID interfaces are parsed without sending the boot-only Set_Protocol request.
 - This does not guarantee every proprietary mouse extension or vendor-specific DPI control; those require device-specific descriptors and testing.
+
+
+### Extended mouse event delivery
+
+- Generic USB HID mouse decoding now records Consumer-page AC Pan as horizontal scrolling and preserves 16-bit vertical and horizontal wheel deltas in the common input event queue.
+- The event queue coalesces and saturates both scroll axes without truncating high-resolution wheel values; PS/2 and boot-mouse producers remain compatible with zero horizontal-scroll defaults.
+- The desktop maps horizontal wheel movement to horizontal arrow navigation and maps standard HID side buttons 4/5 to browser back/forward when the browser view is active.
+- These are protocol and software-path improvements. They do not establish Bluetooth pairing, proprietary vendor extension support, UHCI/OHCI/EHCI operation, or universal physical-device compatibility.
+
+
+### Bluetooth HID report-to-input integration
+
+- Added per-peer HID Report Map configuration and a common input dispatcher for Classic HIDP input packets and BLE HOGP reports.
+- HOGP notifications are matched against discovered GATT Report value handles and the associated Report Reference report ID/type before report decoding. Unknown characteristic handles and non-input Report types are rejected.
+- Generic HID keyboard and mouse reports now have a tested handoff to the shared USB/PS/2 input queue; peer disconnect emits neutral key/button state.
+- This is not a complete Bluetooth mouse driver. USB HCI interrupt/bulk transfers, ACL reassembly, L2CAP signaling, peer discovery/connection, authenticated SMP/SSP pairing and bonding, key storage, settings UI, and physical Bluetooth adapter tests remain outstanding.
+
+
+### Bluetooth ACL fragmentation foundation
+
+- Added bounded reassembly of HCI ACL first and continuation fragments into one complete L2CAP PDU, with connection-handle isolation, packet-boundary validation, declared-length enforcement, and a fixed 1 KiB maximum.
+- Host tests cover normal split delivery, wrong-handle continuation, overlong fragments, and oversized L2CAP declarations.
+- The transport driver must still schedule the USB HCI interrupt/bulk endpoints and feed fragments into this helper; L2CAP signaling/channel setup and authenticated pairing remain necessary for real wireless HID operation.
+
+
+### Wide HID mouse report support
+
+- Generic mouse descriptor parsing now accepts signed 32-bit X/Y and wheel fields in addition to the common 8- and 16-bit formats.
+- Pointer deltas and wheel values saturate to the shared event ABI without wraparound; Y-axis inversion explicitly handles the signed 32-bit minimum.
+- Added host coverage for 32-bit X/Y/wheel decoding and the INT32_MIN inversion boundary. This expands standard HID coverage, but still does not implement proprietary report formats or guarantee every physical device.
+
+
+### Extended generic mouse button capacity
+
+- Expanded generic USB HID mouse button state from 32 to 64 buttons across descriptor parsing, decoded reports, the shared event queue, and desktop button-edge tracking.
+- Added descriptor-driven coverage proving Button 64 survives as the top bit of the 64-bit mask.
+- Device-specific proprietary button pages and vendor command protocols remain outside generic HID support.
+
+
+### Classic HID L2CAP channel negotiation
+
+- Added bounded signaling-command parsing and Connection Request/Response codecs for the Classic HID Control PSM (0x0011) and HID Interrupt PSM (0x0013).
+- Per-channel state validates transaction identifiers and local/remote dynamic CIDs, records accepted/pending/rejected outcomes, and emits a matched Disconnection Request before releasing state.
+- Host tests cover a successful channel lifecycle and malformed/mismatched response rejection.
+- The helper is not yet wired to a Bluetooth controller transport, command scheduler, or a live ACL connection; it does not by itself enable Classic Bluetooth mouse pairing or input.
+
+
+### Composite receiver boundary
+
+- The xHCI runtime currently activates a primary HID interface and at most one companion keyboard-or-mouse interface under the same USB slot. This covers the common two-interface wireless keyboard/mouse receiver layout, not arbitrary composite devices with three or more independently active HID interfaces.
+- USB Bluetooth controller devices are not yet bound to xHCI interrupt/bulk transfer rings; endpoint descriptor parsing alone is not operational transport support.
+
+
+### BLE discovery and connection command preparation
+
+- Added serialized HCI host commands for LE Set Scan Parameters and LE Set Scan Enable, with checked interval/window values and an explicit start/stop state machine.
+- Added a bounds-checked parser for legacy LE Advertising Report events, including multiple reports per event, address types, advertising data spans and signed RSSI.
+- Added a validated LE Create Connection command builder for explicit peer address and connection interval/latency/supervision values.
+- Host tests cover active scan enable/disable, single and multi-advertisement parsing, truncated report rejection, and connection parameter validation.
+- These APIs still require a live HCI transport to submit commands and deliver events. Pairing/security, bond management, HID notification subscription scheduling and USB controller integration remain outstanding.
+
+
+### Consumer-page mouse navigation buttons
+
+- Generic mouse HID decoding now maps Consumer-page AC Back and AC Forward one-bit usages to logical mouse buttons 4 and 5, in addition to the Button-page form.
+- This allows compatible mice to use the existing browser back/forward actions regardless of which common HID page reports the side buttons.
+- Added a descriptor-driven test; proprietary vendor-specific usages and application-defined actions remain device-specific.
+
+
+### USB Bluetooth HCI packet transport abstraction
+
+- Added an I/O abstraction bound to the discovered Bluetooth USB interface. HCI Commands use the Bluetooth class control request, HCI Events are reconstructed from interrupt-IN payloads, and ACL packets use bulk-IN/OUT with strict length checks.
+- Bulk-IN ACL fragments feed the bounded L2CAP reassembler before being passed to the protocol layer. Host tests exercise command control setup, event framing, bulk OUT, and multi-fragment ACL receive.
+- This code is not yet attached to xHCI endpoint transfer rings: the callbacks must be backed by live USB control, interrupt-IN and bulk-IN/OUT scheduling before USB Bluetooth adapters work on hardware.
+
+
+### Multi-report HID expansion
+
+- Raised the generic keyboard/mouse multi-report descriptor capacity from 8 to 32 Report IDs.
+- Added a descriptor-construction regression test with nine distinct mouse Report IDs and decoded the ninth report, ensuring the previous boundary no longer rejects it.
+- Interfaces with more than 32 report IDs remain rejected by design to keep descriptor and per-device storage bounded.
+
+
+### Bluetooth HID security gating
+
+- The HID report bridge now rejects Classic HIDP and BLE HOGP input until its per-peer state is explicitly marked ready by a higher-level pairing layer that confirms both link encryption and pairing completion.
+- Disconnect clears the per-peer state, so a reconnect cannot inherit a previous session's input authorization.
+- Host tests confirm that HID reports are dropped before security readiness and delivered only after the readiness gate is opened. This is an enforcement boundary, not an implementation of SMP/SSP pairing; the real pairing and encryption procedures still need to be completed and connected to this API.
+
+
+### ATT client request path for BLE HID
+
+- Added bounded ATT request builders for MTU exchange, primary HID service discovery, characteristic discovery, descriptor discovery, Report Map/Report Reference reads, and CCCD notification enable.
+- Added MTU response validation and negotiated MTU clamping to the ATT protocol range.
+- Host tests verify request opcodes, UUID byte order, handle ranges, notification enable value, and malformed MTU rejection.
+- These are client-side ATT PDUs only. They still need to be driven by an active encrypted GATT connection, and the resulting discovery responses must be assembled into the HID Report Map/Report Reference state before notifications are enabled.
+
+
+### ATT response parsing
+
+- Added bounded parsers for ATT Read/Read Blob responses, Error Responses and Write Responses.
+- Read response views expose the PDU-owned value bytes without copying; Error Response parsing preserves the failed request opcode, offending handle and ATT error code for the HID discovery state machine.
+- Host tests cover valid reads, read-blob data, ATT errors, write acknowledgements and short/invalid packets.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -133,7 +134,13 @@ def build_command(args: argparse.Namespace, qmp_socket: Path,
             "-device", "usb-mouse,id=nexus-usb-mouse,bus=xhci.0",
         ]
     if args.mode == "installer":
-        command += ["-cdrom", str(args.iso), "-boot", "d"]
+        if args.installer_disk is None:
+            raise RuntimeError("installer mode requires a disposable target disk")
+        command += [
+            "-drive", f"file={args.installer_disk},if=none,id=installer-target,format=raw",
+            "-device", "nvme,drive=installer-target,serial=NEXUSINPUTTGT01",
+            "-cdrom", str(args.iso), "-boot", "d",
+        ]
     else:
         command += [
             "-drive", f"file={args.disk},if=none,id=installed,format=raw",
@@ -258,6 +265,12 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
     print("USB keyboard A make/break reached Nexus input dispatcher")
     print("USB mouse motion/click/wheel reached Nexus input dispatcher")
 
+    # The installer UI must process an actual USB click, not merely receive
+    # a mouse report in the common event queue.
+    if "NEXUS BOOT MODE: DEDICATED INSTALLER" in serial_log.read_text(
+            encoding="utf-8", errors="replace"):
+        exercise_installer_mouse_ui(qmp, serial_log)
+
     # Exercise USB hot-unplug/replug, not just boot-time enumeration. The
     # kernel must release device state and discover the reinserted peripherals.
     qmp.command("device_del", {"id": "nexus-usb-keyboard"})
@@ -303,6 +316,93 @@ def exercise_usb_inputs(qmp: QMP, serial_log: Path, topology: str) -> None:
     print("USB keyboard and mouse hot-unplug/replug recovered")
 
 
+
+def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
+    """Drive the actual installer selection UI with USB mouse motion/clicks."""
+    log = wait_for_predicate(
+        serial_log,
+        lambda value: (
+            "NEXUS DISPLAY GEOMETRY width=" in value
+            and "NEXUS INSTALLER MOUSE POINTER x=" in value
+        ),
+        "installer pointer position telemetry",
+    )
+    geometry = re.search(
+        r"NEXUS DISPLAY GEOMETRY width=0x([0-9a-fA-F]+) height=0x([0-9a-fA-F]+)",
+        log,
+    )
+    pointer = re.search(
+        r"NEXUS INSTALLER MOUSE POINTER x=0x([0-9a-fA-F]+) y=0x([0-9a-fA-F]+)",
+        log,
+    )
+    if geometry is None or pointer is None:
+        raise RuntimeError("installer mouse geometry/pointer telemetry was malformed")
+
+    width, height = int(geometry.group(1), 16), int(geometry.group(2), 16)
+    current_x = int(pointer.group(1), 16)
+    current_y = int(pointer.group(2), 16)
+    if width < 640 or height < 420:
+        raise RuntimeError(
+            f"installer framebuffer too small for full pointer test: {width}x{height}"
+        )
+
+    def click_at(x: int, y: int, marker: str, description: str) -> None:
+        nonlocal current_x, current_y
+        if not (0 <= x < width and 0 <= y < height):
+            raise RuntimeError(f"{description}: target outside framebuffer ({x},{y})")
+        # QEMU HMP mouse_move sends relative deltas, but the emulated USB
+        # boot mouse report is only signed 8-bit per poll. A large one-shot
+        # move is therefore clipped and never reaches the requested control.
+        # Split travel into bounded reports and allow the guest to poll each.
+        remaining_x = x - current_x
+        remaining_y = current_y - y  # HID Y is upward-positive.
+        while remaining_x != 0 or remaining_y != 0:
+            step_x = max(-100, min(100, remaining_x))
+            step_y = max(-100, min(100, remaining_y))
+            qmp.hmp(f"mouse_move {step_x} {step_y}")
+            remaining_x -= step_x
+            remaining_y -= step_y
+            time.sleep(0.04)
+        time.sleep(0.15)
+        # Use QMP's explicit button transitions. This bypasses the legacy HMP
+        # mouse_button state cache while still routing through the active USB
+        # HID mouse selected above.
+        qmp.input([
+            {"type": "btn", "data": {"button": "left", "down": True}},
+        ])
+        time.sleep(0.12)
+        qmp.input([
+            {"type": "btn", "data": {"button": "left", "down": False}},
+        ])
+        wait_for_predicate(
+            serial_log,
+            lambda value: marker in value,
+            description,
+        )
+        current_x, current_y = x, y
+
+    # Full-screen installer origin is (8,8); the drive selector is drawn at
+    # (40,104) with size 520x28. Click its center to open the list.
+    click_at(300, 118,
+             "NEXUS INSTALLER MOUSE: DRIVE SELECTOR OPENED",
+             "USB mouse opening the installer drive selector")
+
+    # Select the first enumerated disposable NVMe target. The first row is
+    # centered at y=152, inside the popup opened by the first click.
+    click_at(300, 152,
+             "NEXUS INSTALLER MOUSE: DRIVE SELECTED",
+             "USB mouse selecting the installer target drive")
+
+    # Continue is only the review step. The test stops before typing the disk
+    # identity or the ERASE authorization phrase, so no target sectors are
+    # written by this interaction test.
+    click_at(378, 378,
+             "NEXUS INSTALLER MOUSE: CONTINUE REFUSED",
+             "USB mouse activating Continue and enforcing target eligibility")
+
+    print("USB mouse opened drive selector, selected target, and exercised the guarded Continue action")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--qemu", default="qemu-system-x86_64")
@@ -312,6 +412,7 @@ def main() -> None:
     parser.add_argument("--disk", type=Path)
     parser.add_argument("--disk-interface", choices=("usb-storage", "nvme"),
                         default="usb-storage")
+    parser.add_argument("--installer-disk", type=Path)
     parser.add_argument("--firmware-code", type=Path, required=True)
     parser.add_argument("--firmware-vars", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=90)
@@ -321,6 +422,10 @@ def main() -> None:
         parser.error("--iso is required for installer mode")
     if args.mode == "desktop" and (args.disk is None or not args.disk.is_file()):
         parser.error("--disk is required for desktop mode")
+    if args.mode == "installer" and args.installer_disk is None:
+        # The harness creates a fresh sparse NVMe target inside its temporary
+        # directory so the test can exercise drive selection safely.
+        args.installer_disk = Path(".") / "nexus-installer-test-target.raw"
     if not args.firmware_code.is_file() or not args.firmware_vars.is_file():
         parser.error("OVMF firmware code/variables files must exist")
 
@@ -331,6 +436,10 @@ def main() -> None:
         qemu_stderr = temp / "qemu.stderr"
         vars_copy = temp / "OVMF_VARS.fd"
         shutil.copyfile(args.firmware_vars, vars_copy)
+        if args.mode == "installer":
+            args.installer_disk = temp / "installer-target.raw"
+            with args.installer_disk.open("wb") as target:
+                target.truncate(64 * 1024 * 1024 * 1024)
         command = build_command(args, qmp_socket, serial_log, vars_copy)
         with qemu_stderr.open("wb") as stderr_stream:
             process = subprocess.Popen(

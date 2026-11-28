@@ -6,11 +6,13 @@
 #define HID_USAGE_PAGE_GENERIC_DESKTOP 0x01U
 #define HID_USAGE_PAGE_KEYBOARD        0x07U
 #define HID_USAGE_PAGE_BUTTON          0x09U
+#define HID_USAGE_PAGE_CONSUMER        0x0CU
 #define HID_USAGE_KEYBOARD             0x06U
 #define HID_USAGE_MOUSE                0x02U
 #define HID_USAGE_X                    0x30U
 #define HID_USAGE_Y                    0x31U
 #define HID_USAGE_WHEEL                0x38U
+#define HID_USAGE_AC_PAN               0x0238U
 #define HID_ITEM_LONG                 0xFEU
 #define HID_MAX_REPORT_BITS           512U
 #define HID_MAX_LOCAL_USAGES          32U
@@ -160,7 +162,7 @@ static bool hid_record_input(
                             global->usage_page, &usage)) continue;
                     if ((usage >> 16) != HID_USAGE_PAGE_BUTTON) continue;
                     const uint32_t id = usage & 0xFFFFU;
-                    if (id >= 1U && id <= 8U) {
+                    if (id >= 1U && id <= 64U) {
                         const uint8_t button = (uint8_t)(id - 1U);
                         layout->button_bit_offset[button] =
                             (uint16_t)(*input_bit_offset + i);
@@ -171,7 +173,7 @@ static bool hid_record_input(
             } else if (global->usage_page ==
                        HID_USAGE_PAGE_GENERIC_DESKTOP && variable &&
                        global->report_size >= 1U &&
-                       global->report_size <= 16U) {
+                       global->report_size <= 32U) {
                 for (uint32_t i = 0U; i < global->report_count; ++i) {
                     uint32_t usage = 0U;
                     if (!hid_local_get_usage(local, i,
@@ -197,6 +199,34 @@ static bool hid_record_input(
                         layout->wheel_logical_minimum =
                             global->logical_minimum;
                         layout->wheel_relative = (flags & 0x04U) != 0U;
+                    }
+                }
+            } else if (global->usage_page == HID_USAGE_PAGE_CONSUMER &&
+                       variable && global->report_size >= 1U &&
+                       global->report_size <= 32U) {
+                for (uint32_t i = 0U; i < global->report_count; ++i) {
+                    uint32_t usage = 0U;
+                    if (!hid_local_get_usage(local, i,
+                            global->usage_page, &usage)) continue;
+                    if ((usage >> 16) != HID_USAGE_PAGE_CONSUMER) continue;
+                    const uint32_t id = usage & 0xFFFFU;
+                    if (id == HID_USAGE_AC_PAN) {
+                        layout->horizontal_wheel_bit_offset = (uint16_t)(
+                            *input_bit_offset + i * global->report_size);
+                        layout->horizontal_wheel_size =
+                            (uint8_t)global->report_size;
+                        layout->horizontal_wheel_logical_minimum =
+                            global->logical_minimum;
+                        layout->horizontal_wheel_relative =
+                            (flags & 0x04U) != 0U;
+                    } else if (global->report_size == 1U &&
+                               (id == 0x0224U || id == 0x0225U)) {
+                        /* Consumer AC Back / Forward map to mouse buttons 4/5. */
+                        const uint8_t button = id == 0x0224U ? 3U : 4U;
+                        layout->button_bit_offset[button] =
+                            (uint16_t)(*input_bit_offset + i);
+                        if (layout->button_count <= button)
+                            layout->button_count = (uint8_t)(button + 1U);
                     }
                 }
             }
@@ -438,10 +468,16 @@ static int16_t hid_clamp_motion(int32_t value) {
     return (int16_t)value;
 }
 
-static int8_t hid_clamp_wheel(int32_t value) {
-    if (value < INT8_MIN) return INT8_MIN;
-    if (value > INT8_MAX) return INT8_MAX;
-    return (int8_t)value;
+/* Invert the hardware Y axis without overflowing on INT32_MIN. */
+static int16_t hid_clamp_inverted_motion(int32_t value) {
+    if (value == INT32_MIN) return INT16_MAX;
+    return hid_clamp_motion(-value);
+}
+
+static int16_t hid_clamp_wheel(int32_t value) {
+    if (value < INT16_MIN) return INT16_MIN;
+    if (value > INT16_MAX) return INT16_MAX;
+    return (int16_t)value;
 }
 
 bool usb_hid_generic_decode_mouse(
@@ -455,11 +491,11 @@ bool usb_hid_generic_decode_mouse(
         return false;
 
     *event = (struct nexus_usb_mouse_event){0};
-    for (uint8_t i = 0U; i < layout->button_count && i < 8U; ++i) {
+    for (uint8_t i = 0U; i < layout->button_count && i < 64U; ++i) {
         uint32_t down = 0U;
         if (!hid_read_bits(payload, layout->input_bytes,
                 layout->button_bit_offset[i], 1U, &down)) return false;
-        if (down != 0U) event->buttons |= (uint8_t)(1U << i);
+        if (down != 0U) event->buttons |= (uint64_t)1U << i;
     }
 
     uint32_t raw = 0U;
@@ -470,7 +506,7 @@ bool usb_hid_generic_decode_mouse(
 
     if (!hid_read_bits(payload, layout->input_bytes,
             layout->y_bit_offset, layout->y_size, &raw)) return false;
-    event->dy = hid_clamp_motion(-hid_signed_value(
+    event->dy = hid_clamp_inverted_motion(hid_signed_value(
         raw, layout->y_size, layout->y_logical_minimum));
 
     if (layout->wheel_size != 0U &&
@@ -479,6 +515,15 @@ bool usb_hid_generic_decode_mouse(
         const int32_t wheel = hid_signed_value(
             raw, layout->wheel_size, layout->wheel_logical_minimum);
         event->wheel = hid_clamp_wheel(wheel);
+    }
+    if (layout->horizontal_wheel_size != 0U &&
+        hid_read_bits(payload, layout->input_bytes,
+            layout->horizontal_wheel_bit_offset,
+            layout->horizontal_wheel_size, &raw)) {
+        const int32_t wheel = hid_signed_value(
+            raw, layout->horizontal_wheel_size,
+            layout->horizontal_wheel_logical_minimum);
+        event->horizontal_wheel = hid_clamp_wheel(wheel);
     }
     return true;
 }

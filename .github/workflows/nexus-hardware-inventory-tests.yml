@@ -44,6 +44,7 @@ jobs:
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
             -Ikernel/src kernel/src/wifi_pci.c kernel/src/win_driver_inf.c \
+            kernel/src/win_driver_package.c kernel/src/win_driver_pe.c \
             kernel/tests/wifi_pci_test.c \
             -o /tmp/nexus-wifi-pci-test
           /tmp/nexus-wifi-pci-test

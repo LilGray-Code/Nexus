@@ -122,6 +122,81 @@ static void test_att_request_builders(void) {
         pdu, sizeof(pdu), &length));
 }
 
+
+static void test_att_hid_client_request_builders(void) {
+    uint8_t pdu[16] = {0};
+    size_t length = 0U;
+    assert(nexus_bt_gatt_att_build_exchange_mtu(247U,pdu,sizeof(pdu),&length));
+    assert(length == 3U && pdu[0] == 0x02U);
+    assert(pdu[1] == 0xF7U && pdu[2] == 0U);
+    const uint8_t mtu_response[] = {0x03U,0x00U,0x02U};
+    uint16_t negotiated = 0U;
+    assert(nexus_bt_gatt_att_parse_mtu_response(
+        mtu_response,sizeof(mtu_response),247U,&negotiated));
+    assert(negotiated == 0x0200U);
+    assert(!nexus_bt_gatt_att_parse_mtu_response(
+        mtu_response,sizeof(mtu_response),22U,&negotiated));
+
+    assert(nexus_bt_gatt_att_build_primary_service_discovery(
+        1U,0xFFFFU,NEXUS_BT_GATT_UUID_HID_SERVICE,pdu,sizeof(pdu),&length));
+    assert(length == 7U && pdu[0] == 0x10U);
+    assert(pdu[5] == 0x12U && pdu[6] == 0x18U);
+    assert(!nexus_bt_gatt_att_build_primary_service_discovery(
+        0U,0xFFFFU,NEXUS_BT_GATT_UUID_HID_SERVICE,pdu,sizeof(pdu),&length));
+
+    assert(nexus_bt_gatt_att_build_characteristic_discovery(
+        1U,0x0040U,pdu,sizeof(pdu),&length));
+    assert(pdu[0] == 0x08U && pdu[5] == 0x03U && pdu[6] == 0x28U);
+    assert(nexus_bt_gatt_att_build_descriptor_discovery(
+        0x0020U,0x0030U,pdu,sizeof(pdu),&length));
+    assert(pdu[0] == 0x04U && length == 5U);
+    assert(nexus_bt_gatt_att_build_read_request(
+        0x0022U,pdu,sizeof(pdu),&length));
+    assert(pdu[0] == 0x0AU && pdu[1] == 0x22U);
+    assert(!nexus_bt_gatt_att_build_read_request(
+        0U,pdu,sizeof(pdu),&length));
+    assert(nexus_bt_gatt_att_build_enable_notifications(
+        0x0024U,pdu,sizeof(pdu),&length));
+    assert(length == 5U && pdu[0] == 0x12U &&
+           pdu[3] == 0x01U && pdu[4] == 0U);
+}
+
+
+static void test_att_value_error_and_write_responses(void) {
+    const uint8_t read_response[] = {0x0BU,0x34U,0x12U,0x56U};
+    struct nexus_bt_gatt_att_value_view value = {0};
+    assert(nexus_bt_gatt_att_parse_value_response(
+        read_response,sizeof(read_response),&value));
+    assert(value.opcode == 0x0BU && value.value_length == 3U);
+    assert(value.value[0] == 0x34U && value.value[2] == 0x56U);
+
+    const uint8_t read_blob_response[] = {0x0DU,0xAAU,0xBBU};
+    assert(nexus_bt_gatt_att_parse_value_response(
+        read_blob_response,sizeof(read_blob_response),&value));
+    assert(value.opcode == 0x0DU && value.value_length == 2U);
+    assert(!nexus_bt_gatt_att_parse_value_response(
+        read_response,1U,&value));
+    const uint8_t invalid_value[] = {0x11U,0x01U};
+    assert(!nexus_bt_gatt_att_parse_value_response(
+        invalid_value,sizeof(invalid_value),&value));
+
+    const uint8_t error_response[] = {0x01U,0x0AU,0x24U,0x00U,0x02U};
+    struct nexus_bt_gatt_att_error error = {0};
+    assert(nexus_bt_gatt_att_parse_error_response(
+        error_response,sizeof(error_response),&error));
+    assert(error.request_opcode == 0x0AU);
+    assert(error.attribute_handle == 0x0024U);
+    assert(error.error_code == 0x02U);
+    assert(!nexus_bt_gatt_att_parse_error_response(
+        error_response,4U,&error));
+
+    const uint8_t write_response[] = {0x13U};
+    assert(nexus_bt_gatt_att_parse_write_response(
+        write_response,sizeof(write_response)));
+    assert(!nexus_bt_gatt_att_parse_write_response(
+        write_response,0U));
+}
+
 int main(void) {
     test_primary_service_discovery();
     test_hid_characteristics();

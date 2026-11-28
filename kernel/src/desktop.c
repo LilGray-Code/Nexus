@@ -349,7 +349,8 @@ static int64_t resize_pointer_origin_x;
 static int64_t resize_pointer_origin_y;
 static uint64_t resize_width_origin;
 static uint64_t resize_height_origin;
-static bool mouse_left_was_down;
+static uint64_t mouse_buttons_was_down;
+static bool installer_mouse_motion_logged;
 enum desktop_theme_mode {
     DESKTOP_THEME_DARK = 0,
     DESKTOP_THEME_LIGHT
@@ -3697,6 +3698,11 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     }
     screen_width = graphics_width();
     screen_height = graphics_height();
+    serial_write("NEXUS DISPLAY GEOMETRY width=");
+    serial_write_hex(screen_width);
+    serial_write(" height=");
+    serial_write_hex(screen_height);
+    serial_write("\r\n");
     active_view = installer_session_mode ? DESKTOP_INSTALLER : DESKTOP_HOME;
     nexus_browser_history_init(&browser_history);
     browser_address_length = 0U;
@@ -3718,7 +3724,8 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     installer_refresh_plan();
     serial_write("DESKTOP: installer storage plan ready\r\n");
     if (installer_session_mode) installer_log_selected_target();
-    mouse_left_was_down = false;
+    installer_mouse_motion_logged = false;
+    mouse_buttons_was_down = 0U;
     start_menu_open = false;
     start_menu_query_length = 0U;
     start_menu_query[0] = '\0';
@@ -6990,12 +6997,31 @@ void desktop_handle_input(const struct nexus_input_event *event) {
         } else {
             pointer_y = next_y;
         }
-        const uint8_t primary_button =
-            desktop_settings.left_handed_mouse ? 2U : 1U;
+        if (installer_session_mode && !installer_mouse_motion_logged &&
+            (event->mouse_dx != 0 || event->mouse_dy != 0)) {
+            installer_mouse_motion_logged = true;
+            serial_write("NEXUS INSTALLER MOUSE POINTER x=");
+            serial_write_hex((uint64_t)pointer_x);
+            serial_write(" y=");
+            serial_write_hex((uint64_t)pointer_y);
+            serial_write("\r\n");
+        }
+        const uint64_t newly_pressed_buttons =
+            event->mouse_buttons & ~mouse_buttons_was_down;
+        mouse_buttons_was_down = event->mouse_buttons;
+        const uint64_t primary_button_mask = (uint64_t)1U <<
+            (desktop_settings.left_handed_mouse ? 1U : 0U);
         const bool left_down =
-            (event->mouse_buttons & primary_button) != 0U;
-        const bool clicked = left_down && !mouse_left_was_down;
-        mouse_left_was_down = left_down;
+            (event->mouse_buttons & primary_button_mask) != 0U;
+        const bool clicked =
+            (newly_pressed_buttons & primary_button_mask) != 0U;
+        /* Standard HID side buttons 4/5 navigate browser history. */
+        if (active_view == DESKTOP_BROWSER &&
+            (newly_pressed_buttons & (1U << 3U)) != 0U)
+            browser_history_navigate(false);
+        if (active_view == DESKTOP_BROWSER &&
+            (newly_pressed_buttons & (1U << 4U)) != 0U)
+            browser_history_navigate(true);
         if (clicked && active_view == DESKTOP_FILES)
             files_search_focus = false;
 
@@ -7537,6 +7563,11 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             }
         }
         if (clicked && active_view == DESKTOP_INSTALLER) {
+            serial_write("NEXUS INSTALLER MOUSE CLICK x=");
+            serial_write_hex((uint64_t)pointer_x);
+            serial_write(" y=");
+            serial_write_hex((uint64_t)pointer_y);
+            serial_write("\r\n");
             const struct desktop_window_rect bounds = desktop_window_bounds();
             const uint64_t px = bounds.x;
             const uint64_t py = bounds.y;
@@ -7554,11 +7585,13 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             const size_t selected =
                                 (size_t)((uint64_t)relative_y - 82U) / 28U;
                             installer_select_device(selected);
+                            serial_write("NEXUS INSTALLER MOUSE: DRIVE SELECTED\r\n");
                         }
                         installer_drive_dropdown_open = false;
                     } else if (relative_y >= 48 && relative_y < 76 &&
                                relative_x < 520) {
                         installer_drive_dropdown_open = true;
+                        serial_write("NEXUS INSTALLER MOUSE: DRIVE SELECTOR OPENED\r\n");
                     } else if (relative_y >= 158 && relative_y < 182) {
                         if (relative_x < 104) {
                             installer_firmware = NEXUS_FIRMWARE_UEFI;
@@ -7572,7 +7605,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         }
                     } else if (relative_y >= 310 && relative_y < 334 &&
                                relative_x >= 228 && relative_x < 448) {
-                        (void)installer_begin_confirmation();
+                        if (installer_begin_confirmation())
+                            serial_write("NEXUS INSTALLER MOUSE: CONFIRMATION SCREEN OPENED\r\n");
+                        else
+                            serial_write("NEXUS INSTALLER MOUSE: CONTINUE REFUSED\r\n");
                     }
                 } else if (installer_ui_state == INSTALLER_UI_CONFIRM_ID ||
                            installer_ui_state == INSTALLER_UI_CONFIRM_ERASE) {
@@ -7736,7 +7772,26 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 .mouse_buttons = 0U,
                 .mouse_dx = 0,
                 .mouse_dy = 0,
-                .mouse_wheel = 0
+                .mouse_wheel = 0,
+                .mouse_hwheel = 0
+            };
+            for (uint32_t i = 0U; i < steps; ++i)
+                desktop_handle_input(&wheel_key);
+            return;
+        }
+        if (event->mouse_hwheel != 0) {
+            uint32_t steps = (uint32_t)(event->mouse_hwheel > 0
+                ? event->mouse_hwheel : -(int32_t)event->mouse_hwheel);
+            steps *= desktop_settings.scroll_speed;
+            if (steps > 20U) steps = 20U;
+            const struct nexus_input_event wheel_key = {
+                .type = NEXUS_INPUT_KEYBOARD,
+                .scancode = event->mouse_hwheel > 0 ? 0x014DU : 0x014BU,
+                .mouse_buttons = 0U,
+                .mouse_dx = 0,
+                .mouse_dy = 0,
+                .mouse_wheel = 0,
+                .mouse_hwheel = 0
             };
             for (uint32_t i = 0U; i < steps; ++i)
                 desktop_handle_input(&wheel_key);

@@ -70,4 +70,61 @@ bool nexus_bt_gatt_build_write_request(uint16_t handle,
 bool nexus_bt_gatt_build_enable_notifications(uint16_t cccd_handle,
     uint8_t *pdu, size_t capacity, size_t *pdu_length);
 
+
+#define NEXUS_BT_ATT_DEFAULT_MTU 23U
+#define NEXUS_BT_ATT_MAX_MTU 517U
+#define NEXUS_BT_GATT_UUID_PRIMARY_SERVICE 0x2800U
+#define NEXUS_BT_GATT_UUID_CHARACTERISTIC 0x2803U
+#define NEXUS_BT_GATT_UUID_CCCD 0x2902U
+#define NEXUS_BT_GATT_UUID_REPORT_REFERENCE 0x2908U
+#define NEXUS_BT_GATT_UUID_HID_SERVICE 0x1812U
+#define NEXUS_BT_GATT_UUID_REPORT_MAP 0x2A4BU
+#define NEXUS_BT_GATT_UUID_REPORT 0x2A4DU
+
+bool nexus_bt_gatt_att_build_exchange_mtu(
+    uint16_t client_mtu, uint8_t *pdu, size_t capacity,
+    size_t *pdu_length);
+bool nexus_bt_gatt_att_parse_mtu_response(
+    const uint8_t *pdu, size_t pdu_length,
+    uint16_t client_mtu, uint16_t *negotiated_mtu);
+bool nexus_bt_gatt_att_build_primary_service_discovery(
+    uint16_t start_handle, uint16_t end_handle, uint16_t service_uuid,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length);
+bool nexus_bt_gatt_att_build_characteristic_discovery(
+    uint16_t start_handle, uint16_t end_handle,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length);
+bool nexus_bt_gatt_att_build_descriptor_discovery(
+    uint16_t start_handle, uint16_t end_handle,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length);
+bool nexus_bt_gatt_att_build_read_request(
+    uint16_t value_handle, uint8_t *pdu, size_t capacity,
+    size_t *pdu_length);
+bool nexus_bt_gatt_att_build_enable_notifications(
+    uint16_t cccd_handle, uint8_t *pdu, size_t capacity,
+    size_t *pdu_length);
+
+
+
+struct nexus_bt_gatt_att_value_view {
+    uint8_t opcode;
+    const uint8_t *value;
+    uint16_t value_length;
+};
+
+struct nexus_bt_gatt_att_error {
+    uint8_t request_opcode;
+    uint16_t attribute_handle;
+    uint8_t error_code;
+};
+
+bool nexus_bt_gatt_att_parse_value_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_value_view *value);
+bool nexus_bt_gatt_att_parse_error_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_error *error);
+bool nexus_bt_gatt_att_parse_write_response(
+    const uint8_t *pdu, size_t pdu_length);
+
+
 #endif

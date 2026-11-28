@@ -204,3 +204,142 @@ bool nexus_bt_gatt_build_enable_notifications(uint16_t cccd_handle,
     return nexus_bt_gatt_build_write_request(cccd_handle, notify,
         sizeof(notify), pdu, capacity, pdu_length);
 }
+
+static void nexus_bt_gatt_att_put_le16(uint8_t *pdu, uint16_t value) {
+    pdu[0] = (uint8_t)value;
+    pdu[1] = (uint8_t)(value >> 8);
+}
+
+static bool nexus_bt_gatt_att_valid_range(uint16_t start_handle,
+                                          uint16_t end_handle) {
+    return start_handle != 0U && start_handle <= end_handle;
+}
+
+bool nexus_bt_gatt_att_build_exchange_mtu(
+    uint16_t client_mtu, uint8_t *pdu, size_t capacity,
+    size_t *pdu_length) {
+    if (pdu == NULL || pdu_length == NULL ||
+        client_mtu < NEXUS_BT_ATT_DEFAULT_MTU ||
+        client_mtu > NEXUS_BT_ATT_MAX_MTU || capacity < 3U) return false;
+    pdu[0] = 0x02U; /* Exchange MTU Request. */
+    nexus_bt_gatt_att_put_le16(pdu + 1U, client_mtu);
+    *pdu_length = 3U;
+    return true;
+}
+
+bool nexus_bt_gatt_att_parse_mtu_response(
+    const uint8_t *pdu, size_t pdu_length,
+    uint16_t client_mtu, uint16_t *negotiated_mtu) {
+    if (pdu == NULL || negotiated_mtu == NULL || pdu_length != 3U ||
+        pdu[0] != 0x03U ||
+        client_mtu < NEXUS_BT_ATT_DEFAULT_MTU ||
+        client_mtu > NEXUS_BT_ATT_MAX_MTU) return false;
+    const uint16_t server_mtu =
+        (uint16_t)(pdu[1] | ((uint16_t)pdu[2] << 8));
+    if (server_mtu < NEXUS_BT_ATT_DEFAULT_MTU ||
+        server_mtu > NEXUS_BT_ATT_MAX_MTU) return false;
+    *negotiated_mtu = server_mtu < client_mtu ? server_mtu : client_mtu;
+    return true;
+}
+
+bool nexus_bt_gatt_att_build_primary_service_discovery(
+    uint16_t start_handle, uint16_t end_handle, uint16_t service_uuid,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length) {
+    if (!nexus_bt_gatt_att_valid_range(start_handle, end_handle) ||
+        pdu == NULL || pdu_length == NULL || capacity < 7U)
+        return false;
+    pdu[0] = 0x10U; /* Read By Group Type Request. */
+    nexus_bt_gatt_att_put_le16(pdu + 1U, start_handle);
+    nexus_bt_gatt_att_put_le16(pdu + 3U, end_handle);
+    nexus_bt_gatt_att_put_le16(pdu + 5U, service_uuid);
+    *pdu_length = 7U;
+    return true;
+}
+
+bool nexus_bt_gatt_att_build_characteristic_discovery(
+    uint16_t start_handle, uint16_t end_handle,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length) {
+    if (!nexus_bt_gatt_att_valid_range(start_handle, end_handle) ||
+        pdu == NULL || pdu_length == NULL || capacity < 7U)
+        return false;
+    pdu[0] = 0x08U; /* Read By Type Request. */
+    nexus_bt_gatt_att_put_le16(pdu + 1U, start_handle);
+    nexus_bt_gatt_att_put_le16(pdu + 3U, end_handle);
+    nexus_bt_gatt_att_put_le16(pdu + 5U,
+        NEXUS_BT_GATT_UUID_CHARACTERISTIC);
+    *pdu_length = 7U;
+    return true;
+}
+
+bool nexus_bt_gatt_att_build_descriptor_discovery(
+    uint16_t start_handle, uint16_t end_handle,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length) {
+    if (!nexus_bt_gatt_att_valid_range(start_handle, end_handle) ||
+        pdu == NULL || pdu_length == NULL || capacity < 5U)
+        return false;
+    pdu[0] = 0x04U; /* Find Information Request. */
+    nexus_bt_gatt_att_put_le16(pdu + 1U, start_handle);
+    nexus_bt_gatt_att_put_le16(pdu + 3U, end_handle);
+    *pdu_length = 5U;
+    return true;
+}
+
+bool nexus_bt_gatt_att_build_read_request(
+    uint16_t value_handle, uint8_t *pdu, size_t capacity,
+    size_t *pdu_length) {
+    if (value_handle == 0U || pdu == NULL || pdu_length == NULL ||
+        capacity < 3U) return false;
+    pdu[0] = 0x0AU; /* Read Request. */
+    nexus_bt_gatt_att_put_le16(pdu + 1U, value_handle);
+    *pdu_length = 3U;
+    return true;
+}
+
+bool nexus_bt_gatt_att_build_enable_notifications(
+    uint16_t cccd_handle, uint8_t *pdu, size_t capacity,
+    size_t *pdu_length) {
+    if (cccd_handle == 0U || pdu == NULL || pdu_length == NULL ||
+        capacity < 5U) return false;
+    pdu[0] = 0x12U; /* Write Request. */
+    nexus_bt_gatt_att_put_le16(pdu + 1U, cccd_handle);
+    nexus_bt_gatt_att_put_le16(pdu + 3U, 0x0001U);
+    *pdu_length = 5U;
+    return true;
+}
+
+
+bool nexus_bt_gatt_att_parse_value_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_value_view *value) {
+    if (pdu == NULL || value == NULL || pdu_length < 2U ||
+        (pdu[0] != 0x0BU && pdu[0] != 0x0DU))
+        return false;
+    *value = (struct nexus_bt_gatt_att_value_view){
+        .opcode = pdu[0],
+        .value = pdu + 1U,
+        .value_length = (uint16_t)(pdu_length - 1U)
+    };
+    return true;
+}
+
+bool nexus_bt_gatt_att_parse_error_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_error *error) {
+    if (pdu == NULL || error == NULL || pdu_length != 5U ||
+        pdu[0] != 0x01U || pdu[1] == 0U ||
+        (pdu[2] == 0U && pdu[3] == 0U) || pdu[4] == 0U)
+        return false;
+    *error = (struct nexus_bt_gatt_att_error){
+        .request_opcode = pdu[1],
+        .attribute_handle = (uint16_t)(
+            pdu[2] | ((uint16_t)pdu[3] << 8)),
+        .error_code = pdu[4]
+    };
+    return true;
+}
+
+bool nexus_bt_gatt_att_parse_write_response(
+    const uint8_t *pdu, size_t pdu_length) {
+    return pdu != NULL && pdu_length == 1U && pdu[0] == 0x13U;
+}
+

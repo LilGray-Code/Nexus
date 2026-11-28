@@ -307,3 +307,39 @@ bool nexus_bt_gatt_att_build_enable_notifications(
     return true;
 }
 
+
+bool nexus_bt_gatt_att_parse_value_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_value_view *value) {
+    if (pdu == NULL || value == NULL || pdu_length < 2U ||
+        (pdu[0] != 0x0BU && pdu[0] != 0x0DU))
+        return false;
+    *value = (struct nexus_bt_gatt_att_value_view){
+        .opcode = pdu[0],
+        .value = pdu + 1U,
+        .value_length = (uint16_t)(pdu_length - 1U)
+    };
+    return true;
+}
+
+bool nexus_bt_gatt_att_parse_error_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_error *error) {
+    if (pdu == NULL || error == NULL || pdu_length != 5U ||
+        pdu[0] != 0x01U || pdu[1] == 0U ||
+        (pdu[2] == 0U && pdu[3] == 0U) || pdu[4] == 0U)
+        return false;
+    *error = (struct nexus_bt_gatt_att_error){
+        .request_opcode = pdu[1],
+        .attribute_handle = (uint16_t)(
+            pdu[2] | ((uint16_t)pdu[3] << 8)),
+        .error_code = pdu[4]
+    };
+    return true;
+}
+
+bool nexus_bt_gatt_att_parse_write_response(
+    const uint8_t *pdu, size_t pdu_length) {
+    return pdu != NULL && pdu_length == 1U && pdu[0] == 0x13U;
+}
+

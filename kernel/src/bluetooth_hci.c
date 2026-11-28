@@ -2,6 +2,11 @@
 
 #include <string.h>
 
+static void put_le16(uint8_t *p, uint16_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+}
+
 static uint16_t get_le16(const uint8_t *p) {
     return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
 }
@@ -16,6 +21,52 @@ bool nexus_bt_hci_parse_event(const uint8_t *packet, size_t packet_length,
         .parameters = packet + 3U,
         .parameter_length = packet[2]
     };
+    return true;
+}
+
+
+bool nexus_bt_hci_parse_le_advertising_report(
+    const struct nexus_bt_hci_event_view *event, uint8_t report_index,
+    struct nexus_bt_hci_le_advertising_report *report,
+    uint8_t *total_reports) {
+    if (event == NULL || report == NULL || total_reports == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_LE_META ||
+        event->parameters == NULL || event->parameter_length < 2U ||
+        event->parameters[0] != NEXUS_BT_HCI_LE_ADVERTISING_REPORT)
+        return false;
+    const uint8_t count = event->parameters[1];
+    if (count == 0U || count > NEXUS_BT_HCI_MAX_LE_ADVERTISING_REPORTS)
+        return false;
+
+    size_t offset = 2U;
+    bool found = false;
+    struct nexus_bt_hci_le_advertising_report selected = {0};
+    for (uint8_t i = 0U; i < count; ++i) {
+        if ((size_t)event->parameter_length - offset < 10U) return false;
+        const uint8_t event_type = event->parameters[offset];
+        const uint8_t address_type = event->parameters[offset + 1U];
+        const uint8_t data_length = event->parameters[offset + 8U];
+        if (event_type > 4U || address_type > 3U || data_length > 31U ||
+            (size_t)data_length >
+                (size_t)event->parameter_length - offset - 10U)
+            return false;
+        if (i == report_index) {
+            selected.event_type = event_type;
+            selected.address_type = address_type;
+            for (size_t j = 0U; j < 6U; ++j)
+                selected.peer_address[j] = event->parameters[offset + 2U + j];
+            selected.data = event->parameters + offset + 9U;
+            selected.data_length = data_length;
+            selected.rssi = (int8_t)event->parameters[
+                offset + 9U + data_length];
+            found = true;
+        }
+        offset += 10U + data_length;
+    }
+    if (offset != event->parameter_length) return false;
+    *total_reports = count;
+    if (!found) return false;
+    *report = selected;
     return true;
 }
 
@@ -222,6 +273,79 @@ bool nexus_bt_hci_parse_command_status(
     return true;
 }
 
+
+bool nexus_bt_hci_host_start_le_scan(
+    struct nexus_bt_hci_host *host, uint16_t interval, uint16_t window,
+    bool active_scan, bool filter_duplicates) {
+    if (host == NULL || host->state != NEXUS_BT_HCI_HOST_READY ||
+        host->outstanding_opcode != 0U || interval < 0x0004U ||
+        interval > 0x4000U || window < 0x0004U || window > interval)
+        return false;
+    host->le_scan_interval = interval;
+    host->le_scan_window = window;
+    host->le_scan_active = active_scan;
+    host->le_scan_filter_duplicates = filter_duplicates;
+    host->le_scan_enable = true;
+    host->state = NEXUS_BT_HCI_HOST_LE_SCAN_PARAMETERS_PENDING;
+    return true;
+}
+
+bool nexus_bt_hci_host_stop_le_scan(struct nexus_bt_hci_host *host) {
+    if (host == NULL || host->state != NEXUS_BT_HCI_HOST_SCANNING ||
+        host->outstanding_opcode != 0U) return false;
+    host->le_scan_enable = false;
+    host->state = NEXUS_BT_HCI_HOST_LE_SCAN_DISABLE_PENDING;
+    return true;
+}
+
+bool nexus_bt_hci_build_le_create_connection(
+    const struct nexus_bt_hci_le_connection_parameters *parameters,
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    if (parameters == NULL ||
+        parameters->scan_interval < 0x0004U ||
+        parameters->scan_interval > 0x4000U ||
+        parameters->scan_window < 0x0004U ||
+        parameters->scan_window > parameters->scan_interval ||
+        parameters->peer_address_type > 1U ||
+        parameters->own_address_type > 1U ||
+        parameters->connection_interval_min < 6U ||
+        parameters->connection_interval_max > 3200U ||
+        parameters->connection_interval_max <
+            parameters->connection_interval_min ||
+        parameters->latency > 499U ||
+        parameters->supervision_timeout < 10U ||
+        parameters->supervision_timeout > 3200U ||
+        (uint32_t)parameters->supervision_timeout * 4U <=
+            (uint32_t)(parameters->latency + 1U) *
+            parameters->connection_interval_max ||
+        parameters->minimum_connection_event_length >
+            parameters->maximum_connection_event_length ||
+        packet == NULL || packet_length == NULL) return false;
+
+    uint8_t command_parameters[25] = {0};
+    put_le16(command_parameters, parameters->scan_interval);
+    put_le16(command_parameters + 2U, parameters->scan_window);
+    command_parameters[4] = 0U;
+    command_parameters[5] = parameters->peer_address_type;
+    for (size_t i = 0U; i < 6U; ++i)
+        command_parameters[6U + i] = parameters->peer_address[i];
+    command_parameters[12] = parameters->own_address_type;
+    put_le16(command_parameters + 13U,
+             parameters->connection_interval_min);
+    put_le16(command_parameters + 15U,
+             parameters->connection_interval_max);
+    put_le16(command_parameters + 17U, parameters->latency);
+    put_le16(command_parameters + 19U, parameters->supervision_timeout);
+    put_le16(command_parameters + 21U,
+             parameters->minimum_connection_event_length);
+    put_le16(command_parameters + 23U,
+             parameters->maximum_connection_event_length);
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION,
+        command_parameters, sizeof(command_parameters),
+        packet, capacity, packet_length);
+}
+
 void nexus_bt_hci_host_init(struct nexus_bt_hci_host *host) {
     if (host == NULL) return;
     *host = (struct nexus_bt_hci_host){
@@ -250,6 +374,46 @@ bool nexus_bt_hci_host_next_command(struct nexus_bt_hci_host *host,
             opcode = NEXUS_BT_HCI_OPCODE_READ_BD_ADDR;
             host->state = NEXUS_BT_HCI_HOST_ADDRESS_IN_FLIGHT;
             break;
+        case NEXUS_BT_HCI_HOST_LE_SCAN_PARAMETERS_PENDING: {
+            uint8_t parameters[7] = {
+                host->le_scan_active ? 1U : 0U,
+                (uint8_t)host->le_scan_interval,
+                (uint8_t)(host->le_scan_interval >> 8),
+                (uint8_t)host->le_scan_window,
+                (uint8_t)(host->le_scan_window >> 8),
+                0U, 0U
+            };
+            opcode = NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS;
+            if (!nexus_bt_hci_build_command(opcode, parameters,
+                    sizeof(parameters), packet, capacity, packet_length)) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
+            host->state = NEXUS_BT_HCI_HOST_LE_SCAN_PARAMETERS_IN_FLIGHT;
+            --host->command_credits;
+            host->outstanding_opcode = opcode;
+            return true;
+        }
+        case NEXUS_BT_HCI_HOST_LE_SCAN_ENABLE_PENDING:
+        case NEXUS_BT_HCI_HOST_LE_SCAN_DISABLE_PENDING: {
+            uint8_t parameters[2] = {
+                host->le_scan_enable ? 1U : 0U,
+                host->le_scan_enable && host->le_scan_filter_duplicates
+                    ? 1U : 0U
+            };
+            opcode = NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE;
+            if (!nexus_bt_hci_build_command(opcode, parameters,
+                    sizeof(parameters), packet, capacity, packet_length)) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
+            host->state = host->le_scan_enable
+                ? NEXUS_BT_HCI_HOST_LE_SCAN_ENABLE_IN_FLIGHT
+                : NEXUS_BT_HCI_HOST_LE_SCAN_DISABLE_IN_FLIGHT;
+            --host->command_credits;
+            host->outstanding_opcode = opcode;
+            return true;
+        }
         default:
             return false;
     }
@@ -270,7 +434,8 @@ bool nexus_bt_hci_host_handle_event(
     if (host == NULL || event == NULL ||
         host->state == NEXUS_BT_HCI_HOST_STOPPED ||
         host->state == NEXUS_BT_HCI_HOST_FAILED ||
-        host->state == NEXUS_BT_HCI_HOST_READY) return false;
+        host->state == NEXUS_BT_HCI_HOST_READY ||
+        host->state == NEXUS_BT_HCI_HOST_SCANNING) return false;
 
     struct nexus_bt_hci_command_result result = {0};
     if (!nexus_bt_hci_parse_command_complete(event, &result)) {
@@ -331,6 +496,30 @@ bool nexus_bt_hci_host_handle_event(
             }
             for (size_t i = 0U; i < 6U; ++i)
                 host->controller_address[i] = result.return_parameters[i];
+            host->state = NEXUS_BT_HCI_HOST_READY;
+            return true;
+
+        case NEXUS_BT_HCI_HOST_LE_SCAN_PARAMETERS_IN_FLIGHT:
+            if (result.opcode != NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
+            host->state = NEXUS_BT_HCI_HOST_LE_SCAN_ENABLE_PENDING;
+            return true;
+
+        case NEXUS_BT_HCI_HOST_LE_SCAN_ENABLE_IN_FLIGHT:
+            if (result.opcode != NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
+            host->state = NEXUS_BT_HCI_HOST_SCANNING;
+            return true;
+
+        case NEXUS_BT_HCI_HOST_LE_SCAN_DISABLE_IN_FLIGHT:
+            if (result.opcode != NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE) {
+                host->state = NEXUS_BT_HCI_HOST_FAILED;
+                return false;
+            }
             host->state = NEXUS_BT_HCI_HOST_READY;
             return true;
 

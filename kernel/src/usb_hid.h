@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 struct nexus_usb_mouse_event {
-    uint32_t buttons;
+    uint64_t buttons;
     int16_t dx;
     int16_t dy;
     int16_t wheel;

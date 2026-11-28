@@ -106,3 +106,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added bounded reassembly of HCI ACL first and continuation fragments into one complete L2CAP PDU, with connection-handle isolation, packet-boundary validation, declared-length enforcement, and a fixed 1 KiB maximum.
 - Host tests cover normal split delivery, wrong-handle continuation, overlong fragments, and oversized L2CAP declarations.
 - The transport driver must still schedule the USB HCI interrupt/bulk endpoints and feed fragments into this helper; L2CAP signaling/channel setup and authenticated pairing remain necessary for real wireless HID operation.
+
+
+### Wide HID mouse report support
+
+- Generic mouse descriptor parsing now accepts signed 32-bit X/Y and wheel fields in addition to the common 8- and 16-bit formats.
+- Pointer deltas and wheel values saturate to the shared event ABI without wraparound; Y-axis inversion explicitly handles the signed 32-bit minimum.
+- Added host coverage for 32-bit X/Y/wheel decoding and the INT32_MIN inversion boundary. This expands standard HID coverage, but still does not implement proprietary report formats or guarantee every physical device.

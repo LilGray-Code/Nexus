@@ -253,6 +253,82 @@ bool nexus_aes128_encrypt_block(
     return true;
 }
 
+static void aes_cmac_double(const uint8_t input[16], uint8_t output[16]) {
+    uint8_t carry = 0U;
+    for (size_t i = 16U; i > 0U; --i) {
+        const uint8_t value = input[i - 1U];
+        output[i - 1U] = (uint8_t)((value << 1) | carry);
+        carry = (uint8_t)(value >> 7);
+    }
+    if (carry != 0U) output[15] ^= 0x87U;
+}
+
+bool nexus_aes128_cmac(
+    const uint8_t key[NEXUS_AES128_KEY_BYTES],
+    const uint8_t *message, size_t message_length,
+    uint8_t mac[16]) {
+    if (key == NULL || mac == NULL ||
+        (message_length != 0U && message == NULL) ||
+        message_length > NEXUS_AES_CMAC_MAX_MESSAGE_BYTES)
+        return false;
+
+    uint8_t round_keys[AES_ROUND_KEY_BYTES];
+    uint8_t zero[16] = {0U};
+    uint8_t l[16] = {0U};
+    uint8_t k1[16] = {0U};
+    uint8_t k2[16] = {0U};
+    uint8_t state[16] = {0U};
+    uint8_t block[16] = {0U};
+    uint8_t encrypted[16] = {0U};
+    aes_expand_key(key, round_keys);
+    aes_encrypt_block(round_keys, zero, l);
+    aes_cmac_double(l, k1);
+    aes_cmac_double(k1, k2);
+
+    const size_t block_count = message_length == 0U
+        ? 1U : (message_length + 15U) / 16U;
+    const bool complete = message_length != 0U &&
+                          (message_length % 16U) == 0U;
+
+    for (size_t block_index = 0U;
+         block_index + 1U < block_count; ++block_index) {
+        const size_t offset = block_index * 16U;
+        for (size_t i = 0U; i < 16U; ++i)
+            block[i] = (uint8_t)(state[i] ^ message[offset + i]);
+        aes_encrypt_block(round_keys, block, encrypted);
+        copy_bytes(state, encrypted, sizeof(state));
+    }
+
+    const size_t last_offset = (block_count - 1U) * 16U;
+    const size_t last_length = message_length > last_offset
+        ? message_length - last_offset : 0U;
+    for (size_t i = 0U; i < sizeof(block); ++i) block[i] = 0U;
+    for (size_t i = 0U; i < last_length; ++i)
+        block[i] = message[last_offset + i];
+    if (complete) {
+        for (size_t i = 0U; i < 16U; ++i)
+            block[i] ^= k1[i];
+    } else {
+        block[last_length] = 0x80U;
+        for (size_t i = 0U; i < 16U; ++i)
+            block[i] ^= k2[i];
+    }
+    for (size_t i = 0U; i < 16U; ++i)
+        block[i] ^= state[i];
+    aes_encrypt_block(round_keys, block, encrypted);
+    copy_bytes(mac, encrypted, 16U);
+
+    secure_zero(round_keys, sizeof(round_keys));
+    secure_zero(zero, sizeof(zero));
+    secure_zero(l, sizeof(l));
+    secure_zero(k1, sizeof(k1));
+    secure_zero(k2, sizeof(k2));
+    secure_zero(state, sizeof(state));
+    secure_zero(block, sizeof(block));
+    secure_zero(encrypted, sizeof(encrypted));
+    return true;
+}
+
 static void aes_decrypt_block(const uint8_t round_keys[AES_ROUND_KEY_BYTES],
                               const uint8_t input[AES_BLOCK_BYTES],
                               uint8_t output[AES_BLOCK_BYTES]) {

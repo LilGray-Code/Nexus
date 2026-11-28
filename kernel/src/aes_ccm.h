@@ -11,6 +11,13 @@
 bool nexus_aes128_encrypt_block(
     const uint8_t key[NEXUS_AES128_KEY_BYTES],
     const uint8_t plaintext[16], uint8_t ciphertext[16]);
+
+#define NEXUS_AES_CMAC_MAX_MESSAGE_BYTES 1024U
+/* RFC 4493 AES-CMAC. A NULL message is valid only when length is zero. */
+bool nexus_aes128_cmac(
+    const uint8_t key[NEXUS_AES128_KEY_BYTES],
+    const uint8_t *message, size_t message_length,
+    uint8_t mac[16]);
 #define NEXUS_AES_CCM_NONCE_BYTES 13U
 #define NEXUS_AES_CCM_TAG_BYTES 8U
 #define NEXUS_AES_CCM_MAX_AAD_BYTES 1024U

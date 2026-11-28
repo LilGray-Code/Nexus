@@ -252,3 +252,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added a 15-second deadline for legacy SMP feature/confirm/random exchange and a separate 5-second deadline while waiting for the HCI link-encryption procedure to complete.
 - On timeout, malformed or unsupported SMP traffic, rejected HCI encryption commands, or unsuccessful Encryption Change events, the HOGP session is disabled and any held keyboard/mouse state from that link is released. Pairing failure is reported where the transport remains available.
 - Added host tests for reserved AuthReq bits, unsupported/bonding requests, unknown SMP commands and clearing all temporary TK/STK/random/confirm material after a failed encryption result.
+
+
+### AES-CMAC foundation for LE Secure Connections — November 28, 2026
+
+- Added an RFC 4493 AES-128-CMAC primitive on top of the FIPS-197 AES block implementation. It supports empty, partial-block and complete-block messages with a bounded 1 KiB input.
+- Added all four RFC 4493 known-answer vectors (empty, 16-byte, 40-byte and 64-byte messages) plus invalid pointer and length checks.
+- This is a crypto primitive only. LE Secure Connections still requires P-256 public-key exchange/DHKey generation, f4/f5/f6, SMP Secure Connections state sequencing, HCI controller capability checks and persistent security policy before it can be advertised as supported.

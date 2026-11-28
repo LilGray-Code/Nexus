@@ -374,6 +374,7 @@ int main(void) {
     test_le_connection();
     test_le_scan_command_builders();
     test_le_create_connection_command_builder();
+    test_le_start_encryption_command_and_event();
     test_le_advertising_report_parser();
     test_host_generic_command_credit_path();
     test_host_generic_command_status_path();

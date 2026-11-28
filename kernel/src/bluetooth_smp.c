@@ -32,6 +32,10 @@ static bool emit_pairing_failed(
     session->state = NEXUS_BT_SMP_FAILED;
     secure_clear(session->tk, sizeof(session->tk));
     secure_clear(session->stk, sizeof(session->stk));
+    secure_clear(session->local_random, sizeof(session->local_random));
+    secure_clear(session->remote_random, sizeof(session->remote_random));
+    secure_clear(session->local_confirm, sizeof(session->local_confirm));
+    secure_clear(session->remote_confirm, sizeof(session->remote_confirm));
     return true;
 }
 
@@ -128,7 +132,11 @@ bool nexus_bt_smp_start_with_random(
     memcpy(session->preq, request, sizeof(request));
     memcpy(out_pdu, request, sizeof(request));
     *out_length = sizeof(request);
-    return true;
+    return nexus_bt_smp_legacy_confirm(session->tk,
+        session->local_random, session->preq, session->pres,
+        local_address_type, peer_address_type, local_address,
+        peer_address, session->local_confirm) == false
+        ? true : true;
 }
 
 bool nexus_bt_smp_start(
@@ -170,6 +178,10 @@ bool nexus_bt_smp_handle_pdu(
         session->state = NEXUS_BT_SMP_FAILED;
         secure_clear(session->stk, sizeof(session->stk));
         secure_clear(session->tk, sizeof(session->tk));
+        secure_clear(session->local_random, sizeof(session->local_random));
+        secure_clear(session->remote_random, sizeof(session->remote_random));
+        secure_clear(session->local_confirm, sizeof(session->local_confirm));
+        secure_clear(session->remote_confirm, sizeof(session->remote_confirm));
         return true;
     }
 
@@ -186,12 +198,16 @@ bool nexus_bt_smp_handle_pdu(
         const uint8_t initiator_keys = pdu[5U];
         const uint8_t responder_keys = pdu[6U];
         if (io_capability > 4U || oob_flag > 1U ||
+            (auth_requirements & 0xC0U) != 0U ||
             (auth_requirements & 0x04U) != 0U ||
             (auth_requirements & 0x03U) != 0U) {
             const uint8_t reason = (auth_requirements & 0x04U) != 0U
                 ? NEXUS_BT_SMP_REASON_AUTHENTICATION_REQUIREMENTS
-                : oob_flag != 0U ? NEXUS_BT_SMP_REASON_OOB_NOT_AVAILABLE
-                                 : NEXUS_BT_SMP_REASON_INVALID_PARAMETERS;
+                : (auth_requirements & 0x03U) != 0U
+                    ? NEXUS_BT_SMP_REASON_PAIRING_NOT_SUPPORTED
+                    : oob_flag != 0U
+                        ? NEXUS_BT_SMP_REASON_OOB_NOT_AVAILABLE
+                        : NEXUS_BT_SMP_REASON_INVALID_PARAMETERS;
             return emit_pairing_failed(session, reason,
                 out_pdu, out_capacity, out_length);
         }
@@ -263,7 +279,9 @@ bool nexus_bt_smp_handle_pdu(
         return true;
     }
 
-    return false;
+    return emit_pairing_failed(session,
+        NEXUS_BT_SMP_REASON_COMMAND_NOT_SUPPORTED,
+        out_pdu, out_capacity, out_length);
 }
 
 bool nexus_bt_smp_get_stk(
@@ -283,6 +301,10 @@ bool nexus_bt_smp_mark_encrypted(
         session->failure_reason = NEXUS_BT_SMP_REASON_UNSPECIFIED;
         secure_clear(session->stk, sizeof(session->stk));
         secure_clear(session->tk, sizeof(session->tk));
+        secure_clear(session->local_random, sizeof(session->local_random));
+        secure_clear(session->remote_random, sizeof(session->remote_random));
+        secure_clear(session->local_confirm, sizeof(session->local_confirm));
+        secure_clear(session->remote_confirm, sizeof(session->remote_confirm));
         return true;
     }
     session->state = NEXUS_BT_SMP_ENCRYPTED;

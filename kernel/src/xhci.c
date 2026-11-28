@@ -6,6 +6,7 @@
 #include "bluetooth_usb.h"
 #include "bluetooth_hid.h"
 #include "bluetooth_hogp.h"
+#include "bluetooth_smp.h"
 #include "xhci_ownership.h"
 #include "xhci_ports.h"
 #include "xhci_power.h"
@@ -191,7 +192,13 @@ struct xhci_hid_device {
 struct xhci_bluetooth_link {
     bool active;
     bool indication_confirmation_pending;
+    bool smp_tx_pending;
+    bool start_encryption_pending;
+    bool encryption_command_sent;
+    uint8_t smp_tx_pdu[17];
+    uint8_t smp_tx_length;
     uint32_t mouse_buttons;
+    struct nexus_bt_smp_session smp;
     struct nexus_bt_hci_connection link;
     struct nexus_bt_acl_reassembler reassembler;
     struct nexus_bt_hogp_client hogp;
@@ -1333,14 +1340,12 @@ static bool xhci_bluetooth_add_link(
         return false;
     }
     if (connection->low_energy)
-        serial_write("USB Bluetooth: starting HOGP ATT discovery on LE link\r\n");
+        serial_write("USB Bluetooth: starting unencrypted HOGP probe; pairing on security request\r\n");
     return true;
 }
 
-static void xhci_bluetooth_remove_link(
-    struct xhci_bluetooth_device *bluetooth, uint16_t handle) {
-    struct xhci_bluetooth_link *link =
-        xhci_bluetooth_find_link(bluetooth, handle);
+static void xhci_bluetooth_release_link_input(
+    struct xhci_bluetooth_link *link) {
     if (link == NULL) return;
     if (link->keyboard_state.have_previous_report) {
         const uint8_t released[8] = {0U};
@@ -1349,7 +1354,32 @@ static void xhci_bluetooth_remove_link(
     if (link->mouse_buttons != 0U) {
         const struct nexus_usb_mouse_event released = {0};
         input_usb_mouse_event(&released);
+        link->mouse_buttons = 0U;
     }
+}
+
+static void xhci_bluetooth_fail_pairing(
+    struct xhci_bluetooth_link *link, uint8_t reason) {
+    if (link == NULL) return;
+    link->smp.state = NEXUS_BT_SMP_FAILED;
+    link->smp.failure_reason = reason;
+    link->smp_tx_pdu[0] = NEXUS_BT_SMP_PAIRING_FAILED;
+    link->smp_tx_pdu[1] = reason;
+    link->smp_tx_length = 2U;
+    link->smp_tx_pending = true;
+    link->start_encryption_pending = false;
+    link->encryption_command_sent = false;
+    link->hogp.state = NEXUS_BT_HOGP_FAILED;
+    link->hogp.awaiting_response = false;
+    xhci_bluetooth_release_link_input(link);
+}
+
+static void xhci_bluetooth_remove_link(
+    struct xhci_bluetooth_device *bluetooth, uint16_t handle) {
+    struct xhci_bluetooth_link *link =
+        xhci_bluetooth_find_link(bluetooth, handle);
+    if (link == NULL) return;
+    xhci_bluetooth_release_link_input(link);
     *link = (struct xhci_bluetooth_link){0};
 }
 
@@ -1374,6 +1404,82 @@ static bool xhci_bluetooth_send_att(
         connection_handle, packet, att_length + 4U);
 }
 
+static bool xhci_bluetooth_begin_legacy_pairing(
+    struct xhci_bluetooth_device *bluetooth,
+    struct xhci_bluetooth_link *link) {
+    if (bluetooth == NULL || link == NULL || !link->active ||
+        !link->link.low_energy ||
+        bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY) return false;
+    if (link->smp.state != NEXUS_BT_SMP_IDLE) return false;
+    bool local_address_valid = false;
+    for (size_t i = 0U; i < sizeof(bluetooth->hci_host.controller_address); ++i)
+        local_address_valid = local_address_valid ||
+            bluetooth->hci_host.controller_address[i] != 0U;
+    if (!local_address_valid) {
+        xhci_bluetooth_fail_pairing(link,
+            NEXUS_BT_SMP_REASON_PAIRING_NOT_SUPPORTED);
+        return false;
+    }
+
+    uint8_t request[17U];
+    size_t request_length = 0U;
+    if (!nexus_bt_smp_start(&link->smp,
+            0U, bluetooth->hci_host.controller_address,
+            link->link.peer_address_type, link->link.peer_address,
+            request, sizeof(request), &request_length) ||
+        request_length != 7U) {
+        xhci_bluetooth_fail_pairing(link,
+            NEXUS_BT_SMP_REASON_PAIRING_NOT_SUPPORTED);
+        return false;
+    }
+    memcpy(link->smp_tx_pdu, request, request_length);
+    link->smp_tx_length = (uint8_t)request_length;
+    link->smp_tx_pending = true;
+    link->hogp.awaiting_response = false;
+    serial_write("USB Bluetooth: starting non-bonding legacy Just Works pairing; unauthenticated\r\n");
+    return true;
+}
+
+static bool xhci_bluetooth_queue_smp_response(
+    struct xhci_bluetooth_link *link,
+    const uint8_t *pdu, size_t length) {
+    if (link == NULL || pdu == NULL || length == 0U ||
+        length > sizeof(link->smp_tx_pdu) || link->smp_tx_pending)
+        return false;
+    memcpy(link->smp_tx_pdu, pdu, length);
+    link->smp_tx_length = (uint8_t)length;
+    link->smp_tx_pending = true;
+    return true;
+}
+
+static bool xhci_bluetooth_send_smp(
+    uint16_t connection_handle, const uint8_t *smp_pdu,
+    size_t smp_length) {
+    if (smp_pdu == NULL || smp_length == 0U ||
+        smp_length > NEXUS_BT_ACL_MAX_L2CAP_PDU - 4U)
+        return false;
+    uint8_t packet[NEXUS_BT_ACL_MAX_L2CAP_PDU] = {0U};
+    packet[0] = (uint8_t)smp_length;
+    packet[1] = (uint8_t)(smp_length >> 8);
+    packet[2] = (uint8_t)NEXUS_BT_SMP_CID;
+    packet[3] = (uint8_t)(NEXUS_BT_SMP_CID >> 8);
+    for (size_t i = 0U; i < smp_length; ++i)
+        packet[4U + i] = smp_pdu[i];
+    return xhci_bluetooth_send_l2cap(
+        connection_handle, packet, smp_length + 4U);
+}
+
+static bool xhci_bluetooth_att_error_requires_security(
+    const struct nexus_bt_hogp_client *client,
+    const uint8_t *att, size_t att_length) {
+    if (client == NULL || att == NULL || att_length != 5U ||
+        att[0] != 0x01U || att[1] != client->request_opcode) return false;
+    return att[4] == 0x05U || /* Insufficient Authentication. */
+           att[4] == 0x08U || /* Insufficient Authorization. */
+           att[4] == 0x0CU || /* Insufficient Encryption Key Size. */
+           att[4] == 0x0FU;   /* Insufficient Encryption. */
+}
+
 static void xhci_bluetooth_process_l2cap(
     struct xhci_bluetooth_device *bluetooth,
     struct xhci_bluetooth_link *link,
@@ -1382,8 +1488,62 @@ static void xhci_bluetooth_process_l2cap(
         !link->link.low_energy) return;
     struct nexus_bt_l2cap_view l2cap = {0};
     if (!nexus_bt_l2cap_parse(pdu, pdu_length, &l2cap) ||
-        l2cap.channel_id != NEXUS_BT_L2CAP_CID_ATT ||
         l2cap.payload_length == 0U) return;
+
+    if (l2cap.channel_id == NEXUS_BT_SMP_CID) {
+        /* A Security Request from the peripheral asks the Central to
+         * initiate security. A pending/failed session is never silently
+         * downgraded to unencrypted HID input. */
+        if (l2cap.payload[0] == 0x0BU) {
+            if (l2cap.payload_length != 2U) {
+                xhci_bluetooth_count_drop(bluetooth);
+                return;
+            }
+            if ((l2cap.payload[1] & 0x04U) != 0U) {
+                /* This driver has no passkey/OOB/Numeric Comparison UI, so
+                 * refuse a Peripheral's explicit MITM requirement. */
+                xhci_bluetooth_fail_pairing(link,
+                    NEXUS_BT_SMP_REASON_AUTHENTICATION_REQUIREMENTS);
+                return;
+            }
+            if (!xhci_bluetooth_begin_legacy_pairing(bluetooth, link))
+                xhci_bluetooth_count_drop(bluetooth);
+            return;
+        }
+        uint8_t response[17U];
+        size_t response_length = 0U;
+        bool start_encryption = false;
+        if (!nexus_bt_smp_handle_pdu(&link->smp,
+                l2cap.payload, l2cap.payload_length,
+                response, sizeof(response), &response_length,
+                &start_encryption)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            link->hogp.state = NEXUS_BT_HOGP_FAILED;
+            link->hogp.awaiting_response = false;
+            return;
+        }
+        if (response_length != 0U &&
+            !xhci_bluetooth_queue_smp_response(
+                link, response, response_length)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            link->smp.state = NEXUS_BT_SMP_FAILED;
+            link->hogp.state = NEXUS_BT_HOGP_FAILED;
+            return;
+        }
+        if (start_encryption) link->start_encryption_pending = true;
+        if (link->smp.state == NEXUS_BT_SMP_FAILED) {
+            link->hogp.state = NEXUS_BT_HOGP_FAILED;
+            link->hogp.awaiting_response = false;
+            xhci_bluetooth_release_link_input(link);
+            serial_write("USB Bluetooth: legacy pairing failed reason=");
+            serial_write_hex(link->smp.failure_reason);
+            serial_write("\r\n");
+        }
+        return;
+    }
+    if (l2cap.channel_id != NEXUS_BT_L2CAP_CID_ATT) return;
+    if (link->smp.state != NEXUS_BT_SMP_IDLE &&
+        link->smp.state != NEXUS_BT_SMP_ENCRYPTED) return;
 
     const uint8_t opcode = l2cap.payload[0];
     if (opcode == NEXUS_BT_ATT_HANDLE_VALUE_NOTIFICATION ||
@@ -1407,6 +1567,14 @@ static void xhci_bluetooth_process_l2cap(
     }
 
     if (link->hogp.awaiting_response) {
+        if (xhci_bluetooth_att_error_requires_security(
+                &link->hogp, l2cap.payload, l2cap.payload_length)) {
+            if (!xhci_bluetooth_begin_legacy_pairing(bluetooth, link)) {
+                xhci_bluetooth_count_drop(bluetooth);
+                link->hogp.state = NEXUS_BT_HOGP_FAILED;
+            }
+            return;
+        }
         if (!nexus_bt_hogp_client_handle_response(
                 &link->hogp, l2cap.payload, l2cap.payload_length)) {
             xhci_bluetooth_count_drop(bluetooth);
@@ -1417,14 +1585,66 @@ static void xhci_bluetooth_process_l2cap(
     }
 }
 
+static bool xhci_bluetooth_send_command(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth,
+    uint16_t opcode, const uint8_t *parameters,
+    uint8_t parameter_length);
+
+static bool xhci_bluetooth_start_le_encryption(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth,
+    struct xhci_bluetooth_link *link) {
+    if (xhci == NULL || bluetooth == NULL || link == NULL ||
+        link->smp.state != NEXUS_BT_SMP_ENCRYPTION_PENDING)
+        return false;
+    uint8_t stk[16] = {0U};
+    uint8_t random[8] = {0U};
+    uint8_t command[40] = {0U};
+    size_t command_length = 0U;
+    const bool built = nexus_bt_smp_get_stk(&link->smp, stk) &&
+        nexus_bt_hci_build_le_start_encryption(
+            link->link.handle, random, 0U, stk,
+            command, sizeof(command), &command_length) &&
+        command_length == 32U &&
+        xhci_bluetooth_send_command(xhci, bluetooth,
+            NEXUS_BT_HCI_OPCODE_LE_START_ENCRYPTION,
+            command + 4U, command[3]);
+    volatile uint8_t *wipe_stk = stk;
+    for (size_t i = 0U; i < sizeof(stk); ++i) wipe_stk[i] = 0U;
+    if (built) {
+        link->start_encryption_pending = false;
+        link->encryption_command_sent = true;
+        serial_write("USB Bluetooth: LE Start Encryption submitted; waiting for controller event\r\n");
+    }
+    return built;
+}
+
 static void xhci_bluetooth_progress_hogp(
+    struct xhci_controller *xhci,
     struct xhci_bluetooth_device *bluetooth) {
-    if (bluetooth == NULL || !bluetooth->active ||
+    if (xhci == NULL || bluetooth == NULL || !bluetooth->active ||
         bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY ||
         bluetooth->bulk_out_active) return;
     for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
         struct xhci_bluetooth_link *link = &bluetooth->connections[i];
         if (!link->active || !link->link.low_energy) continue;
+        if (link->smp_tx_pending) {
+            if (xhci_bluetooth_send_smp(link->link.handle,
+                    link->smp_tx_pdu, link->smp_tx_length)) {
+                link->smp_tx_pending = false;
+                link->smp_tx_length = 0U;
+            }
+            return;
+        }
+        if (link->start_encryption_pending &&
+            link->smp.state == NEXUS_BT_SMP_ENCRYPTION_PENDING) {
+            (void)xhci_bluetooth_start_le_encryption(
+                xhci, bluetooth, link);
+            return;
+        }
+        if (link->smp.state != NEXUS_BT_SMP_IDLE &&
+            link->smp.state != NEXUS_BT_SMP_ENCRYPTED) continue;
         if (link->indication_confirmation_pending) {
             const uint8_t confirmation = 0x1EU;
             if (xhci_bluetooth_send_att(
@@ -1606,6 +1826,25 @@ static void xhci_bluetooth_process_command_result(
     bluetooth->hci_host.last_completed_opcode = 0U;
     bluetooth->hci_host.last_command_status = 0xFFU;
     if (status != 0U) {
+        if (opcode == NEXUS_BT_HCI_OPCODE_LE_START_ENCRYPTION) {
+            for (size_t i = 0U; i < XHCI_BT_MAX_CONNECTIONS; ++i) {
+                struct xhci_bluetooth_link *link =
+                    &bluetooth->connections[i];
+                if (link->active &&
+                    link->smp.state == NEXUS_BT_SMP_ENCRYPTION_PENDING &&
+                    link->encryption_command_sent) {
+                    (void)nexus_bt_smp_mark_encrypted(&link->smp, false);
+                    link->encryption_command_sent = false;
+                    link->hogp.state = NEXUS_BT_HOGP_FAILED;
+                    link->hogp.awaiting_response = false;
+                    xhci_bluetooth_release_link_input(link);
+                }
+            }
+            serial_write("USB Bluetooth: HCI LE Start Encryption command rejected status=");
+            serial_write_hex(status);
+            serial_write("\r\n");
+            return;
+        }
         bluetooth->scan_state = XHCI_BT_SCAN_FAILED;
         serial_write("USB Bluetooth: discovery command failed opcode=");
         serial_write_hex(opcode);
@@ -1680,6 +1919,35 @@ static void xhci_bluetooth_process_event(
             xhci_bluetooth_process_command_result(bluetooth);
         else
             xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+
+    if (event.event_code == NEXUS_BT_HCI_EVENT_ENCRYPTION_CHANGE) {
+        uint16_t connection_handle = 0U;
+        uint8_t status = 0xFFU;
+        bool enabled = false;
+        if (!nexus_bt_hci_parse_encryption_change(
+                &event, &connection_handle, &status, &enabled)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return;
+        }
+        struct xhci_bluetooth_link *link =
+            xhci_bluetooth_find_link(bluetooth, connection_handle);
+        if (link == NULL ||
+            link->smp.state != NEXUS_BT_SMP_ENCRYPTION_PENDING) return;
+        if (status == 0U && enabled &&
+            nexus_bt_smp_mark_encrypted(&link->smp, true) &&
+            nexus_bt_hogp_client_start(&link->hogp, 247U)) {
+            link->encryption_command_sent = false;
+            serial_write("USB Bluetooth: link encrypted; starting HOGP discovery\r\n");
+        } else {
+            (void)nexus_bt_smp_mark_encrypted(&link->smp, false);
+            link->hogp.state = NEXUS_BT_HOGP_FAILED;
+            link->hogp.awaiting_response = false;
+            xhci_bluetooth_release_link_input(link);
+            xhci_bluetooth_count_drop(bluetooth);
+            serial_write("USB Bluetooth: LE encryption failed; wireless HID disabled\r\n");
+        }
         return;
     }
 
@@ -4137,7 +4405,7 @@ void xhci_poll(void) {
             (void)xhci_bluetooth_send_pending_command(xhci, bluetooth);
         } else if (bluetooth->hci_host.state == NEXUS_BT_HCI_HOST_READY) {
             xhci_bluetooth_discovery_progress(xhci, bluetooth);
-            xhci_bluetooth_progress_hogp(bluetooth);
+            xhci_bluetooth_progress_hogp(xhci, bluetooth);
         }
     }
     xhci_poll_usb_hubs(xhci);

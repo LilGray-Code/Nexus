@@ -16,8 +16,11 @@ struct nexus_pci_device;
  * CCCD subscriptions; supported HID keyboard/mouse notifications feed the
  * common input queue.
  *
- * Authenticated pairing/bonding and some advanced HOGP/report layouts remain
- * unsupported. EHCI/OHCI/UHCI are not yet operational input controllers. */
+ * On ATT security errors, the adapter can attempt non-bonding legacy Just
+ * Works pairing and enable link encryption. This mode provides no MITM
+ * authentication and no persistent bond; LE Secure Connections, passkey/OOB
+ * pairing and MITM-required devices remain unsupported. EHCI/OHCI/UHCI are
+ * not yet operational input controllers. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);
@@ -25,8 +28,9 @@ bool xhci_mouse_ready(void);
 bool xhci_gamepads_ready(void);
 
 /* Bluetooth HCI USB transport exposes complete L2CAP PDUs to an upper
- * protocol layer. These calls do not imply scanning, pairing, bonding or
- * HOGP/HID report subscription support. */
+ * protocol layer. Internal ATT/HOGP and limited legacy SMP handling share
+ * this transport; these calls do not imply authenticated pairing, bonding
+ * or classic HIDP support. */
 bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
                                uint8_t *pdu, size_t pdu_capacity,
                                size_t *pdu_length);
@@ -34,8 +38,9 @@ bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
                                const uint8_t *pdu, size_t pdu_length);
 
 /* Read a queued legacy LE advertisement discovered by the USB HCI transport.
- * Connect requests use the address/type selected by an upper layer. Pairing
- * and HID GATT subscription are separate, not yet implemented operations. */
+ * Connect requests use the address/type selected by an upper layer. A security
+ * error can trigger non-bonding legacy Just Works; authenticated pairing and
+ * bonding remain unsupported. */
 bool xhci_bluetooth_read_advertisement(
     struct nexus_bt_hci_advertisement *advertisement);
 bool xhci_bluetooth_connect_le(

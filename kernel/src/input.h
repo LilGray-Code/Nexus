@@ -21,7 +21,8 @@ struct nexus_input_event {
     uint32_t mouse_buttons;
     int16_t mouse_dx;
     int16_t mouse_dy;
-    int8_t mouse_wheel;
+    int16_t mouse_wheel;
+    int16_t mouse_hwheel;
 };
 
 bool input_init(void);

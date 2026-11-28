@@ -188,11 +188,91 @@ static void test_host_initialization_state_machine(void) {
         &host, packet, sizeof(packet), &packet_length));
 }
 
+
+static void test_acl_l2cap_fragment_reassembly(void) {
+    /* L2CAP length=6, CID=ATT, followed by four ATT bytes. */
+    const uint8_t first_packet[] = {
+        0x02U,0x34U,0x22U,0x06U,0x00U,
+        0x06U,0x00U,0x04U,0x00U,0x1BU,0x20U
+    };
+    const uint8_t continuation_packet[] = {
+        0x02U,0x34U,0x12U,0x04U,0x00U,
+        0x00U,0x05U,0x06U,0x07U
+    };
+    struct nexus_bt_hci_acl_view first = {0};
+    struct nexus_bt_hci_acl_view continuation = {0};
+    struct nexus_bt_hci_acl_reassembler reassembler = {0};
+    struct nexus_bt_hci_l2cap_packet complete = {0};
+    assert(nexus_bt_hci_parse_acl(first_packet, sizeof(first_packet), &first));
+    assert(nexus_bt_hci_parse_acl(
+        continuation_packet, sizeof(continuation_packet), &continuation));
+    assert(first.packet_boundary == 2U);
+    assert(continuation.packet_boundary == 1U);
+    assert(nexus_bt_hci_acl_reassemble(
+        &reassembler, &first, &complete) ==
+        NEXUS_BT_HCI_ACL_REASSEMBLY_PENDING);
+    assert(reassembler.active);
+    assert(nexus_bt_hci_acl_reassemble(
+        &reassembler, &continuation, &complete) ==
+        NEXUS_BT_HCI_ACL_REASSEMBLY_COMPLETE);
+    assert(!reassembler.active);
+    assert(complete.connection_handle == 0x0234U);
+    assert(complete.packet_length == 10U);
+    assert(complete.packet[0] == 6U && complete.packet[1] == 0U);
+    assert(complete.packet[2] == 4U && complete.packet[3] == 0U);
+    assert(complete.packet[4] == 0x1BU && complete.packet[9] == 7U);
+}
+
+static void test_acl_reassembly_rejects_wrong_handle_and_overrun(void) {
+    const uint8_t first_packet[] = {
+        0x02U,0x34U,0x22U,0x06U,0x00U,
+        0x06U,0x00U,0x04U,0x00U,0xAAU,0xBBU
+    };
+    const uint8_t wrong_handle[] = {
+        0x02U,0x35U,0x12U,0x06U,0x00U,
+        0xCCU,0xDDU,0xEEU,0xFFU,0x11U,0x22U
+    };
+    struct nexus_bt_hci_acl_view first = {0}, wrong = {0};
+    struct nexus_bt_hci_acl_reassembler reassembler = {0};
+    struct nexus_bt_hci_l2cap_packet complete = {0};
+    assert(nexus_bt_hci_parse_acl(first_packet, sizeof(first_packet), &first));
+    assert(nexus_bt_hci_parse_acl(wrong_handle, sizeof(wrong_handle), &wrong));
+    assert(nexus_bt_hci_acl_reassemble(&reassembler, &first, &complete) ==
+        NEXUS_BT_HCI_ACL_REASSEMBLY_PENDING);
+    assert(nexus_bt_hci_acl_reassemble(&reassembler, &wrong, &complete) ==
+        NEXUS_BT_HCI_ACL_REASSEMBLY_INVALID);
+    assert(!reassembler.active);
+
+    const uint8_t overlong_first[] = {
+        0x02U,0x34U,0x22U,0x07U,0x00U,
+        0x02U,0x00U,0x04U,0x00U,0xAAU,0xBBU,0xCCU
+    };
+    struct nexus_bt_hci_acl_view overlong = {0};
+    assert(nexus_bt_hci_parse_acl(
+        overlong_first, sizeof(overlong_first), &overlong));
+    assert(nexus_bt_hci_acl_reassemble(
+        &reassembler, &overlong, &complete) ==
+        NEXUS_BT_HCI_ACL_REASSEMBLY_INVALID);
+
+    const uint8_t oversized_l2cap_header[] = {0xFD,0x03,0x04,0x00};
+    const struct nexus_bt_hci_acl_view oversized = {
+        .connection_handle = 0x0234U,
+        .packet_boundary = 2U,
+        .payload = oversized_l2cap_header,
+        .payload_length = sizeof(oversized_l2cap_header)
+    };
+    assert(nexus_bt_hci_acl_reassemble(
+        &reassembler, &oversized, &complete) ==
+        NEXUS_BT_HCI_ACL_REASSEMBLY_INVALID);
+}
+
 int main(void) {
     test_event_framing();
     test_host_initialization_state_machine();
     test_hci_command_build_and_responses();
     test_acl_framing();
+    test_acl_l2cap_fragment_reassembly();
+    test_acl_reassembly_rejects_wrong_handle_and_overrun();
     test_classic_connection_and_disconnect();
     test_le_connection();
     puts("NEXUS BLUETOOTH HCI FRAME AND LINK EVENT TESTS PASSED");

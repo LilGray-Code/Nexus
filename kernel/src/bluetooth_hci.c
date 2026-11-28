@@ -274,6 +274,103 @@ bool nexus_bt_hci_advertisement_copy_name(
     return copied != 0U;
 }
 
+static uint16_t hci_get_le16(const uint8_t *p) {
+    return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
+}
+
+bool nexus_bt_hci_parse_inquiry_results(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_classic_device *devices,
+    size_t device_capacity, size_t *device_count) {
+    if (device_count == NULL) return false;
+    *device_count = 0U;
+    if (event == NULL || event->parameters == NULL || devices == NULL ||
+        (event->event_code != NEXUS_BT_HCI_EVENT_INQUIRY_RESULT &&
+         event->event_code != NEXUS_BT_HCI_EVENT_INQUIRY_RESULT_RSSI) ||
+        event->parameter_length < 1U) return false;
+    const uint8_t count = event->parameters[0];
+    const bool with_rssi =
+        event->event_code == NEXUS_BT_HCI_EVENT_INQUIRY_RESULT_RSSI;
+    const size_t stride = with_rssi ? 14U : 13U;
+    if (count == 0U || count > NEXUS_BT_HCI_MAX_CLASSIC_RESULTS ||
+        count > device_capacity ||
+        (size_t)event->parameter_length != 1U + (size_t)count * stride)
+        return false;
+    const uint8_t *p = event->parameters + 1U;
+    const uint8_t *addresses = p;
+    const uint8_t *repetition = addresses + (size_t)count * 6U;
+    const uint8_t *reserved = repetition + count;
+    const uint8_t *classes = reserved + count;
+    const uint8_t *offsets = classes + (size_t)count * 3U;
+    const uint8_t *rssis = offsets + (size_t)count * 2U;
+    struct nexus_bt_hci_classic_device parsed[
+        NEXUS_BT_HCI_MAX_CLASSIC_RESULTS] = {0};
+    for (uint8_t i = 0U; i < count; ++i) {
+        if (repetition[i] > 2U) return false;
+        for (size_t j = 0U; j < 6U; ++j)
+            parsed[i].address[j] = addresses[(size_t)i * 6U + j];
+        parsed[i].page_scan_repetition_mode = repetition[i];
+        for (size_t j = 0U; j < 3U; ++j)
+            parsed[i].class_of_device[j] = classes[(size_t)i * 3U + j];
+        parsed[i].clock_offset = (uint16_t)(
+            hci_get_le16(offsets + (size_t)i * 2U) & 0x7FFFU);
+        parsed[i].rssi_valid = with_rssi;
+        if (with_rssi) parsed[i].rssi = (int8_t)rssis[i];
+    }
+    for (uint8_t i = 0U; i < count; ++i) devices[i] = parsed[i];
+    *device_count = count;
+    return true;
+}
+
+bool nexus_bt_hci_parse_inquiry_complete(
+    const struct nexus_bt_hci_event_view *event, uint8_t *status) {
+    if (event == NULL || status == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_INQUIRY_COMPLETE ||
+        event->parameters == NULL || event->parameter_length != 1U)
+        return false;
+    *status = event->parameters[0];
+    return true;
+}
+
+bool nexus_bt_hci_build_inquiry(
+    uint8_t inquiry_length, uint8_t max_responses,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    if (inquiry_length < 1U || inquiry_length > 0x30U) return false;
+    const uint8_t parameters[5] = {
+        0x33U,0x8BU,0x9EU,inquiry_length,max_responses
+    };
+    return nexus_bt_hci_build_command(NEXUS_BT_HCI_OPCODE_INQUIRY,
+        parameters,sizeof(parameters),packet,packet_capacity,packet_length);
+}
+
+bool nexus_bt_hci_build_inquiry_cancel(
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_INQUIRY_CANCEL,NULL,0U,
+        packet,packet_capacity,packet_length);
+}
+
+bool nexus_bt_hci_build_create_connection(
+    const uint8_t address[6], uint16_t packet_type,
+    uint8_t page_scan_repetition_mode, uint16_t clock_offset,
+    bool allow_role_switch, uint8_t *packet, size_t packet_capacity,
+    size_t *packet_length) {
+    if (address == NULL || packet_type == 0U ||
+        page_scan_repetition_mode > 2U) return false;
+    uint8_t parameters[13] = {0U};
+    for (size_t i = 0U; i < 6U; ++i) parameters[i] = address[i];
+    parameters[6] = (uint8_t)packet_type;
+    parameters[7] = (uint8_t)(packet_type >> 8);
+    parameters[8] = page_scan_repetition_mode;
+    parameters[9] = 0U;
+    parameters[10] = (uint8_t)clock_offset;
+    parameters[11] = (uint8_t)(clock_offset >> 8);
+    parameters[12] = allow_role_switch ? 1U : 0U;
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_CREATE_CONNECTION,
+        parameters,sizeof(parameters),packet,packet_capacity,packet_length);
+}
+
 bool nexus_bt_hci_build_le_scan_parameters(
     uint8_t scan_type, uint16_t scan_interval, uint16_t scan_window,
     uint8_t own_address_type, uint8_t filter_policy,

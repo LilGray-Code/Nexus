@@ -12,10 +12,14 @@
 #define NEXUS_BT_HCI_EVENT_CONNECTION_COMPLETE 0x03U
 #define NEXUS_BT_HCI_EVENT_DISCONNECTION_COMPLETE 0x05U
 #define NEXUS_BT_HCI_EVENT_ENCRYPTION_CHANGE 0x08U
+#define NEXUS_BT_HCI_EVENT_INQUIRY_COMPLETE 0x01U
+#define NEXUS_BT_HCI_EVENT_INQUIRY_RESULT 0x02U
+#define NEXUS_BT_HCI_EVENT_INQUIRY_RESULT_RSSI 0x22U
 #define NEXUS_BT_HCI_EVENT_LE_META 0x3EU
 #define NEXUS_BT_HCI_LE_ADVERTISING_REPORT 0x02U
 #define NEXUS_BT_HCI_OPCODE_INQUIRY 0x0401U
 #define NEXUS_BT_HCI_OPCODE_INQUIRY_CANCEL 0x0402U
+#define NEXUS_BT_HCI_OPCODE_CREATE_CONNECTION 0x0405U
 #define NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS 0x200BU
 #define NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE 0x200CU
 #define NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION 0x200DU
@@ -56,6 +60,32 @@ struct nexus_bt_hci_connection {
     uint8_t peer_address_type;
     uint8_t peer_address[6];
 };
+
+#define NEXUS_BT_HCI_MAX_CLASSIC_RESULTS 16U
+struct nexus_bt_hci_classic_device {
+    uint8_t address[6];
+    uint8_t page_scan_repetition_mode;
+    uint8_t class_of_device[3];
+    uint16_t clock_offset;
+    int8_t rssi;
+    bool rssi_valid;
+};
+bool nexus_bt_hci_parse_inquiry_results(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_classic_device *devices,
+    size_t device_capacity, size_t *device_count);
+bool nexus_bt_hci_parse_inquiry_complete(
+    const struct nexus_bt_hci_event_view *event, uint8_t *status);
+bool nexus_bt_hci_build_inquiry(
+    uint8_t inquiry_length, uint8_t max_responses,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+bool nexus_bt_hci_build_inquiry_cancel(
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+bool nexus_bt_hci_build_create_connection(
+    const uint8_t address[6], uint16_t packet_type,
+    uint8_t page_scan_repetition_mode, uint16_t clock_offset,
+    bool allow_role_switch, uint8_t *packet, size_t packet_capacity,
+    size_t *packet_length);
 
 #define NEXUS_BT_HCI_MAX_ADV_DATA 31U
 #define NEXUS_BT_HCI_MAX_ADV_REPORTS 25U

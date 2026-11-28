@@ -373,6 +373,67 @@ static void test_le_scan_command_builders(void) {
         packet, sizeof(packet), &packet_length));
 }
 
+static void test_classic_inquiry_parser_and_commands(void) {
+    const uint8_t params[] = {
+        2U,1U,2U,3U,4U,5U,6U,7U,8U,9U,10U,11U,12U,
+        1U,2U,0U,0U,
+        0x04U,0x05U,0x06U,0x07U,0x08U,0x09U,
+        0x34U,0x12U,0x78U,0x56U,0xD0U,0xE2U
+    };
+    const struct nexus_bt_hci_event_view event = {
+        .event_code = NEXUS_BT_HCI_EVENT_INQUIRY_RESULT_RSSI,
+        .parameters = params,.parameter_length = sizeof(params)
+    };
+    struct nexus_bt_hci_classic_device devices[2] = {0};
+    size_t count = 0U;
+    assert(nexus_bt_hci_parse_inquiry_results(&event,devices,2U,&count));
+    assert(count == 2U && devices[0].address[0] == 1U);
+    assert(devices[0].page_scan_repetition_mode == 1U);
+    assert(devices[0].class_of_device[0] == 0x04U);
+    assert(devices[0].clock_offset == 0x1234U);
+    assert(devices[0].rssi_valid && devices[0].rssi == -48);
+    assert(devices[1].address[0] == 7U && devices[1].rssi == -30);
+    const uint8_t malformed_params[] = {1U,1U,2U,3U};
+    const struct nexus_bt_hci_event_view malformed = {
+        .event_code = NEXUS_BT_HCI_EVENT_INQUIRY_RESULT_RSSI,
+        .parameters = malformed_params,
+        .parameter_length = sizeof(malformed_params)
+    };
+    assert(!nexus_bt_hci_parse_inquiry_results(
+        &malformed,devices,2U,&count));
+
+    const uint8_t complete_params[] = {0U};
+    const struct nexus_bt_hci_event_view complete = {
+        .event_code = NEXUS_BT_HCI_EVENT_INQUIRY_COMPLETE,
+        .parameters = complete_params,
+        .parameter_length = sizeof(complete_params)
+    };
+    uint8_t status = 0xFFU;
+    assert(nexus_bt_hci_parse_inquiry_complete(&complete,&status));
+    assert(status == 0U);
+
+    uint8_t packet[32] = {0U};
+    size_t length = 0U;
+    assert(nexus_bt_hci_build_inquiry(8U,0U,packet,sizeof(packet),&length));
+    assert(length == 9U && packet[1] == 0x01U && packet[2] == 0x04U &&
+           packet[3] == 5U && packet[4] == 0x33U &&
+           packet[5] == 0x8BU && packet[6] == 0x9EU &&
+           packet[7] == 8U && packet[8] == 0U);
+    assert(!nexus_bt_hci_build_inquiry(0U,0U,packet,sizeof(packet),&length));
+    assert(nexus_bt_hci_build_inquiry_cancel(packet,sizeof(packet),&length));
+    assert(length == 4U && packet[1] == 0x02U && packet[2] == 0x04U);
+    const uint8_t address[6] = {1U,2U,3U,4U,5U,6U};
+    assert(nexus_bt_hci_build_create_connection(address,0xCC18U,1U,
+        0x1234U,false,packet,sizeof(packet),&length));
+    assert(length == 17U && packet[1] == 0x05U && packet[2] == 0x04U &&
+           packet[3] == 13U && packet[4] == 1U && packet[9] == 6U);
+    assert(packet[10] == 0x18U && packet[11] == 0xCCU &&
+           packet[12] == 1U && packet[14] == 0x34U &&
+           packet[15] == 0x12U && packet[16] == 0U);
+    assert(!nexus_bt_hci_build_create_connection(address,0U,1U,0U,
+        false,packet,sizeof(packet),&length));
+}
+
 static void test_le_create_connection_command_builder(void) {
     const uint8_t address[6] = {1U,2U,3U,4U,5U,6U};
     uint8_t packet[32] = {0U};
@@ -540,6 +601,7 @@ int main(void) {
     test_hci_command_build_and_responses();
     test_acl_framing();
     test_classic_connection_and_disconnect();
+    test_classic_inquiry_parser_and_commands();
     test_le_connection();
     test_le_scan_command_builders();
     test_le_create_connection_command_builder();

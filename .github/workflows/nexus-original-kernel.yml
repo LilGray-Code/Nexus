@@ -270,6 +270,15 @@ jobs:
             -o /tmp/nexus-bluetooth-hid-test
           /tmp/nexus-bluetooth-hid-test
 
+      - name: Test Classic BR/EDR Inquiry, connection commands and HID L2CAP channels
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/bluetooth_hid.c \
+            kernel/src/bluetooth_classic_hid.c kernel/src/usb_hid.c \
+            kernel/tests/bluetooth_classic_hid_test.c \
+            -o /tmp/nexus-bluetooth-classic-hid-test
+          /tmp/nexus-bluetooth-classic-hid-test
+
       - name: Test xHCI resume state-loss recovery decision
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

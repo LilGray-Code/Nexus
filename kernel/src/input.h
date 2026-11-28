@@ -18,7 +18,7 @@ struct nexus_input_event {
     uint8_t type;
     /* Bit 8 marks an extended Set-1 key; bit 7 remains the release marker. */
     uint16_t scancode;
-    uint8_t mouse_buttons;
+    uint32_t mouse_buttons;
     int16_t mouse_dx;
     int16_t mouse_dy;
     int8_t mouse_wheel;

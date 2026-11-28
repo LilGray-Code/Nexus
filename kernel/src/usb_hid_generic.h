@@ -49,7 +49,7 @@ struct nexus_usb_hid_generic_layout {
     bool horizontal_wheel_relative;
 };
 
-#define NEXUS_USB_HID_GENERIC_MAX_REPORTS 8U
+#define NEXUS_USB_HID_GENERIC_MAX_REPORTS 32U
 
 struct nexus_usb_hid_generic_multi_layout {
     uint8_t report_count;

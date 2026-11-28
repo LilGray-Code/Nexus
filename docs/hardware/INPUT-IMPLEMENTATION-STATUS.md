@@ -164,3 +164,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added a control-transfer chain builder that links SETUP, optional fragmented DATA qTDs, and STATUS, derives DATA PID from bmRequestType, advances DATA toggles by packet count, and routes short IN packets directly to STATUS. Host tests cover this sequence, including a five-page first qTD and toggle transition.
 - Added host tests for malformed capability and legacy pointer values, root-port status mapping, multi-page qTD buffer pointers, invalid alignment/oversize descriptors, zero-byte status qTDs, and QH endpoint fields.
 - This is the first EHCI schedule/transfer primitive, not an operational EHCI host-controller driver. PCI memory mapping, BIOS/OS legacy ownership, controller halt/reset/run, schedule DMA allocation/activation, asynchronous/periodic execution, transfer completion, root-port reset, USB enumeration, and HID delivery remain open. OHCI and UHCI drivers also remain unimplemented.
+
+
+### USB Bluetooth class-interface descriptor hardening
+
+- The Bluetooth HCI USB interface parser now validates the interface's declared endpoint count against the descriptors actually present and only accepts the default alternate setting for the supported HCI transport.
+- Endpoint zero and reserved endpoint-address/attribute bits are rejected. The interrupt-IN event pipe must have a nonzero interval, a supported packet size and no unsupported high-bandwidth multiplier. Bulk pipes must have valid USB 2 packet sizes and no high-bandwidth multiplier.
+- Duplicate endpoint addresses, missing event/bulk-in/bulk-out pipes, malformed descriptor lengths, and truncated configurations fail closed. Tests cover these negative cases and verify that unrelated interfaces can precede the Bluetooth class interface.
+- This still discovers endpoint addresses only. xHCI has not yet configured a Bluetooth slot, scheduled the interrupt event pipe or bidirectional bulk ACL pipes, or connected their packets to the HCI host service.

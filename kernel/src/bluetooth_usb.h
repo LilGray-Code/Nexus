@@ -5,7 +5,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* USB Bluetooth class interface: Wireless Controller / RF / Bluetooth. */
+/* USB Bluetooth class interface: Wireless Controller / RF / Bluetooth.
+ * This module validates the HCI endpoint layout; it does not yet schedule
+ * interrupt/bulk transfers on xHCI or connect them to the HCI host service. */
 struct nexus_bluetooth_usb_interface {
     uint8_t interface_number;
     uint8_t alternate_setting;

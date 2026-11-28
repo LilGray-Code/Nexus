@@ -161,6 +161,42 @@ static void test_att_hid_client_request_builders(void) {
            pdu[3] == 0x01U && pdu[4] == 0U);
 }
 
+
+static void test_att_value_error_and_write_responses(void) {
+    const uint8_t read_response[] = {0x0BU,0x34U,0x12U,0x56U};
+    struct nexus_bt_gatt_att_value_view value = {0};
+    assert(nexus_bt_gatt_att_parse_value_response(
+        read_response,sizeof(read_response),&value));
+    assert(value.opcode == 0x0BU && value.value_length == 3U);
+    assert(value.value[0] == 0x34U && value.value[2] == 0x56U);
+
+    const uint8_t read_blob_response[] = {0x0DU,0xAAU,0xBBU};
+    assert(nexus_bt_gatt_att_parse_value_response(
+        read_blob_response,sizeof(read_blob_response),&value));
+    assert(value.opcode == 0x0DU && value.value_length == 2U);
+    assert(!nexus_bt_gatt_att_parse_value_response(
+        read_response,1U,&value));
+    const uint8_t invalid_value[] = {0x11U,0x01U};
+    assert(!nexus_bt_gatt_att_parse_value_response(
+        invalid_value,sizeof(invalid_value),&value));
+
+    const uint8_t error_response[] = {0x01U,0x0AU,0x24U,0x00U,0x02U};
+    struct nexus_bt_gatt_att_error error = {0};
+    assert(nexus_bt_gatt_att_parse_error_response(
+        error_response,sizeof(error_response),&error));
+    assert(error.request_opcode == 0x0AU);
+    assert(error.attribute_handle == 0x0024U);
+    assert(error.error_code == 0x02U);
+    assert(!nexus_bt_gatt_att_parse_error_response(
+        error_response,4U,&error));
+
+    const uint8_t write_response[] = {0x13U};
+    assert(nexus_bt_gatt_att_parse_write_response(
+        write_response,sizeof(write_response)));
+    assert(!nexus_bt_gatt_att_parse_write_response(
+        write_response,0U));
+}
+
 int main(void) {
     test_primary_service_discovery();
     test_hid_characteristics();

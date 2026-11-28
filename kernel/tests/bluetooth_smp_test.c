@@ -166,10 +166,10 @@ static void test_reject_reserved_auth_and_unknown_commands(void) {
     assert(nexus_bt_smp_start_with_random(&session,0U,local,0U,peer,
         random,out,sizeof(out),&length));
     const uint8_t unknown_command[] = {0x0FU};
+    const enum nexus_bt_smp_state state_before_unknown = session.state;
     assert(nexus_bt_smp_handle_pdu(&session,unknown_command,
         sizeof(unknown_command),out,sizeof(out),&length,&encrypt));
-    assert(length == 2U && out[0] == NEXUS_BT_SMP_PAIRING_FAILED);
-    assert(out[1] == NEXUS_BT_SMP_REASON_COMMAND_NOT_SUPPORTED);
+    assert(length == 0U && session.state == state_before_unknown);
 }
 
 static void test_failed_encryption_wipes_temporary_secrets(void) {

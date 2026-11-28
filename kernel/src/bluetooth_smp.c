@@ -167,11 +167,15 @@ bool nexus_bt_smp_handle_pdu(
         return false;
     *out_length = 0U;
     *start_encryption = false;
+    const uint8_t code = pdu[0];
+
+    /* SMP reserves values above 0x0E for future use. Per the command
+     * framing rules, ignore such commands without changing pairing state. */
+    if (code > 0x0EU) return true;
+
     if (session->state == NEXUS_BT_SMP_FAILED ||
         session->state == NEXUS_BT_SMP_ENCRYPTED ||
         session->state == NEXUS_BT_SMP_IDLE) return false;
-
-    const uint8_t code = pdu[0];
     if (code == NEXUS_BT_SMP_PAIRING_FAILED) {
         if (pdu_length != 2U) return false;
         session->failure_reason = pdu[1];

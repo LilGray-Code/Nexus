@@ -113,3 +113,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Generic mouse descriptor parsing now accepts signed 32-bit X/Y and wheel fields in addition to the common 8- and 16-bit formats.
 - Pointer deltas and wheel values saturate to the shared event ABI without wraparound; Y-axis inversion explicitly handles the signed 32-bit minimum.
 - Added host coverage for 32-bit X/Y/wheel decoding and the INT32_MIN inversion boundary. This expands standard HID coverage, but still does not implement proprietary report formats or guarantee every physical device.
+
+
+### Extended generic mouse button capacity
+
+- Expanded generic USB HID mouse button state from 32 to 64 buttons across descriptor parsing, decoded reports, the shared event queue, and desktop button-edge tracking.
+- Added descriptor-driven coverage proving Button 64 survives as the top bit of the 64-bit mask.
+- Device-specific proprietary button pages and vendor command protocols remain outside generic HID support.

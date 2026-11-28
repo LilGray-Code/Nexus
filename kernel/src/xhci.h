@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct nexus_bt_hci_advertisement;
+
 struct nexus_pci_device;
 
 /* Initialize xHCI and enumerate attached HID devices, supported downstream
@@ -29,6 +31,14 @@ bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
                                size_t *pdu_length);
 bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
                                const uint8_t *pdu, size_t pdu_length);
+
+/* Read a queued legacy LE advertisement discovered by the USB HCI transport.
+ * Connect requests use the address/type selected by an upper layer. Pairing
+ * and HID GATT subscription are separate, not yet implemented operations. */
+bool xhci_bluetooth_read_advertisement(
+    struct nexus_bt_hci_advertisement *advertisement);
+bool xhci_bluetooth_connect_le(
+    uint8_t address_type, const uint8_t address[6]);
 
 /* Drain completed USB HID keyboard and mouse interrupt transfers. */
 void xhci_poll(void);

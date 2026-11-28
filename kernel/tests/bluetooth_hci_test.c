@@ -189,6 +189,151 @@ static void test_host_initialization_state_machine(void) {
         &host, packet, sizeof(packet), &packet_length));
 }
 
+static void test_le_scan_command_builders(void) {
+    uint8_t packet[32] = {0U};
+    size_t packet_length = 0U;
+    assert(nexus_bt_hci_build_le_scan_parameters(
+        0U, 0x0060U, 0x0030U, 0U, 0U,
+        packet, sizeof(packet), &packet_length));
+    assert(packet_length == 11U);
+    assert(packet[0] == NEXUS_BT_HCI_PACKET_COMMAND);
+    assert(packet[1] == 0x0BU && packet[2] == 0x20U);
+    assert(packet[3] == 7U && packet[4] == 0U);
+    assert(packet[5] == 0x60U && packet[6] == 0U);
+    assert(packet[7] == 0x30U && packet[8] == 0U);
+
+    assert(nexus_bt_hci_build_le_scan_enable(
+        true, true, packet, sizeof(packet), &packet_length));
+    assert(packet_length == 6U);
+    assert(packet[1] == 0x0CU && packet[2] == 0x20U);
+    assert(packet[4] == 1U && packet[5] == 1U);
+    assert(!nexus_bt_hci_build_le_scan_parameters(
+        0U, 0x0003U, 0x0003U, 0U, 0U,
+        packet, sizeof(packet), &packet_length));
+    assert(!nexus_bt_hci_build_le_scan_parameters(
+        0U, 0x0010U, 0x0020U, 0U, 0U,
+        packet, sizeof(packet), &packet_length));
+}
+
+static void test_le_create_connection_command_builder(void) {
+    const uint8_t address[6] = {1U,2U,3U,4U,5U,6U};
+    uint8_t packet[32] = {0U};
+    size_t packet_length = 0U;
+    assert(nexus_bt_hci_build_le_create_connection(
+        0x0060U,0x0030U,0U,1U,address,0U,
+        24U,40U,0U,400U,0U,0U,
+        packet,sizeof(packet),&packet_length));
+    assert(packet_length == 29U);
+    assert(packet[1] == 0x0DU && packet[2] == 0x20U);
+    assert(packet[3] == 25U);
+    assert(packet[9] == 1U);
+    assert(packet[10] == 1U && packet[15] == 6U);
+    assert(!nexus_bt_hci_build_le_create_connection(
+        0x0060U,0x0030U,0U,1U,address,0U,
+        40U,24U,0U,400U,0U,0U,
+        packet,sizeof(packet),&packet_length));
+    assert(!nexus_bt_hci_build_le_create_connection(
+        0x0060U,0x0030U,0U,1U,address,0U,
+        24U,40U,0U,10U,0U,0U,
+        packet,sizeof(packet),&packet_length));
+}
+
+static void test_le_advertising_report_parser(void) {
+    const uint8_t parameters[] = {
+        NEXUS_BT_HCI_LE_ADVERTISING_REPORT,1U,
+        0U,0U,1U,2U,3U,4U,5U,6U,
+        3U,0x02U,0x01U,0x06U,0xD8U
+    };
+    const struct nexus_bt_hci_event_view event = {
+        .event_code = NEXUS_BT_HCI_EVENT_LE_META,
+        .parameters = parameters,
+        .parameter_length = sizeof(parameters)
+    };
+    struct nexus_bt_hci_advertisement reports[4] = {0};
+    size_t count = 0U;
+    assert(nexus_bt_hci_parse_le_advertising_reports(
+        &event,reports,4U,&count));
+    assert(count == 1U);
+    assert(reports[0].event_type == 0U);
+    assert(reports[0].address_type == 0U);
+    assert(reports[0].address[0] == 1U &&
+           reports[0].address[5] == 6U);
+    assert(reports[0].data_length == 3U);
+    assert(reports[0].data[0] == 0x02U &&
+           reports[0].data[2] == 0x06U);
+    assert(reports[0].rssi == -40);
+    assert(!nexus_bt_hci_parse_le_advertising_reports(
+        &event,reports,0U,&count));
+
+    const uint8_t malformed[] = {
+        NEXUS_BT_HCI_LE_ADVERTISING_REPORT,1U,
+        0U,0U,1U,2U,3U,4U,5U,6U,
+        32U
+    };
+    const struct nexus_bt_hci_event_view bad = {
+        .event_code = NEXUS_BT_HCI_EVENT_LE_META,
+        .parameters = malformed,
+        .parameter_length = sizeof(malformed)
+    };
+    assert(!nexus_bt_hci_parse_le_advertising_reports(
+        &bad,reports,4U,&count));
+}
+
+static void test_host_generic_command_status_path(void) {
+    struct nexus_bt_hci_host host = {
+        .state = NEXUS_BT_HCI_HOST_READY,
+        .command_credits = 1U
+    };
+    const uint8_t parameters[25] = {0U};
+    uint8_t packet[32] = {0U};
+    size_t length = 0U;
+    assert(nexus_bt_hci_host_send_command(&host,
+        NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION,
+        parameters, sizeof(parameters), packet, sizeof(packet), &length));
+    assert(host.outstanding_opcode == NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION);
+    const uint8_t status_parameters[] = {0U,1U,0x0DU,0x20U};
+    const struct nexus_bt_hci_event_view status = {
+        .event_code = NEXUS_BT_HCI_EVENT_COMMAND_STATUS,
+        .parameters = status_parameters,
+        .parameter_length = sizeof(status_parameters)
+    };
+    assert(nexus_bt_hci_host_handle_event(&host, &status));
+    assert(host.command_credits == 1U);
+    assert(host.outstanding_opcode == 0U);
+    assert(host.last_completed_opcode == NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION);
+    assert(host.last_command_status == 0U);
+}
+
+static void test_host_generic_command_credit_path(void) {
+    struct nexus_bt_hci_host host = {
+        .state = NEXUS_BT_HCI_HOST_READY,
+        .command_credits = 1U
+    };
+    const uint8_t params[2] = {1U,1U};
+    uint8_t packet[16] = {0U};
+    size_t length = 0U;
+    assert(nexus_bt_hci_host_send_command(&host,
+        NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE,params,sizeof(params),
+        packet,sizeof(packet),&length));
+    assert(length == 6U);
+    assert(host.command_credits == 0U);
+    assert(host.outstanding_opcode == NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE);
+
+    const uint8_t complete_parameters[] = {
+        1U,0x0CU,0x20U,0U
+    };
+    const struct nexus_bt_hci_event_view complete = {
+        .event_code = NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE,
+        .parameters = complete_parameters,
+        .parameter_length = sizeof(complete_parameters)
+    };
+    assert(nexus_bt_hci_host_handle_event(&host,&complete));
+    assert(host.command_credits == 1U);
+    assert(host.outstanding_opcode == 0U);
+    assert(host.last_completed_opcode == NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE);
+    assert(host.last_command_status == 0U);
+}
+
 int main(void) {
     test_event_framing();
     test_host_initialization_state_machine();
@@ -196,6 +341,11 @@ int main(void) {
     test_acl_framing();
     test_classic_connection_and_disconnect();
     test_le_connection();
-    puts("NEXUS BLUETOOTH HCI FRAME AND LINK EVENT TESTS PASSED");
+    test_le_scan_command_builders();
+    test_le_create_connection_command_builder();
+    test_le_advertising_report_parser();
+    test_host_generic_command_credit_path();
+    test_host_generic_command_status_path();
+    puts("NEXUS BLUETOOTH HCI DISCOVERY, CONNECTION AND COMMAND CREDIT TESTS PASSED");
     return 0;
 }

@@ -12,6 +12,12 @@
 #define NEXUS_BT_HCI_EVENT_CONNECTION_COMPLETE 0x03U
 #define NEXUS_BT_HCI_EVENT_DISCONNECTION_COMPLETE 0x05U
 #define NEXUS_BT_HCI_EVENT_LE_META 0x3EU
+#define NEXUS_BT_HCI_LE_ADVERTISING_REPORT 0x02U
+#define NEXUS_BT_HCI_OPCODE_INQUIRY 0x0401U
+#define NEXUS_BT_HCI_OPCODE_INQUIRY_CANCEL 0x0402U
+#define NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS 0x200BU
+#define NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE 0x200CU
+#define NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION 0x200DU
 #define NEXUS_BT_HCI_LE_CONNECTION_COMPLETE 0x01U
 #define NEXUS_BT_HCI_PSM_HID_CONTROL 0x0011U
 #define NEXUS_BT_HCI_PSM_HID_INTERRUPT 0x0013U
@@ -38,7 +44,20 @@ struct nexus_bt_hci_connection {
     bool connected;
     bool low_energy;
     uint16_t handle;
+    uint8_t peer_address_type;
     uint8_t peer_address[6];
+};
+
+#define NEXUS_BT_HCI_MAX_ADV_DATA 31U
+#define NEXUS_BT_HCI_MAX_ADV_REPORTS 25U
+
+struct nexus_bt_hci_advertisement {
+    uint8_t event_type;
+    uint8_t address_type;
+    uint8_t address[6];
+    uint8_t data_length;
+    uint8_t data[NEXUS_BT_HCI_MAX_ADV_DATA];
+    int8_t rssi;
 };
 
 #define NEXUS_BT_ACL_MAX_L2CAP_PDU 1024U
@@ -84,6 +103,30 @@ bool nexus_bt_hci_disconnection_complete(
     const struct nexus_bt_hci_event_view *event,
     uint16_t *connection_handle, uint8_t *reason);
 
+/* Parse all legacy LE Advertising Report structures in one LE Meta Event.
+ * A report's data is copied into caller-owned bounded storage. */
+bool nexus_bt_hci_parse_le_advertising_reports(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_advertisement *reports,
+    size_t report_capacity, size_t *report_count);
+
+bool nexus_bt_hci_build_le_scan_parameters(
+    uint8_t scan_type, uint16_t scan_interval, uint16_t scan_window,
+    uint8_t own_address_type, uint8_t filter_policy,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+bool nexus_bt_hci_build_le_scan_enable(
+    bool enable, bool filter_duplicates,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+bool nexus_bt_hci_build_le_create_connection(
+    uint16_t scan_interval, uint16_t scan_window,
+    uint8_t initiator_filter_policy, uint8_t peer_address_type,
+    const uint8_t peer_address[6], uint8_t own_address_type,
+    uint16_t connection_interval_min, uint16_t connection_interval_max,
+    uint16_t connection_latency, uint16_t supervision_timeout,
+    uint16_t connection_event_length_min,
+    uint16_t connection_event_length_max,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+
 
 #define NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE 0x0EU
 #define NEXUS_BT_HCI_EVENT_COMMAND_STATUS 0x0FU
@@ -127,6 +170,8 @@ struct nexus_bt_hci_host {
     enum nexus_bt_hci_host_state state;
     uint8_t command_credits;
     uint16_t outstanding_opcode;
+    uint16_t last_completed_opcode;
+    uint8_t last_command_status;
     uint8_t hci_version;
     uint8_t lmp_version;
     uint16_t manufacturer;
@@ -139,6 +184,11 @@ struct nexus_bt_hci_host {
  * HCI events back into the host state machine. */
 void nexus_bt_hci_host_init(struct nexus_bt_hci_host *host);
 bool nexus_bt_hci_host_next_command(struct nexus_bt_hci_host *host,
+    uint8_t *packet, size_t capacity, size_t *packet_length);
+/* Queue one additional command after initialization. Command-complete or
+ * command-status events are matched against the outstanding opcode. */
+bool nexus_bt_hci_host_send_command(struct nexus_bt_hci_host *host,
+    uint16_t opcode, const uint8_t *parameters, uint8_t parameter_length,
     uint8_t *packet, size_t capacity, size_t *packet_length);
 bool nexus_bt_hci_host_handle_event(struct nexus_bt_hci_host *host,
     const struct nexus_bt_hci_event_view *event);

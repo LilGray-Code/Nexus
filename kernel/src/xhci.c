@@ -35,6 +35,7 @@
 #define XHCI_MAX_GAMEPADS      32U
 #define XHCI_MAX_HUBS          16U
 #define XHCI_MAX_BLUETOOTH     4U
+#define XHCI_BT_ADV_QUEUE_DEPTH 16U
 #define XHCI_BT_ACL_TRANSFER_BYTES (NEXUS_BT_ACL_MAX_L2CAP_PDU + 4U)
 #define XHCI_BT_EVENT_TRANSFER_BYTES 260U
 #define XHCI_MAX_EXTRA_HID_INTERFACES (NEXUS_USB_HID_MAX_INTERFACES - 2U)
@@ -197,6 +198,21 @@ struct xhci_bluetooth_pdu {
     uint8_t bytes[NEXUS_BT_ACL_MAX_L2CAP_PDU];
 };
 
+enum xhci_bluetooth_scan_state {
+    XHCI_BT_SCAN_DISABLED = 0U,
+    XHCI_BT_SCAN_PARAMETERS_PENDING,
+    XHCI_BT_SCAN_PARAMETERS_IN_FLIGHT,
+    XHCI_BT_SCAN_ENABLE_PENDING,
+    XHCI_BT_SCAN_ENABLE_IN_FLIGHT,
+    XHCI_BT_SCAN_ACTIVE,
+    XHCI_BT_SCAN_DISABLE_PENDING,
+    XHCI_BT_SCAN_DISABLE_IN_FLIGHT,
+    XHCI_BT_SCAN_CONNECT_PENDING,
+    XHCI_BT_SCAN_CONNECT_IN_FLIGHT,
+    XHCI_BT_SCAN_CONNECTING,
+    XHCI_BT_SCAN_FAILED
+};
+
 struct xhci_bluetooth_device {
     bool active;
     struct xhci_hid_device usb_device;
@@ -221,10 +237,16 @@ struct xhci_bluetooth_device {
     bool event_transfer_active;
     bool bulk_in_transfer_active;
     bool bulk_out_active;
+    enum xhci_bluetooth_scan_state scan_state;
+    uint8_t peer_address_type;
+    uint8_t peer_address[6];
     struct xhci_bluetooth_link connections[XHCI_BT_MAX_CONNECTIONS];
     struct xhci_bluetooth_pdu receive_queue[XHCI_BT_PDU_QUEUE_DEPTH];
+    struct nexus_bt_hci_advertisement advertisements[XHCI_BT_ADV_QUEUE_DEPTH];
     uint8_t queue_head;
     uint8_t queue_tail;
+    uint8_t advertisement_head;
+    uint8_t advertisement_tail;
     uint32_t dropped_packets;
 };
 
@@ -1340,6 +1362,155 @@ static void xhci_bluetooth_queue_l2cap(
     bluetooth->queue_tail = next;
 }
 
+static bool xhci_bluetooth_send_command(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth,
+    uint16_t opcode, const uint8_t *parameters,
+    uint8_t parameter_length) {
+    if (xhci == NULL || bluetooth == NULL || !bluetooth->active ||
+        bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY) return false;
+    uint8_t packet[260U];
+    size_t packet_length = 0U;
+    if (!nexus_bt_hci_host_send_command(&bluetooth->hci_host,
+            opcode, parameters, parameter_length,
+            packet, sizeof(packet), &packet_length)) return false;
+    if (packet_length < 4U || packet[0] != NEXUS_BT_HCI_PACKET_COMMAND ||
+        !xhci_control_transfer(xhci, &bluetooth->usb_device,
+            0x20U, 0x00U, 0U, bluetooth->interface_number,
+            packet + 1U, (uint16_t)(packet_length - 1U))) {
+        bluetooth->hci_host.state = NEXUS_BT_HCI_HOST_FAILED;
+        bluetooth->hci_host.outstanding_opcode = 0U;
+        serial_write("USB Bluetooth: HCI command submission failed opcode=");
+        serial_write_hex(opcode);
+        serial_write("\r\n");
+        return false;
+    }
+    return true;
+}
+
+static void xhci_bluetooth_queue_advertisement(
+    struct xhci_bluetooth_device *bluetooth,
+    const struct nexus_bt_hci_advertisement *advertisement) {
+    if (bluetooth == NULL || advertisement == NULL) return;
+    const uint8_t next = (uint8_t)(
+        (bluetooth->advertisement_tail + 1U) &
+        (XHCI_BT_ADV_QUEUE_DEPTH - 1U));
+    if (next == bluetooth->advertisement_head) {
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    bluetooth->advertisements[bluetooth->advertisement_tail] =
+        *advertisement;
+    bluetooth->advertisement_tail = next;
+}
+
+static void xhci_bluetooth_discovery_progress(
+    struct xhci_controller *xhci,
+    struct xhci_bluetooth_device *bluetooth) {
+    if (xhci == NULL || bluetooth == NULL || !bluetooth->active ||
+        bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY ||
+        bluetooth->hci_host.outstanding_opcode != 0U) return;
+
+    uint8_t packet[260U];
+    size_t packet_length = 0U;
+    bool built = false;
+    uint16_t opcode = 0U;
+    switch (bluetooth->scan_state) {
+        case XHCI_BT_SCAN_PARAMETERS_PENDING:
+            built = nexus_bt_hci_build_le_scan_parameters(
+                0U, 0x0060U, 0x0030U, 0U, 0U,
+                packet, sizeof(packet), &packet_length);
+            opcode = NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS;
+            break;
+        case XHCI_BT_SCAN_ENABLE_PENDING:
+            built = nexus_bt_hci_build_le_scan_enable(
+                true, true, packet, sizeof(packet), &packet_length);
+            opcode = NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE;
+            break;
+        case XHCI_BT_SCAN_DISABLE_PENDING:
+            built = nexus_bt_hci_build_le_scan_enable(
+                false, true, packet, sizeof(packet), &packet_length);
+            opcode = NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE;
+            break;
+        case XHCI_BT_SCAN_CONNECT_PENDING:
+            built = nexus_bt_hci_build_le_create_connection(
+                0x0060U, 0x0030U, 0U,
+                bluetooth->peer_address_type, bluetooth->peer_address,
+                0U, 0x0018U, 0x0028U, 0U, 0x01F4U,
+                0U, 0U, packet, sizeof(packet), &packet_length);
+            opcode = NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION;
+            break;
+        default:
+            return;
+    }
+    if (!built || packet_length < 4U ||
+        packet[0] != NEXUS_BT_HCI_PACKET_COMMAND ||
+        !xhci_bluetooth_send_command(xhci, bluetooth, opcode,
+            packet + 4U, packet[3])) {
+        bluetooth->scan_state = XHCI_BT_SCAN_FAILED;
+        xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+    switch (opcode) {
+        case NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS:
+            bluetooth->scan_state = XHCI_BT_SCAN_PARAMETERS_IN_FLIGHT;
+            break;
+        case NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE:
+            bluetooth->scan_state =
+                bluetooth->scan_state == XHCI_BT_SCAN_DISABLE_PENDING
+                    ? XHCI_BT_SCAN_DISABLE_IN_FLIGHT
+                    : XHCI_BT_SCAN_ENABLE_IN_FLIGHT;
+            break;
+        case NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION:
+            bluetooth->scan_state = XHCI_BT_SCAN_CONNECT_IN_FLIGHT;
+            break;
+        default:
+            bluetooth->scan_state = XHCI_BT_SCAN_FAILED;
+            break;
+    }
+}
+
+static void xhci_bluetooth_process_command_result(
+    struct xhci_bluetooth_device *bluetooth) {
+    if (bluetooth == NULL ||
+        bluetooth->hci_host.last_completed_opcode == 0U) return;
+    const uint16_t opcode = bluetooth->hci_host.last_completed_opcode;
+    const uint8_t status = bluetooth->hci_host.last_command_status;
+    bluetooth->hci_host.last_completed_opcode = 0U;
+    bluetooth->hci_host.last_command_status = 0xFFU;
+    if (status != 0U) {
+        bluetooth->scan_state = XHCI_BT_SCAN_FAILED;
+        serial_write("USB Bluetooth: discovery command failed opcode=");
+        serial_write_hex(opcode);
+        serial_write(" status=");
+        serial_write_hex(status);
+        serial_write("\r\n");
+        return;
+    }
+    switch (opcode) {
+        case NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS:
+            if (bluetooth->scan_state ==
+                XHCI_BT_SCAN_PARAMETERS_IN_FLIGHT)
+                bluetooth->scan_state = XHCI_BT_SCAN_ENABLE_PENDING;
+            break;
+        case NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE:
+            if (bluetooth->scan_state ==
+                XHCI_BT_SCAN_DISABLE_IN_FLIGHT)
+                bluetooth->scan_state = XHCI_BT_SCAN_CONNECT_PENDING;
+            else if (bluetooth->scan_state ==
+                XHCI_BT_SCAN_ENABLE_IN_FLIGHT)
+                bluetooth->scan_state = XHCI_BT_SCAN_ACTIVE;
+            break;
+        case NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION:
+            if (bluetooth->scan_state ==
+                XHCI_BT_SCAN_CONNECT_IN_FLIGHT)
+                bluetooth->scan_state = XHCI_BT_SCAN_CONNECTING;
+            break;
+        default:
+            break;
+    }
+}
+
 static void xhci_bluetooth_process_event(
     struct xhci_bluetooth_device *bluetooth,
     const uint8_t *event_bytes, size_t event_length) {
@@ -1360,11 +1531,53 @@ static void xhci_bluetooth_process_event(
         if (event.event_code == NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE ||
             event.event_code == NEXUS_BT_HCI_EVENT_COMMAND_STATUS) {
             if (nexus_bt_hci_host_handle_event(
-                    &bluetooth->hci_host, &event))
-                bluetooth->command_pending = true;
-            else
+                    &bluetooth->hci_host, &event)) {
+                if (bluetooth->hci_host.state == NEXUS_BT_HCI_HOST_READY) {
+                    bluetooth->command_pending = false;
+                    bluetooth->scan_state =
+                        XHCI_BT_SCAN_PARAMETERS_PENDING;
+                    serial_write("USB Bluetooth: HCI ready; starting passive LE scan\r\n");
+                } else {
+                    bluetooth->command_pending = true;
+                }
+            } else {
                 xhci_bluetooth_count_drop(bluetooth);
+            }
         }
+        return;
+    }
+
+    if (event.event_code == NEXUS_BT_HCI_EVENT_COMMAND_COMPLETE ||
+        event.event_code == NEXUS_BT_HCI_EVENT_COMMAND_STATUS) {
+        if (nexus_bt_hci_host_handle_event(&bluetooth->hci_host, &event))
+            xhci_bluetooth_process_command_result(bluetooth);
+        else
+            xhci_bluetooth_count_drop(bluetooth);
+        return;
+    }
+
+    if (event.event_code == NEXUS_BT_HCI_EVENT_LE_META &&
+        event.parameter_length >= 2U &&
+        event.parameters[0] == NEXUS_BT_HCI_LE_ADVERTISING_REPORT) {
+        struct nexus_bt_hci_advertisement reports[
+            NEXUS_BT_HCI_MAX_ADV_REPORTS] = {0};
+        size_t report_count = 0U;
+        if (!nexus_bt_hci_parse_le_advertising_reports(
+                &event, reports, NEXUS_BT_HCI_MAX_ADV_REPORTS,
+                &report_count)) {
+            xhci_bluetooth_count_drop(bluetooth);
+            return;
+        }
+        for (size_t i = 0U; i < report_count; ++i)
+            xhci_bluetooth_queue_advertisement(bluetooth, &reports[i]);
+        return;
+    }
+
+    if (event.event_code == NEXUS_BT_HCI_EVENT_LE_META &&
+        event.parameter_length == 19U &&
+        event.parameters[0] == NEXUS_BT_HCI_LE_CONNECTION_COMPLETE &&
+        event.parameters[1] != 0U) {
+        bluetooth->scan_state = XHCI_BT_SCAN_ENABLE_PENDING;
         return;
     }
 
@@ -1376,6 +1589,8 @@ static void xhci_bluetooth_process_event(
             serial_write("USB Bluetooth: HCI link connected handle=");
             serial_write_hex(connection.handle);
             serial_write(connection.low_energy ? " LE\r\n" : " BR/EDR\r\n");
+            if (connection.low_energy)
+                bluetooth->scan_state = XHCI_BT_SCAN_ENABLE_PENDING;
         }
         return;
     }
@@ -3369,6 +3584,43 @@ bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
     return false;
 }
 
+bool xhci_bluetooth_read_advertisement(
+    struct nexus_bt_hci_advertisement *advertisement) {
+    if (!controller.initialized || advertisement == NULL) return false;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &controller.bluetooths[i];
+        if (!bluetooth->active ||
+            bluetooth->advertisement_head == bluetooth->advertisement_tail)
+            continue;
+        *advertisement =
+            bluetooth->advertisements[bluetooth->advertisement_head];
+        bluetooth->advertisement_head = (uint8_t)(
+            (bluetooth->advertisement_head + 1U) &
+            (XHCI_BT_ADV_QUEUE_DEPTH - 1U));
+        return true;
+    }
+    return false;
+}
+
+bool xhci_bluetooth_connect_le(
+    uint8_t address_type, const uint8_t address[6]) {
+    if (!controller.initialized || address == NULL || address_type > 1U)
+        return false;
+    for (size_t i = 0U; i < XHCI_MAX_BLUETOOTH; ++i) {
+        struct xhci_bluetooth_device *bluetooth = &controller.bluetooths[i];
+        if (!bluetooth->active ||
+            bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY ||
+            bluetooth->scan_state != XHCI_BT_SCAN_ACTIVE ||
+            bluetooth->hci_host.outstanding_opcode != 0U) continue;
+        bluetooth->peer_address_type = address_type;
+        for (size_t j = 0U; j < 6U; ++j)
+            bluetooth->peer_address[j] = address[j];
+        bluetooth->scan_state = XHCI_BT_SCAN_DISABLE_PENDING;
+        return true;
+    }
+    return false;
+}
+
 bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
                                const uint8_t *pdu, size_t pdu_length) {
     if (!controller.initialized || connection_handle == 0U ||
@@ -3388,7 +3640,7 @@ bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
          * without the H4 packet-type byte, then copy it into DMA-visible RAM. */
         uint8_t packet[NEXUS_BT_ACL_MAX_L2CAP_PDU + 4U];
         size_t acl_length = 0U;
-        if (!nexus_bluetooth_usb_build_acl_packet(connection_handle, 0U,
+        if (!nexus_bluetooth_usb_build_acl_packet(connection_handle, 2U,
                 pdu, pdu_length, packet, sizeof(packet), &acl_length))
             return false;
         for (size_t j = 0U; j < acl_length; ++j)
@@ -3754,8 +4006,11 @@ void xhci_poll(void) {
         if (!bluetooth->active) continue;
         if (bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_READY &&
             bluetooth->hci_host.state != NEXUS_BT_HCI_HOST_FAILED &&
-            bluetooth->command_pending)
+            bluetooth->command_pending) {
             (void)xhci_bluetooth_send_pending_command(xhci, bluetooth);
+        } else if (bluetooth->hci_host.state == NEXUS_BT_HCI_HOST_READY) {
+            xhci_bluetooth_discovery_progress(xhci, bluetooth);
+        }
     }
     xhci_poll_usb_hubs(xhci);
 }

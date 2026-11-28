@@ -140,7 +140,8 @@ bool nexus_bt_hci_connection_complete(
         *connection = (struct nexus_bt_hci_connection){
             .connected = true,
             .low_energy = true,
-            .handle = handle
+            .handle = handle,
+            .peer_address_type = event->parameters[5U]
         };
         /* LE connection complete uses address at parameters[5..10]. */
         for (size_t i = 0U; i < 6U; ++i)
@@ -162,6 +163,128 @@ bool nexus_bt_hci_disconnection_complete(
     *connection_handle = handle;
     *reason = event->parameters[3U];
     return true;
+}
+
+bool nexus_bt_hci_parse_le_advertising_reports(
+    const struct nexus_bt_hci_event_view *event,
+    struct nexus_bt_hci_advertisement *reports,
+    size_t report_capacity, size_t *report_count) {
+    if (report_count == NULL) return false;
+    *report_count = 0U;
+    if (event == NULL || reports == NULL || event->parameters == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_LE_META ||
+        event->parameter_length < 2U ||
+        event->parameters[0] != NEXUS_BT_HCI_LE_ADVERTISING_REPORT)
+        return false;
+
+    const uint8_t count = event->parameters[1U];
+    if (count == 0U || count > NEXUS_BT_HCI_MAX_ADV_REPORTS ||
+        count > report_capacity) return false;
+    struct nexus_bt_hci_advertisement parsed[
+        NEXUS_BT_HCI_MAX_ADV_REPORTS] = {0};
+    size_t offset = 2U;
+    for (uint8_t i = 0U; i < count; ++i) {
+        if (offset + 9U > event->parameter_length) return false;
+        const uint8_t event_type = event->parameters[offset++];
+        const uint8_t address_type = event->parameters[offset++];
+        if (event_type > 4U || address_type > 1U) return false;
+        parsed[i].event_type = event_type;
+        parsed[i].address_type = address_type;
+        for (size_t j = 0U; j < 6U; ++j)
+            parsed[i].address[j] = event->parameters[offset++];
+        const uint8_t data_length = event->parameters[offset++];
+        if (data_length > NEXUS_BT_HCI_MAX_ADV_DATA ||
+            offset + data_length + 1U > event->parameter_length)
+            return false;
+        parsed[i].data_length = data_length;
+        for (uint8_t j = 0U; j < data_length; ++j)
+            parsed[i].data[j] = event->parameters[offset++];
+        parsed[i].rssi = (int8_t)event->parameters[offset++];
+    }
+    if (offset != event->parameter_length) return false;
+    for (uint8_t i = 0U; i < count; ++i) reports[i] = parsed[i];
+    *report_count = count;
+    return true;
+}
+
+bool nexus_bt_hci_build_le_scan_parameters(
+    uint8_t scan_type, uint16_t scan_interval, uint16_t scan_window,
+    uint8_t own_address_type, uint8_t filter_policy,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    if (scan_type > 1U || scan_interval < 0x0004U ||
+        scan_interval > 0x4000U || scan_window < 0x0004U ||
+        scan_window > scan_interval || own_address_type > 1U ||
+        filter_policy > 1U) return false;
+    const uint8_t parameters[7] = {
+        scan_type,
+        (uint8_t)scan_interval, (uint8_t)(scan_interval >> 8),
+        (uint8_t)scan_window, (uint8_t)(scan_window >> 8),
+        own_address_type, filter_policy
+    };
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_PARAMETERS,
+        parameters, sizeof(parameters), packet, packet_capacity,
+        packet_length);
+}
+
+bool nexus_bt_hci_build_le_scan_enable(
+    bool enable, bool filter_duplicates,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    const uint8_t parameters[2] = {
+        enable ? 1U : 0U, filter_duplicates ? 1U : 0U
+    };
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE,
+        parameters, sizeof(parameters), packet, packet_capacity,
+        packet_length);
+}
+
+bool nexus_bt_hci_build_le_create_connection(
+    uint16_t scan_interval, uint16_t scan_window,
+    uint8_t initiator_filter_policy, uint8_t peer_address_type,
+    const uint8_t peer_address[6], uint8_t own_address_type,
+    uint16_t connection_interval_min, uint16_t connection_interval_max,
+    uint16_t connection_latency, uint16_t supervision_timeout,
+    uint16_t connection_event_length_min,
+    uint16_t connection_event_length_max,
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    if (peer_address == NULL || scan_interval < 0x0004U ||
+        scan_interval > 0x4000U || scan_window < 0x0004U ||
+        scan_window > scan_interval || initiator_filter_policy > 1U ||
+        peer_address_type > 1U || own_address_type > 1U ||
+        connection_interval_min < 0x0006U ||
+        connection_interval_max > 0x0C80U ||
+        connection_interval_min > connection_interval_max ||
+        connection_latency > 0x01F3U ||
+        supervision_timeout < 0x000AU || supervision_timeout > 0x0C80U ||
+        connection_event_length_min > connection_event_length_max ||
+        (uint32_t)supervision_timeout * 8U <=
+            ((uint32_t)connection_latency + 1U) *
+            connection_interval_max * 2U) return false;
+
+    uint8_t parameters[25] = {0U};
+    const uint16_t values[2] = {scan_interval, scan_window};
+    parameters[0] = (uint8_t)values[0];
+    parameters[1] = (uint8_t)(values[0] >> 8);
+    parameters[2] = (uint8_t)values[1];
+    parameters[3] = (uint8_t)(values[1] >> 8);
+    parameters[4] = initiator_filter_policy;
+    parameters[5] = peer_address_type;
+    for (size_t i = 0U; i < 6U; ++i) parameters[6U + i] = peer_address[i];
+    parameters[12] = own_address_type;
+    const uint16_t tail[6] = {
+        connection_interval_min, connection_interval_max,
+        connection_latency, supervision_timeout,
+        connection_event_length_min, connection_event_length_max
+    };
+    for (size_t i = 0U; i < 6U; ++i) {
+        parameters[13U + i * 2U] = (uint8_t)tail[i];
+        parameters[14U + i * 2U] = (uint8_t)(tail[i] >> 8);
+    }
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION,
+        parameters, sizeof(parameters), packet, packet_capacity,
+        packet_length);
 }
 
 bool nexus_bt_hci_build_command(uint16_t opcode,
@@ -260,36 +383,64 @@ bool nexus_bt_hci_host_next_command(struct nexus_bt_hci_host *host,
     return true;
 }
 
+bool nexus_bt_hci_host_send_command(struct nexus_bt_hci_host *host,
+    uint16_t opcode, const uint8_t *parameters, uint8_t parameter_length,
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    if (host == NULL || host->state != NEXUS_BT_HCI_HOST_READY ||
+        host->command_credits == 0U || host->outstanding_opcode != 0U ||
+        opcode == 0U) return false;
+    if (!nexus_bt_hci_build_command(opcode, parameters, parameter_length,
+            packet, capacity, packet_length)) return false;
+    --host->command_credits;
+    host->outstanding_opcode = opcode;
+    host->last_completed_opcode = 0U;
+    host->last_command_status = 0xFFU;
+    return true;
+}
+
 bool nexus_bt_hci_host_handle_event(
     struct nexus_bt_hci_host *host,
     const struct nexus_bt_hci_event_view *event) {
     if (host == NULL || event == NULL ||
         host->state == NEXUS_BT_HCI_HOST_STOPPED ||
-        host->state == NEXUS_BT_HCI_HOST_FAILED ||
-        host->state == NEXUS_BT_HCI_HOST_READY) return false;
+        host->state == NEXUS_BT_HCI_HOST_FAILED) return false;
+    const bool initialized = host->state == NEXUS_BT_HCI_HOST_READY;
 
     struct nexus_bt_hci_command_result result = {0};
     if (!nexus_bt_hci_parse_command_complete(event, &result)) {
         if (event->event_code == NEXUS_BT_HCI_EVENT_COMMAND_STATUS) {
             if (!nexus_bt_hci_parse_command_status(event, &result))
                 return false;
-            /* Bring-up commands are synchronous; Command Status without the
-             * matching Command Complete is not enough to advance the state. */
             if (result.opcode != host->outstanding_opcode ||
-                result.status != 0U) {
+                host->outstanding_opcode == 0U) return false;
+            host->command_credits = result.command_packets_allowed;
+            if (initialized) {
+                host->outstanding_opcode = 0U;
+                host->last_completed_opcode = result.opcode;
+                host->last_command_status = result.status;
+                return true;
+            }
+            /* Startup bring-up commands require a successful Command Status
+             * followed by their matching Command Complete event. */
+            if (result.status != 0U) {
                 host->state = NEXUS_BT_HCI_HOST_FAILED;
                 host->outstanding_opcode = 0U;
                 return false;
             }
-            host->command_credits = result.command_packets_allowed;
             return true;
         }
         return false;
     }
 
-    if (result.opcode != host->outstanding_opcode) return false;
+    if (result.opcode != host->outstanding_opcode ||
+        host->outstanding_opcode == 0U) return false;
     host->outstanding_opcode = 0U;
     host->command_credits = result.command_packets_allowed;
+    if (initialized) {
+        host->last_completed_opcode = result.opcode;
+        host->last_command_status = result.status;
+        return true;
+    }
     if (result.status != 0U) {
         host->state = NEXUS_BT_HCI_HOST_FAILED;
         return false;

@@ -91,3 +91,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - The event queue coalesces and saturates both scroll axes without truncating high-resolution wheel values; PS/2 and boot-mouse producers remain compatible with zero horizontal-scroll defaults.
 - The desktop maps horizontal wheel movement to horizontal arrow navigation and maps standard HID side buttons 4/5 to browser back/forward when the browser view is active.
 - These are protocol and software-path improvements. They do not establish Bluetooth pairing, proprietary vendor extension support, UHCI/OHCI/EHCI operation, or universal physical-device compatibility.
+
+
+### Bluetooth HID report-to-input integration
+
+- Added per-peer HID Report Map configuration and a common input dispatcher for Classic HIDP input packets and BLE HOGP reports.
+- HOGP notifications are matched against discovered GATT Report value handles and the associated Report Reference report ID/type before report decoding. Unknown characteristic handles and non-input Report types are rejected.
+- Generic HID keyboard and mouse reports now have a tested handoff to the shared USB/PS/2 input queue; peer disconnect emits neutral key/button state.
+- This is not a complete Bluetooth mouse driver. USB HCI interrupt/bulk transfers, ACL reassembly, L2CAP signaling, peer discovery/connection, authenticated SMP/SSP pairing and bonding, key storage, settings UI, and physical Bluetooth adapter tests remain outstanding.

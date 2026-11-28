@@ -349,7 +349,7 @@ static int64_t resize_pointer_origin_x;
 static int64_t resize_pointer_origin_y;
 static uint64_t resize_width_origin;
 static uint64_t resize_height_origin;
-static uint32_t mouse_buttons_was_down;
+static uint64_t mouse_buttons_was_down;
 static bool installer_mouse_motion_logged;
 enum desktop_theme_mode {
     DESKTOP_THEME_DARK = 0,
@@ -7006,10 +7006,10 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             serial_write_hex((uint64_t)pointer_y);
             serial_write("\r\n");
         }
-        const uint32_t newly_pressed_buttons =
+        const uint64_t newly_pressed_buttons =
             event->mouse_buttons & ~mouse_buttons_was_down;
         mouse_buttons_was_down = event->mouse_buttons;
-        const uint32_t primary_button_mask = 1U <<
+        const uint64_t primary_button_mask = (uint64_t)1U <<
             (desktop_settings.left_handed_mouse ? 1U : 0U);
         const bool left_down =
             (event->mouse_buttons & primary_button_mask) != 0U;

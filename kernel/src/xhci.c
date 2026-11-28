@@ -30,6 +30,7 @@
 #define XHCI_MAX_MICE           32U
 #define XHCI_MAX_GAMEPADS      32U
 #define XHCI_MAX_HUBS          16U
+#define XHCI_MAX_EXTRA_HID_INTERFACES (NEXUS_USB_HID_MAX_INTERFACES - 2U)
 #define XHCI_MAX_SCRATCHPADS    512U
 #define XHCI_POLL_LIMIT         5000000U
 #define XHCI_BIOS_HANDOFF_TIMEOUT 5000000U
@@ -116,6 +117,20 @@ enum xhci_hid_kind {
     XHCI_HID_HUB = 4
 };
 
+struct xhci_hid_extra_endpoint {
+    bool active;
+    enum xhci_hid_kind kind;
+    uint8_t interface_number;
+    uint8_t endpoint_id;
+    uint16_t max_packet;
+    struct nexus_usb_keyboard_state keyboard_state;
+    struct nexus_usb_hid_generic_multi_layout generic_multi_layout;
+    bool generic_report_protocol;
+    uint64_t report_buffer_physical;
+    volatile uint8_t *report_buffer;
+    struct xhci_ring interrupt_ring;
+};
+
 struct xhci_hid_device {
     bool active;
     enum xhci_hid_kind kind;
@@ -149,6 +164,8 @@ struct xhci_hid_device {
     uint64_t secondary_report_buffer_physical;
     volatile uint8_t *secondary_report_buffer;
     struct xhci_ring secondary_interrupt_ring;
+    struct xhci_hid_extra_endpoint extra_hid[
+        XHCI_MAX_EXTRA_HID_INTERFACES];
     uint64_t device_context_physical;
     uint64_t input_context_physical;
     uint64_t report_buffer_physical;
@@ -1003,7 +1020,12 @@ static bool xhci_configure_interrupt_endpoint(struct xhci_controller *xhci,
         in_slot[i] = out_slot[i];
         in_ep0[i] = out_ep0[i];
     }
-    in_slot[0] = (in_slot[0] & 0x07FFFFFFU) | ((uint32_t)dci << 27);
+    const uint8_t existing_context_entries =
+        (uint8_t)((out_slot[0] >> 27) & 0x1FU);
+    const uint8_t context_entries = existing_context_entries > dci
+        ? existing_context_entries : dci;
+    in_slot[0] = (in_slot[0] & 0x07FFFFFFU) |
+                 ((uint32_t)context_entries << 27);
 
     const uint8_t encoded_interval = xhci_interval(speed, interval);
     in_ep[0] = (uint32_t)encoded_interval << 16;
@@ -1049,7 +1071,9 @@ static bool xhci_configure_secondary_hid_interface(
     struct xhci_controller *xhci, struct xhci_hid_device *device,
     const struct nexus_usb_hid_interface_set *interfaces,
     uint8_t primary_interface, enum xhci_hid_kind primary_kind,
-    uint8_t speed) {
+    uint8_t speed, uint8_t *selected_interface_number) {
+    if (selected_interface_number != NULL)
+        *selected_interface_number = 0xFFU;
     if (xhci == NULL || device == NULL || interfaces == NULL ||
         !device->active || device->slot_id == 0U ||
         (primary_kind != XHCI_HID_KEYBOARD &&
@@ -1064,6 +1088,8 @@ static bool xhci_configure_secondary_hid_interface(
             primary_interface, wanted_boot_protocol, &selected_interface))
         return true; /* Receiver has no second input class. */
     const struct nexus_usb_hid_interface *selected = &selected_interface;
+    if (selected_interface_number != NULL)
+        *selected_interface_number = selected->number;
 
     struct xhci_hid_device endpoint = *device;
     endpoint.endpoint_id = 0U;
@@ -1150,6 +1176,130 @@ static bool xhci_configure_secondary_hid_interface(
     return true;
 }
 
+static bool xhci_configure_extra_hid_interface(
+    struct xhci_controller *xhci, struct xhci_hid_device *device,
+    const struct nexus_usb_hid_interface *selected, uint8_t speed,
+    struct xhci_hid_extra_endpoint *extra) {
+    if (xhci == NULL || device == NULL || selected == NULL ||
+        extra == NULL || !device->active || selected->endpoint_in == 0U ||
+        selected->max_packet == 0U ||
+        selected->report_descriptor_length > 512U) return false;
+
+    *extra = (struct xhci_hid_extra_endpoint){0};
+    struct xhci_hid_device endpoint = *device;
+    endpoint.endpoint_id = 0U;
+    endpoint.max_packet = selected->max_packet;
+    endpoint.report_buffer = NULL;
+    endpoint.report_buffer_physical = 0U;
+    endpoint.interrupt_ring = (struct xhci_ring){0};
+    endpoint.generic_report_protocol = false;
+    endpoint.generic_multi_layout =
+        (struct nexus_usb_hid_generic_multi_layout){0};
+    endpoint.kind = XHCI_HID_NONE;
+    endpoint.active = true;
+    if (!xhci_alloc_page(&endpoint.report_buffer_physical,
+                         &endpoint.report_buffer)) return false;
+
+    const bool boot_keyboard = selected->subclass == 1U &&
+                               selected->protocol == 1U;
+    const bool boot_mouse = selected->subclass == 1U &&
+                            selected->protocol == 2U;
+    bool ready = false;
+    if (boot_mouse) {
+        endpoint.kind = XHCI_HID_MOUSE;
+        /* Report protocol retains wheel, side buttons and high-resolution axes. */
+        ready = xhci_load_generic_hid_report_protocol(
+            xhci, &endpoint, selected->number,
+            selected->report_descriptor_length, selected->max_packet,
+            XHCI_HID_MOUSE, true);
+        if (!ready && selected->max_packet >= 3U)
+            ready = xhci_control_transfer(xhci, &endpoint, 0x21U, 0x0BU,
+                0U, selected->number, NULL, 0U);
+    } else if (boot_keyboard) {
+        endpoint.kind = XHCI_HID_KEYBOARD;
+        ready = selected->max_packet >= 8U &&
+            xhci_control_transfer(xhci, &endpoint, 0x21U, 0x0BU,
+                0U, selected->number, NULL, 0U);
+        if (!ready)
+            ready = xhci_load_generic_hid_report_protocol(
+                xhci, &endpoint, selected->number,
+                selected->report_descriptor_length, selected->max_packet,
+                XHCI_HID_KEYBOARD, true);
+    } else {
+        /* Non-boot HID interfaces are classified from their report descriptor.
+         * Gamepads and unsupported/vendor-specific layouts are rejected here. */
+        if (xhci_load_generic_hid_report_protocol(
+                xhci, &endpoint, selected->number,
+                selected->report_descriptor_length, selected->max_packet,
+                XHCI_HID_MOUSE, false)) {
+            endpoint.kind = XHCI_HID_MOUSE;
+            ready = true;
+        } else if (xhci_load_generic_hid_report_protocol(
+                xhci, &endpoint, selected->number,
+                selected->report_descriptor_length, selected->max_packet,
+                XHCI_HID_KEYBOARD, false)) {
+            endpoint.kind = XHCI_HID_KEYBOARD;
+            ready = true;
+        }
+    }
+
+    if (!ready || (endpoint.kind != XHCI_HID_KEYBOARD &&
+                   endpoint.kind != XHCI_HID_MOUSE)) {
+        (void)memory_free_page(endpoint.report_buffer_physical);
+        return false;
+    }
+    if (!xhci_configure_interrupt_endpoint(xhci, &endpoint,
+            selected->endpoint_in, selected->max_packet,
+            selected->interval, speed) ||
+        !xhci_schedule_interrupt_endpoint(xhci, endpoint.slot_id,
+            endpoint.endpoint_id, &endpoint.interrupt_ring,
+            endpoint.report_buffer_physical, endpoint.max_packet)) {
+        if (endpoint.interrupt_ring.physical != 0U)
+            (void)memory_free_page(endpoint.interrupt_ring.physical);
+        (void)memory_free_page(endpoint.report_buffer_physical);
+        return false;
+    }
+
+    extra->active = true;
+    extra->kind = endpoint.kind;
+    extra->interface_number = selected->number;
+    extra->endpoint_id = endpoint.endpoint_id;
+    extra->max_packet = endpoint.max_packet;
+    extra->generic_multi_layout = endpoint.generic_multi_layout;
+    extra->generic_report_protocol = endpoint.generic_report_protocol;
+    extra->report_buffer_physical = endpoint.report_buffer_physical;
+    extra->report_buffer = endpoint.report_buffer;
+    extra->interrupt_ring = endpoint.interrupt_ring;
+    usb_hid_keyboard_state_reset(&extra->keyboard_state);
+
+    serial_write("NEXUS USB HID EXTRA ");
+    serial_write(extra->kind == XHCI_HID_KEYBOARD ? "KEYBOARD" : "MOUSE");
+    serial_write(" READY slot=");
+    serial_write_hex(device->slot_id);
+    serial_write(" interface=");
+    serial_write_hex(extra->interface_number);
+    serial_write("\r\n");
+    return true;
+}
+
+static void xhci_drop_extra_hid_endpoint(
+    struct xhci_hid_device *device,
+    struct xhci_hid_extra_endpoint *extra) {
+    if (device == NULL || extra == NULL || !extra->active) return;
+    if (extra->kind == XHCI_HID_KEYBOARD) {
+        const uint8_t release[8] = {0U};
+        input_usb_keyboard_report_state(&extra->keyboard_state, release);
+    } else if (extra->kind == XHCI_HID_MOUSE) {
+        const struct nexus_usb_mouse_event release = {0};
+        input_usb_mouse_event(&release);
+    }
+    if (extra->interrupt_ring.physical != 0U)
+        (void)memory_free_page(extra->interrupt_ring.physical);
+    if (extra->report_buffer_physical != 0U)
+        (void)memory_free_page(extra->report_buffer_physical);
+    *extra = (struct xhci_hid_extra_endpoint){0};
+}
+
 static void xhci_drop_secondary_hid_endpoint(
     struct xhci_hid_device *device) {
     if (device == NULL || !device->secondary_active) return;
@@ -1195,6 +1345,14 @@ static void xhci_free_hid_device_dma(struct xhci_controller *xhci,
         (void)memory_free_page(device->secondary_interrupt_ring.physical);
     if (device->secondary_report_buffer_physical != 0U)
         (void)memory_free_page(device->secondary_report_buffer_physical);
+    for (size_t i = 0U; i < XHCI_MAX_EXTRA_HID_INTERFACES; ++i) {
+        if (device->extra_hid[i].interrupt_ring.physical != 0U)
+            (void)memory_free_page(
+                device->extra_hid[i].interrupt_ring.physical);
+        if (device->extra_hid[i].report_buffer_physical != 0U)
+            (void)memory_free_page(
+                device->extra_hid[i].report_buffer_physical);
+    }
     *device = (struct xhci_hid_device){0};
 }
 
@@ -1207,8 +1365,19 @@ static void xhci_release_hid_device(struct xhci_controller *xhci,
             input_usb_keyboard_report_state(
                 &device->secondary_keyboard_state, release);
         } else if (device->secondary_kind == XHCI_HID_MOUSE) {
-            const uint8_t release[3] = {0U};
-            input_usb_mouse_report(release);
+            const struct nexus_usb_mouse_event release = {0};
+            input_usb_mouse_event(&release);
+        }
+    }
+    for (size_t i = 0U; i < XHCI_MAX_EXTRA_HID_INTERFACES; ++i) {
+        struct xhci_hid_extra_endpoint *extra = &device->extra_hid[i];
+        if (!extra->active) continue;
+        if (extra->kind == XHCI_HID_KEYBOARD) {
+            const uint8_t release[8] = {0U};
+            input_usb_keyboard_report_state(&extra->keyboard_state, release);
+        } else if (extra->kind == XHCI_HID_MOUSE) {
+            const struct nexus_usb_mouse_event release = {0};
+            input_usb_mouse_event(&release);
         }
     }
     if (device->slot_id != 0U)
@@ -1220,10 +1389,15 @@ static bool xhci_has_keyboard(const struct xhci_controller *xhci) {
     if (xhci == NULL) return false;
     for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
         if (xhci->keyboards[i].active) return true;
-    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
-        if (xhci->mice[i].active &&
-            xhci->mice[i].secondary_active &&
-            xhci->mice[i].secondary_kind == XHCI_HID_KEYBOARD) return true;
+    for (size_t i = 0U; i < XHCI_MAX_MICE; ++i) {
+        const struct xhci_hid_device *device = &xhci->mice[i];
+        if (!device->active) continue;
+        if (device->secondary_active &&
+            device->secondary_kind == XHCI_HID_KEYBOARD) return true;
+        for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j)
+            if (device->extra_hid[j].active &&
+                device->extra_hid[j].kind == XHCI_HID_KEYBOARD) return true;
+    }
     return false;
 }
 
@@ -1231,10 +1405,15 @@ static bool xhci_has_mouse(const struct xhci_controller *xhci) {
     if (xhci == NULL) return false;
     for (size_t i = 0U; i < XHCI_MAX_MICE; ++i)
         if (xhci->mice[i].active) return true;
-    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i)
-        if (xhci->keyboards[i].active &&
-            xhci->keyboards[i].secondary_active &&
-            xhci->keyboards[i].secondary_kind == XHCI_HID_MOUSE) return true;
+    for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS; ++i) {
+        const struct xhci_hid_device *device = &xhci->keyboards[i];
+        if (!device->active) continue;
+        if (device->secondary_active &&
+            device->secondary_kind == XHCI_HID_MOUSE) return true;
+        for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j)
+            if (device->extra_hid[j].active &&
+                device->extra_hid[j].kind == XHCI_HID_MOUSE) return true;
+    }
     return false;
 }
 
@@ -1729,13 +1908,38 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     serial_write_hex(path->root_port);
     serial_write("\r\n");
 
-    /* Common keyboard+mouse 2.4 GHz receivers expose two HID interfaces but
-     * only one USB address/slot. Configure the second HID endpoint under this
-     * same slot so both devices can report concurrently. */
+    /* Configure every discovered keyboard/mouse HID interface under this USB
+     * address/slot. Additional endpoints have independent rings and report
+     * state so composite receivers with more than two input interfaces work. */
     if (kind == XHCI_HID_KEYBOARD || kind == XHCI_HID_MOUSE) {
+        uint8_t secondary_interface_number = 0xFFU;
         if (!xhci_configure_secondary_hid_interface(xhci, device,
-                &hid_interfaces, interface_number, kind, speed)) {
+                &hid_interfaces, interface_number, kind, speed,
+                &secondary_interface_number)) {
             serial_write("xHCI: secondary composite HID interface unavailable; primary interface remains active\r\n");
+        }
+        for (uint8_t i = 0U; i < hid_interfaces.interface_count; ++i) {
+            const struct nexus_usb_hid_interface *candidate =
+                &hid_interfaces.interfaces[i];
+            if (candidate->number == interface_number ||
+                candidate->number == secondary_interface_number) continue;
+            struct xhci_hid_extra_endpoint *free_endpoint = NULL;
+            for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j) {
+                if (!device->extra_hid[j].active) {
+                    free_endpoint = &device->extra_hid[j];
+                    break;
+                }
+            }
+            if (free_endpoint == NULL) {
+                serial_write("xHCI: composite HID endpoint capacity reached; remaining interfaces skipped\r\n");
+                break;
+            }
+            if (!xhci_configure_extra_hid_interface(xhci, device,
+                    candidate, speed, free_endpoint)) {
+                serial_write("xHCI: unsupported additional HID interface skipped number=");
+                serial_write_hex(candidate->number);
+                serial_write("\r\n");
+            }
         }
     }
     return true;
@@ -2378,8 +2582,20 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
                 &device->secondary_keyboard_state, release);
         if (device->secondary_active &&
             device->secondary_kind == XHCI_HID_MOUSE) {
-            const uint8_t mouse_release[3] = {0U};
-            input_usb_mouse_report(mouse_release);
+            const struct nexus_usb_mouse_event mouse_release = {0};
+            input_usb_mouse_event(&mouse_release);
+        }
+        for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j) {
+            struct xhci_hid_extra_endpoint *extra = &device->extra_hid[j];
+            if (!extra->active) continue;
+            if (extra->kind == XHCI_HID_KEYBOARD) {
+                const uint8_t keyboard_release[8] = {0U};
+                input_usb_keyboard_report_state(
+                    &extra->keyboard_state, keyboard_release);
+            } else if (extra->kind == XHCI_HID_MOUSE) {
+                const struct nexus_usb_mouse_event mouse_release = {0};
+                input_usb_mouse_event(&mouse_release);
+            }
         }
         xhci_free_hid_device_dma(xhci, device);
     }
@@ -2397,6 +2613,18 @@ static void xhci_release_all_input_devices(struct xhci_controller *xhci) {
         if (device->secondary_active &&
             device->secondary_kind == XHCI_HID_MOUSE)
             input_usb_mouse_report(release);
+        for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j) {
+            struct xhci_hid_extra_endpoint *extra = &device->extra_hid[j];
+            if (!extra->active) continue;
+            if (extra->kind == XHCI_HID_KEYBOARD) {
+                const uint8_t keyboard_release[8] = {0U};
+                input_usb_keyboard_report_state(
+                    &extra->keyboard_state, keyboard_release);
+            } else if (extra->kind == XHCI_HID_MOUSE) {
+                const struct nexus_usb_mouse_event mouse_release = {0};
+                input_usb_mouse_event(&mouse_release);
+            }
+        }
         xhci_free_hid_device_dma(xhci, device);
     }
     for (size_t i = 0U; i < XHCI_MAX_GAMEPADS; ++i) {
@@ -2672,6 +2900,7 @@ void xhci_poll(void) {
 
         struct xhci_hid_device *device = NULL;
         bool secondary = false;
+        struct xhci_hid_extra_endpoint *extra_endpoint = NULL;
 
         for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS && device == NULL; ++i) {
             if (xhci->keyboards[i].active &&
@@ -2714,24 +2943,60 @@ void xhci_poll(void) {
                 }
             }
         }
+        if (device == NULL) {
+            for (size_t i = 0U; i < XHCI_MAX_KEYBOARDS && device == NULL; ++i) {
+                struct xhci_hid_device *candidate = &xhci->keyboards[i];
+                if (!candidate->active || candidate->slot_id != slot) continue;
+                for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j) {
+                    struct xhci_hid_extra_endpoint *extra =
+                        &candidate->extra_hid[j];
+                    if (extra->active && extra->endpoint_id == endpoint) {
+                        device = candidate;
+                        extra_endpoint = extra;
+                        break;
+                    }
+                }
+            }
+        }
+        if (device == NULL) {
+            for (size_t i = 0U; i < XHCI_MAX_MICE && device == NULL; ++i) {
+                struct xhci_hid_device *candidate = &xhci->mice[i];
+                if (!candidate->active || candidate->slot_id != slot) continue;
+                for (size_t j = 0U; j < XHCI_MAX_EXTRA_HID_INTERFACES; ++j) {
+                    struct xhci_hid_extra_endpoint *extra =
+                        &candidate->extra_hid[j];
+                    if (extra->active && extra->endpoint_id == endpoint) {
+                        device = candidate;
+                        extra_endpoint = extra;
+                        break;
+                    }
+                }
+            }
+        }
         if (device == NULL || !device->active) continue;
 
         const enum xhci_hid_kind kind =
-            secondary ? device->secondary_kind : device->kind;
-        const uint16_t max_packet =
-            secondary ? device->secondary_max_packet : device->max_packet;
+            extra_endpoint != NULL ? extra_endpoint->kind
+            : secondary ? device->secondary_kind : device->kind;
+        const uint16_t max_packet = extra_endpoint != NULL
+            ? extra_endpoint->max_packet
+            : secondary ? device->secondary_max_packet : device->max_packet;
         const uint8_t *report = (const uint8_t *)(uintptr_t)(
-            secondary ? device->secondary_report_buffer
-                      : device->report_buffer);
-        const bool generic_report_protocol = secondary
-            ? device->secondary_generic_report_protocol
-            : device->generic_report_protocol;
+            extra_endpoint != NULL ? extra_endpoint->report_buffer
+            : secondary ? device->secondary_report_buffer
+                        : device->report_buffer);
+        const bool generic_report_protocol = extra_endpoint != NULL
+            ? extra_endpoint->generic_report_protocol
+            : secondary ? device->secondary_generic_report_protocol
+                         : device->generic_report_protocol;
         const struct nexus_usb_hid_generic_multi_layout *generic_layout =
-            secondary ? &device->secondary_generic_multi_layout
-                      : &device->generic_multi_layout;
+            extra_endpoint != NULL ? &extra_endpoint->generic_multi_layout
+            : secondary ? &device->secondary_generic_multi_layout
+                        : &device->generic_multi_layout;
         struct nexus_usb_keyboard_state *keyboard_state =
-            secondary ? &device->secondary_keyboard_state
-                      : &device->keyboard_state;
+            extra_endpoint != NULL ? &extra_endpoint->keyboard_state
+            : secondary ? &device->secondary_keyboard_state
+                        : &device->keyboard_state;
 
         const uint8_t code = xhci_event_code(&event);
         if (code == XHCI_CC_SUCCESS || code == XHCI_CC_SHORT_PACKET) {
@@ -2778,25 +3043,35 @@ void xhci_poll(void) {
                 : "xHCI: USB gamepad endpoint transfer failed; code=");
             serial_write_hex(code);
             serial_write("\r\n");
-            if (secondary)
+            if (extra_endpoint != NULL)
+                xhci_drop_extra_hid_endpoint(device, extra_endpoint);
+            else if (secondary)
                 xhci_drop_secondary_hid_endpoint(device);
             else
                 xhci_drop_hid_device(xhci, device);
             continue;
         }
 
-        const bool rearmed = secondary
+        const bool rearmed = extra_endpoint != NULL
             ? xhci_schedule_interrupt_endpoint(xhci, device->slot_id,
-                device->secondary_endpoint_id,
-                &device->secondary_interrupt_ring,
-                device->secondary_report_buffer_physical,
-                device->secondary_max_packet)
-            : xhci_schedule_interrupt_read(xhci, device);
+                extra_endpoint->endpoint_id,
+                &extra_endpoint->interrupt_ring,
+                extra_endpoint->report_buffer_physical,
+                extra_endpoint->max_packet)
+            : secondary
+                ? xhci_schedule_interrupt_endpoint(xhci, device->slot_id,
+                    device->secondary_endpoint_id,
+                    &device->secondary_interrupt_ring,
+                    device->secondary_report_buffer_physical,
+                    device->secondary_max_packet)
+                : xhci_schedule_interrupt_read(xhci, device);
         if (!rearmed) {
             serial_write(secondary
                 ? "xHCI: unable to re-arm secondary composite HID endpoint\r\n"
                 : "xHCI: unable to re-arm USB HID endpoint\r\n");
-            if (secondary)
+            if (extra_endpoint != NULL)
+                xhci_drop_extra_hid_endpoint(device, extra_endpoint);
+            else if (secondary)
                 xhci_drop_secondary_hid_endpoint(device);
             else
                 xhci_drop_hid_device(xhci, device);

@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 struct nexus_bt_hci_advertisement;
+struct nexus_bt_hci_classic_device;
 
 struct nexus_bt_runtime_status {
     uint8_t adapter_count;
@@ -14,6 +15,9 @@ struct nexus_bt_runtime_status {
     uint8_t connected_links;
     uint8_t encrypted_links;
     uint8_t hogp_ready_links;
+    uint8_t classic_scanning_adapters;
+    uint8_t classic_hid_ready_links;
+    uint8_t classic_device_count;
     uint32_t dropped_packets;
 };
 
@@ -63,6 +67,15 @@ bool xhci_bluetooth_connect_le(
     uint8_t address_type, const uint8_t address[6]);
 bool xhci_bluetooth_start_scan(void);
 bool xhci_bluetooth_get_status(struct nexus_bt_runtime_status *status);
+
+/* Classic BR/EDR discovery is independent of passive LE scan. Classic HIDP
+ * channels are started only for links reported encrypted by the controller;
+ * this runtime does not implement SSP passkey/MITM UI or persistent keys. */
+bool xhci_bluetooth_start_classic_inquiry(void);
+size_t xhci_bluetooth_classic_device_count(void);
+bool xhci_bluetooth_get_classic_device(
+    size_t index, struct nexus_bt_hci_classic_device *device);
+bool xhci_bluetooth_connect_classic(size_t index);
 
 /* Drain completed USB HID keyboard and mouse interrupt transfers. */
 void xhci_poll(void);

@@ -130,6 +130,14 @@ jobs:
             -o /tmp/nexus-bluetooth-smp-test
           /tmp/nexus-bluetooth-smp-test
 
+      - name: Test BLE Secure Connections f4 f5 f6 Core 6.3 vectors
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/aes_ccm.c kernel/src/bluetooth_sc.c \
+            kernel/tests/bluetooth_sc_test.c \
+            -o /tmp/nexus-bluetooth-sc-test
+          /tmp/nexus-bluetooth-sc-test
+
       - name: Test Bluetooth 16550 UART H4 transport
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

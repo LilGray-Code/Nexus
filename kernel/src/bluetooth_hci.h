@@ -20,6 +20,12 @@
 #define NEXUS_BT_HCI_OPCODE_LE_SET_SCAN_ENABLE 0x200CU
 #define NEXUS_BT_HCI_OPCODE_LE_CREATE_CONNECTION 0x200DU
 #define NEXUS_BT_HCI_OPCODE_LE_START_ENCRYPTION 0x2019U
+#define NEXUS_BT_HCI_OPCODE_SET_EVENT_MASK 0x0C01U
+#define NEXUS_BT_HCI_OPCODE_LE_SET_EVENT_MASK 0x2001U
+#define NEXUS_BT_HCI_OPCODE_LE_READ_LOCAL_P256_PUBLIC_KEY 0x2025U
+#define NEXUS_BT_HCI_OPCODE_LE_GENERATE_DHKEY 0x2026U
+#define NEXUS_BT_HCI_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE 0x08U
+#define NEXUS_BT_HCI_LE_GENERATE_DHKEY_COMPLETE 0x09U
 #define NEXUS_BT_HCI_LE_CONNECTION_COMPLETE 0x01U
 #define NEXUS_BT_HCI_PSM_HID_CONTROL 0x0011U
 #define NEXUS_BT_HCI_PSM_HID_INTERRUPT 0x0013U
@@ -123,6 +129,24 @@ bool nexus_bt_hci_build_le_start_encryption(
     uint16_t connection_handle, const uint8_t random[8], uint16_t ediv,
     const uint8_t ltk[16], uint8_t *packet, size_t packet_capacity,
     size_t *packet_length);
+
+bool nexus_bt_hci_build_set_event_mask(
+    uint64_t event_mask, uint8_t *packet, size_t packet_capacity,
+    size_t *packet_length);
+bool nexus_bt_hci_build_le_set_event_mask(
+    uint64_t le_event_mask, uint8_t *packet, size_t packet_capacity,
+    size_t *packet_length);
+bool nexus_bt_hci_build_le_read_local_p256_public_key(
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+bool nexus_bt_hci_build_le_generate_dhkey(
+    const uint8_t remote_public_key[64],
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length);
+bool nexus_bt_hci_parse_le_read_local_p256_public_key_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t public_key[64]);
+bool nexus_bt_hci_parse_le_generate_dhkey_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t dhkey[32]);
 bool nexus_bt_hci_parse_encryption_change(
     const struct nexus_bt_hci_event_view *event,
     uint16_t *connection_handle, uint8_t *status, bool *enabled);

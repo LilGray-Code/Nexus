@@ -259,3 +259,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Added an RFC 4493 AES-128-CMAC primitive on top of the FIPS-197 AES block implementation. It supports empty, partial-block and complete-block messages with a bounded 1 KiB input.
 - Added all four RFC 4493 known-answer vectors (empty, 16-byte, 40-byte and 64-byte messages) plus invalid pointer and length checks.
 - This is a crypto primitive only. LE Secure Connections still requires P-256 public-key exchange/DHKey generation, f4/f5/f6, SMP Secure Connections state sequencing, HCI controller capability checks and persistent security policy before it can be advertised as supported.
+
+
+### LE Secure Connections crypto and HCI controller primitives — November 28, 2026
+
+- Added the HCI command builders for global HCI Event Mask, LE Event Mask, LE Read Local P-256 Public Key and LE Generate DHKey (v1). The LE mask enables subevents 0, 1, 7 and 8; the global mask enables command completion/status, disconnect, encryption change and LE Meta events.
+- Added strict parsers for the LE Read Local P-256 Public Key Complete event (0x3E/0x08) and LE Generate DHKey Complete event (0x3E/0x09). The DHKey parser rejects all-0xFF output, which the HCI specification defines as the invalid-remote-public-key result.
+- Added Core 6.3 f4, f5, and f6 on the RFC 4493 AES-CMAC primitive. The implementation includes the 128-bit CMAC salt, btle key ID, 256-bit key-length field, central/peripheral nonce ordering and seven-octet address values.
+- Added HCI command/event tests and Core 6.3 sample-vector tests for f4/f5/f6. This is currently crypto and HCI plumbing only: SMP Secure Connections transcript, P-256 key exchange, DHKey check, HCI event-mask setup on live adapters and encrypted HOGP integration are not yet wired. No controller has been physically tested for these HCI commands.

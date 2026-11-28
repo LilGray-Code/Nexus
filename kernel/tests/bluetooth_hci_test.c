@@ -189,6 +189,77 @@ static void test_host_initialization_state_machine(void) {
         &host, packet, sizeof(packet), &packet_length));
 }
 
+static void test_hci_secure_connections_command_builders(void) {
+    uint8_t packet[80] = {0U};
+    size_t length = 0U;
+    assert(nexus_bt_hci_build_set_event_mask(
+        (1ULL<<2)|(1ULL<<4)|(1ULL<<7)|(1ULL<<13)|(1ULL<<14)|(1ULL<<61),
+        packet,sizeof(packet),&length));
+    assert(length == 12U && packet[1] == 0x01U &&
+           packet[2] == 0x0CU && packet[3] == 8U);
+    assert(packet[4] == 0x94U && packet[5] == 0x60U &&
+           packet[11] == 0x20U);
+
+    assert(nexus_bt_hci_build_le_set_event_mask(
+        (1ULL<<0)|(1ULL<<1)|(1ULL<<7)|(1ULL<<8),
+        packet,sizeof(packet),&length));
+    assert(length == 12U && packet[1] == 0x01U &&
+           packet[2] == 0x20U && packet[3] == 8U);
+    assert(packet[4] == 0x83U && packet[5] == 0x01U);
+
+    assert(nexus_bt_hci_build_le_read_local_p256_public_key(
+        packet,sizeof(packet),&length));
+    assert(length == 4U && packet[1] == 0x25U &&
+           packet[2] == 0x20U && packet[3] == 0U);
+
+    uint8_t remote_key[64];
+    for (size_t i = 0U; i < sizeof(remote_key); ++i)
+        remote_key[i] = (uint8_t)(i + 1U);
+    assert(nexus_bt_hci_build_le_generate_dhkey(
+        remote_key,packet,sizeof(packet),&length));
+    assert(length == 68U && packet[1] == 0x26U &&
+           packet[2] == 0x20U && packet[3] == 64U);
+    assert(memcmp(packet+4U,remote_key,sizeof(remote_key)) == 0);
+    assert(!nexus_bt_hci_build_le_generate_dhkey(
+        NULL,packet,sizeof(packet),&length));
+}
+
+static void test_hci_secure_connections_complete_events(void) {
+    uint8_t parameters[66] = {0x08U,0U};
+    for (size_t i = 0U; i < 64U; ++i)
+        parameters[2U+i] = (uint8_t)(i + 1U);
+    struct nexus_bt_hci_event_view event = {
+        .event_code = NEXUS_BT_HCI_EVENT_LE_META,
+        .parameters = parameters,
+        .parameter_length = sizeof(parameters)
+    };
+    uint8_t public_key[64] = {0U};
+    assert(nexus_bt_hci_parse_le_read_local_p256_public_key_complete(
+        &event,public_key));
+    assert(memcmp(public_key,parameters+2U,64U) == 0);
+
+    parameters[1] = 0x1FU;
+    assert(!nexus_bt_hci_parse_le_read_local_p256_public_key_complete(
+        &event,public_key));
+    parameters[1] = 0U;
+    memset(parameters+2U,0xFFU,64U);
+    assert(!nexus_bt_hci_parse_le_read_local_p256_public_key_complete(
+        &event,public_key));
+
+    uint8_t dh_parameters[34] = {0x09U,0U};
+    for (size_t i = 0U; i < 32U; ++i)
+        dh_parameters[2U+i] = (uint8_t)(0x80U + i);
+    event.parameters = dh_parameters;
+    event.parameter_length = sizeof(dh_parameters);
+    uint8_t dhkey[32] = {0U};
+    assert(nexus_bt_hci_parse_le_generate_dhkey_complete(&event,dhkey));
+    assert(memcmp(dhkey,dh_parameters+2U,32U) == 0);
+    memset(dh_parameters+2U,0xFFU,32U);
+    assert(!nexus_bt_hci_parse_le_generate_dhkey_complete(&event,dhkey));
+    dh_parameters[0] = 0x08U;
+    assert(!nexus_bt_hci_parse_le_generate_dhkey_complete(&event,dhkey));
+}
+
 static void test_le_start_encryption_command_and_event(void) {
     const uint8_t random[8] = {0U};
     const uint8_t ltk[16] = {
@@ -375,6 +446,8 @@ int main(void) {
     test_le_scan_command_builders();
     test_le_create_connection_command_builder();
     test_le_start_encryption_command_and_event();
+    test_hci_secure_connections_command_builders();
+    test_hci_secure_connections_complete_events();
     test_le_advertising_report_parser();
     test_host_generic_command_credit_path();
     test_host_generic_command_status_path();

@@ -239,6 +239,89 @@ bool nexus_bt_hci_build_le_scan_enable(
         packet_length);
 }
 
+static bool hci_all_bytes_equal(
+    const uint8_t *bytes, size_t length, uint8_t value) {
+    if (bytes == NULL) return false;
+    uint8_t difference = 0U;
+    for (size_t i = 0U; i < length; ++i)
+        difference |= (uint8_t)(bytes[i] ^ value);
+    return difference == 0U;
+}
+
+static bool hci_build_mask_command(
+    uint16_t opcode, uint64_t mask,
+    uint8_t *packet, size_t capacity, size_t *packet_length) {
+    uint8_t parameters[8];
+    for (size_t i = 0U; i < sizeof(parameters); ++i)
+        parameters[i] = (uint8_t)(mask >> (i * 8U));
+    return nexus_bt_hci_build_command(opcode, parameters,
+        sizeof(parameters), packet, capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_set_event_mask(
+    uint64_t event_mask, uint8_t *packet, size_t packet_capacity,
+    size_t *packet_length) {
+    return hci_build_mask_command(NEXUS_BT_HCI_OPCODE_SET_EVENT_MASK,
+        event_mask, packet, packet_capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_le_set_event_mask(
+    uint64_t le_event_mask, uint8_t *packet, size_t packet_capacity,
+    size_t *packet_length) {
+    return hci_build_mask_command(NEXUS_BT_HCI_OPCODE_LE_SET_EVENT_MASK,
+        le_event_mask, packet, packet_capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_le_read_local_p256_public_key(
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LE_READ_LOCAL_P256_PUBLIC_KEY,
+        NULL, 0U, packet, packet_capacity, packet_length);
+}
+
+bool nexus_bt_hci_build_le_generate_dhkey(
+    const uint8_t remote_public_key[64],
+    uint8_t *packet, size_t packet_capacity, size_t *packet_length) {
+    if (remote_public_key == NULL) return false;
+    return nexus_bt_hci_build_command(
+        NEXUS_BT_HCI_OPCODE_LE_GENERATE_DHKEY,
+        remote_public_key, 64U, packet, packet_capacity, packet_length);
+}
+
+bool nexus_bt_hci_parse_le_read_local_p256_public_key_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t public_key[64]) {
+    if (event == NULL || public_key == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_LE_META ||
+        event->parameters == NULL || event->parameter_length != 66U ||
+        event->parameters[0] !=
+            NEXUS_BT_HCI_LE_READ_LOCAL_P256_PUBLIC_KEY_COMPLETE ||
+        event->parameters[1] != 0U) return false;
+    const uint8_t *coordinates = event->parameters + 2U;
+    if (hci_all_bytes_equal(coordinates, 64U, 0U) ||
+        hci_all_bytes_equal(coordinates, 64U, 0xFFU)) return false;
+    for (size_t i = 0U; i < 64U; ++i) public_key[i] = coordinates[i];
+    return true;
+}
+
+bool nexus_bt_hci_parse_le_generate_dhkey_complete(
+    const struct nexus_bt_hci_event_view *event,
+    uint8_t dhkey[32]) {
+    if (event == NULL || dhkey == NULL ||
+        event->event_code != NEXUS_BT_HCI_EVENT_LE_META ||
+        event->parameters == NULL || event->parameter_length != 34U ||
+        event->parameters[0] !=
+            NEXUS_BT_HCI_LE_GENERATE_DHKEY_COMPLETE ||
+        event->parameters[1] != 0U) return false;
+    const uint8_t *generated = event->parameters + 2U;
+    /* Core HCI specifies an all-0xFF DHKey when the remote public point is
+     * invalid, even when the command was accepted asynchronously. */
+    if (hci_all_bytes_equal(generated, 32U, 0xFFU) ||
+        hci_all_bytes_equal(generated, 32U, 0U)) return false;
+    for (size_t i = 0U; i < 32U; ++i) dhkey[i] = generated[i];
+    return true;
+}
+
 bool nexus_bt_hci_build_le_start_encryption(
     uint16_t connection_handle, const uint8_t random[8], uint16_t ediv,
     const uint8_t ltk[16], uint8_t *packet, size_t packet_capacity,

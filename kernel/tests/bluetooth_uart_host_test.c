@@ -71,8 +71,8 @@ static void test_uart_hci_host_bringup_and_acl_bridge(void) {
     feed_rx(reset_complete, sizeof(reset_complete));
     assert(nexus_bt_uart_host_poll(&host, 32U, 8U));
     assert(host.hci.state == NEXUS_BT_HCI_HOST_VERSION_IN_FLIGHT);
-    assert(tx_length == 10U && tx_fifo[5] == 0x01U &&
-           tx_fifo[6] == 0x10U);
+    assert(tx_length == 8U && tx_fifo[5] == 0x01U &&
+           tx_fifo[6] == 0x10U && tx_fifo[7] == 0U);
 
     const uint8_t version_complete[] = {
         0x04U,0x0EU,0x0CU,0x01U,0x01U,0x10U,0x00U,
@@ -85,8 +85,8 @@ static void test_uart_hci_host_bringup_and_acl_bridge(void) {
     assert(host.hci.lmp_version == 0x09U);
     assert(host.hci.manufacturer == 0x1234U);
     assert(host.hci.subversion == 0x5678U);
-    assert(tx_length == 14U && tx_fifo[11] == 0x09U &&
-           tx_fifo[12] == 0x10U);
+    assert(tx_length == 12U && tx_fifo[9] == 0x09U &&
+           tx_fifo[10] == 0x10U && tx_fifo[11] == 0U);
 
     const uint8_t address_complete[] = {
         0x04U,0x0EU,0x0AU,0x01U,0x09U,0x10U,0x00U,

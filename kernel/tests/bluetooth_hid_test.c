@@ -1,4 +1,5 @@
 #include "bluetooth_hid.h"
+#include "bluetooth_hci.h"
 #include "bluetooth_gatt.h"
 #include "input.h"
 

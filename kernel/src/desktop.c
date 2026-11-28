@@ -92,6 +92,7 @@ static void hardware_append_text(char *output, size_t capacity,
                                  size_t *length, const char *text);
 static void format_u64(uint64_t value, char output[21]);
 #define DESKTOP_BT_VISIBLE_DEVICES 5U
+#define DESKTOP_BT_VISIBLE_CLASSIC_DEVICES 3U
 struct desktop_bluetooth_row {
     struct nexus_bt_hci_advertisement advertisement;
     char name[32];
@@ -99,6 +100,9 @@ struct desktop_bluetooth_row {
 static struct desktop_bluetooth_row desktop_bt_devices[
     DESKTOP_BT_VISIBLE_DEVICES];
 static uint8_t desktop_bt_device_count;
+static struct nexus_bt_hci_classic_device desktop_bt_classic_devices[
+    DESKTOP_BT_VISIBLE_CLASSIC_DEVICES];
+static uint8_t desktop_bt_classic_device_count;
 static const char *desktop_bt_status_message =
     "Bluetooth scan results appear here when a USB HCI adapter is available.";
 
@@ -131,6 +135,18 @@ static void desktop_bluetooth_refresh_cache(void) {
                 desktop_bt_devices[index].name,
                 sizeof(desktop_bt_devices[index].name)))
             desktop_bt_devices[index].name[0] = '\0';
+    }
+}
+
+static void desktop_bluetooth_refresh_classic_cache(void) {
+    desktop_bt_classic_device_count = 0U;
+    const size_t available = xhci_bluetooth_classic_device_count();
+    const size_t visible = available < DESKTOP_BT_VISIBLE_CLASSIC_DEVICES
+        ? available : DESKTOP_BT_VISIBLE_CLASSIC_DEVICES;
+    for (size_t i = 0U; i < visible; ++i) {
+        if (xhci_bluetooth_get_classic_device(
+                i, &desktop_bt_classic_devices[i]))
+            ++desktop_bt_classic_device_count;
     }
 }
 
@@ -222,10 +238,74 @@ static void desktop_bluetooth_draw(uint64_t x, uint64_t y) {
         "INPUT REQUIRES ENCRYPTION: JUST WORKS ONLY; NO MITM / SAVED BONDS",
         1U, 231U, 183U, 127U);
     graphics_draw_text(x, y + 78U + (uint64_t)desktop_bt_device_count * 31U,
-        "BLE HOGP KEYBOARD/MOUSE; CLASSIC HIDP IS NOT CONNECTED YET",
+        "BLE HOGP INPUT; CLASSIC HIDP ONLY ON ENCRYPTED BR/EDR LINKS",
         1U, 171U, 191U, 211U);
     graphics_draw_text(x, y + 102U + (uint64_t)desktop_bt_device_count * 31U,
         desktop_bt_status_message, 1U, 108U, 216U, 229U);
+
+    desktop_bluetooth_refresh_classic_cache();
+    const uint64_t classic_y =
+        y + 132U + (uint64_t)desktop_bt_device_count * 31U;
+    graphics_draw_text(x, classic_y, "BLUETOOTH CLASSIC / BR-EDR",
+                       1U, 142U, 174U, 199U);
+    desktop_settings_draw_button(x + 360U, classic_y - 4U,
+        128U, 27U, "SCAN CLASSIC", status.ready_adapters != 0U);
+    char classic_summary[96] = "CLASSIC DEVICES ";
+    size_t classic_used = 16U;
+    desktop_bluetooth_append_number(classic_summary, sizeof(classic_summary),
+        &classic_used, xhci_bluetooth_classic_device_count());
+    hardware_append_text(classic_summary, sizeof(classic_summary), &classic_used,
+        " / HIDP READY ");
+    desktop_bluetooth_append_number(classic_summary, sizeof(classic_summary),
+        &classic_used, status.classic_hid_ready_links);
+    graphics_draw_text(x, classic_y + 25U, classic_summary,
+                       1U, 171U, 191U, 211U);
+    for (uint8_t i = 0U; i < desktop_bt_classic_device_count; ++i) {
+        const uint64_t row_y = classic_y + 51U + (uint64_t)i * 29U;
+        char address[18];
+        desktop_bluetooth_format_address(
+            desktop_bt_classic_devices[i].address, address);
+        graphics_draw_text(x, row_y, address, 1U, 239U, 247U, 255U);
+        graphics_draw_text(x + 126U, row_y, "BR/EDR device",
+                           1U, 171U, 191U, 211U);
+        if (desktop_bt_classic_devices[i].rssi_valid) {
+            char rssi[32] = "RSSI ";
+            size_t offset = 5U;
+            const int16_t strength = desktop_bt_classic_devices[i].rssi;
+            if (strength < 0) {
+                rssi[offset++] = '-';
+                const uint16_t magnitude = (uint16_t)(-strength);
+                char digits[21];
+                format_u64(magnitude, digits);
+                for (size_t j = 0U; digits[j] != '\0' &&
+                     offset + 1U < sizeof(rssi); ++j)
+                    rssi[offset++] = digits[j];
+            } else {
+                char digits[21];
+                format_u64((uint16_t)strength, digits);
+                for (size_t j = 0U; digits[j] != '\0' &&
+                     offset + 1U < sizeof(rssi); ++j)
+                    rssi[offset++] = digits[j];
+            }
+            rssi[offset] = '\0';
+            graphics_draw_text(x + 288U, row_y, rssi,
+                               1U, 171U, 191U, 211U);
+        }
+        desktop_settings_draw_button(x + 360U, row_y - 4U,
+            128U, 26U, "CONNECT", true);
+    }
+    if (desktop_bt_classic_device_count == 0U) {
+        graphics_draw_text(x, classic_y + 52U,
+            "NO CLASSIC INQUIRY RESULTS", 1U, 231U, 183U, 127U);
+    }
+    graphics_draw_text(x, classic_y + 55U +
+        (uint64_t)desktop_bt_classic_device_count * 29U,
+        "CLASSIC HIDP STARTS ONLY ON AN ENCRYPTED LINK.",
+        1U, 231U, 183U, 127U);
+    graphics_draw_text(x, classic_y + 78U +
+        (uint64_t)desktop_bt_classic_device_count * 29U,
+        "SSP PAIRING / MITM UI / SAVED LINK KEYS NOT IMPLEMENTED.",
+        1U, 231U, 183U, 127U);
 }
 
 static enum desktop_settings_page settings_page = SETTINGS_PERSONAL;
@@ -7627,6 +7707,33 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                             desktop_bt_status_message =
                                 "Could not start connection; adapter may be busy.";
                     }
+                } else if (px >= sx + 360U && px < sx + 488U &&
+                    py >= content_y + 406U +
+                        (uint64_t)desktop_bt_device_count * 31U &&
+                    py < content_y + 433U +
+                        (uint64_t)desktop_bt_device_count * 31U) {
+                    if (xhci_bluetooth_start_classic_inquiry())
+                        desktop_bt_status_message =
+                            "Classic BR/EDR inquiry is active.";
+                    else
+                        desktop_bt_status_message =
+                            "Classic inquiry unavailable; adapter may be busy.";
+                } else if (px >= sx + 360U && px < sx + 488U &&
+                    py >= content_y + 457U +
+                        (uint64_t)desktop_bt_device_count * 31U &&
+                    py < content_y + 457U +
+                        (uint64_t)desktop_bt_device_count * 31U +
+                        (uint64_t)desktop_bt_classic_device_count * 29U) {
+                    const uint64_t row = (py -
+                        (content_y + 457U +
+                         (uint64_t)desktop_bt_device_count * 31U)) / 29U;
+                    if (row < desktop_bt_classic_device_count &&
+                        xhci_bluetooth_connect_classic((size_t)row))
+                        desktop_bt_status_message =
+                            "BR/EDR connection requested; HIDP requires controller-reported encryption.";
+                    else
+                        desktop_bt_status_message =
+                            "Classic connection could not be started.";
                 }
             }
             if (changed) desktop_preferences_save();

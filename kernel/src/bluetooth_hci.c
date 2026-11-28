@@ -119,12 +119,15 @@ bool nexus_bt_hci_connection_complete(
         return false;
     if (event->event_code == NEXUS_BT_HCI_EVENT_CONNECTION_COMPLETE) {
         if (event->parameter_length != 11U) return false;
-        if (event->parameters[0] != 0U) return false;
+        if (event->parameters[0] != 0U ||
+            event->parameters[9U] != 1U || /* ACL only; reject SCO/eSCO. */
+            event->parameters[10U] > 1U) return false;
         const uint16_t handle = get_le16(event->parameters + 1U);
         if (handle == 0U || handle > 0x0FFFU) return false;
         *connection = (struct nexus_bt_hci_connection){
             .connected = true,
             .low_energy = false,
+            .encrypted = event->parameters[10U] == 1U,
             .handle = handle
         };
         for (size_t i = 0U; i < 6U; ++i)

@@ -41,6 +41,37 @@ static void test_classic_connection_and_disconnect(void) {
     assert(nexus_bt_hci_connection_complete(&connected_event, &connection));
     assert(connection.connected && !connection.low_energy);
     assert(connection.handle == 0x0234U && connection.peer_address[5] == 6U);
+    assert(!connection.encrypted);
+
+    uint8_t encrypted_parameters[sizeof(connected_parameters)];
+    memcpy(encrypted_parameters, connected_parameters,
+           sizeof(encrypted_parameters));
+    encrypted_parameters[10U] = 1U;
+    const struct nexus_bt_hci_event_view encrypted_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_CONNECTION_COMPLETE,
+        .parameters = encrypted_parameters,
+        .parameter_length = sizeof(encrypted_parameters)
+    };
+    assert(nexus_bt_hci_connection_complete(&encrypted_event, &connection));
+    assert(connection.encrypted);
+
+    encrypted_parameters[9U] = 0U; /* SCO link is not an ACL HID transport. */
+    const struct nexus_bt_hci_event_view invalid_link_type_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_CONNECTION_COMPLETE,
+        .parameters = encrypted_parameters,
+        .parameter_length = sizeof(encrypted_parameters)
+    };
+    assert(!nexus_bt_hci_connection_complete(
+        &invalid_link_type_event, &connection));
+    encrypted_parameters[9U] = 1U;
+    encrypted_parameters[10U] = 2U;
+    const struct nexus_bt_hci_event_view invalid_encryption_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_CONNECTION_COMPLETE,
+        .parameters = encrypted_parameters,
+        .parameter_length = sizeof(encrypted_parameters)
+    };
+    assert(!nexus_bt_hci_connection_complete(
+        &invalid_encryption_event, &connection));
 
     const uint8_t disconnected_parameters[] = {0U,0x34U,0x02U,0x13U};
     const struct nexus_bt_hci_event_view disconnected_event = {

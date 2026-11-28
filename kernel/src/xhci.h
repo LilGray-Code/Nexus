@@ -32,9 +32,10 @@ struct nexus_pci_device;
  * continue only that same exchange using non-bonding legacy Just Works.
  * NoInputNoOutput means there is no MITM protection, passkey/OOB/numeric
  * confirmation UI, or persistent bond store. The Settings view exposes
- * adapter status and passive LE advertisements. Classic BR/EDR HIDP is not
- * connected to the input runtime. EHCI/OHCI/UHCI are not fully operational
- * input controllers. */
+ * adapter status, LE advertisements and Classic BR/EDR inquiry results.
+ * Classic HIDP is connected only for links the controller reports encrypted;
+ * Classic SSP pairing, MITM UI and persistent link-key storage are not
+ * provided. EHCI/OHCI/UHCI are not fully operational input controllers. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);
@@ -42,9 +43,10 @@ bool xhci_mouse_ready(void);
 bool xhci_gamepads_ready(void);
 
 /* Bluetooth HCI USB transport exposes complete L2CAP PDUs to an upper
- * protocol layer. Internal ATT/HOGP and BLE SC/legacy pairing share this
- * transport. Pairing uses NoInputNoOutput Just Works only; there is no MITM
- * confirmation, passkey/OOB, persistent bond store or classic HIDP client. */
+ * protocol layer. Internal ATT/HOGP, BLE SC/legacy pairing, and Classic HIDP
+ * over controller-reported encrypted BR/EDR links share this transport.
+ * Pairing uses NoInputNoOutput Just Works for BLE only; Classic SSP, MITM
+ * confirmation and persistent link-key storage are not implemented. */
 bool xhci_bluetooth_read_l2cap(uint16_t *connection_handle,
                                uint8_t *pdu, size_t pdu_capacity,
                                size_t *pdu_length);

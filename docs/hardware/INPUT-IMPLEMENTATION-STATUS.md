@@ -325,4 +325,4 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 ### Desktop Bluetooth settings update
 
 - The Network settings Bluetooth panel now shows ready/scanning adapters, active links, encrypted links, and HOGP-ready HID links separately. This distinguishes a radio link from an encrypted link and from an active keyboard/mouse report subscription.
-- Connect feedback explains that BLE pairing/encryption is required before input. The panel explicitly identifies the current security limit (Just Works, no MITM/passkey/OOB or stored bonds) and that Classic HIDP has not yet been connected to the live input runtime.
+- Connect feedback explains that BLE pairing/encryption is required before input. The panel explicitly identifies the current security limit (Just Works, no MITM/passkey/OOB or stored bonds), and separates Classic Inquiry/BR-EDR HIDP readiness from BLE HOGP readiness. Classic devices are only allowed to deliver input after the controller reports the ACL link encrypted.

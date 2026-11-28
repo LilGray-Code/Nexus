@@ -56,6 +56,7 @@ struct nexus_bt_hci_acl_view {
 struct nexus_bt_hci_connection {
     bool connected;
     bool low_energy;
+    bool encrypted;
     uint16_t handle;
     uint8_t peer_address_type;
     uint8_t peer_address[6];

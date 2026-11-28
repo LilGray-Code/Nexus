@@ -397,10 +397,10 @@ def exercise_installer_mouse_ui(qmp: QMP, serial_log: Path) -> None:
     # identity or the ERASE authorization phrase, so no target sectors are
     # written by this interaction test.
     click_at(378, 378,
-             "NEXUS INSTALLER MOUSE: CONFIRMATION SCREEN OPENED",
-             "USB mouse activating installer Continue")
+             "NEXUS INSTALLER MOUSE: CONTINUE REFUSED",
+             "USB mouse activating Continue and enforcing target eligibility")
 
-    print("USB mouse opened drive selector, selected target, and opened review")
+    print("USB mouse opened drive selector, selected target, and exercised the guarded Continue action")
 
 
 def main() -> None:

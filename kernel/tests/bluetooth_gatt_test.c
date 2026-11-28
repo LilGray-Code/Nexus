@@ -122,11 +122,69 @@ static void test_att_request_builders(void) {
         pdu, sizeof(pdu), &length));
 }
 
+static void test_characteristic_inventory_and_paging_helpers(void) {
+    const uint8_t response[] = {
+        0x09U,0x07U,
+        0x02U,0x00U,0x02U,0x03U,0x00U,0x4BU,0x2AU,
+        0x05U,0x00U,0x02U,0x06U,0x00U,0x4DU,0x2AU,
+        0x08U,0x00U,0x12U,0x09U,0x00U,0x4DU,0x2AU
+    };
+    struct nexus_bt_gatt_hid_service service = {
+        .start_handle = 1U,
+        .end_handle = 16U
+    };
+    assert(nexus_bt_gatt_add_hid_characteristics(
+        response,sizeof(response),&service));
+    assert(service.characteristic_count == 3U);
+    assert(service.characteristics[0].declaration_handle == 2U);
+    assert(service.characteristics[0].value_handle == 3U);
+    assert(service.characteristics[0].properties == 2U);
+    assert(service.characteristics[0].uuid == NEXUS_BT_GATT_UUID_REPORT_MAP);
+    assert(service.report_map_handle == 3U);
+    assert(service.report_count == 2U);
+    assert(service.reports[1].properties == 0x12U);
+
+    uint8_t pdu[16] = {0U};
+    size_t length = 0U;
+    assert(nexus_bt_gatt_build_read_blob_request(
+        3U, 23U, pdu, sizeof(pdu), &length));
+    assert(length == 5U && pdu[0] == 0x0CU);
+    assert(pdu[1] == 3U && pdu[3] == 23U);
+    assert(!nexus_bt_gatt_build_read_blob_request(
+        0U, 0U, pdu, sizeof(pdu), &length));
+
+    assert(nexus_bt_gatt_build_find_information_request(
+        10U, 14U, pdu, sizeof(pdu), &length));
+    assert(length == 5U && pdu[0] == 0x04U);
+    assert(pdu[1] == 10U && pdu[3] == 14U);
+    assert(!nexus_bt_gatt_build_find_information_request(
+        15U, 14U, pdu, sizeof(pdu), &length));
+
+    const uint8_t group_response[] = {
+        0x11U,0x06U,1U,0U,5U,0U,0x0FU,0x18U,
+        6U,0U,10U,0U,0x12U,0x18U
+    };
+    uint16_t last = 0U;
+    assert(nexus_bt_gatt_response_last_group_end(
+        group_response,sizeof(group_response),&last));
+    assert(last == 10U);
+
+    const uint8_t characteristic_response[] = {
+        0x09U,0x07U,
+        2U,0U,2U,3U,0U,0x4BU,0x2AU,
+        5U,0U,2U,6U,0U,0x4DU,0x2AU
+    };
+    assert(nexus_bt_gatt_response_last_attribute_handle(
+        characteristic_response,sizeof(characteristic_response),&last));
+    assert(last == 5U);
+}
+
 int main(void) {
     test_primary_service_discovery();
     test_hid_characteristics();
     test_report_reference_and_descriptors();
     test_att_request_builders();
+    test_characteristic_inventory_and_paging_helpers();
     puts("NEXUS BLE HID GATT DISCOVERY AND REQUEST TESTS PASSED");
     return 0;
 }

@@ -65,8 +65,18 @@ bool nexus_bt_gatt_add_hid_characteristics(const uint8_t *pdu,
         if (declaration < service->start_handle ||
             declaration > service->end_handle ||
             value <= declaration || value > service->end_handle) return false;
+        const uint16_t uuid = entry_length == 7U
+            ? get_le16(pdu + offset + 5U) : 0U;
+        if (service->characteristic_count >=
+                NEXUS_BT_GATT_MAX_CHARACTERISTICS) return false;
+        service->characteristics[service->characteristic_count++] =
+            (struct nexus_bt_gatt_characteristic){
+                .declaration_handle = declaration,
+                .value_handle = value,
+                .properties = properties,
+                .uuid = uuid
+            };
         if (entry_length != 7U) continue;
-        const uint16_t uuid = get_le16(pdu + offset + 5U);
         switch (uuid) {
             case NEXUS_BT_GATT_UUID_HID_INFORMATION:
                 service->hid_information_handle = value;
@@ -203,4 +213,66 @@ bool nexus_bt_gatt_build_enable_notifications(uint16_t cccd_handle,
     static const uint8_t notify[2] = {0x01U,0x00U};
     return nexus_bt_gatt_build_write_request(cccd_handle, notify,
         sizeof(notify), pdu, capacity, pdu_length);
+}
+
+
+bool nexus_bt_gatt_build_read_blob_request(uint16_t handle, uint16_t offset,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length) {
+    if (handle == 0U || pdu == NULL || pdu_length == NULL ||
+        capacity < 5U) return false;
+    pdu[0] = 0x0CU;
+    put_le16(pdu + 1U, handle);
+    put_le16(pdu + 3U, offset);
+    *pdu_length = 5U;
+    return true;
+}
+
+bool nexus_bt_gatt_build_find_information_request(uint16_t start_handle,
+    uint16_t end_handle, uint8_t *pdu, size_t capacity, size_t *pdu_length) {
+    if (start_handle == 0U || end_handle < start_handle ||
+        pdu == NULL || pdu_length == NULL || capacity < 5U) return false;
+    pdu[0] = 0x04U;
+    put_le16(pdu + 1U, start_handle);
+    put_le16(pdu + 3U, end_handle);
+    *pdu_length = 5U;
+    return true;
+}
+
+bool nexus_bt_gatt_response_last_group_end(
+    const uint8_t *pdu, size_t pdu_length, uint16_t *last_end_handle) {
+    if (pdu == NULL || last_end_handle == NULL || pdu_length < 2U ||
+        pdu[0] != 0x11U) return false;
+    const uint8_t entry_length = pdu[1U];
+    if ((entry_length != 6U && entry_length != 20U) ||
+        pdu_length < 2U + entry_length ||
+        (pdu_length - 2U) % entry_length != 0U) return false;
+    uint16_t last = 0U;
+    for (size_t offset = 2U; offset < pdu_length; offset += entry_length) {
+        const uint16_t start = get_le16(pdu + offset);
+        const uint16_t end = get_le16(pdu + offset + 2U);
+        if (start == 0U || end < start) return false;
+        last = end;
+    }
+    *last_end_handle = last;
+    return true;
+}
+
+bool nexus_bt_gatt_response_last_attribute_handle(
+    const uint8_t *pdu, size_t pdu_length,
+    uint16_t *last_declaration_handle) {
+    if (pdu == NULL || last_declaration_handle == NULL ||
+        pdu_length < 2U || pdu[0] != 0x09U) return false;
+    const uint8_t entry_length = pdu[1U];
+    if ((entry_length != 7U && entry_length != 21U) ||
+        pdu_length < 2U + entry_length ||
+        (pdu_length - 2U) % entry_length != 0U) return false;
+    uint16_t last = 0U;
+    for (size_t offset = 2U; offset < pdu_length; offset += entry_length) {
+        const uint16_t declaration = get_le16(pdu + offset);
+        const uint16_t value = get_le16(pdu + offset + 3U);
+        if (declaration == 0U || value <= declaration) return false;
+        last = declaration;
+    }
+    *last_declaration_handle = last;
+    return true;
 }

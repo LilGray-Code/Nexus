@@ -15,6 +15,7 @@
 #define NEXUS_BT_GATT_UUID_REPORT 0x2A4DU
 #define NEXUS_BT_GATT_UUID_PROTOCOL_MODE 0x2A4EU
 #define NEXUS_BT_GATT_MAX_REPORTS 8U
+#define NEXUS_BT_GATT_MAX_CHARACTERISTICS 16U
 
 struct nexus_bt_gatt_hid_report_characteristic {
     uint16_t declaration_handle;
@@ -26,6 +27,13 @@ struct nexus_bt_gatt_hid_report_characteristic {
     uint8_t report_type;
 };
 
+struct nexus_bt_gatt_characteristic {
+    uint16_t declaration_handle;
+    uint16_t value_handle;
+    uint8_t properties;
+    uint16_t uuid;
+};
+
 struct nexus_bt_gatt_hid_service {
     uint16_t start_handle;
     uint16_t end_handle;
@@ -33,6 +41,9 @@ struct nexus_bt_gatt_hid_service {
     uint16_t report_map_handle;
     uint16_t hid_control_point_handle;
     uint16_t protocol_mode_handle;
+    uint8_t characteristic_count;
+    struct nexus_bt_gatt_characteristic characteristics[
+        NEXUS_BT_GATT_MAX_CHARACTERISTICS];
     uint8_t report_count;
     struct nexus_bt_gatt_hid_report_characteristic reports[
         NEXUS_BT_GATT_MAX_REPORTS];
@@ -64,6 +75,15 @@ bool nexus_bt_gatt_build_read_by_type(uint16_t start_handle,
     size_t *pdu_length);
 bool nexus_bt_gatt_build_read_request(uint16_t handle, uint8_t *pdu,
     size_t capacity, size_t *pdu_length);
+bool nexus_bt_gatt_build_read_blob_request(uint16_t handle, uint16_t offset,
+    uint8_t *pdu, size_t capacity, size_t *pdu_length);
+bool nexus_bt_gatt_build_find_information_request(uint16_t start_handle,
+    uint16_t end_handle, uint8_t *pdu, size_t capacity, size_t *pdu_length);
+bool nexus_bt_gatt_response_last_group_end(
+    const uint8_t *pdu, size_t pdu_length, uint16_t *last_end_handle);
+bool nexus_bt_gatt_response_last_attribute_handle(
+    const uint8_t *pdu, size_t pdu_length,
+    uint16_t *last_declaration_handle);
 bool nexus_bt_gatt_build_write_request(uint16_t handle,
     const uint8_t *value, uint16_t value_length, uint8_t *pdu,
     size_t capacity, size_t *pdu_length);

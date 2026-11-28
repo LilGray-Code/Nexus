@@ -202,3 +202,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - An upper layer can initiate a connection to a selected address/type through xhci_bluetooth_connect_le. The adapter disables scanning, sends LE Create Connection through the USB HCI control pipe, processes Command Status and LE Connection Complete, then resumes scanning after success/failure.
 - Generic HCI command submission now remains usable after initial controller bring-up and tracks the matching Command Complete/Command Status opcode, status and command credits.
 - This does not implement authenticated SMP pairing, bonding/key persistence, L2CAP signalling, HID service discovery/subscriptions or keyboard/mouse input report delivery. Only legacy advertisements are parsed; LE Extended Advertising Reports are not yet supported. No physical Bluetooth radio has been tested.
+
+
+### BLE HID GATT discovery support — November 28, 2026
+
+- Extended HID characteristic inventory to retain declaration/value handles, properties and 16-bit UUIDs for all characteristics in the bounded service range, not only Report characteristics.
+- Added ATT Read Blob and Find Information request builders and validated continuation-handle extraction for Read By Group Type and Read By Type responses.
+- These are reusable ATT/GATT discovery primitives, not yet an end-to-end HOGP client. The runtime still needs to negotiate ATT MTU, paginate discovery across responses, discover per-report descriptors, read and parse the HID Report Map, enable the input-report CCCDs, and deliver report notifications into the shared input subsystem.

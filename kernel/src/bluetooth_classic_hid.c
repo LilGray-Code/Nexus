@@ -238,7 +238,7 @@ static bool handle_config_request(
             uint8_t response[32U] = {0U};
             const size_t remaining = (size_t)option_length + 2U;
             if (remaining > sizeof(response) - 6U) return false;
-            put_le16(response,channel->remote_cid);
+            put_le16(response,channel->local_cid);
             put_le16(response + 2U,0U);
             put_le16(response + 4U,L2CAP_CONFIG_UNKNOWN_OPTIONS);
             memcpy(response + 6U,parameters + offset,remaining);
@@ -248,7 +248,7 @@ static bool handle_config_request(
         offset += 2U + option_length;
     }
     uint8_t response[6U] = {0U};
-    put_le16(response,channel->remote_cid);
+    put_le16(response,channel->local_cid);
     put_le16(response + 2U,0U);
     put_le16(response + 4U,L2CAP_CONFIG_SUCCESS);
     if (!queue_signal(session,L2CAP_SIGNAL_CONFIG_RESPONSE,identifier,

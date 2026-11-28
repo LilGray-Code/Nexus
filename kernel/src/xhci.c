@@ -1640,6 +1640,23 @@ static void xhci_bluetooth_process_l2cap(
     const uint8_t opcode = l2cap.payload[0];
     if (opcode == NEXUS_BT_ATT_HANDLE_VALUE_NOTIFICATION ||
         opcode == NEXUS_BT_ATT_HANDLE_VALUE_INDICATION) {
+        const bool encrypted =
+            (link->security_mode == XHCI_BT_SECURITY_SECURE_CONNECTIONS &&
+             link->smp_sc.state == NEXUS_BT_SMP_SC_ENCRYPTED) ||
+            (link->security_mode == XHCI_BT_SECURITY_LEGACY &&
+             link->smp.state == NEXUS_BT_SMP_ENCRYPTED);
+        if (!encrypted) {
+            /* Never deliver a wireless keyboard/mouse report before link
+             * encryption, even when a peripheral incorrectly notifies before
+             * the ATT CCCD write or before pairing has completed. */
+            xhci_bluetooth_count_drop(bluetooth);
+            if (link->security_mode == XHCI_BT_SECURITY_NONE &&
+                !xhci_bluetooth_begin_secure_connections(
+                    &bluetooth->hci_host, link))
+                xhci_bluetooth_fail_pairing(
+                    link, NEXUS_BT_SMP_REASON_PAIRING_NOT_SUPPORTED);
+            return;
+        }
         struct nexus_bt_hogp_input_report decoded = {0};
         if (nexus_bt_hogp_client_decode_notification(
                 &link->hogp, &l2cap, &decoded)) {
@@ -1855,6 +1872,26 @@ static void xhci_bluetooth_progress_hogp(
             link->hogp.state == NEXUS_BT_HOGP_READY ||
             link->hogp.state == NEXUS_BT_HOGP_FAILED ||
             link->hogp.state == NEXUS_BT_HOGP_IDLE) continue;
+
+        /* Discover the HID service and Report Map without granting input
+         * access, but require an encrypted LE link before subscribing to
+         * input reports. This avoids accepting unauthenticated plaintext HID
+         * notifications from peripherals that omit ATT permission errors. */
+        if (link->hogp.state == NEXUS_BT_HOGP_CCCD_WRITE_PENDING &&
+            link->security_mode == XHCI_BT_SECURITY_NONE) {
+            if (!xhci_bluetooth_begin_secure_connections(
+                    &bluetooth->hci_host, link)) {
+                xhci_bluetooth_fail_pairing(
+                    link, NEXUS_BT_SMP_REASON_PAIRING_NOT_SUPPORTED);
+            }
+            return;
+        }
+        if (link->hogp.state == NEXUS_BT_HOGP_CCCD_WRITE_PENDING &&
+            ((link->security_mode == XHCI_BT_SECURITY_SECURE_CONNECTIONS &&
+              link->smp_sc.state != NEXUS_BT_SMP_SC_ENCRYPTED) ||
+             (link->security_mode == XHCI_BT_SECURITY_LEGACY &&
+              link->smp.state != NEXUS_BT_SMP_ENCRYPTED)))
+            continue;
 
         const enum nexus_bt_hogp_state pending_state = link->hogp.state;
         uint8_t att[ NEXUS_BT_HOGP_MAX_MTU ];

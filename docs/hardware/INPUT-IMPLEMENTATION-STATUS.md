@@ -313,3 +313,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - The Classic HCI inquiry parser and Inquiry/Create Connection builders are now included in the host test matrix.
 - Added the standalone Classic HID session implementation to the kernel object list and CI. The test exercises separate Control/Interrupt PSM connections, both directions of L2CAP configuration, HIDP Set Protocol boot-mode handshake, keyboard and mouse input decoding, malformed signaling and retry after failed transmit.
 - This commit provides the protocol component and build validation; runtime HCI Inquiry UI/connection orchestration and xHCI report dispatch are the next integration step.
+
+
+### Bluetooth input security gate — November 28, 2026
+
+- BLE HID service discovery may inspect public GATT metadata before encryption, but the xHCI HOGP runtime now starts LE Secure Connections (or the existing same-exchange legacy fallback only when the peer declines SC) before writing an input-report CCCD.
+- ATT Handle Value Notifications/Indications are rejected for input while the link is not encrypted, including unexpected early notifications from a peripheral that fails to enforce its attribute permissions. Keyboard/mouse reports are delivered to the shared input queue only after the HCI Encryption Change event confirms encryption.
+- This policy currently uses NoInputNoOutput Just Works. It provides link encryption but not MITM protection or persistent bonding. The OS still needs a trusted passkey/numeric-comparison/OOB UI and protected bond storage before claiming authenticated pairing. Physical radio interoperability testing remains required.

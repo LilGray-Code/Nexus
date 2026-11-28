@@ -172,3 +172,12 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Endpoint zero and reserved endpoint-address/attribute bits are rejected. The interrupt-IN event pipe must have a nonzero interval, a supported packet size and no unsupported high-bandwidth multiplier. Bulk pipes must have valid USB 2 packet sizes and no high-bandwidth multiplier.
 - Duplicate endpoint addresses, missing event/bulk-in/bulk-out pipes, malformed descriptor lengths (including malformed trailing descriptors after a valid interface), and truncated configurations fail closed. Tests cover these negative cases and verify that unrelated interfaces can precede the Bluetooth class interface.
 - This still discovers endpoint addresses only. xHCI has not yet configured a Bluetooth slot, scheduled the interrupt event pipe or bidirectional bulk ACL pipes, or connected their packets to the HCI host service.
+
+
+### xHCI endpoint context and deferred completion foundation — November 28, 2026
+
+- Extracted non-control endpoint-context construction into a tested helper. It maps USB endpoint addresses to xHCI DCI/endpoint types for Bulk IN/OUT and Interrupt IN/OUT, validates reserved address bits, interval, packet/burst size and transfer-ring alignment, and never shrinks the Slot Context's existing context-entry count.
+- The existing interrupt endpoint path (HID and hub) now uses the shared builder. Added a generic normal-TRB scheduler with explicit short-packet reporting for IN transfers and no ISP request for OUT transfers.
+- Added a bounded 63-entry deferred xHCI event FIFO. Synchronous command/EP0 transfer waiters now retain unrelated port and transfer events instead of dropping them; the ordinary xHCI poll loop drains retained events before newer hardware events.
+- Host tests cover endpoint DCI/type/context construction, IN/OUT direction, context-entry preservation, malformed endpoint addresses and ring addresses, plus FIFO ordering/wrap/full/empty behavior.
+- These are xHCI transfer foundations; USB Bluetooth interface discovery is still not wired to live xHCI endpoint allocation, HCI command transport or ACL event/data service. Authenticated pairing/scanning and HID report delivery remain incomplete.

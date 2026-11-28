@@ -164,6 +164,14 @@ jobs:
             -o /tmp/nexus-xhci-endpoint-test
           /tmp/nexus-xhci-endpoint-test
 
+      - name: Test xHCI deferred event FIFO
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/xhci_events.c \
+            kernel/tests/xhci_events_test.c \
+            -o /tmp/nexus-xhci-events-test
+          /tmp/nexus-xhci-events-test
+
       - name: Test xHCI root-port discovery bounds and PORTSC helpers
         run: |
           test -s kernel/src/xhci_ports.h

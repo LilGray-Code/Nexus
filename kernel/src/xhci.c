@@ -1,6 +1,7 @@
 #include "xhci.h"
 #include "xhci_speed.h"
 #include "xhci_endpoint.h"
+#include "xhci_events.h"
 #include "xhci_ownership.h"
 #include "xhci_ports.h"
 #include "xhci_power.h"
@@ -198,6 +199,7 @@ struct xhci_controller {
     uint64_t event_ring_physical;
     uint16_t event_dequeue;
     uint8_t event_cycle;
+    struct nexus_xhci_event_queue deferred_events;
     uint64_t last_root_scan_tick;
     /* Last observed CCS state prevents periodic polling from repeatedly
      * resetting unrelated connected devices after failed HID probing. */
@@ -377,6 +379,33 @@ static bool xhci_event_next(struct xhci_controller *xhci,
     return true;
 }
 
+static bool xhci_defer_event(
+    struct xhci_controller *xhci, const struct xhci_trb *event) {
+    if (xhci == NULL || event == NULL) return false;
+    const struct nexus_xhci_event deferred = {
+        .parameter = event->parameter,
+        .status = event->status,
+        .control = event->control
+    };
+    if (nexus_xhci_event_queue_push(&xhci->deferred_events, &deferred))
+        return true;
+    serial_write("xHCI: deferred event queue overflow; transfer/port event could not be retained\r\n");
+    return false;
+}
+
+static bool xhci_poll_event_next(
+    struct xhci_controller *xhci, struct xhci_trb *event) {
+    if (xhci == NULL || event == NULL) return false;
+    struct nexus_xhci_event deferred = {0};
+    if (nexus_xhci_event_queue_pop(&xhci->deferred_events, &deferred)) {
+        event->parameter = deferred.parameter;
+        event->status = deferred.status;
+        event->control = deferred.control;
+        return true;
+    }
+    return xhci_event_next(xhci, event);
+}
+
 static uint8_t xhci_event_type(const struct xhci_trb *event) {
     return (uint8_t)((event->control >> 10) & 0x3FU);
 }
@@ -402,7 +431,10 @@ static bool xhci_command(struct xhci_controller *xhci, uint64_t parameter,
             __asm__ volatile ("pause");
             continue;
         }
-        if (xhci_event_type(&event) != XHCI_TRB_COMMAND_EVENT) continue;
+        if (xhci_event_type(&event) != XHCI_TRB_COMMAND_EVENT) {
+            if (!xhci_defer_event(xhci, &event)) return false;
+            continue;
+        }
         if (completion != NULL) *completion = event;
         if (xhci_event_code(&event) != XHCI_CC_SUCCESS) {
             const uint16_t last_index = xhci->command_ring.enqueue == 0U
@@ -467,10 +499,16 @@ static bool xhci_wait_transfer(struct xhci_controller *xhci,
             __asm__ volatile ("pause");
             continue;
         }
-        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) continue;
+        if (xhci_event_type(&event) != XHCI_TRB_TRANSFER_EVENT) {
+            if (!xhci_defer_event(xhci, &event)) return false;
+            continue;
+        }
         const uint8_t event_slot = (uint8_t)(event.control >> 24);
         const uint8_t event_ep = (uint8_t)((event.control >> 16) & 0x1FU);
-        if (event_slot != slot_id || event_ep != endpoint_id) continue;
+        if (event_slot != slot_id || event_ep != endpoint_id) {
+            if (!xhci_defer_event(xhci, &event)) return false;
+            continue;
+        }
         if (completion != NULL) *completion = event;
         const uint8_t code = xhci_event_code(&event);
         if (code != XHCI_CC_SUCCESS && code != XHCI_CC_SHORT_PACKET) {
@@ -2872,7 +2910,7 @@ void xhci_poll(void) {
     }
 
     struct xhci_trb event;
-    while (xhci_event_next(xhci, &event)) {
+    while (xhci_poll_event_next(xhci, &event)) {
         const uint8_t event_type = xhci_event_type(&event);
         if (event_type == XHCI_TRB_PORT_EVENT) {
             xhci_handle_port_status_change(xhci, &event);

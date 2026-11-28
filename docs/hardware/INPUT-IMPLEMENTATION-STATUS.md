@@ -83,3 +83,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - xHCI attempts HID Set_Protocol(Report) and parses the mouse's report descriptor for boot-class mice before choosing the legacy three-byte Boot format. This retains scroll-wheel and extra button fields on supported devices.
 - If Report protocol selection or parsing fails, xHCI requests Boot protocol and retains the basic movement/button path. Composite boot mice use the same preference; generic non-boot HID interfaces are parsed without sending the boot-only Set_Protocol request.
 - This does not guarantee every proprietary mouse extension or vendor-specific DPI control; those require device-specific descriptors and testing.
+
+
+### Extended mouse event delivery
+
+- Generic USB HID mouse decoding now records Consumer-page AC Pan as horizontal scrolling and preserves 16-bit vertical and horizontal wheel deltas in the common input event queue.
+- The event queue coalesces and saturates both scroll axes without truncating high-resolution wheel values; PS/2 and boot-mouse producers remain compatible with zero horizontal-scroll defaults.
+- The desktop maps horizontal wheel movement to horizontal arrow navigation and maps standard HID side buttons 4/5 to browser back/forward when the browser view is active.
+- These are protocol and software-path improvements. They do not establish Bluetooth pairing, proprietary vendor extension support, UHCI/OHCI/EHCI operation, or universal physical-device compatibility.

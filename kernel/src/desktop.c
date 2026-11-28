@@ -349,7 +349,7 @@ static int64_t resize_pointer_origin_x;
 static int64_t resize_pointer_origin_y;
 static uint64_t resize_width_origin;
 static uint64_t resize_height_origin;
-static bool mouse_left_was_down;
+static uint32_t mouse_buttons_was_down;
 static bool installer_mouse_motion_logged;
 enum desktop_theme_mode {
     DESKTOP_THEME_DARK = 0,
@@ -3725,7 +3725,7 @@ bool desktop_show(const struct limine_framebuffer *framebuffer) {
     serial_write("DESKTOP: installer storage plan ready\r\n");
     if (installer_session_mode) installer_log_selected_target();
     installer_mouse_motion_logged = false;
-    mouse_left_was_down = false;
+    mouse_buttons_was_down = 0U;
     start_menu_open = false;
     start_menu_query_length = 0U;
     start_menu_query[0] = '\0';
@@ -7006,12 +7006,22 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             serial_write_hex((uint64_t)pointer_y);
             serial_write("\r\n");
         }
-        const uint8_t primary_button =
-            desktop_settings.left_handed_mouse ? 2U : 1U;
+        const uint32_t newly_pressed_buttons =
+            event->mouse_buttons & ~mouse_buttons_was_down;
+        mouse_buttons_was_down = event->mouse_buttons;
+        const uint32_t primary_button_mask = 1U <<
+            (desktop_settings.left_handed_mouse ? 1U : 0U);
         const bool left_down =
-            (event->mouse_buttons & primary_button) != 0U;
-        const bool clicked = left_down && !mouse_left_was_down;
-        mouse_left_was_down = left_down;
+            (event->mouse_buttons & primary_button_mask) != 0U;
+        const bool clicked =
+            (newly_pressed_buttons & primary_button_mask) != 0U;
+        /* Standard HID side buttons 4/5 navigate browser history. */
+        if (active_view == DESKTOP_BROWSER &&
+            (newly_pressed_buttons & (1U << 3U)) != 0U)
+            browser_history_navigate(false);
+        if (active_view == DESKTOP_BROWSER &&
+            (newly_pressed_buttons & (1U << 4U)) != 0U)
+            browser_history_navigate(true);
         if (clicked && active_view == DESKTOP_FILES)
             files_search_focus = false;
 
@@ -7762,7 +7772,26 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                 .mouse_buttons = 0U,
                 .mouse_dx = 0,
                 .mouse_dy = 0,
-                .mouse_wheel = 0
+                .mouse_wheel = 0,
+                .mouse_hwheel = 0
+            };
+            for (uint32_t i = 0U; i < steps; ++i)
+                desktop_handle_input(&wheel_key);
+            return;
+        }
+        if (event->mouse_hwheel != 0) {
+            uint32_t steps = (uint32_t)(event->mouse_hwheel > 0
+                ? event->mouse_hwheel : -(int32_t)event->mouse_hwheel);
+            steps *= desktop_settings.scroll_speed;
+            if (steps > 20U) steps = 20U;
+            const struct nexus_input_event wheel_key = {
+                .type = NEXUS_INPUT_KEYBOARD,
+                .scancode = event->mouse_hwheel > 0 ? 0x014DU : 0x014BU,
+                .mouse_buttons = 0U,
+                .mouse_dx = 0,
+                .mouse_dy = 0,
+                .mouse_wheel = 0,
+                .mouse_hwheel = 0
             };
             for (uint32_t i = 0U; i < steps; ++i)
                 desktop_handle_input(&wheel_key);

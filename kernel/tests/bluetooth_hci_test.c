@@ -401,7 +401,7 @@ static void test_le_create_connection_command_builder(void) {
     size_t packet_length = 0U;
     assert(nexus_bt_hci_build_le_create_connection(
         &parameters, packet, sizeof(packet), &packet_length));
-    assert(packet_length == 28U);
+    assert(packet_length == 29U);
     assert(packet[0] == NEXUS_BT_HCI_PACKET_COMMAND);
     assert(packet[1] == 0x0DU && packet[2] == 0x20U);
     assert(packet[3] == 25U);

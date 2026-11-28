@@ -104,4 +104,27 @@ bool nexus_bt_gatt_att_build_enable_notifications(
     size_t *pdu_length);
 
 
+
+struct nexus_bt_gatt_att_value_view {
+    uint8_t opcode;
+    const uint8_t *value;
+    uint16_t value_length;
+};
+
+struct nexus_bt_gatt_att_error {
+    uint8_t request_opcode;
+    uint16_t attribute_handle;
+    uint8_t error_code;
+};
+
+bool nexus_bt_gatt_att_parse_value_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_value_view *value);
+bool nexus_bt_gatt_att_parse_error_response(
+    const uint8_t *pdu, size_t pdu_length,
+    struct nexus_bt_gatt_att_error *error);
+bool nexus_bt_gatt_att_parse_write_response(
+    const uint8_t *pdu, size_t pdu_length);
+
+
 #endif

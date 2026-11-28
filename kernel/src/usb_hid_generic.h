@@ -28,7 +28,7 @@ struct nexus_usb_hid_generic_layout {
     uint8_t key_usage_minimum;
     uint8_t key_usage_maximum;
 
-    uint16_t button_bit_offset[8];
+    uint16_t button_bit_offset[32];
     uint8_t button_count;
 
     uint16_t x_bit_offset;

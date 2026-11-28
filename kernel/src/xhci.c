@@ -1517,6 +1517,10 @@ static bool xhci_bluetooth_att_error_requires_security(
            att[4] == 0x0FU;   /* Insufficient Encryption. */
 }
 
+static bool xhci_bluetooth_begin_secure_connections(
+    struct nexus_bt_hci_host *host,
+    struct xhci_bluetooth_link *link);
+
 static void xhci_bluetooth_process_l2cap(
     struct xhci_bluetooth_device *bluetooth,
     struct xhci_bluetooth_link *link,

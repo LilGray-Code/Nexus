@@ -7,7 +7,7 @@
 void serial_write(const char *text) { (void)text; }
 void serial_write_hex(uint64_t value) { (void)value; }
 
-static void submit_mouse(uint16_t buttons, int16_t dx, int16_t dy, int16_t wheel) {
+static void submit_mouse(uint32_t buttons, int16_t dx, int16_t dy, int16_t wheel) {
     const struct nexus_usb_mouse_event event = {
         .buttons = buttons,
         .dx = dx,
@@ -18,7 +18,7 @@ static void submit_mouse(uint16_t buttons, int16_t dx, int16_t dy, int16_t wheel
     input_usb_mouse_event(&event);
 }
 
-static void submit_mouse_extended(uint16_t buttons, int16_t dx, int16_t dy,
+static void submit_mouse_extended(uint32_t buttons, int16_t dx, int16_t dy,
                                   int16_t wheel, int16_t horizontal_wheel) {
     const struct nexus_usb_mouse_event event = {
         .buttons = buttons,

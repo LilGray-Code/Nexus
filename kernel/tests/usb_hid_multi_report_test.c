@@ -25,8 +25,8 @@ static const uint8_t high_resolution_mouse_report_id[] = {
     0x05,0x01, 0x09,0x02, 0xA1,0x01,
     0x85,0x01,
     0x09,0x01, 0xA1,0x00,
-    0x05,0x09, 0x19,0x01, 0x29,0x10,
-    0x15,0x00, 0x25,0x01, 0x95,0x10, 0x75,0x01, 0x81,0x02,
+    0x05,0x09, 0x19,0x01, 0x29,0x20,
+    0x15,0x00, 0x25,0x01, 0x95,0x20, 0x75,0x01, 0x81,0x02,
     0x05,0x01, 0x09,0x30, 0x09,0x31,
     0x16,0x00,0x80, 0x26,0xFF,0x7F,
     0x75,0x10, 0x95,0x02, 0x81,0x06,
@@ -123,32 +123,32 @@ static void test_high_resolution_mouse_report_id(void) {
         high_resolution_mouse_report_id,
         sizeof(high_resolution_mouse_report_id), &multi));
     assert(multi.report_count == 1U);
-    assert(multi.max_report_bytes == 11U);
+    assert(multi.max_report_bytes == 13U);
     assert(multi.reports[0].kind == NEXUS_USB_HID_GENERIC_MOUSE);
     assert(multi.reports[0].report_id == 1U);
     assert(multi.reports[0].x_size == 16U);
     assert(multi.reports[0].y_size == 16U);
     assert(multi.reports[0].wheel_size == 16U);
     assert(multi.reports[0].horizontal_wheel_size == 16U);
-    assert(multi.reports[0].button_count == 16U);
+    assert(multi.reports[0].button_count == 32U);
 
-    /* Report ID 1, buttons 1/3/16, X=300, Y=-300,
+    /* Report ID 1, buttons 1/3/32, X=300, Y=-300,
      * vertical wheel=512 and horizontal AC Pan=-256. */
-    const uint8_t report[11] = {
-        1U, 0x05U, 0x80U, 0x2CU, 0x01U, 0xD4U,
-        0xFEU, 0x00U, 0x02U, 0x00U, 0xFFU
+    const uint8_t report[13] = {
+        1U, 0x05U, 0x00U, 0x00U, 0x80U, 0x2CU, 0x01U,
+        0xD4U, 0xFEU, 0x00U, 0x02U, 0x00U, 0xFFU
     };
     struct nexus_usb_mouse_event event = {0};
     assert(usb_hid_generic_decode_mouse_multi(
         &multi, report, sizeof(report), &event));
-    assert(event.buttons == 0x8005U);
+    assert(event.buttons == 0x80000005U);
     assert(event.dx == 300);
     assert(event.dy == 300);
     assert(event.wheel == 512);
     assert(event.horizontal_wheel == -256);
 
-    const uint8_t unknown_report[11] = {
-        2U,0U,0U,0U,0U,0U,0U,0U,0U,0U,0U
+    const uint8_t unknown_report[13] = {
+        2U,0U,0U,0U,0U,0U,0U,0U,0U,0U,0U,0U,0U
     };
     assert(!usb_hid_generic_decode_mouse_multi(
         &multi, unknown_report, sizeof(unknown_report), &event));

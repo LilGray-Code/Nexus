@@ -150,3 +150,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Generic mouse HID decoding now maps Consumer-page AC Back and AC Forward one-bit usages to logical mouse buttons 4 and 5, in addition to the Button-page form.
 - This allows compatible mice to use the existing browser back/forward actions regardless of which common HID page reports the side buttons.
 - Added a descriptor-driven test; proprietary vendor-specific usages and application-defined actions remain device-specific.
+
+
+### USB Bluetooth HCI packet transport abstraction
+
+- Added an I/O abstraction bound to the discovered Bluetooth USB interface. HCI Commands use the Bluetooth class control request, HCI Events are reconstructed from interrupt-IN payloads, and ACL packets use bulk-IN/OUT with strict length checks.
+- Bulk-IN ACL fragments feed the bounded L2CAP reassembler before being passed to the protocol layer. Host tests exercise command control setup, event framing, bulk OUT, and multi-fragment ACL receive.
+- This code is not yet attached to xHCI endpoint transfer rings: the callbacks must be backed by live USB control, interrupt-IN and bulk-IN/OUT scheduling before USB Bluetooth adapters work on hardware.

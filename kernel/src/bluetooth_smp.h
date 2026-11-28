@@ -76,6 +76,17 @@ bool nexus_bt_smp_start(
     uint8_t peer_address_type, const uint8_t peer_address[6],
     uint8_t *out_pdu, size_t out_capacity, size_t *out_length);
 
+/* Continue legacy pairing when the peer explicitly omits Secure Connections
+ * in its response to an SC-capable request. Reuses that exchange and sends
+ * Pairing Confirm; it does not transmit a second Pairing Request. */
+bool nexus_bt_smp_start_from_exchange(
+    struct nexus_bt_smp_session *session,
+    const uint8_t pairing_request[7], const uint8_t pairing_response[7],
+    uint8_t local_address_type, const uint8_t local_address[6],
+    uint8_t peer_address_type, const uint8_t peer_address[6],
+    const uint8_t local_random[16],
+    uint8_t *out_pdu, size_t out_capacity, size_t *out_length);
+
 /* Process one SMP command PDU. start_encryption becomes true once the peer's
  * confirm is verified and the Short Term Key is ready. Pairing Failed is
  * emitted for rejected feature sets or failed confirm verification. */

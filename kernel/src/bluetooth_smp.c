@@ -132,11 +132,46 @@ bool nexus_bt_smp_start_with_random(
     memcpy(session->preq, request, sizeof(request));
     memcpy(out_pdu, request, sizeof(request));
     *out_length = sizeof(request);
-    return nexus_bt_smp_legacy_confirm(session->tk,
-        session->local_random, session->preq, session->pres,
-        local_address_type, peer_address_type, local_address,
-        peer_address, session->local_confirm) == false
-        ? true : true;
+    return true;
+}
+
+bool nexus_bt_smp_start_from_exchange(
+    struct nexus_bt_smp_session *session,
+    const uint8_t pairing_request[7], const uint8_t pairing_response[7],
+    uint8_t local_address_type, const uint8_t local_address[6],
+    uint8_t peer_address_type, const uint8_t peer_address[6],
+    const uint8_t local_random[16],
+    uint8_t *out_pdu, size_t out_capacity, size_t *out_length) {
+    if (session == NULL || pairing_request == NULL ||
+        pairing_response == NULL || local_address == NULL ||
+        peer_address == NULL || local_random == NULL ||
+        out_pdu == NULL || out_length == NULL || out_capacity < 17U ||
+        pairing_request[0] != NEXUS_BT_SMP_PAIRING_REQUEST ||
+        pairing_response[0] != NEXUS_BT_SMP_PAIRING_RESPONSE ||
+        local_address_type > 1U || peer_address_type > 1U)
+        return false;
+
+    *session = (struct nexus_bt_smp_session){0};
+    memcpy(session->preq,pairing_request,7U);
+    memcpy(session->pres,pairing_response,7U);
+    memcpy(session->local_address,local_address,6U);
+    memcpy(session->peer_address,peer_address,6U);
+    memcpy(session->local_random,local_random,16U);
+    session->local_address_type = local_address_type;
+    session->peer_address_type = peer_address_type;
+    if (!nexus_bt_smp_legacy_confirm(session->tk,session->local_random,
+            session->preq,session->pres,local_address_type,
+            peer_address_type,local_address,peer_address,
+            session->local_confirm)) {
+        session->state = NEXUS_BT_SMP_FAILED;
+        session->failure_reason = NEXUS_BT_SMP_REASON_UNSPECIFIED;
+        return false;
+    }
+    out_pdu[0] = NEXUS_BT_SMP_PAIRING_CONFIRM;
+    memcpy(out_pdu+1U,session->local_confirm,16U);
+    *out_length = 17U;
+    session->state = NEXUS_BT_SMP_WAIT_PEER_CONFIRM;
+    return true;
 }
 
 bool nexus_bt_smp_start(

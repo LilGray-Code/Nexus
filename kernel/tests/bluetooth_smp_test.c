@@ -134,6 +134,30 @@ static void test_reject_mitm_and_wrong_confirms(void) {
     assert(out[1] == NEXUS_BT_SMP_REASON_CONFIRM_VALUE_FAILED);
 }
 
+static void test_legacy_fallback_reuses_sc_pairing_exchange(void) {
+    const uint8_t local[6] = {1U,2U,3U,4U,5U,6U};
+    const uint8_t peer[6] = {7U,8U,9U,10U,11U,12U};
+    const uint8_t random[16] = {
+        0x10U,0x11U,0x12U,0x13U,0x14U,0x15U,0x16U,0x17U,
+        0x18U,0x19U,0x1AU,0x1BU,0x1CU,0x1DU,0x1EU,0x1FU
+    };
+    const uint8_t preq[7] = {
+        NEXUS_BT_SMP_PAIRING_REQUEST,3U,0U,0x08U,16U,0U,0U
+    };
+    const uint8_t pres[7] = {
+        NEXUS_BT_SMP_PAIRING_RESPONSE,3U,0U,0U,16U,0U,0U
+    };
+    struct nexus_bt_smp_session session = {0};
+    uint8_t out[32] = {0U};
+    size_t length = 0U;
+    assert(nexus_bt_smp_start_from_exchange(&session,
+        preq,pres,0U,local,1U,peer,random,out,sizeof(out),&length));
+    assert(length == 17U && out[0] == NEXUS_BT_SMP_PAIRING_CONFIRM);
+    assert(session.state == NEXUS_BT_SMP_WAIT_PEER_CONFIRM);
+    assert(memcmp(session.preq,preq,7U) == 0);
+    assert(memcmp(session.pres,pres,7U) == 0);
+}
+
 static void test_reject_reserved_auth_and_unknown_commands(void) {
     const uint8_t local[6] = {1U,2U,3U,4U,5U,6U};
     const uint8_t peer[6] = {7U,8U,9U,10U,11U,12U};
@@ -200,6 +224,7 @@ int main(void) {
     test_legacy_just_works_pairing_transcript();
     test_reject_mitm_and_wrong_confirms();
     test_reject_reserved_auth_and_unknown_commands();
+    test_legacy_fallback_reuses_sc_pairing_exchange();
     test_failed_encryption_wipes_temporary_secrets();
     puts("NEXUS BLE SMP LEGACY PAIRING TESTS PASSED");
     return 0;

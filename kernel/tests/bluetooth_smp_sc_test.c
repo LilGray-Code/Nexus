@@ -97,7 +97,7 @@ static void test_legacy_fallback_and_security_rejections(void) {
     uint8_t local_public[64];
     for (size_t i = 0U; i < 64U; ++i) local_public[i]=(uint8_t)(i+1U);
     struct nexus_bt_smp_sc_session session = {0};
-    uint8_t out[32] = {0U}; size_t length = 0U;
+    uint8_t out[80] = {0U}; size_t length = 0U;
     bool dh=false,encrypt=false,fallback=false;
     assert(nexus_bt_smp_sc_start(&session,local_address,peer_address,
         local_public,out,sizeof(out),&length));

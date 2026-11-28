@@ -162,7 +162,7 @@ static bool hid_record_input(
                             global->usage_page, &usage)) continue;
                     if ((usage >> 16) != HID_USAGE_PAGE_BUTTON) continue;
                     const uint32_t id = usage & 0xFFFFU;
-                    if (id >= 1U && id <= 32U) {
+                    if (id >= 1U && id <= 64U) {
                         const uint8_t button = (uint8_t)(id - 1U);
                         layout->button_bit_offset[button] =
                             (uint16_t)(*input_bit_offset + i);
@@ -481,11 +481,11 @@ bool usb_hid_generic_decode_mouse(
         return false;
 
     *event = (struct nexus_usb_mouse_event){0};
-    for (uint8_t i = 0U; i < layout->button_count && i < 32U; ++i) {
+    for (uint8_t i = 0U; i < layout->button_count && i < 64U; ++i) {
         uint32_t down = 0U;
         if (!hid_read_bits(payload, layout->input_bytes,
                 layout->button_bit_offset[i], 1U, &down)) return false;
-        if (down != 0U) event->buttons |= (uint32_t)(1U << i);
+        if (down != 0U) event->buttons |= (uint64_t)1U << i;
     }
 
     uint32_t raw = 0U;

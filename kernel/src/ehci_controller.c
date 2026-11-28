@@ -489,25 +489,6 @@ static bool ehci_async_unlink_control_qh(
         EHCI_USBSTS_ASYNC_ADVANCE);
 }
 
-static bool ehci_async_unlink_control_qh(
-    struct ehci_controller *controller) {
-    if (controller == NULL || controller->async_head == NULL)
-        return false;
-    controller->async_head->horizontal_link =
-        (uint32_t)controller->async_head_physical |
-        NEXUS_EHCI_LINK_QH;
-    __asm__ volatile ("sfence" : : : "memory");
-
-    uint32_t command = 0U;
-    const uint32_t operational = controller->capability_length;
-    if (!ehci_read32(controller, operational, &command) ||
-        !ehci_write32(controller, operational,
-                      command | EHCI_USBCMD_ASYNC_ADVANCE) ||
-        !ehci_wait_register(controller, operational + 0x04U,
-            EHCI_USBSTS_ASYNC_ADVANCE, true)) return false;
-    return ehci_write32(controller, operational + 0x04U,
-                        EHCI_USBSTS_ASYNC_ADVANCE);
-}
 
 bool ehci_controller_control_transfer(
     uint32_t controller_index, uint8_t device_address,

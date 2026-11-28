@@ -131,6 +131,16 @@ jobs:
             -o /tmp/nexus-bluetooth-uart-test
           /tmp/nexus-bluetooth-uart-test
 
+      - name: Test Bluetooth UART HCI host and ACL/L2CAP bridge
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -DNEXUS_BT_UART_HOST_TEST -Ikernel/src \
+            kernel/src/bluetooth_hci.c kernel/src/bluetooth_uart.c \
+            kernel/src/bluetooth_uart_host.c \
+            kernel/tests/bluetooth_uart_host_test.c \
+            -o /tmp/nexus-bluetooth-uart-host-test
+          /tmp/nexus-bluetooth-uart-host-test
+
       - name: Test PCI discovery for xHCI EHCI OHCI and UHCI
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \

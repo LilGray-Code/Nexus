@@ -34,6 +34,38 @@ struct nexus_bt_hci_acl_view {
     uint16_t payload_length;
 };
 
+
+#define NEXUS_BT_HCI_MAX_L2CAP_PACKET 1024U
+
+enum nexus_bt_hci_acl_reassembly_status {
+    NEXUS_BT_HCI_ACL_REASSEMBLY_INVALID = 0,
+    NEXUS_BT_HCI_ACL_REASSEMBLY_PENDING,
+    NEXUS_BT_HCI_ACL_REASSEMBLY_COMPLETE
+};
+
+struct nexus_bt_hci_acl_reassembler {
+    bool active;
+    uint16_t connection_handle;
+    uint16_t expected_length;
+    uint16_t accumulated_length;
+    uint8_t packet[NEXUS_BT_HCI_MAX_L2CAP_PACKET];
+};
+
+struct nexus_bt_hci_l2cap_packet {
+    uint16_t connection_handle;
+    const uint8_t *packet;
+    uint16_t packet_length;
+};
+
+/* Completed packet data is owned by the reassembler and must be consumed
+ * before its buffer is reused by the next call. */
+void nexus_bt_hci_acl_reassembler_reset(
+    struct nexus_bt_hci_acl_reassembler *reassembler);
+enum nexus_bt_hci_acl_reassembly_status nexus_bt_hci_acl_reassemble(
+    struct nexus_bt_hci_acl_reassembler *reassembler,
+    const struct nexus_bt_hci_acl_view *fragment,
+    struct nexus_bt_hci_l2cap_packet *completed);
+
 struct nexus_bt_hci_connection {
     bool connected;
     bool low_energy;

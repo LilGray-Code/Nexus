@@ -186,10 +186,11 @@ jobs:
             -o /tmp/nexus-bluetooth-usb-test
           /tmp/nexus-bluetooth-usb-test
 
-      - name: Test Classic HIDP and BLE HOGP report parsing
+      - name: Test Classic HIDP and BLE HOGP report-to-input delivery
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
             -Ikernel/src kernel/src/bluetooth_hid.c \
+            kernel/src/usb_hid_generic.c kernel/src/bluetooth_gatt.c \
             kernel/tests/bluetooth_hid_test.c \
             -o /tmp/nexus-bluetooth-hid-test
           /tmp/nexus-bluetooth-hid-test

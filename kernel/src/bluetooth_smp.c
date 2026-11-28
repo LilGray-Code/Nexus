@@ -159,6 +159,7 @@ bool nexus_bt_smp_start_from_exchange(
     memcpy(session->local_random,local_random,16U);
     session->local_address_type = local_address_type;
     session->peer_address_type = peer_address_type;
+
     if (!nexus_bt_smp_legacy_confirm(session->tk,session->local_random,
             session->preq,session->pres,local_address_type,
             peer_address_type,local_address,peer_address,

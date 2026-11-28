@@ -156,6 +156,8 @@ static void test_legacy_fallback_reuses_sc_pairing_exchange(void) {
     assert(session.state == NEXUS_BT_SMP_WAIT_PEER_CONFIRM);
     assert(memcmp(session.preq,preq,7U) == 0);
     assert(memcmp(session.pres,pres,7U) == 0);
+    const uint8_t *ignored = out;
+    (void)ignored;
 }
 
 static void test_reject_reserved_auth_and_unknown_commands(void) {

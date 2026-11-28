@@ -22,9 +22,11 @@
 #define EHCI_USBCMD_RESET (1U << 1)
 #define EHCI_USBCMD_PERIODIC_ENABLE (1U << 4)
 #define EHCI_USBCMD_ASYNC_ENABLE (1U << 5)
+#define EHCI_USBCMD_ASYNC_ADVANCE (1U << 6)
 #define EHCI_USBSTS_HALTED (1U << 0)
 #define EHCI_USBSTS_HOST_ERROR (1U << 4)
 #define EHCI_USBSTS_ASYNC_STATUS (1U << 15)
+#define EHCI_USBSTS_ASYNC_ADVANCE (1U << 5)
 #define EHCI_USBSTS_W1C_MASK 0x3FU
 #define EHCI_LEGACY_CAP_ID 0x01U
 #define EHCI_LEGACY_BIOS_OWNED (1U << 16)
@@ -41,6 +43,7 @@ struct ehci_controller {
     bool present;
     bool running;
     bool dma_quarantined;
+    bool control_transfer_active;
     const struct nexus_pci_device *pci_device;
     uint64_t bar_base;
     uint8_t capability_length;
@@ -457,6 +460,205 @@ uint32_t ehci_controller_count(void) {
         if (controllers[i].present) ++count;
     return count;
 }
+
+static bool ehci_async_unlink_control_qh(
+    struct ehci_controller *controller) {
+    if (controller == NULL || controller->async_head == NULL)
+        return false;
+
+    controller->async_head->horizontal_link =
+        (uint32_t)controller->async_head_physical |
+        NEXUS_EHCI_LINK_QH;
+    __asm__ volatile ("sfence" : : : "memory");
+
+    uint32_t command = 0U;
+    if (!ehci_read32(controller,
+            (uint32_t)controller->capability_length, &command) ||
+        !ehci_write32(controller,
+            (uint32_t)controller->capability_length,
+            command | EHCI_USBCMD_ASYNC_ADVANCE)) return false;
+
+    if (!ehci_wait_register(controller,
+            (uint32_t)controller->capability_length + 0x04U,
+            EHCI_USBSTS_ASYNC_ADVANCE, true)) return false;
+
+    /* IAA is write-one-to-clear after the async schedule has advanced past
+     * the unlinked QH. Only now may its DMA page be reclaimed. */
+    return ehci_write32(controller,
+        (uint32_t)controller->capability_length + 0x04U,
+        EHCI_USBSTS_ASYNC_ADVANCE);
+}
+
+static bool ehci_async_unlink_control_qh(
+    struct ehci_controller *controller) {
+    if (controller == NULL || controller->async_head == NULL)
+        return false;
+    controller->async_head->horizontal_link =
+        (uint32_t)controller->async_head_physical |
+        NEXUS_EHCI_LINK_QH;
+    __asm__ volatile ("sfence" : : : "memory");
+
+    uint32_t command = 0U;
+    const uint32_t operational = controller->capability_length;
+    if (!ehci_read32(controller, operational, &command) ||
+        !ehci_write32(controller, operational,
+                      command | EHCI_USBCMD_ASYNC_ADVANCE) ||
+        !ehci_wait_register(controller, operational + 0x04U,
+            EHCI_USBSTS_ASYNC_ADVANCE, true)) return false;
+    return ehci_write32(controller, operational + 0x04U,
+                        EHCI_USBSTS_ASYNC_ADVANCE);
+}
+
+bool ehci_controller_control_transfer(
+    uint32_t controller_index, uint8_t device_address,
+    uint8_t endpoint_speed, uint16_t maximum_packet,
+    const uint8_t setup_packet[8], void *data, uint16_t data_length,
+    uint16_t *transferred) {
+    if (transferred != NULL) *transferred = 0U;
+    if (controller_index >= EHCI_MAX_CONTROLLERS ||
+        device_address > 127U || setup_packet == NULL ||
+        transferred == NULL || maximum_packet == 0U ||
+        maximum_packet > 64U || endpoint_speed != NEXUS_EHCI_SPEED_HIGH ||
+        data_length > 3072U || (data_length != 0U && data == NULL))
+        return false;
+
+    struct ehci_controller *controller = &controllers[controller_index];
+    if (!controller->present || !controller->running ||
+        controller->dma_quarantined || controller->control_transfer_active ||
+        controller->async_head == NULL) return false;
+
+    const uint16_t requested_length = (uint16_t)(
+        setup_packet[6] | ((uint16_t)setup_packet[7] << 8));
+    if (requested_length != data_length) return false;
+    controller->control_transfer_active = true;
+
+    uint64_t dma_physical = 0U;
+    if (!memory_alloc_dma_page(EHCI_DMA_LIMIT, &dma_physical)) {
+        controller->control_transfer_active = false;
+        return false;
+    }
+    volatile uint8_t *dma_page =
+        (volatile uint8_t *)memory_phys_to_virt(dma_physical);
+    if (dma_page == NULL || dma_physical == 0U ||
+        (dma_physical & (NEXUS_EHCI_PAGE_SIZE - 1U)) != 0U ||
+        dma_physical > UINT32_MAX - (NEXUS_EHCI_PAGE_SIZE - 1U)) {
+        (void)memory_free_page(dma_physical);
+        controller->control_transfer_active = false;
+        return false;
+    }
+    ehci_zero_page(dma_page);
+
+    const uint32_t qh_physical = (uint32_t)dma_physical;
+    struct nexus_ehci_qh *qh =
+        (struct nexus_ehci_qh *)(uintptr_t)dma_page;
+    const size_t qtd_count = nexus_ehci_control_qtd_count(
+        data_length, 512U);
+    if (qtd_count < 2U || qtd_count > 4U) {
+        (void)memory_free_page(dma_physical);
+        controller->control_transfer_active = false;
+        return false;
+    }
+
+    const size_t qtd_offset = sizeof(struct nexus_ehci_qh);
+    struct nexus_ehci_qtd *qtds =
+        (struct nexus_ehci_qtd *)(uintptr_t)(dma_page + qtd_offset);
+    uint32_t qtd_physical[4] = {0U,0U,0U,0U};
+    for (size_t i = 0U; i < qtd_count; ++i)
+        qtd_physical[i] = qh_physical + (uint32_t)qtd_offset +
+            (uint32_t)(i * sizeof(struct nexus_ehci_qtd));
+
+    const uint16_t setup_offset = 256U;
+    const uint16_t data_offset = 512U;
+    for (size_t i = 0U; i < 8U; ++i)
+        dma_page[setup_offset + i] = setup_packet[i];
+    if (data_length != 0U) {
+        if ((setup_packet[0] & 0x80U) != 0U) {
+            for (uint16_t i = 0U; i < data_length; ++i)
+                dma_page[data_offset + i] = 0U;
+        } else {
+            const uint8_t *source = (const uint8_t *)data;
+            for (uint16_t i = 0U; i < data_length; ++i)
+                dma_page[data_offset + i] = source[i];
+        }
+    }
+
+    const uint32_t pages[5] = {qh_physical,0U,0U,0U,0U};
+    if (!nexus_ehci_build_control_qtd_chain(
+            qtds, qtd_physical, qtd_count, setup_packet,
+            pages, setup_offset, data_length != 0U ? pages : NULL,
+            data_length != 0U ? 1U : 0U, data_offset, maximum_packet) ||
+        !nexus_ehci_build_qh(qh, qh_physical,
+            (uint32_t)controller->async_head_physical,
+            device_address, 0U, NEXUS_EHCI_SPEED_HIGH,
+            maximum_packet, true, false, 4U, qtd_physical[0])) {
+        (void)memory_free_page(dma_physical);
+        controller->control_transfer_active = false;
+        return false;
+    }
+
+    /* Serialize endpoint-zero transfers, linking this QH after the async
+     * reclamation head. Its horizontal link points back to the head. */
+    controller->async_head->horizontal_link =
+        qh_physical | NEXUS_EHCI_LINK_QH;
+    __asm__ volatile ("sfence" : : : "memory");
+
+    const size_t status_index = qtd_count - 1U;
+    volatile struct nexus_ehci_qtd *status_qtd = &qtds[status_index];
+    volatile struct nexus_ehci_qtd *data_qtd =
+        data_length != 0U ? &qtds[1U] : NULL;
+    bool completed = false;
+    bool success = false;
+    uint32_t data_token = 0U;
+    for (uint32_t spin = 0U; spin < EHCI_POLL_LIMIT; ++spin) {
+        const uint32_t status_token = status_qtd->token;
+        if ((status_token & (1U << 7)) == 0U) {
+            completed = true;
+            const uint32_t errors =
+                (1U << 6) | (1U << 5) | (1U << 4) | (1U << 3) |
+                (1U << 2);
+            success = (status_token & errors) == 0U;
+            if (data_qtd != NULL) {
+                data_token = data_qtd->token;
+                success = success && (data_token & errors) == 0U &&
+                    (data_token & (1U << 7)) == 0U;
+            }
+            break;
+        }
+        __asm__ volatile ("pause");
+    }
+
+    if (!ehci_async_unlink_control_qh(controller)) {
+        /* IAA is the proof that the controller has advanced past the removed
+         * QH. Without it, do not free a page the controller may still fetch. */
+        controller->dma_quarantined = true;
+        controller->running = false;
+        controller->control_transfer_active = false;
+        serial_write("EHCI: async advance timed out; retaining control-transfer DMA page\r\n");
+        return false;
+    }
+
+    if (completed && success && data_qtd != NULL) {
+        /* The DATA qTD contains the actual residual count; the STATUS qTD
+         * is zero-length and therefore cannot report a short data packet. */
+        const uint32_t residual =
+            (data_token >> 16) & NEXUS_EHCI_QTD_MAX_BYTES;
+        if (residual <= data_length) {
+            *transferred = (uint16_t)(data_length - residual);
+            if ((setup_packet[0] & 0x80U) != 0U) {
+                uint8_t *destination = (uint8_t *)data;
+                for (uint16_t i = 0U; i < *transferred; ++i)
+                    destination[i] = dma_page[data_offset + i];
+            }
+        } else {
+            success = false;
+        }
+    }
+
+    (void)memory_free_page(dma_physical);
+    controller->control_transfer_active = false;
+    return completed && success;
+}
+
 
 uint32_t ehci_controller_running_count(void) {
     uint32_t count = 0U;

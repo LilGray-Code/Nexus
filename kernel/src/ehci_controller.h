@@ -16,4 +16,13 @@ void ehci_controller_poll(void);
 uint32_t ehci_controller_count(void);
 uint32_t ehci_controller_running_count(void);
 
+/* Submit one synchronous high-speed endpoint-zero transfer through the async
+ * schedule. Data is bounded to one DMA page; callers receive actual bytes
+ * transferred. Low/full-speed TT routing is deliberately not claimed. */
+bool ehci_controller_control_transfer(
+    uint32_t controller_index, uint8_t device_address,
+    uint8_t endpoint_speed, uint16_t maximum_packet,
+    const uint8_t setup_packet[8], void *data, uint16_t data_length,
+    uint16_t *transferred);
+
 #endif

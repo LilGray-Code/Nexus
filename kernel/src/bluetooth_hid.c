@@ -1,10 +1,134 @@
 #include "bluetooth_hid.h"
 
 #include "bluetooth_gatt.h"
+#include "bluetooth_hci.h"
 #include "input.h"
 
 static uint16_t get_le16(const uint8_t *p) {
     return (uint16_t)(p[0] | ((uint16_t)p[1] << 8));
+}
+
+
+static void put_le16(uint8_t *p, uint16_t value) {
+    p[0] = (uint8_t)(value & 0xFFU);
+    p[1] = (uint8_t)(value >> 8);
+}
+
+bool nexus_bt_l2cap_parse_signaling_command(
+    const struct nexus_bt_l2cap_view *l2cap,
+    struct nexus_bt_l2cap_signaling_command *command) {
+    if (l2cap == NULL || command == NULL || l2cap->payload == NULL ||
+        l2cap->channel_id != NEXUS_BT_L2CAP_CID_SIGNALING ||
+        l2cap->payload_length < 4U) return false;
+    const uint8_t code = l2cap->payload[0];
+    const uint8_t identifier = l2cap->payload[1];
+    const uint16_t data_length = get_le16(l2cap->payload + 2U);
+    if (code == 0U || identifier == 0U ||
+        data_length > l2cap->payload_length - 4U) return false;
+    *command = (struct nexus_bt_l2cap_signaling_command){
+        .code = code,
+        .identifier = identifier,
+        .data = l2cap->payload + 4U,
+        .data_length = data_length,
+        .command_length = (uint16_t)(data_length + 4U)
+    };
+    return true;
+}
+
+bool nexus_bt_l2cap_hid_channel_begin(
+    struct nexus_bt_l2cap_hid_channel *channel, uint16_t psm,
+    uint16_t local_cid, uint8_t identifier,
+    uint8_t *l2cap_packet, size_t capacity, size_t *packet_length) {
+    if (channel == NULL || l2cap_packet == NULL || packet_length == NULL ||
+        (psm != NEXUS_BT_HCI_PSM_HID_CONTROL &&
+         psm != NEXUS_BT_HCI_PSM_HID_INTERRUPT) ||
+        local_cid < 0x0040U || identifier == 0U || capacity < 12U ||
+        channel->pending || channel->connected) return false;
+
+    put_le16(l2cap_packet, 8U);
+    put_le16(l2cap_packet + 2U, NEXUS_BT_L2CAP_CID_SIGNALING);
+    l2cap_packet[4] = NEXUS_BT_L2CAP_SIGNAL_CONNECTION_REQUEST;
+    l2cap_packet[5] = identifier;
+    put_le16(l2cap_packet + 6U, 4U);
+    put_le16(l2cap_packet + 8U, psm);
+    put_le16(l2cap_packet + 10U, local_cid);
+    *packet_length = 12U;
+    *channel = (struct nexus_bt_l2cap_hid_channel){
+        .psm = psm,
+        .local_cid = local_cid,
+        .identifier = identifier,
+        .pending = true
+    };
+    return true;
+}
+
+bool nexus_bt_l2cap_hid_channel_handle_connection_response(
+    struct nexus_bt_l2cap_hid_channel *channel,
+    const struct nexus_bt_l2cap_signaling_command *command) {
+    if (channel == NULL || command == NULL || !channel->pending ||
+        command->code != NEXUS_BT_L2CAP_SIGNAL_CONNECTION_RESPONSE ||
+        command->identifier != channel->identifier ||
+        command->data == NULL || command->data_length != 8U)
+        return false;
+    const uint16_t remote_cid = get_le16(command->data);
+    const uint16_t local_cid = get_le16(command->data + 2U);
+    const uint16_t result = get_le16(command->data + 4U);
+    const uint16_t status = get_le16(command->data + 6U);
+    if (local_cid != channel->local_cid || result > 4U || status > 2U ||
+        (result == 0U && (remote_cid < 0x0040U || status != 0U)))
+        return false;
+
+    channel->result = (uint8_t)result;
+    channel->status = (uint8_t)status;
+    if (result == 0U) {
+        channel->remote_cid = remote_cid;
+        channel->pending = false;
+        channel->connected = true;
+    } else if (result != 1U) {
+        channel->pending = false;
+        channel->connected = false;
+        channel->remote_cid = 0U;
+    }
+    return true;
+}
+
+bool nexus_bt_l2cap_hid_channel_build_disconnect(
+    struct nexus_bt_l2cap_hid_channel *channel, uint8_t identifier,
+    uint8_t *l2cap_packet, size_t capacity, size_t *packet_length) {
+    if (channel == NULL || !channel->connected ||
+        channel->local_cid < 0x0040U || channel->remote_cid < 0x0040U ||
+        channel->disconnect_pending || identifier == 0U ||
+        l2cap_packet == NULL || packet_length == NULL || capacity < 12U)
+        return false;
+    put_le16(l2cap_packet, 8U);
+    put_le16(l2cap_packet + 2U, NEXUS_BT_L2CAP_CID_SIGNALING);
+    l2cap_packet[4] = NEXUS_BT_L2CAP_SIGNAL_DISCONNECTION_REQUEST;
+    l2cap_packet[5] = identifier;
+    put_le16(l2cap_packet + 6U, 4U);
+    put_le16(l2cap_packet + 8U, channel->remote_cid);
+    put_le16(l2cap_packet + 10U, channel->local_cid);
+    *packet_length = 12U;
+    channel->disconnect_identifier = identifier;
+    channel->disconnect_pending = true;
+    return true;
+}
+
+bool nexus_bt_l2cap_hid_channel_handle_disconnect_response(
+    struct nexus_bt_l2cap_hid_channel *channel,
+    const struct nexus_bt_l2cap_signaling_command *command) {
+    if (channel == NULL || command == NULL || !channel->connected ||
+        !channel->disconnect_pending ||
+        command->code != NEXUS_BT_L2CAP_SIGNAL_DISCONNECTION_RESPONSE ||
+        command->identifier != channel->disconnect_identifier ||
+        command->data == NULL || command->data_length != 4U) return false;
+    if (get_le16(command->data) != channel->remote_cid ||
+        get_le16(command->data + 2U) != channel->local_cid) return false;
+    channel->connected = false;
+    channel->pending = false;
+    channel->disconnect_pending = false;
+    channel->disconnect_identifier = 0U;
+    channel->remote_cid = 0U;
+    return true;
 }
 
 bool nexus_bt_l2cap_parse(const uint8_t *packet, size_t packet_length,

@@ -7740,7 +7740,6 @@ void desktop_handle_input(const struct nexus_input_event *event) {
             };
             for (uint32_t i = 0U; i < steps; ++i)
                 desktop_handle_input(&wheel_key);
-            return;
         }
         if (event->mouse_horizontal_wheel != 0) {
             uint32_t steps = (uint32_t)(

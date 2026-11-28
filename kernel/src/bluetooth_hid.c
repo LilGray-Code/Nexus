@@ -227,7 +227,8 @@ static bool bluetooth_hid_report_index(
 static bool bluetooth_hid_dispatch_framed_report(
     struct nexus_bt_hid_input_device *device,
     const uint8_t *report, size_t report_length) {
-    if (device == NULL || !device->configured || report == NULL ||
+    if (device == NULL || !device->configured || !device->security_ready ||
+        report == NULL ||
         report_length == 0U || report_length > NEXUS_BT_HID_MAX_REPORT_BYTES)
         return false;
 
@@ -273,6 +274,14 @@ bool nexus_bt_hid_input_configure(
         .layout = layout
     };
     return true;
+}
+
+bool nexus_bt_hid_input_set_security_ready(
+    struct nexus_bt_hid_input_device *device, bool link_encrypted,
+    bool pairing_complete) {
+    if (device == NULL || !device->configured) return false;
+    device->security_ready = link_encrypted && pairing_complete;
+    return device->security_ready;
 }
 
 bool nexus_bt_hid_input_dispatch_hogp_report(

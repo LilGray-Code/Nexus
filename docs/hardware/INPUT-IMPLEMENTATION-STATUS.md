@@ -171,3 +171,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - The HID report bridge now rejects Classic HIDP and BLE HOGP input until its per-peer state is explicitly marked ready by a higher-level pairing layer that confirms both link encryption and pairing completion.
 - Disconnect clears the per-peer state, so a reconnect cannot inherit a previous session's input authorization.
 - Host tests confirm that HID reports are dropped before security readiness and delivered only after the readiness gate is opened. This is an enforcement boundary, not an implementation of SMP/SSP pairing; the real pairing and encryption procedures still need to be completed and connected to this API.
+
+
+### ATT client request path for BLE HID
+
+- Added bounded ATT request builders for MTU exchange, primary HID service discovery, characteristic discovery, descriptor discovery, Report Map/Report Reference reads, and CCCD notification enable.
+- Added MTU response validation and negotiated MTU clamping to the ATT protocol range.
+- Host tests verify request opcodes, UUID byte order, handle ranges, notification enable value, and malformed MTU rejection.
+- These are client-side ATT PDUs only. They still need to be driven by an active encrypted GATT connection, and the resulting discovery responses must be assembled into the HID Report Map/Report Reference state before notifications are enabled.

@@ -99,3 +99,10 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - HOGP notifications are matched against discovered GATT Report value handles and the associated Report Reference report ID/type before report decoding. Unknown characteristic handles and non-input Report types are rejected.
 - Generic HID keyboard and mouse reports now have a tested handoff to the shared USB/PS/2 input queue; peer disconnect emits neutral key/button state.
 - This is not a complete Bluetooth mouse driver. USB HCI interrupt/bulk transfers, ACL reassembly, L2CAP signaling, peer discovery/connection, authenticated SMP/SSP pairing and bonding, key storage, settings UI, and physical Bluetooth adapter tests remain outstanding.
+
+
+### Bluetooth ACL fragmentation foundation
+
+- Added bounded reassembly of HCI ACL first and continuation fragments into one complete L2CAP PDU, with connection-handle isolation, packet-boundary validation, declared-length enforcement, and a fixed 1 KiB maximum.
+- Host tests cover normal split delivery, wrong-handle continuation, overlong fragments, and oversized L2CAP declarations.
+- The transport driver must still schedule the USB HCI interrupt/bulk endpoints and feed fragments into this helper; L2CAP signaling/channel setup and authenticated pairing remain necessary for real wireless HID operation.

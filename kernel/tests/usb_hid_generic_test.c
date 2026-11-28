@@ -176,6 +176,40 @@ static void test_generic_mouse_32_buttons(void) {
     assert(event.dx == 1 && event.dy == -2);
 }
 
+
+static const uint8_t generic_mouse_hwheel_descriptor[] = {
+    0x05,0x01, 0x09,0x02, 0xA1,0x01,
+    0x09,0x01, 0xA1,0x00,
+    0x05,0x09, 0x19,0x01, 0x29,0x03,
+    0x15,0x00, 0x25,0x01, 0x95,0x03, 0x75,0x01, 0x81,0x02,
+    0x95,0x01, 0x75,0x05, 0x81,0x01,
+    0x05,0x01, 0x09,0x30, 0x09,0x31,
+    0x15,0x81, 0x25,0x7F, 0x75,0x08, 0x95,0x02, 0x81,0x06,
+    0x09,0x38,
+    0x16,0x00,0x80, 0x26,0xFF,0x7F, 0x75,0x10, 0x95,0x01, 0x81,0x06,
+    0x05,0x0C, 0x0B,0x38,0x02,0x0C,0x00,
+    0x16,0x00,0x80, 0x26,0xFF,0x7F, 0x75,0x10, 0x95,0x01, 0x81,0x06,
+    0xC0,0xC0
+};
+
+static void test_generic_mouse_high_resolution_horizontal_scroll(void) {
+    struct nexus_usb_hid_generic_layout layout = {0};
+    assert(usb_hid_generic_parse_descriptor(
+        generic_mouse_hwheel_descriptor,
+        sizeof(generic_mouse_hwheel_descriptor), &layout));
+    assert(layout.wheel_size == 16U);
+    assert(layout.horizontal_wheel_size == 16U);
+    assert(layout.horizontal_wheel_relative);
+    const uint8_t report[7] = {
+        0x05U, 0x01U, 0x02U, 0x00U, 0x01U, 0x00U, 0xFEU
+    };
+    struct nexus_usb_mouse_event event = {0};
+    assert(usb_hid_generic_decode_mouse(&layout, report,
+        sizeof(report), &event));
+    assert(event.wheel == 256);
+    assert(event.horizontal_wheel == -512);
+}
+
 static void test_descriptor_rejection_and_bounds(void) {
     struct nexus_usb_hid_generic_layout layout = {0};
     assert(!usb_hid_generic_parse_descriptor(NULL, 0U, &layout));
@@ -201,6 +235,7 @@ int main(void) {
     test_generic_mouse();
     test_high_resolution_mouse_motion_is_not_clipped();
     test_generic_mouse_32_buttons();
+    test_generic_mouse_high_resolution_horizontal_scroll();
     test_descriptor_rejection_and_bounds();
     puts("NEXUS GENERIC USB HID KEYBOARD AND MOUSE TESTS PASSED");
     return 0;

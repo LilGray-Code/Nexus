@@ -120,3 +120,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Expanded generic USB HID mouse button state from 32 to 64 buttons across descriptor parsing, decoded reports, the shared event queue, and desktop button-edge tracking.
 - Added descriptor-driven coverage proving Button 64 survives as the top bit of the 64-bit mask.
 - Device-specific proprietary button pages and vendor command protocols remain outside generic HID support.
+
+
+### Classic HID L2CAP channel negotiation
+
+- Added bounded signaling-command parsing and Connection Request/Response codecs for the Classic HID Control PSM (0x0011) and HID Interrupt PSM (0x0013).
+- Per-channel state validates transaction identifiers and local/remote dynamic CIDs, records accepted/pending/rejected outcomes, and emits a matched Disconnection Request before releasing state.
+- Host tests cover a successful channel lifecycle and malformed/mismatched response rejection.
+- The helper is not yet wired to a Bluetooth controller transport, command scheduler, or a live ACL connection; it does not by itself enable Classic Bluetooth mouse pairing or input.

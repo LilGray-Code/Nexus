@@ -136,6 +136,85 @@ static void test_bluetooth_keyboard_disconnect_releases_keys(void) {
     assert(bluetooth_keyboard_report[2] == 0U);
 }
 
+
+static void test_classic_hid_l2cap_channel_lifecycle(void) {
+    struct nexus_bt_l2cap_hid_channel channel = {0};
+    uint8_t packet[16] = {0};
+    size_t packet_length = 0U;
+    assert(nexus_bt_l2cap_hid_channel_begin(
+        &channel, NEXUS_BT_HCI_PSM_HID_CONTROL, 0x0040U, 0x11U,
+        packet, sizeof(packet), &packet_length));
+    assert(packet_length == 12U);
+    assert(packet[0] == 8U && packet[2] == 1U);
+    assert(packet[4] == NEXUS_BT_L2CAP_SIGNAL_CONNECTION_REQUEST);
+    assert(packet[5] == 0x11U);
+    assert(packet[8] == 0x11U && packet[9] == 0U);
+    assert(packet[10] == 0x40U && packet[11] == 0U);
+
+    struct nexus_bt_l2cap_view l2cap = {0};
+    struct nexus_bt_l2cap_signaling_command command = {0};
+    assert(nexus_bt_l2cap_parse(packet, packet_length, &l2cap));
+    assert(nexus_bt_l2cap_parse_signaling_command(&l2cap, &command));
+    assert(command.code == NEXUS_BT_L2CAP_SIGNAL_CONNECTION_REQUEST);
+    assert(command.identifier == 0x11U && command.data_length == 4U);
+
+    const uint8_t accepted_data[] = {
+        0x41U,0x00U, 0x40U,0x00U, 0U,0U, 0U,0U
+    };
+    const struct nexus_bt_l2cap_signaling_command accepted = {
+        .code = NEXUS_BT_L2CAP_SIGNAL_CONNECTION_RESPONSE,
+        .identifier = 0x11U,
+        .data = accepted_data,
+        .data_length = sizeof(accepted_data)
+    };
+    assert(nexus_bt_l2cap_hid_channel_handle_connection_response(
+        &channel, &accepted));
+    assert(channel.connected && !channel.pending);
+    assert(channel.remote_cid == 0x0041U);
+
+    assert(nexus_bt_l2cap_hid_channel_build_disconnect(
+        &channel, 0x12U, packet, sizeof(packet), &packet_length));
+    assert(packet_length == 12U);
+    assert(packet[4] == NEXUS_BT_L2CAP_SIGNAL_DISCONNECTION_REQUEST);
+    assert(packet[5] == 0x12U);
+    assert(packet[8] == 0x41U && packet[10] == 0x40U);
+    const uint8_t disconnect_data[] = {0x41U,0x00U,0x40U,0x00U};
+    const struct nexus_bt_l2cap_signaling_command disconnected = {
+        .code = NEXUS_BT_L2CAP_SIGNAL_DISCONNECTION_RESPONSE,
+        .identifier = 0x12U,
+        .data = disconnect_data,
+        .data_length = sizeof(disconnect_data)
+    };
+    assert(nexus_bt_l2cap_hid_channel_handle_disconnect_response(
+        &channel, &disconnected));
+    assert(!channel.connected && !channel.disconnect_pending);
+    assert(channel.remote_cid == 0U);
+}
+
+static void test_classic_hid_l2cap_channel_rejects_mismatch(void) {
+    struct nexus_bt_l2cap_hid_channel channel = {0};
+    uint8_t packet[12] = {0};
+    size_t packet_length = 0U;
+    assert(nexus_bt_l2cap_hid_channel_begin(
+        &channel, NEXUS_BT_HCI_PSM_HID_INTERRUPT, 0x0042U, 0x21U,
+        packet, sizeof(packet), &packet_length));
+    const uint8_t bad_data[] = {
+        0x44U,0x00U, 0x43U,0x00U, 0U,0U, 0U,0U
+    };
+    const struct nexus_bt_l2cap_signaling_command bad_response = {
+        .code = NEXUS_BT_L2CAP_SIGNAL_CONNECTION_RESPONSE,
+        .identifier = 0x21U,
+        .data = bad_data,
+        .data_length = sizeof(bad_data)
+    };
+    assert(!nexus_bt_l2cap_hid_channel_handle_connection_response(
+        &channel, &bad_response));
+    assert(channel.pending && !channel.connected);
+    assert(!nexus_bt_l2cap_hid_channel_begin(
+        &channel, 0x0001U, 0x0043U, 0x22U,
+        packet, sizeof(packet), &packet_length));
+}
+
 int main(void) {
     const uint8_t l2cap_packet[] = {4U,0U,4U,0U,0x1BU,0x20U,0U,0x04U};
     struct nexus_bt_l2cap_view l2cap = {0};
@@ -169,6 +248,8 @@ int main(void) {
     test_hogp_notification_matches_discovered_report_handle();
     test_bluetooth_hidp_mouse_dispatch();
     test_bluetooth_keyboard_disconnect_releases_keys();
+    test_classic_hid_l2cap_channel_lifecycle();
+    test_classic_hid_l2cap_channel_rejects_mismatch();
     puts("NEXUS BLUETOOTH HIDP/HOGP INPUT DELIVERY TESTS PASSED");
     return 0;
 }

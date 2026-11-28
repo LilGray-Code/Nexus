@@ -87,7 +87,7 @@ static void test_hogp_notification_matches_discovered_report_handle(void) {
     nexus_bt_hid_input_disconnect(&device);
 
     service.reports[0].value_handle = 0x0040U;
-    assert(!nexus_bt_hid_input_configure(&device,
+    assert(nexus_bt_hid_input_configure(&device,
         bluetooth_generic_mouse_map, sizeof(bluetooth_generic_mouse_map)));
     assert(!nexus_bt_hid_input_dispatch_hogp_notification(
         &device, &service, &l2cap));

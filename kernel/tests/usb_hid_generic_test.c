@@ -311,6 +311,55 @@ static void test_generic_mouse_consumer_back_forward_side_buttons(void) {
     assert(event.buttons == 0x1DU);
 }
 
+
+static void test_generic_mouse_multi_report_id_capacity(void) {
+    uint8_t descriptor[512] = {0};
+    size_t length = 0U;
+#define HID_EMIT(value) do { descriptor[length++] = (uint8_t)(value); } while (0)
+    const uint8_t prefix[] = {0x05U,0x01U,0x09U,0x02U,0xA1U,0x01U};
+    for (size_t i = 0U; i < sizeof(prefix); ++i) HID_EMIT(prefix[i]);
+    for (uint8_t id = 1U; id <= 9U; ++id) {
+        HID_EMIT(0x85U); HID_EMIT(id); /* Report ID. */
+        HID_EMIT(0x09U); HID_EMIT(0x01U); HID_EMIT(0xA1U); HID_EMIT(0x00U);
+        HID_EMIT(0x05U); HID_EMIT(0x09U);
+        HID_EMIT(0x19U); HID_EMIT(0x01U);
+        HID_EMIT(0x29U); HID_EMIT(0x03U);
+        HID_EMIT(0x15U); HID_EMIT(0x00U);
+        HID_EMIT(0x25U); HID_EMIT(0x01U);
+        HID_EMIT(0x95U); HID_EMIT(0x03U);
+        HID_EMIT(0x75U); HID_EMIT(0x01U);
+        HID_EMIT(0x81U); HID_EMIT(0x02U);
+        HID_EMIT(0x95U); HID_EMIT(0x01U);
+        HID_EMIT(0x75U); HID_EMIT(0x05U);
+        HID_EMIT(0x81U); HID_EMIT(0x01U);
+        HID_EMIT(0x05U); HID_EMIT(0x01U);
+        HID_EMIT(0x09U); HID_EMIT(0x30U);
+        HID_EMIT(0x09U); HID_EMIT(0x31U);
+        HID_EMIT(0x15U); HID_EMIT(0x81U);
+        HID_EMIT(0x25U); HID_EMIT(0x7FU);
+        HID_EMIT(0x75U); HID_EMIT(0x08U);
+        HID_EMIT(0x95U); HID_EMIT(0x02U);
+        HID_EMIT(0x81U); HID_EMIT(0x06U);
+        HID_EMIT(0xC0U);
+    }
+    HID_EMIT(0xC0U);
+#undef HID_EMIT
+
+    struct nexus_usb_hid_generic_multi_layout layout = {0};
+    assert(usb_hid_generic_parse_descriptor_multi(
+        descriptor, length, &layout));
+    assert(layout.report_count == 9U);
+    assert(layout.max_report_bytes == 5U);
+
+    const uint8_t report[] = {9U,0x05U,0xFEU,0x03U,0U};
+    struct nexus_usb_mouse_event event = {0};
+    assert(usb_hid_generic_decode_mouse_multi(
+        &layout, report, sizeof(report), &event));
+    assert(event.buttons == 0x05U);
+    assert(event.dx == -2);
+    assert(event.dy == -3);
+}
+
 static void test_descriptor_rejection_and_bounds(void) {
     struct nexus_usb_hid_generic_layout layout = {0};
     assert(!usb_hid_generic_parse_descriptor(NULL, 0U, &layout));
@@ -340,6 +389,7 @@ int main(void) {
     test_generic_mouse_32bit_axes_and_wheel_saturate_safely();
     test_generic_mouse_64th_button_is_preserved();
     test_generic_mouse_consumer_back_forward_side_buttons();
+    test_generic_mouse_multi_report_id_capacity();
     test_descriptor_rejection_and_bounds();
     puts("NEXUS GENERIC USB HID KEYBOARD AND MOUSE TESTS PASSED");
     return 0;

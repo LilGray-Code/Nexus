@@ -132,21 +132,47 @@ bool nexus_bt_hci_connection_complete(
         return true;
     }
     if (event->event_code == NEXUS_BT_HCI_EVENT_LE_META) {
-        if (event->parameter_length != 19U ||
-            event->parameters[0] != NEXUS_BT_HCI_LE_CONNECTION_COMPLETE ||
-            event->parameters[1] != 0U) return false;
-        const uint16_t handle = get_le16(event->parameters + 2U);
-        if (handle == 0U || handle > 0x0FFFU) return false;
-        *connection = (struct nexus_bt_hci_connection){
-            .connected = true,
-            .low_energy = true,
-            .handle = handle,
-            .peer_address_type = event->parameters[5U]
-        };
-        /* LE connection complete uses address at parameters[5..10]. */
-        for (size_t i = 0U; i < 6U; ++i)
-            connection->peer_address[i] = event->parameters[6U + i];
-        return true;
+        if (event->parameters[0] == NEXUS_BT_HCI_LE_CONNECTION_COMPLETE) {
+            if (event->parameter_length != 19U ||
+                event->parameters[1] != 0U ||
+                event->parameters[4U] > 1U ||
+                event->parameters[5U] > 1U) return false;
+            const uint16_t handle = get_le16(event->parameters + 2U);
+            if (handle == 0U || handle > 0x0FFFU) return false;
+            *connection = (struct nexus_bt_hci_connection){
+                .connected = true,
+                .low_energy = true,
+                .handle = handle,
+                .peer_address_type = event->parameters[5U]
+            };
+            for (size_t i = 0U; i < 6U; ++i)
+                connection->peer_address[i] = event->parameters[6U + i];
+            return true;
+        }
+        if (event->parameters[0] ==
+                NEXUS_BT_HCI_LE_ENHANCED_CONNECTION_COMPLETE) {
+            /* LE Enhanced Connection Complete includes both RPAs after the
+             * peer address. Address types 2/3 are identity-address forms;
+             * normalize them to their public/random address class. */
+            if (event->parameter_length != 31U ||
+                event->parameters[1U] != 0U ||
+                event->parameters[4U] > 1U ||
+                event->parameters[5U] > 3U) return false;
+            const uint16_t handle = get_le16(event->parameters + 2U);
+            if (handle == 0U || handle > 0x0FFFU) return false;
+            const uint8_t address_type = event->parameters[5U] >= 2U
+                ? (uint8_t)(event->parameters[5U] - 2U)
+                : event->parameters[5U];
+            *connection = (struct nexus_bt_hci_connection){
+                .connected = true,
+                .low_energy = true,
+                .handle = handle,
+                .peer_address_type = address_type
+            };
+            for (size_t i = 0U; i < 6U; ++i)
+                connection->peer_address[i] = event->parameters[6U + i];
+            return true;
+        }
     }
     return false;
 }

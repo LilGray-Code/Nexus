@@ -71,6 +71,61 @@ static void test_le_connection(void) {
     assert(connection.handle == 0x0078U);
     assert(connection.peer_address[0] == 1U &&
            connection.peer_address[5] == 6U);
+    uint8_t malformed_legacy[sizeof(parameters)];
+    memcpy(malformed_legacy, parameters, sizeof(parameters));
+    malformed_legacy[5] = 2U; /* Identity types belong to Enhanced Complete. */
+    const struct nexus_bt_hci_event_view malformed_legacy_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_LE_META,
+        .parameters = malformed_legacy,
+        .parameter_length = sizeof(malformed_legacy)
+    };
+    assert(!nexus_bt_hci_connection_complete(
+        &malformed_legacy_event, &connection));
+
+    /* HCI 5.0+ controllers may return LE Enhanced Connection Complete.
+     * The event adds local and peer RPA fields before connection parameters. */
+    const uint8_t enhanced_parameters[31] = {
+        NEXUS_BT_HCI_LE_ENHANCED_CONNECTION_COMPLETE,
+        0U, 0x34U,0x02U, 0U, 1U,
+        1U,2U,3U,4U,5U,6U,
+        0U,0U,0U,0U,0U,0U,
+        0U,0U,0U,0U,0U,0U,
+        0x18U,0U, 0U,0U, 0xF4U,1U, 0U
+    };
+    const struct nexus_bt_hci_event_view enhanced_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_LE_META,
+        .parameters = enhanced_parameters,
+        .parameter_length = sizeof(enhanced_parameters)
+    };
+    assert(nexus_bt_hci_connection_complete(&enhanced_event, &connection));
+    assert(connection.connected && connection.low_energy);
+    assert(connection.handle == 0x0234U);
+    assert(connection.peer_address_type == 1U);
+    assert(connection.peer_address[0] == 1U &&
+           connection.peer_address[5] == 6U);
+
+    uint8_t identity_parameters[31];
+    memcpy(identity_parameters, enhanced_parameters,
+           sizeof(identity_parameters));
+    identity_parameters[5] = 3U;
+    const struct nexus_bt_hci_event_view identity_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_LE_META,
+        .parameters = identity_parameters,
+        .parameter_length = sizeof(identity_parameters)
+    };
+    assert(nexus_bt_hci_connection_complete(&identity_event, &connection));
+    assert(connection.peer_address_type == 1U);
+
+    uint8_t failed_parameters[31];
+    memcpy(failed_parameters, enhanced_parameters,
+           sizeof(failed_parameters));
+    failed_parameters[1] = 0x3EU;
+    const struct nexus_bt_hci_event_view failed_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_LE_META,
+        .parameters = failed_parameters,
+        .parameter_length = sizeof(failed_parameters)
+    };
+    assert(!nexus_bt_hci_connection_complete(&failed_event, &connection));
 }
 
 

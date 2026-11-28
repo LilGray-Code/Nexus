@@ -5,15 +5,16 @@
 
 struct nexus_pci_device;
 
-/* Initialize xHCI and enumerate directly attached HID keyboards, mice and
- * gamepads. Scan the controller-advertised root-port range (up to 255 ports),
- * and periodically rescan root ports for missed events/reconnection.
+/* Initialize xHCI and enumerate directly attached and supported downstream
+ * HID keyboards, mice and gamepads. The controller scans its advertised root
+ * ports, configures USB 2/SuperSpeed hubs, and monitors hub interrupt-IN
+ * change notifications with a GET_STATUS polling fallback. Composite input
+ * devices can expose up to 16 discovered HID interfaces; standard keyboard/
+ * mouse endpoints receive independent rings and report state.
  *
- * Bounded generic keyboard/mouse parsing supports multiple Report IDs per
- * selected HID interface. USB2 hub topology and composite-HID descriptors have
- * tested helper implementations, but hub child enumeration and simultaneous
- * multi-interface endpoint dispatch are not yet operational. Legacy host
- * controller drivers and Bluetooth transports/profiles remain unavailable. */
+ * This API does not imply support for legacy EHCI/OHCI/UHCI controllers or
+ * Bluetooth HID pairing/report delivery. See INPUT-IMPLEMENTATION-STATUS.md
+ * for the remaining controller, protocol and physical-hardware limitations. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);

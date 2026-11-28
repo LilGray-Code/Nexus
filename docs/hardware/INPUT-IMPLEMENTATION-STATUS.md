@@ -26,7 +26,8 @@ This is an implementation ledger, not a hardware compatibility claim. A parser u
 - Composite HID supports a primary endpoint, one companion and bounded additional boot/generic keyboard/mouse endpoints on the same USB slot, up to the 16-interface descriptor-discovery limit. Each active endpoint has independent report state, DMA buffer, transfer ring and completion dispatch. Unsupported sibling gamepad/vendor HID interfaces are skipped; this is not arbitrary composite-class support.
 - Multi-report-ID support is for bounded generic keyboard/mouse reports. Generic relative X/Y movement, vertical wheel and Consumer AC Pan horizontal scroll preserve signed 16-bit values end to end. Generic mouse button collections retain a 32-bit bitmap for up to 32 standard button usages. Unsupported report layouts must fail closed and must not be misclassified as boot-protocol devices.
 - HCI framing and link-event decoding do not establish Bluetooth HID support. A controller is not "connected" to the input stack until a complete authenticated HIDP/HOGP path delivers reports.
-- UHCI/OHCI/EHCI PCI recognition is inventory only; it must not be described as a driver.
+- EHCI work now includes a host-tested, DMA32-bounded qTD and QH descriptor construction layer, capability/legacy-register validation and root-port status decoding. This is schedule/transfer infrastructure only: there is no EHCI MMIO controller lifecycle, PCI BIOS-ownership handoff, async/periodic schedule activation, control/bulk/interrupt submission, enumeration, or EHCI input path. Keep EHCI marked unavailable until those pieces are implemented and exercised.
+- UHCI and OHCI remain PCI recognition only. None of UHCI/OHCI/EHCI is currently advertised as an operational input driver.
 - The resume watchdog refuses to free DMA buffers if controller halt cannot be confirmed. After confirmed halt it rebuilds controller resources; actual ACPI wake wiring and hardware power-loss tests remain.
 
 ## Test commands used by CI
@@ -153,3 +154,12 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Mouse report parsing and the shared input path preserve a 32-button standard HID bitmap, 16-bit X/Y movement and vertical/horizontal scroll. Feature-report based Resolution Multiplier support and proprietary gaming extensions remain open.
 - The latest 2026-11-28 installer-runtime, QA and platform-foundation workflows have passed on preceding code revisions. The current original-kernel/ISO workflows are rerunning after the latest UART host, composite endpoint and 32-button changes; only completed workflow results should be treated as passed.
 - Physical validation is still outstanding: no motherboard, USB-C port, 2.4 GHz receiver or Bluetooth radio was attached to this build environment.
+
+
+### EHCI transfer-schedule foundation — November 28, 2026
+
+- Added EHCI capability-register validation for CAPLENGTH, interface version, HCSPARAMS port count/power capability and HCCPARAMS flags, including bounds checking for the EHCI extended-capability pointer.
+- Added root-port PORTSC decoding for connect/enable/suspend/over-current/reset/power, line state and write-one-to-clear change bits.
+- Added ABI-sized/aligned EHCI QH and qTD definitions plus bounded builders. qTD buffer construction validates DMA32 page bases, first-page offsets, the five-page coverage limit, 15-bit transfer byte count, descriptor alignment, PID, data toggle, IOC and terminated/link pointers. Zero-byte status-stage qTDs need no data page list.
+- Added host tests for malformed capability and BAR-era legacy pointer values, root-port status mapping, multi-page qTD buffer pointers, invalid alignment/oversize descriptors, zero-byte status qTDs, and QH endpoint fields.
+- This is the first EHCI schedule/transfer primitive, not an operational EHCI host-controller driver. PCI memory mapping, BIOS/OS legacy ownership, controller halt/reset/run, schedule DMA allocation/activation, asynchronous/periodic execution, transfer completion, root-port reset, USB enumeration, and HID delivery remain open. OHCI and UHCI drivers also remain unimplemented.

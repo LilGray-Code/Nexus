@@ -149,6 +149,13 @@ jobs:
             -o /tmp/nexus-usb-host-controller-test
           /tmp/nexus-usb-host-controller-test
 
+      - name: Test EHCI capabilities, root-port status and DMA transfer descriptors
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+            -Ikernel/src kernel/src/ehci.c kernel/tests/ehci_test.c \
+            -o /tmp/nexus-ehci-test
+          /tmp/nexus-ehci-test
+
       - name: Test xHCI root-port discovery bounds and PORTSC helpers
         run: |
           test -s kernel/src/xhci_ports.h

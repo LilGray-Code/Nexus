@@ -173,7 +173,7 @@ static bool hid_record_input(
             } else if (global->usage_page ==
                        HID_USAGE_PAGE_GENERIC_DESKTOP && variable &&
                        global->report_size >= 1U &&
-                       global->report_size <= 16U) {
+                       global->report_size <= 32U) {
                 for (uint32_t i = 0U; i < global->report_count; ++i) {
                     uint32_t usage = 0U;
                     if (!hid_local_get_usage(local, i,
@@ -203,7 +203,7 @@ static bool hid_record_input(
                 }
             } else if (global->usage_page == HID_USAGE_PAGE_CONSUMER &&
                        variable && global->report_size >= 1U &&
-                       global->report_size <= 16U) {
+                       global->report_size <= 32U) {
                 for (uint32_t i = 0U; i < global->report_count; ++i) {
                     uint32_t usage = 0U;
                     if (!hid_local_get_usage(local, i,
@@ -458,6 +458,12 @@ static int16_t hid_clamp_motion(int32_t value) {
     return (int16_t)value;
 }
 
+/* Invert the hardware Y axis without overflowing on INT32_MIN. */
+static int16_t hid_clamp_inverted_motion(int32_t value) {
+    if (value == INT32_MIN) return INT16_MAX;
+    return hid_clamp_motion(-value);
+}
+
 static int16_t hid_clamp_wheel(int32_t value) {
     if (value < INT16_MIN) return INT16_MIN;
     if (value > INT16_MAX) return INT16_MAX;
@@ -490,7 +496,7 @@ bool usb_hid_generic_decode_mouse(
 
     if (!hid_read_bits(payload, layout->input_bytes,
             layout->y_bit_offset, layout->y_size, &raw)) return false;
-    event->dy = hid_clamp_motion(-hid_signed_value(
+    event->dy = hid_clamp_inverted_motion(hid_signed_value(
         raw, layout->y_size, layout->y_logical_minimum));
 
     if (layout->wheel_size != 0U &&

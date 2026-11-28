@@ -209,3 +209,11 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - Extended HID characteristic inventory to retain declaration/value handles, properties and 16-bit UUIDs for all characteristics in the bounded service range, not only Report characteristics.
 - Added ATT Read Blob and Find Information request builders and validated continuation-handle extraction for Read By Group Type and Read By Type responses.
 - These are reusable ATT/GATT discovery primitives, not yet an end-to-end HOGP client. The runtime still needs to negotiate ATT MTU, paginate discovery across responses, discover per-report descriptors, read and parse the HID Report Map, enable the input-report CCCDs, and deliver report notifications into the shared input subsystem.
+
+
+### BLE HOGP ATT client state machine — November 28, 2026
+
+- Added a bounded, asynchronous ATT client sequence: MTU exchange; paginated primary HID service and characteristic discovery; Report Map read plus Read Blob paging; per-Report-characteristic Find Information; Report Reference reads; and CCCD writes for input notifications/indications.
+- The state machine matches each response to the outstanding ATT opcode, handles the expected Attribute Not Found pagination terminators and Invalid Offset end-of-blob response, clamps the negotiated MTU, and bounds the Report Map to 512 bytes and report characteristics to the existing eight-entry service limit.
+- Added host tests for the complete discovery/CCCD subscription sequence, Report Map blob paging, response ordering and malformed/unmatched ATT replies.
+- This is still a protocol client primitive. The xHCI runtime has not yet started it on connected LE links or mapped resulting HOGP report notifications into the desktop input queue.

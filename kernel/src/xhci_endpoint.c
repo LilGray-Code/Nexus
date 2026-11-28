@@ -1,5 +1,7 @@
 #include "xhci_endpoint.h"
 
+#include <stddef.h>
+
 #define XHCI_ENDPOINT_RING_ADDRESS_MAX ((1ULL << 52) - 1ULL)
 
 bool nexus_xhci_build_endpoint_context(

@@ -7,7 +7,7 @@
 void serial_write(const char *text) { (void)text; }
 void serial_write_hex(uint64_t value) { (void)value; }
 
-static void submit_mouse(uint32_t buttons, int16_t dx, int16_t dy,
+static void submit_mouse(uint64_t buttons, int16_t dx, int16_t dy,
                          int16_t wheel, int16_t hwheel) {
     const struct nexus_usb_mouse_event event = {
         .buttons = buttons,
@@ -75,9 +75,9 @@ static void test_high_resolution_horizontal_wheel_coalesces(void) {
 }
 
 static void test_full_button_mask_is_preserved(void) {
-    submit_mouse(0x80000000U, 0, 0, 0, 0);
+    submit_mouse(0x8000000000000000ULL, 0, 0, 0, 0);
     const struct nexus_input_event event = pop_required();
-    assert(event.mouse_buttons == 0x80000000U);
+    assert(event.mouse_buttons == 0x8000000000000000ULL);
     assert(!input_pop_event(&(struct nexus_input_event){0}));
 }
 

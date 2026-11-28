@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <string.h>
 
 static void test_event_framing(void) {
     const uint8_t packet[] = {0x04U,0x0EU,0x02U,0x01U,0x10U};
@@ -80,6 +79,15 @@ static void test_classic_ssp_event_parsers_and_command_builders(void) {
         address,packet,sizeof(packet),&length));
     assert(packet[1] == 0x2FU && packet[2] == 0x04U);
 
+    const uint8_t io_params[] = {1U,2U,3U,4U,5U,6U,3U,0U,0U};
+    const struct nexus_bt_hci_event_view io_event = {
+        .event_code = NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE,
+        .parameters = io_params,
+        .parameter_length = sizeof(io_params)
+    };
+    uint8_t parsed_address[6] = {0U};
+    uint8_t io = 0U, oob = 0U, auth = 0U;
+
     const uint8_t confirmation_params[] = {
         1U,2U,3U,4U,5U,6U,0x40U,0xE2U,0x01U,0U
     };
@@ -95,14 +103,6 @@ static void test_classic_ssp_event_parsers_and_command_builders(void) {
     assert(!nexus_bt_hci_parse_classic_address_event(
         &io_event,NEXUS_BT_HCI_EVENT_LINK_KEY_REQUEST,parsed_address));
 
-    const uint8_t io_params[] = {1U,2U,3U,4U,5U,6U,3U,0U,0U};
-    const struct nexus_bt_hci_event_view io_event = {
-        .event_code = NEXUS_BT_HCI_EVENT_IO_CAPABILITY_RESPONSE,
-        .parameters = io_params,
-        .parameter_length = sizeof(io_params)
-    };
-    uint8_t parsed_address[6] = {0U};
-    uint8_t io = 0U, oob = 0U, auth = 0U;
     assert(nexus_bt_hci_parse_io_capability_response(
         &io_event,parsed_address,&io,&oob,&auth));
     assert(memcmp(parsed_address,address,6U) == 0);
@@ -771,6 +771,7 @@ int main(void) {
     test_hci_command_build_and_responses();
     test_acl_framing();
     test_classic_connection_and_disconnect();
+    test_classic_ssp_event_parsers_and_command_builders();
     test_classic_inquiry_parser_and_commands();
     test_le_connection();
     test_le_scan_command_builders();

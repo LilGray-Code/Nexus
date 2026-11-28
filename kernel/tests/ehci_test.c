@@ -48,8 +48,8 @@ static void test_legacy_capability_pointer_bounds(void) {
 
 static void test_port_status_decode(void) {
     struct nexus_ehci_port_status status = {0};
-    const uint32_t portsc = (1U << 0) | (1U << 2) | (1U << 7) |
-        (1U << 12) | (1U << 10) | (1U << 1) | (1U << 5);
+    const uint32_t portsc = (1U << 0) | (1U << 2) | (1U << 4) |
+        (1U << 7) | (1U << 12) | (1U << 10) | (1U << 1) | (1U << 5);
     assert(nexus_ehci_decode_port_status(portsc, &status));
     assert(status.connected && status.enabled && status.suspended);
     assert(status.powered && status.over_current);
@@ -102,6 +102,49 @@ static void test_qtd_builder(void) {
     assert(qtd.buffer[0] == 0U && qtd.buffer[4] == 0U);
 }
 
+static void test_control_transfer_qtd_chain(void) {
+    /* 20,481-byte GET_DESCRIPTOR response starts at the end of a page:
+     * the first qTD spans five pages and contains an odd packet count. */
+    uint8_t setup[8] = {0x80U,0x06U,0x00U,0x01U,0U,0U,0x01U,0x50U};
+    const uint32_t setup_pages[5] = {
+        0x00500000U,0U,0U,0U,0U
+    };
+    uint32_t data_pages[6];
+    for (uint32_t i = 0U; i < 6U; ++i)
+        data_pages[i] = 0x01000000U + i * NEXUS_EHCI_PAGE_SIZE;
+
+    struct nexus_ehci_qtd qtds[4] = {0};
+    const uint32_t qtd_physical[4] = {
+        0x00400000U,0x00400020U,0x00400040U,0x00400060U
+    };
+    assert(nexus_ehci_control_qtd_count(20481U, 4095U) == 4U);
+    assert(nexus_ehci_build_control_qtd_chain(qtds,qtd_physical,4U,
+        setup,setup_pages,0U,data_pages,6U,4095U,64U));
+
+    assert(qtds[0].next_qtd == qtd_physical[1]);
+    assert(((qtds[0].token >> 8) & 3U) == NEXUS_EHCI_PID_SETUP);
+    assert(((qtds[0].token >> 16) & 0x7FFFU) == 8U);
+    assert((qtds[0].token & (1U << 31)) == 0U);
+
+    assert(qtds[1].next_qtd == qtd_physical[2]);
+    assert(qtds[1].alternate_next_qtd == qtd_physical[3]);
+    assert(((qtds[1].token >> 8) & 3U) == NEXUS_EHCI_PID_IN);
+    assert(((qtds[1].token >> 16) & 0x7FFFU) == 16385U);
+    assert((qtds[1].token & (1U << 31)) != 0U);
+    assert(qtds[1].buffer[0] == 0x01000FFFU);
+    assert(qtds[1].buffer[4] == data_pages[4]);
+
+    assert(qtds[2].next_qtd == qtd_physical[3]);
+    assert(qtds[2].alternate_next_qtd == qtd_physical[3]);
+    assert(((qtds[2].token >> 16) & 0x7FFFU) == 4096U);
+    assert((qtds[2].token & (1U << 31)) == 0U);
+
+    assert(((qtds[3].token >> 8) & 3U) == NEXUS_EHCI_PID_OUT);
+    assert((qtds[3].token & (1U << 31)) != 0U);
+    assert((qtds[3].token & (1U << 15)) != 0U);
+    assert(((qtds[3].token >> 16) & 0x7FFFU) == 0U);
+}
+
 static void test_qh_builder(void) {
     struct nexus_ehci_qh qh = {0};
     assert(nexus_ehci_build_qh(&qh, 0x00300000U, 0x00300040U,
@@ -132,6 +175,7 @@ int main(void) {
     test_port_status_decode();
     test_qtd_builder();
     test_qh_builder();
+    test_control_transfer_qtd_chain();
     puts("NEXUS EHCI CAPABILITY AND TRANSFER-DESCRIPTOR TESTS PASSED");
     return 0;
 }

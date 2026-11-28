@@ -205,3 +205,123 @@ bool nexus_ehci_build_qh(
     };
     return true;
 }
+
+size_t nexus_ehci_control_qtd_count(
+    uint16_t data_length, uint16_t first_data_page_offset) {
+    if (first_data_page_offset >= NEXUS_EHCI_PAGE_SIZE) return 0U;
+    size_t count = 2U; /* SETUP and STATUS. */
+    uint32_t remaining = data_length;
+    uint32_t offset = first_data_page_offset;
+    while (remaining != 0U) {
+        const uint32_t capacity =
+            (uint32_t)(5U * NEXUS_EHCI_PAGE_SIZE) - offset;
+        const uint32_t chunk = remaining < capacity
+            ? remaining : capacity;
+        if (chunk == 0U) return 0U;
+        remaining -= chunk;
+        offset = 0U;
+        ++count;
+    }
+    return count;
+}
+
+bool nexus_ehci_build_control_qtd_chain(
+    struct nexus_ehci_qtd *qtds, const uint32_t *qtd_physical,
+    size_t qtd_capacity, const uint8_t setup_packet[8],
+    const uint32_t setup_page_addresses[5], uint16_t setup_page_offset,
+    const uint32_t *data_page_addresses, size_t data_page_count,
+    uint16_t first_data_page_offset, uint16_t maximum_packet) {
+    if (qtds == NULL || qtd_physical == NULL || setup_packet == NULL ||
+        setup_page_addresses == NULL || maximum_packet == 0U ||
+        maximum_packet > 1024U ||
+        first_data_page_offset >= NEXUS_EHCI_PAGE_SIZE ||
+        setup_page_offset > NEXUS_EHCI_PAGE_SIZE - 8U ||
+        ((uintptr_t)qtds & 0x1FU) != 0U) return false;
+
+    const uint16_t data_length = (uint16_t)(
+        setup_packet[6] | ((uint16_t)setup_packet[7] << 8));
+    const size_t needed = nexus_ehci_control_qtd_count(
+        data_length, first_data_page_offset);
+    if (needed == 0U || needed > qtd_capacity) return false;
+
+    for (size_t i = 0U; i < needed; ++i) {
+        if (qtd_physical[i] == 0U ||
+            (qtd_physical[i] & 0x1FU) != 0U ||
+            qtd_physical[i] > UINT32_MAX - 0x1FU) return false;
+    }
+
+    const uint32_t status_physical = qtd_physical[needed - 1U];
+    const uint32_t setup_next = data_length != 0U
+        ? qtd_physical[1U] : status_physical;
+    if (!nexus_ehci_build_qtd(&qtds[0], qtd_physical[0], setup_next,
+            NEXUS_EHCI_QTD_TERMINATE, NEXUS_EHCI_PID_SETUP,
+            8U, false, false, setup_page_addresses, setup_page_offset))
+        return false;
+
+    if (data_length == 0U) {
+        const enum nexus_ehci_pid status_pid = NEXUS_EHCI_PID_IN;
+        return nexus_ehci_build_qtd(&qtds[1], status_physical,
+            NEXUS_EHCI_QTD_TERMINATE, NEXUS_EHCI_QTD_TERMINATE,
+            status_pid, 0U, true, true, NULL, 0U);
+    }
+
+    if (data_page_addresses == NULL || data_page_count == 0U)
+        return false;
+    uint32_t pages_required =
+        ((uint32_t)first_data_page_offset + data_length +
+         NEXUS_EHCI_PAGE_SIZE - 1U) / NEXUS_EHCI_PAGE_SIZE;
+    if (pages_required > data_page_count) return false;
+    for (uint32_t i = 0U; i < pages_required; ++i) {
+        const uint32_t page = data_page_addresses[i];
+        if (page == 0U || page > UINT32_MAX -
+                (NEXUS_EHCI_PAGE_SIZE - 1U) ||
+            (page & (NEXUS_EHCI_PAGE_SIZE - 1U)) != 0U) return false;
+    }
+
+    const bool direction_in = (setup_packet[0] & 0x80U) != 0U;
+    const enum nexus_ehci_pid data_pid = direction_in
+        ? NEXUS_EHCI_PID_IN : NEXUS_EHCI_PID_OUT;
+    const enum nexus_ehci_pid status_pid = direction_in
+        ? NEXUS_EHCI_PID_OUT : NEXUS_EHCI_PID_IN;
+    const size_t data_count = needed - 2U;
+    uint32_t remaining = data_length;
+    uint32_t page_index = 0U;
+    uint16_t page_offset = first_data_page_offset;
+    bool toggle = true;
+
+    for (size_t i = 0U; i < data_count; ++i) {
+        const uint32_t capacity =
+            (uint32_t)(5U * NEXUS_EHCI_PAGE_SIZE) - page_offset;
+        const uint16_t chunk = (uint16_t)(
+            remaining < capacity ? remaining : capacity);
+        uint32_t qtd_pages[5] = {0U};
+        const uint32_t used_pages =
+            ((uint32_t)page_offset + chunk + NEXUS_EHCI_PAGE_SIZE - 1U) /
+            NEXUS_EHCI_PAGE_SIZE;
+        if (used_pages == 0U || used_pages > 5U ||
+            page_index + used_pages > pages_required) return false;
+        for (uint32_t p = 0U; p < used_pages; ++p)
+            qtd_pages[p] = data_page_addresses[page_index + p];
+
+        const uint32_t current_physical = qtd_physical[i + 1U];
+        const uint32_t next_physical = i + 1U < data_count
+            ? qtd_physical[i + 2U] : status_physical;
+        const uint32_t alternate_physical = direction_in
+            ? status_physical : NEXUS_EHCI_QTD_TERMINATE;
+        if (!nexus_ehci_build_qtd(&qtds[i + 1U], current_physical,
+                next_physical, alternate_physical, data_pid, chunk,
+                toggle, false, qtd_pages, page_offset)) return false;
+
+        const uint32_t packets =
+            ((uint32_t)chunk + maximum_packet - 1U) / maximum_packet;
+        if ((packets & 1U) != 0U) toggle = !toggle;
+        remaining -= chunk;
+        page_index += used_pages;
+        page_offset = 0U;
+    }
+    if (remaining != 0U) return false;
+
+    return nexus_ehci_build_qtd(&qtds[needed - 1U], status_physical,
+        NEXUS_EHCI_QTD_TERMINATE, NEXUS_EHCI_QTD_TERMINATE,
+        status_pid, 0U, true, true, NULL, 0U);
+}

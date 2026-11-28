@@ -106,4 +106,21 @@ bool nexus_ehci_build_qh(
     bool data_toggle_control, uint8_t nak_reload,
     uint32_t first_qtd_physical);
 
+/* Count descriptors required by a control request. The result includes SETUP
+ * and STATUS qTDs, and accounts for the first data-page byte offset. */
+size_t nexus_ehci_control_qtd_count(
+    uint16_t data_length, uint16_t first_data_page_offset);
+
+/* Construct SETUP, optional DATA qTDs, and STATUS qTDs. qtd_physical has one
+ * aligned DMA32 address per output descriptor. setup_page_addresses supplies
+ * the physical page containing the 8-byte setup packet. data_page_addresses
+ * lists all DMA32 pages backing the data buffer, beginning at its first page.
+ * For a short IN packet, each DATA qTD's alternate link targets STATUS. */
+bool nexus_ehci_build_control_qtd_chain(
+    struct nexus_ehci_qtd *qtds, const uint32_t *qtd_physical,
+    size_t qtd_capacity, const uint8_t setup_packet[8],
+    const uint32_t setup_page_addresses[5], uint16_t setup_page_offset,
+    const uint32_t *data_page_addresses, size_t data_page_count,
+    uint16_t first_data_page_offset, uint16_t maximum_packet);
+
 #endif

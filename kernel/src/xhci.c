@@ -1908,9 +1908,9 @@ static bool xhci_enumerate_hid_port(struct xhci_controller *xhci,
     serial_write_hex(path->root_port);
     serial_write("\r\n");
 
-    /* Configure every discovered keyboard/mouse HID interface under this USB
-     * address/slot. Additional endpoints have independent rings and report
-     * state so composite receivers with more than two input interfaces work. */
+    /* Common keyboard+mouse 2.4 GHz receivers expose two HID interfaces but
+     * only one USB address/slot. Configure the second HID endpoint under this
+     * same slot so both devices can report concurrently. */
     if (kind == XHCI_HID_KEYBOARD || kind == XHCI_HID_MOUSE) {
         uint8_t secondary_interface_number = 0xFFU;
         if (!xhci_configure_secondary_hid_interface(xhci, device,

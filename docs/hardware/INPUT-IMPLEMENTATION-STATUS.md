@@ -320,3 +320,9 @@ Do not claim that every keyboard, mouse, receiver, hub, motherboard, Bluetooth r
 - BLE HID service discovery may inspect public GATT metadata before encryption, but the xHCI HOGP runtime now starts LE Secure Connections (or the existing same-exchange legacy fallback only when the peer declines SC) before writing an input-report CCCD.
 - ATT Handle Value Notifications/Indications are rejected for input while the link is not encrypted, including unexpected early notifications from a peripheral that fails to enforce its attribute permissions. Keyboard/mouse reports are delivered to the shared input queue only after the HCI Encryption Change event confirms encryption.
 - This policy currently uses NoInputNoOutput Just Works. It provides link encryption but not MITM protection or persistent bonding. The OS still needs a trusted passkey/numeric-comparison/OOB UI and protected bond storage before claiming authenticated pairing. Physical radio interoperability testing remains required.
+
+
+### Desktop Bluetooth settings update
+
+- The Network settings Bluetooth panel now shows ready/scanning adapters, active links, encrypted links, and HOGP-ready HID links separately. This distinguishes a radio link from an encrypted link and from an active keyboard/mouse report subscription.
+- Connect feedback explains that BLE pairing/encryption is required before input. The panel explicitly identifies the current security limit (Just Works, no MITM/passkey/OOB or stored bonds) and that Classic HIDP has not yet been connected to the live input runtime.

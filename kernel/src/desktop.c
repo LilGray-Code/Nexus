@@ -171,6 +171,9 @@ static void desktop_bluetooth_draw(uint64_t x, uint64_t y) {
                                     status.connected_links);
     hardware_append_text(summary, sizeof(summary), &used, " LINKS / ");
     desktop_bluetooth_append_number(summary, sizeof(summary), &used,
+                                    status.encrypted_links);
+    hardware_append_text(summary, sizeof(summary), &used, " ENCRYPTED / ");
+    desktop_bluetooth_append_number(summary, sizeof(summary), &used,
                                     status.hogp_ready_links);
     hardware_append_text(summary, sizeof(summary), &used, " HID READY");
     graphics_draw_text(x, y + 22U, summary, 1U, 108U, 216U, 229U);
@@ -216,10 +219,10 @@ static void desktop_bluetooth_draw(uint64_t x, uint64_t y) {
                            1U, 231U, 183U, 127U);
     }
     graphics_draw_text(x, y + 54U + (uint64_t)desktop_bt_device_count * 31U,
-        "SECURITY: JUST WORKS ONLY; NO MITM / PASSKEY / SAVED BONDS",
+        "INPUT REQUIRES ENCRYPTION: JUST WORKS ONLY; NO MITM / SAVED BONDS",
         1U, 231U, 183U, 127U);
     graphics_draw_text(x, y + 78U + (uint64_t)desktop_bt_device_count * 31U,
-        "CLASSIC HIDP INPUT IS NOT AVAILABLE YET",
+        "BLE HOGP KEYBOARD/MOUSE; CLASSIC HIDP IS NOT CONNECTED YET",
         1U, 171U, 191U, 211U);
     graphics_draw_text(x, y + 102U + (uint64_t)desktop_bt_device_count * 31U,
         desktop_bt_status_message, 1U, 108U, 216U, 229U);
@@ -7619,7 +7622,7 @@ void desktop_handle_input(const struct nexus_input_event *event) {
                         if (xhci_bluetooth_connect_le(
                                 peer->address_type, peer->address))
                             desktop_bt_status_message =
-                                "Connection requested; security is negotiated by the peer.";
+                                "Connection requested; BLE pairing/encryption is required before HID input.";
                         else
                             desktop_bt_status_message =
                                 "Could not start connection; adapter may be busy.";

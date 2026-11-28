@@ -26,14 +26,15 @@ struct nexus_pci_device;
  * CCCD subscriptions; supported HID keyboard/mouse notifications feed the
  * common input queue.
  *
- * On ATT security errors or SMP Security Request, the adapter first
- * attempts LE Secure Connections using the controller P-256/DHKey engine,
- * f4/f5/f6 transcript verification and HCI link encryption. A peer that
- * explicitly declines SC can continue the same exchange with non-bonding
- * legacy Just Works. Both modes are NoInputNoOutput with no MITM UI or stored
- * bonds; MITM-required peers are refused. The current Settings view exposes
- * adapter status and passive LE advertisements. EHCI/OHCI/UHCI are not yet
- * operational input controllers. */
+ * Before enabling an input-report CCCD, the adapter requires LE encryption.
+ * It attempts Secure Connections with the controller P-256/DHKey engine and
+ * f4/f5/f6 transcript verification; a peer that explicitly declines SC can
+ * continue only that same exchange using non-bonding legacy Just Works.
+ * NoInputNoOutput means there is no MITM protection, passkey/OOB/numeric
+ * confirmation UI, or persistent bond store. The Settings view exposes
+ * adapter status and passive LE advertisements. Classic BR/EDR HIDP is not
+ * connected to the input runtime. EHCI/OHCI/UHCI are not fully operational
+ * input controllers. */
 bool xhci_init(void);
 bool xhci_controller_owns_pci_device(const struct nexus_pci_device *device);
 bool xhci_keyboard_ready(void);
@@ -52,8 +53,8 @@ bool xhci_bluetooth_send_l2cap(uint16_t connection_handle,
 
 /* Read a queued legacy LE advertisement discovered by the USB HCI transport.
  * Connect requests use the address/type selected by an upper layer. Security
- * is negotiated only after an SMP Security Request or ATT permission error;
- * MITM-required peers are refused and no keys are persisted. */
+ * is initiated on peer request/ATT permission error or before CCCD subscription;
+ * encrypted links are required before wireless HID reports enter input. */
 bool xhci_bluetooth_read_advertisement(
     struct nexus_bt_hci_advertisement *advertisement);
 bool xhci_bluetooth_connect_le(
